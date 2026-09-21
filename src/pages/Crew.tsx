@@ -4,15 +4,17 @@ import { useApp } from "../ui/AppContext";
 import { getDb, useDb } from "../data/store";
 import { ROLES } from "../config/roles";
 import { redactPerson } from "../services/access";
-import { can } from "../services/permissions";
-import { assignToProject, createLoginForPerson, createPerson, deactivatePerson, getPerson, projectHistory, reactivatePerson, removeFromProject, updatePerson, updatePersonCategory } from "../services/people";
+import { can } from "../services/wrapped/permissions";
+import { assignToProject, createLoginForPerson, createPerson, deactivatePerson, getPerson, projectHistory, reactivatePerson, removeFromProject, updatePerson, updatePersonCategory } from "../services/wrapped/people";
 import { fmtShort } from "../services/utils";
 import { Modal } from "../ui/Modal";
 import { RolePicker } from "../ui/RolePicker";
 import { Empty, Field } from "../ui/parts";
 import { IconPlus } from "../ui/Icons";
 import { WorkloadTab, PersonWorkload } from "./Workload";
-import { rolesOnProject } from "../services/team";
+import { isRemote } from "../data/remote";
+import { RemoteLoginPanel } from "./Accounts";
+import { rolesOnProject } from "../services/wrapped/team";
 
 type Tab = "crew" | "volunteers" | "partners" | "workload";
 const TAB_ROLE: Record<Exclude<Tab, "workload">, RoleCode> = { crew: "CRW", volunteers: "VOL", partners: "PTR" };
@@ -116,8 +118,8 @@ function AddPersonModal({ defaultCategory, onClose, onCreated }: { defaultCatego
         </div>
         <Field label="Skills (separate with commas)"><input type="text" value={skills} onChange={(e) => setSkills(e.target.value)} /></Field>
         {category === "CRW" && <Field label="Equipment they know (separate with commas)"><input type="text" value={familiar} onChange={(e) => setFamiliar(e.target.value)} /></Field>}
-        <label className="check"><input type="checkbox" checked={login} onChange={(e) => setLogin(e.target.checked)} /> Create login access for this person</label>
-        {login && (
+        {!isRemote() && <label className="check"><input type="checkbox" checked={login} onChange={(e) => setLogin(e.target.checked)} /> Create login access for this person</label>}
+        {login && !isRemote() && (
           <div className="row">
             <Field label="Login email"><input type="email" value={loginEmail} placeholder={email} onChange={(e) => setLoginEmail(e.target.value)} /></Field>
             <Field label="Starting password"><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></Field>
@@ -176,7 +178,8 @@ export function PersonPage({ id }: { id: string }) {
           </dl>
           {p.email === "Hidden" && actor.personId !== p.personId && <p className="muted" style={{ marginTop: 10, fontSize: ".84rem" }}>Contact details are private to the Head of Production.</p>}
         </section>
-        {showLogin && <section className="glass panel">
+        {showLogin && isRemote() && <RemoteLoginPanel person={p} />}
+        {showLogin && !isRemote() && <section className="glass panel">
           <h2>Login access</h2>
           {user ? (
             <dl className="kv"><dt>Login email</dt><dd>{hop || actor.personId === id ? user.email : "Hidden"}</dd><dt>Access level</dt><dd>{ROLES[user.role].label}</dd><dt>State</dt><dd>{user.active ? "Can sign in" : "Deactivated"}</dd></dl>

@@ -9,9 +9,9 @@ import { canComment, canView, canWrite, getRecord } from "../services/access";
 import {
   addComment, advanceStage, canAdvance, canDelete, childKindFor, currentStageDeadline, deleteRecord, deletionImpact, deletionSummary, getBreadcrumb, getChildren, getComments,
   getRollupStatus, isComplete, levelLabel, sendBackStage, setStageDeadline, setStageOutput, updateRecord, usesPipeline,
-} from "../services/content";
-import { callSheetForRecord, openOrCreateForRecord } from "../services/callsheets";
-import { nameOf } from "../services/people";
+} from "../services/wrapped/content";
+import { callSheetForRecord, openOrCreateForRecord } from "../services/wrapped/callsheets";
+import { nameOf } from "../services/wrapped/people";
 import { fmtDate, fmtShort, relativeDays } from "../services/utils";
 import { Empty, Field, RiskBadge, StageBadge } from "../ui/parts";
 import { IconPlus } from "../ui/Icons";

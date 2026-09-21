@@ -6,8 +6,8 @@ import { Field } from "../ui/parts";
 import { levelLabel } from "../config/production";
 import { shootDateLabel } from "../config/categories";
 import { canWrite } from "../services/access";
-import { updateRecord, usesPipeline } from "../services/content";
-import { nameWithRole } from "../services/team";
+import { updateRecord, usesPipeline } from "../services/wrapped/content";
+import { nameWithRole } from "../services/wrapped/team";
 import { fmtDate, fmtShort, relativeDays } from "../services/utils";
 
 /** Details you can change in place. Click Edit, or click any value. */

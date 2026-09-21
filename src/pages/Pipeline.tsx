@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { ReportButton } from "../ui/ReportDialog";
-import { can } from "../services/permissions";
+import { can } from "../services/wrapped/permissions";
 import type { CategoryKey, ContentRecord } from "../types";
 import { useApp, type MenuItem } from "../ui/AppContext";
 import { useDb } from "../data/store";
 import { CATEGORIES, categoryOf } from "../config/categories";
 import { canWrite, isHop, visibleRecords } from "../services/access";
-import { canDelete, currentStageDeadline, deleteRecord, deletionImpact, deletionSummary, displayTitle, getChildren, getRollupStatus, isComplete, levelLabel, usesPipeline } from "../services/content";
-import { nameOf } from "../services/people";
+import { canDelete, currentStageDeadline, deleteRecord, deletionImpact, deletionSummary, displayTitle, getChildren, getRollupStatus, isComplete, levelLabel, usesPipeline } from "../services/wrapped/content";
+import { nameOf } from "../services/wrapped/people";
 import { fmtShort } from "../services/utils";
 import { Empty, RiskBadge, StageBadge } from "../ui/parts";
 import { IconChevron, IconDown, IconPlus } from "../ui/Icons";

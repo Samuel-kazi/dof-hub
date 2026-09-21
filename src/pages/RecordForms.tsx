@@ -6,7 +6,7 @@ import { CATEGORIES, categoryOf, shootDateLabel } from "../config/categories";
 import { useApp } from "../ui/AppContext";
 import { Modal } from "../ui/Modal";
 import { Field } from "../ui/parts";
-import { createChildRecord, createRecord, childKindFor, updateRecord } from "../services/content";
+import { createChildRecord, createRecord, childKindFor, updateRecord } from "../services/wrapped/content";
 
 // Assigning someone also attaches them to the project (see ensureMember in the content service).
 function assigneeOptions() {

@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { Actor, CategoryKey, EquipCategoryKey, Person } from "../types";
 import { RuleError } from "../types";
 import type { ModuleKey } from "../config/roles";
-import { getPerson } from "../services/people";
+import { getPerson } from "../services/wrapped/people";
 import { Modal } from "./Modal";
 
 export type Route =
@@ -59,6 +59,7 @@ interface Ctx {
 export interface AppNote { id: number; title: string; body: string; at: string }
 
 import type { ReportDoc } from "../services/reports";
+import { syncEvents } from "../data/remote";
 import { ReportView } from "./ReportView";
 
 const AppCtx = createContext<Ctx | null>(null);
@@ -75,6 +76,7 @@ export function AppProvider({ actor, onLogout, children }: { actor: Actor; onLog
   const [confirmState, setConfirmState] = useState<(ConfirmOpts & { resolve: (v: boolean) => void }) | null>(null);
   const idRef = useRef(0);
   const [notes, setNotes] = useState<AppNote[]>([]);
+  useEffect(() => { syncEvents.onError = (m) => toast(m, "error"); return () => { syncEvents.onError = () => {}; }; }, []);
   const [printing, setPrinting] = useState<ReportDoc | null>(null);
 
   const go = useCallback((r: Route) => setStack((s) => [...s, r]), []);

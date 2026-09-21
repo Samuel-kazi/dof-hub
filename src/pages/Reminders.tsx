@@ -1,15 +1,17 @@
 import { useState } from "react";
+import { api, isRemote } from "../data/remote";
+import { useGoogle } from "./Accounts";
 import { useApp } from "../ui/AppContext";
 import { getDb, useDb } from "../data/store";
 import { Empty } from "../ui/parts";
-import { can } from "../services/permissions";
+import { can } from "../services/wrapped/permissions";
 import { redactPerson } from "../services/access";
-import { alreadySent, dueSoon, lastSent, logSent, mailtoLink, messageFor, remindersFor, smsLink, type Reminder } from "../services/reminders";
+import { alreadySent, dueSoon, lastSent, logSent, mailtoLink, messageFor, remindersFor, smsLink, type Reminder } from "../services/wrapped/reminders";
 import { googleCalendarLink, icsFor } from "../services/calendar";
-import { updateOwnProfile } from "../services/people";
+import { updateOwnProfile } from "../services/wrapped/people";
 import { saveFile } from "../services/download";
 import { fmtDateTime, fmtShort, relativeDays } from "../services/utils";
-import { nameOf } from "../services/people";
+import { nameOf } from "../services/wrapped/people";
 
 const KIND: Record<Reminder["kind"], string> = { stage: "Stage", task: "Checklist", shoot: "Shoot", gear: "Gear" };
 
@@ -52,6 +54,7 @@ function Mine() {
   const { actor, me, go, attempt, notify, toast } = useApp();
   const lead = getDb().settings.stageReminderHours;
   const rems = remindersFor(actor.personId);
+  const [g] = useGoogle();
 
   const download = async () => {
     try {
@@ -86,7 +89,11 @@ function Mine() {
         <section className="glass panel" aria-label="Calendar file">
           <h2>Put them in your calendar</h2>
           <p className="muted" style={{ margin: "8px 0 14px" }}>Download a calendar file with everything above. Open it to add the events to Google Calendar, Apple Calendar or Outlook. Each event has an alert {lead} hours before it, so your phone reminds you too.</p>
-          <button className="btn primary" onClick={download} disabled={rems.length === 0}>Download my calendar (.ics)</button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {isRemote() && g?.calendar && <button className="btn primary" disabled={rems.length === 0} onClick={async () => { try { const r = await api.post<{ added: number; already: number; failed: number }>("/api/google/calendar"); toast(r.added ? `${r.added} added to your Google Calendar` : "Your Google Calendar already has everything", "success"); } catch (e) { toast(e instanceof Error ? e.message : "Could not add them.", "error"); } }}>Add to my Google Calendar</button>}
+            <button className={`btn ${isRemote() && g?.calendar ? "" : "primary"}`} onClick={download} disabled={rems.length === 0}>Download my calendar (.ics)</button>
+          </div>
+          {isRemote() && g && !g.calendar && <p className="muted" style={{ marginTop: 10, fontSize: ".84rem" }}>{g.available ? "Want them added to Google Calendar automatically? Link your Google account in Settings. It is optional." : ""}</p>}
           <p className="muted" style={{ marginTop: 12, fontSize: ".84rem" }}>The file is a snapshot. When dates change, download a fresh one. A calendar that updates by itself needs a server, which comes with the database.</p>
         </section>
 
@@ -106,6 +113,7 @@ function Mine() {
 
 function Send() {
   const { actor, attempt, toast } = useApp();
+  const [g] = useGoogle();
   const people = getDb().people.filter((p) => p.status === "active" && (p.category === "CRW" || p.category === "HOP"));
   const rows = people.map((p) => ({ person: redactPerson(actor, p), due: dueSoon(p.personId) })).sort((a, b) => b.due.length - a.due.length || a.person.name.localeCompare(b.person.name));
   const withDue = rows.filter((r) => r.due.length > 0);
@@ -125,7 +133,7 @@ function Send() {
 
   return (
     <>
-      <div className="banner"><span className="grow">This opens your own mail or messages app with the message ready to send, and keeps a record here. It does not send anything by itself. Sending on a schedule with nobody clicking needs a small server that can email and text. See the README.</span></div>
+      <div className="banner"><span className="grow">This opens your own mail or messages app with the message ready to send, and keeps a record here. It does not send anything by itself. If you have linked Google with sending allowed (in Settings), Send with Gmail sends the email straight from your Gmail. Texting, and sending on a schedule, still need a text-message service.</span></div>
       <section className="glass panel" aria-label="Send reminders">
         <h2 style={{ marginBottom: 12 }}>Due within {getDb().settings.stageReminderHours} hours, or late</h2>
         {withDue.length === 0 ? <Empty>Nobody has anything due in that time.</Empty> : (
@@ -144,6 +152,7 @@ function Send() {
                     <span style={{ flex: 1 }} />
                     <button className="btn small" disabled={hidden || !person.email} onClick={() => send("email", person.personId)}>Email</button>
                     <button className="btn small" disabled={hidden || !person.phone} onClick={() => send("text", person.personId)}>Text</button>
+                    {isRemote() && g?.gmail && <button className="btn small primary" disabled={hidden || !person.email} onClick={async () => { try { const r = await api.post<{ to: string; items: number }>("/api/google/email", { personId: person.personId }); toast(`Email sent to ${r.to} from your Gmail`, "success"); } catch (e) { toast(e instanceof Error ? e.message : "Could not send it.", "error"); } }}>Send with Gmail</button>}
                     <button className="btn small ghost" onClick={() => copy(person.personId)}>Copy message</button>
                   </div>
                   <div className="list">

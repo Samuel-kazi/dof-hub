@@ -1,5 +1,5 @@
-import type { DriveUsage, Forecast } from "../services/storage";
-import { isNearlyFull } from "../services/storage";
+import type { DriveUsage, Forecast } from "../services/wrapped/storage";
+import { isNearlyFull } from "../services/wrapped/storage";
 import { getRecord } from "../services/access";
 import { dayNumber, fmtDate, fmtShort, fmtSize } from "../services/utils";
 

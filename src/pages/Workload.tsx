@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ReportButton } from "../ui/ReportDialog";
-import { can } from "../services/permissions";
+import { can } from "../services/wrapped/permissions";
 import type { Person } from "../types";
 import { useApp } from "../ui/AppContext";
 import { Empty } from "../ui/parts";

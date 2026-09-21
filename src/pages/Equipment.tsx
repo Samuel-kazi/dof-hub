@@ -8,9 +8,9 @@ import { Empty, Field } from "../ui/parts";
 import { IconPlus } from "../ui/Icons";
 import {
   allIncidents, displayStatus, hasGearAccess, groupByFamily, isOverdue, listManifests, manifestStatusView, manifestSummary, projectLabel, qtyAssigned, qtyOut, type Family,
-} from "../services/equipment";
+} from "../services/wrapped/equipment";
 import { getDb } from "../data/store";
-import { nameOf } from "../services/people";
+import { nameOf } from "../services/wrapped/people";
 import { fmtDate, fmtShort, relativeDays, todayIso, daysUntil } from "../services/utils";
 import { ItemFormModal, NewCheckoutModal, useItemActions } from "./EquipmentForms";
 

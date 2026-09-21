@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useApp, type Route } from "./AppContext";
 import { didSaveFail, useDb } from "../data/store";
-import { modulesFor } from "../services/permissions";
+import { modulesFor } from "../services/wrapped/permissions";
 import { CATEGORIES } from "../config/categories";
 import { MODULE_LABELS, ROLES, type ModuleKey } from "../config/roles";
-import { getReminders } from "../services/content";
+import { getReminders } from "../services/wrapped/content";
 import { relativeDays } from "../services/utils";
 import { IconBack, IconBell, IconCam, IconChevron, IconDoc, IconDrive, IconFilm, IconGear, IconHome, IconLogout, IconMenu, IconMoon, IconSheet, IconSun, IconUsers } from "./Icons";
 import { Logo } from "./Logo";

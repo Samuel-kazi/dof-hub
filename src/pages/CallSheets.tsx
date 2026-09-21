@@ -7,17 +7,17 @@ import {
   createCallSheet, crewConflicts, deleteCallSheet, duplicateCallSheet, finalizeCallSheet, getCallSheet, getMismatches,
   reopenCallSheet, resolveMismatches, updateCallSheet,
   addRunItem, daysOf, removeRunItem, runOfShowRequired, runOfShowTotals, sheetLevel, sortedRunOfShow, updateRunItem,
-} from "../services/callsheets";
-import { addComment, featuredFor, getComments, updateRecord } from "../services/content";
-import { roleOn } from "../services/team";
+} from "../services/wrapped/callsheets";
+import { addComment, featuredFor, getComments, updateRecord } from "../services/wrapped/content";
+import { roleOn } from "../services/wrapped/team";
 import { levelLabel } from "../config/production";
-import { nameOf } from "../services/people";
+import { nameOf } from "../services/wrapped/people";
 import { fmtDate, relativeDays } from "../services/utils";
 import { Modal } from "../ui/Modal";
 import { Empty, Field } from "../ui/parts";
 import { IconPlus } from "../ui/Icons";
 import { GearPicker } from "../ui/GearPicker";
-import { addGearToSheet, getItem, gearIssues, hasGearAccess, manifestForSheet, manifestStatusView, removeGearFromSheet } from "../services/equipment";
+import { addGearToSheet, getItem, gearIssues, hasGearAccess, manifestForSheet, manifestStatusView, removeGearFromSheet } from "../services/wrapped/equipment";
 
 export function CallSheets() {
   const { actor, go, menu, confirm, attempt } = useApp();

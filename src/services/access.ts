@@ -79,6 +79,6 @@ export function redactPerson(actor: Actor, p: Person): Person {
   let out = p;
   const hideContact = !can(actor, "people.contacts") && (actor.role === "VOL" || actor.role === "PTR" || p.category === "VOL" || p.category === "PTR");
   if (hideContact) out = { ...out, email: "Hidden", phone: "Hidden", equipmentFamiliarity: [] };
-  if (!can(actor, "people.loginStatus")) out = { ...out, hasLogin: false };
+  if (!can(actor, "people.loginStatus")) out = { ...out, hasLogin: false, username: undefined, loginOff: undefined };
   return out;
 }

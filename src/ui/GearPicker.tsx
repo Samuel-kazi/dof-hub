@@ -6,7 +6,7 @@ import { Field } from "./parts";
 import { EQUIP_CATEGORIES } from "../config/equipment";
 import type { EquipCategoryKey } from "../types";
 import { RuleError } from "../types";
-import { allocateFifo, pickerRows, type LineRequest, type PickerRow } from "../services/equipment";
+import { allocateFifo, pickerRows, type LineRequest, type PickerRow } from "../services/wrapped/equipment";
 import { fmtShort } from "../services/utils";
 
 /**

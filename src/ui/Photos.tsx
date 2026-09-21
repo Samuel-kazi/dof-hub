@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import type { Attachment } from "../types";
 import { useApp } from "./AppContext";
 import { Modal } from "./Modal";
-import type { PhotoInput } from "../services/equipment";
+import type { PhotoInput } from "../services/wrapped/equipment";
 import { fmtDateTime } from "../services/utils";
 
 /** Shrinks a photo to a small JPEG so it fits comfortably in local storage. */

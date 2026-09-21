@@ -13,8 +13,8 @@ import { IconPlus } from "../ui/Icons";
 import { MiniMarkdown, toggleCheckLine } from "../ui/MiniMarkdown";
 import { joinSections, parseSections, type ParsedDoc } from "../config/docTemplates";
 import { canWrite, getRecord } from "../services/access";
-import { archiveDoc, canEditDoc, canViewDoc, createDoc, diffLines, getDoc, listDocs, restoreRevision, revisionsOf, saveDoc } from "../services/docs";
-import { nameOf } from "../services/people";
+import { archiveDoc, canEditDoc, canViewDoc, createDoc, diffLines, getDoc, listDocs, restoreRevision, revisionsOf, saveDoc } from "../services/wrapped/docs";
+import { nameOf } from "../services/wrapped/people";
 import { fmtDateTime, relativeDays } from "../services/utils";
 
 export function NewDocModal({ contentId, onClose, onCreated }: { contentId?: string; onClose: () => void; onCreated: (id: string) => void }) {

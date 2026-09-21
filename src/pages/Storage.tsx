@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ReportButton } from "../ui/ReportDialog";
-import { can } from "../services/permissions";
+import { can } from "../services/wrapped/permissions";
 import type { Drive, DriveAllocation } from "../types";
 import { useApp } from "../ui/AppContext";
 import { getDb, useDb } from "../data/store";
@@ -11,7 +11,7 @@ import { ForecastChart, ForecastNote, StorageBar } from "../ui/StorageViz";
 import { canWrite, getRecord, isHop } from "../services/access";
 import {
   addAllocation, allDriveUsage, createDrive, deleteDrive, driveReportText, driveUsage, fleetReportText, fleetTotals, forecast, getDrive, isNearlyFull, hasStorageAccess, removeAllocation, updateAllocation, updateDrive,
-} from "../services/storage";
+} from "../services/wrapped/storage";
 import { fmtDate, fmtSize, todayIso } from "../services/utils";
 
 const KIND_LABEL: Record<DriveAllocation["kind"], string> = { raw: "Raw footage", project: "Project files", delivered: "Delivered files", other: "Other" };

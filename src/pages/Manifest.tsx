@@ -11,9 +11,9 @@ import { GearPicker } from "../ui/GearPicker";
 import { canWrite, getRecord } from "../services/access";
 import {
   addLines, checkIn, hasGearAccess, getItem, getManifest, goneOutDefaults, isOverdue, manifestStatusView, markGoneOut, projectLabel, releaseManifest, removeLine, type PhotoInput, type ReturnInput,
-} from "../services/equipment";
+} from "../services/wrapped/equipment";
 import { getDb } from "../data/store";
-import { nameOf } from "../services/people";
+import { nameOf } from "../services/wrapped/people";
 import { daysUntil, fmtDate, fmtDateTime } from "../services/utils";
 
 export function ManifestPage({ id }: { id: string }) {

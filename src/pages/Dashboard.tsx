@@ -1,12 +1,12 @@
 import { useMemo, useRef, useState } from "react";
-import { can } from "../services/permissions";
+import { can } from "../services/wrapped/permissions";
 import { useApp } from "../ui/AppContext";
 import { useDb } from "../data/store";
 import { ROLES } from "../config/roles";
 import { categoryOf } from "../config/categories";
 import { visibleCallSheets, visibleRecords, isHop } from "../services/access";
-import { currentStageDeadline, displayTitle, getBlockedOnUser, isComplete, leavesUnder, riskOf, usesPipeline } from "../services/content";
-import { nameOf } from "../services/people";
+import { currentStageDeadline, displayTitle, getBlockedOnUser, isComplete, leavesUnder, riskOf, usesPipeline } from "../services/wrapped/content";
+import { nameOf } from "../services/wrapped/people";
 import { daysUntil, fmtShort, fmtSize, relativeDays, todayIso } from "../services/utils";
 import { RiskBadge } from "../ui/parts";
 import { NewRecordModal } from "./RecordForms";
@@ -14,10 +14,10 @@ import { IconCalendar, IconCam, IconDrive, IconFilm, IconPlus, IconPulse, IconSh
 import { Empty } from "../ui/parts";
 import { StorageBar } from "../ui/StorageViz";
 import { WorkloadGrid } from "./Workload";
-import { hasGearAccess, isOverdue, listManifests, manifestSummary, projectLabel } from "../services/equipment";
-import { allDriveUsage, fleetTotals, forecast, hasStorageAccess, isNearlyFull } from "../services/storage";
+import { hasGearAccess, isOverdue, listManifests, manifestSummary, projectLabel } from "../services/wrapped/equipment";
+import { allDriveUsage, fleetTotals, forecast, hasStorageAccess, isNearlyFull } from "../services/wrapped/storage";
 import { crewWorkload } from "../services/workload";
-import { modulesFor } from "../services/permissions";
+import { modulesFor } from "../services/wrapped/permissions";
 import { searchAll, type Hit } from "../services/search";
 
 const greeting = (): string => { const h = new Date().getHours(); return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening"; };

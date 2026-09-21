@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { can } from "../services/permissions";
+import { can } from "../services/wrapped/permissions";
 import type { EquipCategoryKey, EquipCondition, EquipmentItem, Manifest, TrackingType } from "../types";
 import { useApp, type MenuItem } from "../ui/AppContext";
 import { getDb } from "../data/store";
@@ -9,7 +9,7 @@ import { PromptModal } from "../ui/Prompt";
 import { Field } from "../ui/parts";
 import { GearPicker } from "../ui/GearPicker";
 import { canWrite, isHop } from "../services/access";
-import { addDays, createItem, createManifest, deleteItem, finishRepair, getItem, reinstateItem, retireItem, startRepair, updateItem, type LineRequest } from "../services/equipment";
+import { addDays, createItem, createManifest, deleteItem, finishRepair, getItem, reinstateItem, retireItem, startRepair, updateItem, type LineRequest } from "../services/wrapped/equipment";
 import { todayIso } from "../services/utils";
 import { IconPlus } from "../ui/Icons";
 

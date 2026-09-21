@@ -1,7 +1,11 @@
 # Dawn of Faith Production Hub
 
-Desktop app for Dawn of Faith TV. React + TypeScript front end, wrapped by Tauri.
-Phases 1 and 2 run on in-memory sample data (saved in the app's local storage). The database comes later.
+Production Hub for Dawn of Faith TV. React + TypeScript front end, wrapped by Tauri for the desktop.
+
+Two ways it runs:
+
+- **The real site (Vercel + MongoDB).** People sign in with a username and password. The server holds the data, checks every change against the permission rules, and keeps the activity log. See **GO-LIVE.md**.
+- **The local demo** (`npm run dev`, or the desktop app on its own). Sample data kept in the browser's storage, with demo logins. Nothing is shared and nothing is protected. It is for trying things out.
 
 ## What works now
 
@@ -146,3 +150,18 @@ Photos are shrunk and kept in the app's local storage for now, which holds rough
 - Every change is written to the audit log
 - Quantities, availability and drive usage are computed from checkouts and allocations, never stored
 - Gear with history is retired, never deleted
+
+
+## The real site: security and accounts
+
+- **Usernames, not email.** A username is 3 to 30 letters, numbers, dots, dashes or underscores. Email can be added later.
+- **Passwords are never stored.** Only a salted scrypt hash is kept. Passwords need at least 10 characters. Common passwords, and passwords containing the username or first name, are refused.
+- **Sessions** are random tokens held in an HttpOnly, SameSite cookie. The database keeps only a hash of each token. A session ends after 12 idle hours or 7 days. Changing a password, resetting one, switching a login off, or making someone inactive signs them out everywhere.
+- **Wrong guesses are limited.** Five wrong passwords lock a username for 15 minutes, and an address that guesses many usernames is locked as well. A wrong username and a wrong password give the same answer.
+- **The first account** (Head of Production) is created once, on first visit, with a setup code (`SETUP_TOKEN`) only the site owner knows.
+- **New logins.** The Head of Production creates a login for a person (People, then the person, then Login access) and gets a one-time password to pass on. The person must choose their own at first sign-in.
+- **The server decides.** The screen never decides who may see or do something: the server applies the same permission rules to every change, and hides what a person may not see (for example, crew do not see who has a login).
+- **Google is optional and personal.** Nobody is asked to link anything. A person chooses to link their own Google account in Settings, and chooses what it may do: add reminders to their calendar, and/or send reminder emails from their Gmail. Linking is only offered once `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set. The Google key is stored encrypted, and unlinking revokes it.
+- **After changing anything under `server/` or `src/services/`,** run `npm run build:server` and commit `api/_server.mjs`. `npm run build` does this automatically, and so does Vercel.
+
+`npm test` runs everything, including 34 checks on the server. `npm run dev:server` runs the real site on your own computer (in memory, so nothing is kept) after `npm run build`.

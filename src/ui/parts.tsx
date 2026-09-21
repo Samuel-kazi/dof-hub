@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { ContentRecord } from "../types";
-import { isComplete, riskOf } from "../services/content";
+import { isComplete, riskOf } from "../services/wrapped/content";
 
 export function RiskBadge({ record }: { record: ContentRecord }) {
   const r = riskOf(record);

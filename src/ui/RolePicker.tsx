@@ -1,5 +1,5 @@
 import { useId, useState } from "react";
-import { knownRoles } from "../services/team";
+import { knownRoles } from "../services/wrapped/team";
 
 /** One or more roles. Pick from the list or type your own, then press Enter or Add. */
 export function RolePicker({ value, onChange, disabled }: { value: string[]; onChange: (next: string[]) => void; disabled?: boolean }) {

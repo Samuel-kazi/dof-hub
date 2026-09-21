@@ -5,10 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "node scripts/build-server.mjs && tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test": "tsx tests/rules.test.ts && tsx tests/gear.test.ts && tsx tests/migrate.test.ts && tsx tests/search.test.ts && tsx tests/workflow.test.ts && tsx tests/lifecycle.test.ts && tsx tests/project.test.ts && tsx tests/workload.test.ts && tsx tests/permissions.test.ts && tsx tests/reports.test.ts && tsx tests/templates.test.ts && tsx tests/reminders.test.ts && tsx tests/render.test.tsx"
+    "test": "tsx tests/rules.test.ts && tsx tests/gear.test.ts && tsx tests/migrate.test.ts && tsx tests/search.test.ts && tsx tests/workflow.test.ts && tsx tests/lifecycle.test.ts && tsx tests/project.test.ts && tsx tests/workload.test.ts && tsx tests/permissions.test.ts && tsx tests/reports.test.ts && tsx tests/templates.test.ts && tsx tests/reminders.test.ts && tsx tests/server.test.ts && tsx tests/render.test.tsx",
+    "gen": "node scripts/gen-wrapped.mjs",
+    "build:server": "node scripts/build-server.mjs",
+    "dev:server": "node scripts/dev-server.mjs",
+    "check": "tsc --noEmit && tsc --noEmit -p server"
   },
   "dependencies": {
     "jspdf": "^4.2.1",
@@ -18,12 +22,13 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",
+    "@types/node": "^26.6.2",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
-    "@vercel/node": "^4.0.0",
     "@vitejs/plugin-react": "^4.3.1",
+    "esbuild": "^0.28.2",
     "tsx": "^4.19.0",
     "typescript": "^5.5.4",
-    "vite": "^5.4.21"
+    "vite": "^5.4.0"
   }
 }

@@ -1,16 +1,18 @@
 import { useState } from "react";
+import { isRemote } from "../data/remote";
+import { ConnectedAccounts, PasswordSettings } from "./Accounts";
 import { ReportButton } from "../ui/ReportDialog";
 import { useApp } from "../ui/AppContext";
 import { getDb, resetDemoData, useDb } from "../data/store";
 import { ROLES } from "../config/roles";
 import { isHop } from "../services/access";
-import { can, customisations } from "../services/permissions";
-import { changePassword, updateSettings } from "../services/settings";
-import { updateOwnProfile } from "../services/people";
+import { can, customisations } from "../services/wrapped/permissions";
+import { changePassword, updateSettings } from "../services/wrapped/settings";
+import { updateOwnProfile } from "../services/wrapped/people";
 import { CATEGORIES } from "../config/categories";
 import { DEFAULT_WORK_DAYS, effortFor, effortKey } from "../config/capacity";
 import type { CategoryKey } from "../types";
-import { nameOf } from "../services/people";
+import { nameOf } from "../services/wrapped/people";
 import { useTheme } from "../ui/theme";
 import { Field } from "../ui/parts";
 import { Empty } from "../ui/parts";
@@ -77,6 +79,8 @@ export function Settings() {
         </div>
       </section>
 
+      {isRemote() && <PasswordSettings username={me.username ?? ""} />}
+      {isRemote() && <ConnectedAccounts />}
       <>
           {sys && <>
           <section className="glass panel">
@@ -142,7 +146,7 @@ export function Settings() {
             <button className="btn primary" onClick={() => go({ n: "access" })}>Manage access</button>
           </section>}
 
-          {hop && <section className="glass panel">
+          {hop && !isRemote() && <section className="glass panel">
             <h2>Demo data</h2>
             <p className="sub" style={{ marginBottom: 12 }}>While the app is running on sample data, you can restore the starting set at any time.</p>
             <button className="btn danger" onClick={async () => { if (await confirm({ title: "Restore demo data?", body: "Everything you added or changed is replaced with the starting sample data.", confirmLabel: "Restore", danger: true })) resetDemoData(); }}>Restore demo data</button>

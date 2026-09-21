@@ -4,7 +4,7 @@ import { useApp } from "../ui/AppContext";
 import { Field } from "../ui/parts";
 import { IconPlus } from "../ui/Icons";
 import { canWrite } from "../services/access";
-import { addFeatured, featuredFor, removeFeatured, updateFeatured } from "../services/content";
+import { addFeatured, featuredFor, removeFeatured, updateFeatured } from "../services/wrapped/content";
 
 /** Hosts and guests. Hosts of the show carry down to its episodes. Guests are listed where they appear. */
 export function CastPanel({ rec }: { rec: ContentRecord }) {

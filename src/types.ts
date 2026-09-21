@@ -19,6 +19,8 @@ export interface Person {
   hasLogin: boolean;
   status: "active" | "inactive";
   createdAt: string;
+  username?: string; // what they sign in with. Set by the server when a login is made.
+  loginOff?: boolean; // the Head of Production switched their login off
   notifyEmail?: boolean; // also wants reminders by email, on top of the ones in the app
   notifySms?: boolean; // and by text message
 }

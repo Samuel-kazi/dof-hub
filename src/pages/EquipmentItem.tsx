@@ -3,9 +3,9 @@ import { useDb } from "../data/store";
 import { equipCategory } from "../config/equipment";
 import { Attachments, PhotoAdd } from "../ui/Photos";
 import { Empty } from "../ui/parts";
-import { addAttachment, availabilityOn, hasGearAccess, displayStatus, getItem, itemHistory, itemIncidents, manifestStatusView, projectLabel, qtyAssigned, qtyOut, removeAttachment, getManifest } from "../services/equipment";
+import { addAttachment, availabilityOn, hasGearAccess, displayStatus, getItem, itemHistory, itemIncidents, manifestStatusView, projectLabel, qtyAssigned, qtyOut, removeAttachment, getManifest } from "../services/wrapped/equipment";
 import { getDb } from "../data/store";
-import { nameOf } from "../services/people";
+import { nameOf } from "../services/wrapped/people";
 import { fmtDate, fmtShort } from "../services/utils";
 import { useItemActions } from "./EquipmentForms";
 

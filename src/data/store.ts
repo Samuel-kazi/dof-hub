@@ -38,18 +38,28 @@ function migrate(old: Database): Database {
   return next;
 }
 
+/** Brings saved data of any older version up to the current one. Returns null if it is not recognisable. */
+export function upgradeDb(parsed: Database): Database | null {
+  switch (parsed.schemaVersion) {
+    case SCHEMA_VERSION: return parsed;
+    case 1: return upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(migrate(parsed))))));
+    case 2: return upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(parsed)))));
+    case 3: return upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(parsed))));
+    case 4: return upgradeToV7(upgradeToV6(upgradeToV5(parsed)));
+    case 5: return upgradeToV7(upgradeToV6(parsed));
+    case 6: return upgradeToV7(parsed);
+    default: return null;
+  }
+}
+
+export const CURRENT_SCHEMA = SCHEMA_VERSION;
+
 function load(): Database {
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as Database;
-      if (parsed.schemaVersion === SCHEMA_VERSION) return parsed;
-      if (parsed.schemaVersion === 1) return upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(migrate(parsed))))));
-      if (parsed.schemaVersion === 2) return upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(parsed)))));
-      if (parsed.schemaVersion === 3) return upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(parsed))));
-      if (parsed.schemaVersion === 4) return upgradeToV7(upgradeToV6(upgradeToV5(parsed)));
-      if (parsed.schemaVersion === 5) return upgradeToV7(upgradeToV6(parsed));
-      if (parsed.schemaVersion === 6) return upgradeToV7(parsed);
+      const up = upgradeDb(JSON.parse(raw) as Database);
+      if (up) return up;
     }
   } catch {
     /* fall through to seed data */
@@ -67,13 +77,29 @@ let saveFailed = false;
 /** True when the last save to this device failed, usually because photos filled the space. */
 export const didSaveFail = (): boolean => saveFailed;
 
+let persist = true;
+/** Signed-in sessions on the server keep data off this device. Only the local demo saves here. */
+export const setPersist = (on: boolean): void => { persist = on; };
+
+/** Counts every change. The action recorder uses it to tell a change from a read. */
+export const getTick = (): number => tick;
+
+/** Replaces everything, for example with what the server sent. */
+export function setDb(next: Database): void {
+  db = next;
+  tick++;
+  listeners.forEach((l) => l());
+}
+
 export function commit(): void {
   tick++;
-  try {
-    localStorage.setItem(KEY, JSON.stringify(db));
-    saveFailed = false;
-  } catch {
-    saveFailed = true; // keep working in memory, but tell the user
+  if (persist) {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(db));
+      saveFailed = false;
+    } catch {
+      saveFailed = true; // keep working in memory, but tell the user
+    }
   }
   listeners.forEach((l) => l());
 }

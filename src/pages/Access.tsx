@@ -6,7 +6,7 @@ import { ROLES } from "../config/roles";
 import { CAPABILITIES, DEFAULT_GRANTS, type Capability } from "../config/permissions";
 import { Empty, Field } from "../ui/parts";
 import { isHop } from "../services/access";
-import { customisations, effectiveGrants, grantFor, resetPermissions, setPersonGrant, setRoleGrant } from "../services/permissions";
+import { customisations, effectiveGrants, grantFor, resetPermissions, setPersonGrant, setRoleGrant } from "../services/wrapped/permissions";
 
 const EDITABLE_ROLES: RoleCode[] = ["CRW", "VOL", "PTR"];
 const groups = [...new Set(CAPABILITIES.map((c) => c.group))];
