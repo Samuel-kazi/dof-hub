@@ -5,6 +5,24 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
+// server/dbproblem.ts
+function describeDbProblem(e) {
+  const name = e instanceof Error ? e.name : "";
+  const text = e instanceof Error ? `${e.message} ${e.cause?.message ?? ""}` : String(e);
+  const code = e.code;
+  if (code === 18 || /bad auth|authentication failed|AuthenticationFailed/i.test(text))
+    return "MongoDB refused the username or password in MONGODB_URI. If the password has symbols such as @ : / ? # or %, they must be URL-encoded. The simplest fix is to reset the database user's password to letters and numbers only, then update MONGODB_URI in Vercel and redeploy.";
+  if (name === "MongoParseError" || /invalid scheme|invalid connection string|must be a string|URI malformed|Invalid namespace/i.test(text))
+    return "MONGODB_URI is not a valid connection string. It should start with mongodb+srv:// and be copied whole from Atlas (Connect, Drivers), with <password> replaced by the real password and no spaces or quotes.";
+  if (/ENOTFOUND|querySrv|EBADNAME/i.test(text))
+    return "The cluster address in MONGODB_URI was not found. Copy the connection string again from Atlas (Connect, Drivers).";
+  if (name === "MongoServerSelectionError" || /ECONNREFUSED|ETIMEDOUT|timed out|Server selection/i.test(text))
+    return "The server could not reach MongoDB. In Atlas, Network Access must allow 0.0.0.0/0 (Vercel's addresses change), and the cluster must not be paused. Wait a minute after changing either, then try again.";
+  if (/not authorized|Unauthorized|requires authentication/i.test(text))
+    return 'The database user in MONGODB_URI is not allowed to use this database. In Atlas, Database Access, give the user the role "Read and write to any database", or read and write on the database named in MONGODB_DB.';
+  return `The database could not be reached${name ? ` (${name})` : ""}. The details are in the Vercel logs for this deployment.`;
+}
+
 // server/errors.ts
 var HttpError = class extends Error {
   constructor(status2, message, code) {
@@ -4644,11 +4662,11 @@ function createHandler(getStore2) {
       assertSameSite(req);
       await dispatch(await getStore2(), req, res);
     } catch (e) {
-      if (e instanceof HttpError) return send(res, e.status, { ok: false, error: e.message, code: e.code });
-      if (e instanceof RuleError) return send(res, 400, { ok: false, error: e.message, code: "rule" });
-      if (e instanceof SyntaxError) return send(res, 400, { ok: false, error: "That request is not valid." });
+      if (e instanceof HttpError) return send(res, e.status, { ok: false, remote: true, error: e.message, code: e.code });
+      if (e instanceof RuleError) return send(res, 400, { ok: false, remote: true, error: e.message, code: "rule" });
+      if (e instanceof SyntaxError) return send(res, 400, { ok: false, remote: true, error: "That request is not valid." });
       console.error("Server error", e);
-      return send(res, 500, { ok: false, error: "Something went wrong on the server. Nothing was changed." });
+      return send(res, 500, { ok: false, remote: true, error: "Something went wrong on the server. Nothing was changed." });
     }
   };
 }
@@ -4723,7 +4741,7 @@ async function getStore() {
     return await mongoStore(uri, process.env.MONGODB_DB || "dof");
   } catch (e) {
     console.error("MongoDB connection failed", e);
-    throw new HttpError(503, "The database could not be reached. Try again in a minute.");
+    throw new HttpError(503, describeDbProblem(e), "db");
   }
 }
 var handler = createHandler(getStore);

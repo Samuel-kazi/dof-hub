@@ -7,10 +7,10 @@ import { can } from "../services/permissions";
 import { api, ApiError, isRemote } from "../data/remote";
 import { fmtDateTime } from "../services/utils";
 
-const say = (e: unknown): string => (e instanceof Error ? e.message : "Something went wrong. Try again.");
+export const say = (e: unknown): string => (e instanceof Error ? e.message : "Something went wrong. Try again.");
 
 /** A one-time password is shown once, here, and is not kept anywhere the Head of Production can look it up again. */
-function GivePassword({ title, username, password, onClose }: { title: string; username: string; password: string; onClose: () => void }) {
+export function GivePassword({ title, username, password, onClose }: { title: string; username: string; password: string; onClose: () => void }) {
   const { toast } = useApp();
   return (
     <Modal title={title} onClose={onClose} actions={<><button className="btn" onClick={() => navigator.clipboard.writeText(`Username: ${username}\nOne-time password: ${password}`).then(() => toast("Copied", "success"))}>Copy</button><button className="btn primary" onClick={onClose}>Done</button></>}>

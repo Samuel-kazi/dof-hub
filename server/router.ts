@@ -94,11 +94,11 @@ export function createHandler(getStore: () => Promise<Store>) {
       assertSameSite(req);
       await dispatch(await getStore(), req, res);
     } catch (e) {
-      if (e instanceof HttpError) return send(res, e.status, { ok: false, error: e.message, code: e.code });
-      if (e instanceof RuleError) return send(res, 400, { ok: false, error: e.message, code: "rule" });
-      if (e instanceof SyntaxError) return send(res, 400, { ok: false, error: "That request is not valid." });
+      if (e instanceof HttpError) return send(res, e.status, { ok: false, remote: true, error: e.message, code: e.code });
+      if (e instanceof RuleError) return send(res, 400, { ok: false, remote: true, error: e.message, code: "rule" });
+      if (e instanceof SyntaxError) return send(res, 400, { ok: false, remote: true, error: "That request is not valid." });
       console.error("Server error", e); // the detail stays in Vercel's logs
-      return send(res, 500, { ok: false, error: "Something went wrong on the server. Nothing was changed." });
+      return send(res, 500, { ok: false, remote: true, error: "Something went wrong on the server. Nothing was changed." });
     }
   };
 }

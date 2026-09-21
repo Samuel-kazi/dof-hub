@@ -39,6 +39,19 @@ Save them for Production, Preview and Development, then **Redeploy** (Deployment
 
 Open `https://YOUR-SITE.vercel.app/api/health`. You should see `"message":"Connected to MongoDB."`.
 
+If it does not say that, it says what is wrong, in words. What each one means:
+
+| It says | Do this |
+|---|---|
+| `MONGODB_URI is not set on the server` | Add it in Vercel (all three environments), then Redeploy. Adding a setting does nothing until you redeploy |
+| refused the username or password | Atlas, Database Access: reset that user's password to letters and numbers only. Put it in `MONGODB_URI`, Redeploy |
+| not a valid connection string | Copy the string again from Atlas (Connect, Drivers). It starts `mongodb+srv://`. Replace `<password>` with the real password. No quotes or spaces |
+| address in `MONGODB_URI` was not found | Copy the string again from Atlas |
+| could not reach MongoDB | Atlas, Network Access: allow `0.0.0.0/0`. Check the cluster is not paused. Wait a minute |
+| not allowed to use this database | Atlas, Database Access: give the user "Read and write to any database" |
+
+If the site shows **The site cannot reach its data** instead of a sign-in box, it is the same list. The site never shows demo data in its place.
+
 ## 4. Create the Head of Production
 
 Open the site. It shows **Set up the Production Hub**. Enter the setup code, your name, a username and a password (10 or more characters). Choose blank or sample data. This can only be done once.
@@ -47,7 +60,9 @@ Afterwards, delete `SETUP_TOKEN` in Vercel. Setup is then switched off completel
 
 ## 5. Add everyone else
 
-People, choose the person, **Login access**. Pick a username. The app shows a one-time password. Send it to them privately. They choose their own password when they first sign in.
+People, **Add**, fill in the name and details. "Make a login for this person now" is ticked. Check the username (it is suggested from the name, and they sign in with it, not an email), then Save. The app shows a one-time password. Send it to them privately. They choose their own password when they first sign in.
+
+To make a login for someone you added earlier: People, choose the person, **Login access**, pick a username, **Create login**.
 
 Forgotten password: the same panel has **Reset password**. Someone leaves: **Switch login off** signs them out at once.
 

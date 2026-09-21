@@ -89,6 +89,15 @@ function Frame({ children, onSubmit, title, note }: { children: React.ReactNode;
   );
 }
 
+/** Shown when the site's server is running but cannot reach its database. It never shows demo data instead. */
+export function Unavailable({ message: why }: { message: string }) {
+  return (
+    <Frame title="The site cannot reach its data" note={why} onSubmit={(e) => { e.preventDefault(); window.location.reload(); }}>
+      <button className="btn primary" type="submit" style={{ justifyContent: "center" }}>Try again</button>
+    </Frame>
+  );
+}
+
 const message = (e: unknown): string => (e instanceof Error ? e.message : "Something went wrong. Try again.");
 
 export function RemoteLogin({ onLogin }: { onLogin: (u: SessionUser) => void }) {

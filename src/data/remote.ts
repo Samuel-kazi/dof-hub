@@ -8,7 +8,7 @@ import { setRpcSink, type Call } from "./rpc";
 // may see and do what, and answers every change. This file is the second way.
 
 export interface SessionUser { personId: string; role: RoleCode; name: string; username: string; mustChange: boolean }
-export interface SessionInfo { needsSetup: boolean; user: SessionUser | null; google: { available: boolean } }
+export interface SessionInfo { needsSetup: boolean; user: SessionUser | null; google: { available: boolean }; unavailable?: string }
 
 let remote = false;
 export const isRemote = (): boolean => remote;
@@ -41,9 +41,12 @@ export const api = {
 export async function probe(): Promise<SessionInfo | null> {
   try {
     const res = await fetch("/api/session", { credentials: "same-origin" });
-    const json = (await res.json()) as { remote?: boolean } & SessionInfo;
-    if (json?.remote !== true) return null;
+    const json = (await res.json()) as { remote?: boolean; ok?: boolean; error?: string } & SessionInfo;
+    if (json?.remote !== true) return null; // no server behind this page: the local demo
     remote = true;
+    // There is a server, but it could not do its job (for example, it cannot reach the database).
+    // Never fall back to the demo here: that would show data that is not the real data.
+    if (json.ok === false) return { needsSetup: false, user: null, google: { available: false }, unavailable: json.error ?? "The server is not answering properly. Try again in a minute." };
     return json;
   } catch {
     return null;
@@ -93,6 +96,11 @@ async function pump(): Promise<void> {
 }
 
 const poll = (): void => { if (!running && !queue.length && document.visibilityState !== "hidden") void refresh(); };
+
+/** Resolves once every change made on this screen has been sent to the server (or has failed and been undone). */
+export async function whenSynced(): Promise<void> {
+  while (running || queue.length) await new Promise((r) => setTimeout(r, 40));
+}
 
 export async function hydrate(): Promise<void> {
   const r = await api.get<{ revision: number; db: Database }>("/api/state");

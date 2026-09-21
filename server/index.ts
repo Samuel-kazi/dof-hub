@@ -1,3 +1,4 @@
+import { describeDbProblem } from "./dbproblem";
 import { HttpError } from "./errors";
 import { mongoStore } from "./mongo";
 import { createHandler } from "./router";
@@ -13,7 +14,7 @@ async function getStore(): Promise<Store> {
     return await mongoStore(uri, process.env.MONGODB_DB || "dof");
   } catch (e) {
     console.error("MongoDB connection failed", e);
-    throw new HttpError(503, "The database could not be reached. Try again in a minute.");
+    throw new HttpError(503, describeDbProblem(e), "db");
   }
 }
 

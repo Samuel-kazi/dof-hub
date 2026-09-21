@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { Actor } from "./types";
 import { AppProvider } from "./ui/AppContext";
 import { Shell } from "./ui/Shell";
-import { Login, MustChange, RemoteLogin, Setup } from "./pages/Login";
+import { Login, MustChange, RemoteLogin, Setup, Unavailable } from "./pages/Login";
 import { actorOf, hydrate, probe, signOut, startSync, syncEvents, type SessionInfo, type SessionUser } from "./data/remote";
 
 type Boot = { kind: "loading" } | { kind: "local" } | { kind: "remote"; info: SessionInfo };
@@ -25,7 +25,7 @@ export default function App() {
     void probe().then(async (info) => {
       if (!info) { setBoot({ kind: "local" }); return; }
       setBoot({ kind: "remote", info });
-      if (info.user) await enter(info.user);
+      if (info.user && !info.unavailable) await enter(info.user);
     });
   }, []);
 
@@ -40,6 +40,8 @@ export default function App() {
         </AppProvider>
       ) : boot.kind === "local" ? (
         <Login onLogin={setActor} />
+      ) : boot.info.unavailable ? (
+        <Unavailable message={boot.info.unavailable} />
       ) : pending ? (
         <MustChange user={pending} onDone={(u) => void enter({ ...u, mustChange: false })} />
       ) : boot.info.needsSetup ? (

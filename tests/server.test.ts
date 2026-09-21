@@ -430,6 +430,52 @@ await t("Google linking says so when it is not set up", async () => {
   } finally { process.env.GOOGLE_CLIENT_ID = id; }
 });
 
+const { describeDbProblem } = await import("../server/dbproblem");
+const { HttpError } = await import("../server/errors");
+
+await t("a database that cannot be reached is explained in plain words, never with the password", async () => {
+  const bad = Object.assign(new Error("bad auth : authentication failed for user dofapp with password hunter2"), { code: 18 });
+  assert.match(describeDbProblem(bad), /username or password/);
+  assert.doesNotMatch(describeDbProblem(bad), /hunter2|dofapp/);
+  const net = Object.assign(new Error("Server selection timed out after 8000 ms"), { name: "MongoServerSelectionError" });
+  assert.match(describeDbProblem(net), /Network Access[\s\S]*0\.0\.0\.0\/0/);
+  assert.match(describeDbProblem(new Error("querySrv ENOTFOUND _mongodb._tcp.nowhere.mongodb.net")), /address in MONGODB_URI/);
+  assert.match(describeDbProblem(Object.assign(new Error("Invalid scheme, expected connection string to start with mongodb://"), { name: "MongoParseError" })), /valid connection string/);
+  assert.match(describeDbProblem(new Error("something odd")), /Vercel logs/);
+});
+
+await t("when the database is down, every answer says so and is marked as the server's own", async () => {
+  const down = createServer(createHandler(async () => { throw new HttpError(503, describeDbProblem(new Error("querySrv ENOTFOUND x")), "db"); }));
+  await new Promise<void>((r) => down.listen(0, "127.0.0.1", r));
+  const at = `http://127.0.0.1:${(down.address() as AddressInfo).port}`;
+  try {
+    for (const path of ["/api/session", "/api/health"]) {
+      const res = await fetch(at + path);
+      const json = await res.json() as { ok: boolean; remote: boolean; error: string; code: string };
+      assert.equal(res.status, 503);
+      assert.equal(json.ok, false);
+      assert.equal(json.remote, true); // so the app knows a server is there and never falls back to the demo
+      assert.equal(json.code, "db");
+      assert.match(json.error, /MONGODB_URI/);
+    }
+  } finally { down.close(); }
+});
+
+await t("the app shows a database problem instead of quietly turning into the local demo", async () => {
+  const { probe } = await import("../src/data/remote");
+  const real = globalThis.fetch;
+  const answer = (status: number, body: unknown) => (async () => new Response(typeof body === "string" ? body : JSON.stringify(body), { status })) as typeof fetch;
+  try {
+    globalThis.fetch = answer(503, { ok: false, remote: true, error: "The server could not reach MongoDB.", code: "db" });
+    const down = await probe();
+    assert.ok(down && down.unavailable && /MongoDB/.test(down.unavailable) && down.user === null);
+    globalThis.fetch = answer(200, "<!doctype html><html></html>"); // a plain website or the desktop app: no server, so the demo is right
+    assert.equal(await probe(), null);
+    globalThis.fetch = (async () => { throw new TypeError("offline"); }) as typeof fetch;
+    assert.equal(await probe(), null);
+  } finally { globalThis.fetch = real; }
+});
+
 server?.close();
 console.log(`\n${passed} passed${failures.length ? `, ${failures.length} failed` : ""}`);
 process.exit(failures.length ? 1 : 0);

@@ -12,8 +12,8 @@ import { RolePicker } from "../ui/RolePicker";
 import { Empty, Field } from "../ui/parts";
 import { IconPlus } from "../ui/Icons";
 import { WorkloadTab, PersonWorkload } from "./Workload";
-import { isRemote } from "../data/remote";
-import { RemoteLoginPanel } from "./Accounts";
+import { api, isRemote, whenSynced } from "../data/remote";
+import { GivePassword, RemoteLoginPanel, say } from "./Accounts";
 import { rolesOnProject } from "../services/wrapped/team";
 
 type Tab = "crew" | "volunteers" | "partners" | "workload";
@@ -84,9 +84,14 @@ export function Crew({ tab: initial }: { tab?: Tab }) {
   );
 }
 
-function AddPersonModal({ defaultCategory, onClose, onCreated }: { defaultCategory: "CRW" | "VOL" | "PTR"; onClose: () => void; onCreated: (p: Person) => void }) {
-  const { actor, attempt } = useApp();
+export function AddPersonModal({ defaultCategory, onClose, onCreated }: { defaultCategory: "CRW" | "VOL" | "PTR"; onClose: () => void; onCreated: (p: Person) => void }) {
+  const { actor, attempt, toast } = useApp();
+  const remote = isRemote();
   const [category, setCategory] = useState<"CRW" | "VOL" | "PTR">(defaultCategory);
+  const [makeLogin, setMakeLogin] = useState(true); // on the real site: make the login as the person is added
+  const [typedUsername, setTypedUsername] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [given, setGiven] = useState<{ person: Person; username: string; password: string } | null>(null);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -97,16 +102,42 @@ function AddPersonModal({ defaultCategory, onClose, onCreated }: { defaultCatego
   const [password, setPassword] = useState("");
   const split = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
 
-  const save = () => {
-    const p = attempt(
-      () => createPerson(actor, { category, name, email, phone, skills: split(skills), equipmentFamiliarity: category === "CRW" ? split(familiar) : [] }, login ? { email: loginEmail || email, password } : undefined),
-      "Person added",
-    );
-    if (p) onCreated(p);
+  const suggested = name.toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(/^\.|\.$/g, "").slice(0, 30);
+  const username = typedUsername ?? suggested;
+
+  const save = async () => {
+    if (!remote) {
+      const p = attempt(
+        () => createPerson(actor, { category, name, email, phone, skills: split(skills), equipmentFamiliarity: category === "CRW" ? split(familiar) : [] }, login ? { email: loginEmail || email, password } : undefined),
+        "Person added",
+      );
+      if (p) onCreated(p);
+      return;
+    }
+    if (makeLogin && !username) { toast("Choose a username for their login, or untick \"Make a login\".", "error"); return; }
+    setBusy(true);
+    try {
+      const p = attempt(() => createPerson(actor, { category, name, email, phone, skills: split(skills), equipmentFamiliarity: category === "CRW" ? split(familiar) : [] }), "Person added");
+      if (!p) return;
+      if (!makeLogin) { onCreated(p); return; }
+      await whenSynced(); // the server must know the person before it can give them a login
+      if (!getDb().people.some((x) => x.personId === p.personId)) return; // the server refused; the screen has already said why
+      try {
+        const r = await api.post<{ username: string; temporaryPassword: string }>("/api/accounts/create", { personId: p.personId, username });
+        setGiven({ person: p, username: r.username, password: r.temporaryPassword });
+      } catch (e) {
+        toast(`${p.name} was added, but the login could not be made: ${say(e)} You can try again on their page.`, "error");
+        onCreated(p);
+      }
+    } finally {
+      setBusy(false);
+    }
   };
 
+  if (given) return <GivePassword title={`Login made for ${given.person.name}`} username={given.username} password={given.password} onClose={() => onCreated(given.person)} />;
+
   return (
-    <Modal title="Add a person" onClose={onClose} actions={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save}>Save person</button></>}>
+    <Modal title="Add a person" onClose={onClose} actions={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={busy} onClick={() => void save()}>{busy ? "Saving…" : "Save person"}</button></>}>
       <div className="stack">
         <div className="seg" role="group" aria-label="Category">
           {(["CRW", "VOL", "PTR"] as const).map((c) => <button key={c} type="button" className={category === c ? "on" : ""} onClick={() => setCategory(c)}>{ROLES[c].label}</button>)}
@@ -118,8 +149,17 @@ function AddPersonModal({ defaultCategory, onClose, onCreated }: { defaultCatego
         </div>
         <Field label="Skills (separate with commas)"><input type="text" value={skills} onChange={(e) => setSkills(e.target.value)} /></Field>
         {category === "CRW" && <Field label="Equipment they know (separate with commas)"><input type="text" value={familiar} onChange={(e) => setFamiliar(e.target.value)} /></Field>}
-        {!isRemote() && <label className="check"><input type="checkbox" checked={login} onChange={(e) => setLogin(e.target.checked)} /> Create login access for this person</label>}
-        {login && !isRemote() && (
+        {remote && (
+          <>
+            <label className="check"><input type="checkbox" checked={makeLogin} onChange={(e) => setMakeLogin(e.target.checked)} /> Make a login for this person now</label>
+            {makeLogin && (
+              <Field label="Username (they sign in with this, not an email)"><input type="text" value={username} onChange={(e) => setTypedUsername(e.target.value.toLowerCase())} autoCapitalize="none" spellCheck={false} /></Field>
+            )}
+            {makeLogin && <p className="muted" style={{ fontSize: ".84rem" }}>You will be shown a one-time password to give them. They choose their own when they first sign in.</p>}
+          </>
+        )}
+        {!remote && <label className="check"><input type="checkbox" checked={login} onChange={(e) => setLogin(e.target.checked)} /> Create login access for this person</label>}
+        {login && !remote && (
           <div className="row">
             <Field label="Login email"><input type="email" value={loginEmail} placeholder={email} onChange={(e) => setLoginEmail(e.target.value)} /></Field>
             <Field label="Starting password"><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></Field>
