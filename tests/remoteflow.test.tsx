@@ -66,7 +66,7 @@ ok("on the real site the form offers to make the login, with a username, straigh
 const person = createPerson(actor, { category: "CRW", name: "Wanjiru Kamau", email: "", phone: "", skills: [], equipmentFamiliarity: [] });
 await remote.whenSynced();
 assert.ok(getDb().people.some((p) => p.personId === person.personId));
-const made = await remote.api.post<{ username: string; temporaryPassword: string }>("/api/accounts/create", { personId: person.personId, username: "wanjiru.kamau" });
+const made = await remote.api.post<{ username: string; temporaryPassword: string }>("/api/accounts-create", { personId: person.personId, username: "wanjiru.kamau" });
 assert.equal(made.username, "wanjiru.kamau");
 assert.ok(made.temporaryPassword.length >= 10);
 ok("a person added on the real site can be given a login as soon as they are saved");

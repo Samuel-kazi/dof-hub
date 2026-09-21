@@ -4395,7 +4395,7 @@ var GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.send";
 var TIME_ZONE = "Africa/Nairobi";
 var cfg = () => ({ id: process.env.GOOGLE_CLIENT_ID ?? "", secret: process.env.GOOGLE_CLIENT_SECRET ?? "" });
 var googleAvailable = () => !!(cfg().id && cfg().secret && process.env.TOKEN_ENCRYPTION_KEY);
-var redirectUri = (origin) => `${origin}/api/google/callback`;
+var redirectUri = (origin) => `${origin}/api/google-callback`;
 var web = () => globalThis.fetch;
 async function status(store2, who) {
   const d = await store2.google.get(who.user._id);
@@ -4570,7 +4570,7 @@ var clearCookie = (secure) => sessionCookie("", secure, 0);
 // server/router.ts
 var str = (v) => typeof v === "string" ? v : "";
 async function dispatch(store2, req, res) {
-  const route = `${req.method} ${req.path.replace(/^\/api/, "")}`;
+  const route = `${req.method} ${req.path.replace(/^\/api/, "").replace(/^\/(accounts|account|google)-/, "/$1/")}`;
   const cookieToken = req.cookies[COOKIE];
   const ok = (body = {}, extra = {}) => send(res, 200, { ok: true, ...body }, extra);
   const signedIn = async (allowMustChange = false) => {

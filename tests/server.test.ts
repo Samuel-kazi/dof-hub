@@ -350,7 +350,7 @@ await t("linking Google is a choice: nothing changes until the person says yes, 
     const { url, cb } = await linkGoogle(hop, { calendar: true });
     assert.equal(url.host, "accounts.google.com"); assert.equal(url.searchParams.get("client_id"), process.env.GOOGLE_CLIENT_ID);
     assert.match(url.searchParams.get("scope")!, /calendar\.events/); assert.doesNotMatch(url.searchParams.get("scope")!, /gmail/);
-    assert.equal(url.searchParams.get("code_challenge_method"), "S256"); assert.equal(url.searchParams.get("redirect_uri"), `${base}/api/google/callback`);
+    assert.equal(url.searchParams.get("code_challenge_method"), "S256"); assert.equal(url.searchParams.get("redirect_uri"), `${base}/api/google-callback`);
     assert.equal(cb.status, 302); assert.equal(cb.headers.get("location"), "/?google=linked");
     const g = (await hop.get("/api/google/status")).json.google;
     assert.deepEqual([g.linked, g.email, g.calendar, g.gmail], [true, "kev@gmail.com", true, false]);
@@ -473,6 +473,30 @@ await t("the app shows a database problem instead of quietly turning into the lo
     assert.equal(await probe(), null);
     globalThis.fetch = (async () => { throw new TypeError("offline"); }) as typeof fetch;
     assert.equal(await probe(), null);
+  } finally { globalThis.fetch = real; }
+});
+
+await t("every address works in its one-segment form, which is what the app uses, and in the older two-segment form", async () => {
+  const hop = await setupHop(true);
+  const a = await hop.post("/api/accounts-create", { personId: "DOF-P-CRW-001", username: "wanjiru" });
+  assert.equal(a.status, 200, JSON.stringify(a.json));
+  assert.equal((await hop.post("/api/accounts/reset", { personId: "DOF-P-CRW-001" })).status, 200);
+  assert.equal((await hop.post("/api/accounts-reset", { personId: "DOF-P-CRW-001" })).status, 200);
+  assert.equal((await hop.post("/api/accounts-disable", { personId: "DOF-P-CRW-001", disabled: true })).status, 200);
+  assert.equal((await hop.get("/api/google-status")).status, 200);
+  assert.equal((await hop.get("/api/google/status")).status, 200);
+  assert.equal((await hop.post("/api/account-password", { current: "wrong wrong wrong", next: "another good password" })).status, 403);
+  assert.equal((await hop.get("/api/nothing-here")).status, 404);
+});
+
+await t("when the server answers in a way the app cannot read, the message says what the answer was", async () => {
+  const { api } = await import("../src/data/remote");
+  const real = globalThis.fetch;
+  try {
+    globalThis.fetch = (async () => new Response("The page could not be found\n\nNOT_FOUND", { status: 404 })) as typeof fetch;
+    await assert.rejects(api.post("/api/anything", {}), /404/);
+    globalThis.fetch = (async () => new Response("A server error has occurred\n\nFUNCTION_INVOCATION_FAILED", { status: 500 })) as typeof fetch;
+    await assert.rejects(api.post("/api/anything", {}), /status 500/);
   } finally { globalThis.fetch = real; }
 });
 

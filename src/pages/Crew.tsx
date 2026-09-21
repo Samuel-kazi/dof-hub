@@ -123,7 +123,7 @@ export function AddPersonModal({ defaultCategory, onClose, onCreated }: { defaul
       await whenSynced(); // the server must know the person before it can give them a login
       if (!getDb().people.some((x) => x.personId === p.personId)) return; // the server refused; the screen has already said why
       try {
-        const r = await api.post<{ username: string; temporaryPassword: string }>("/api/accounts/create", { personId: p.personId, username });
+        const r = await api.post<{ username: string; temporaryPassword: string }>("/api/accounts-create", { personId: p.personId, username });
         setGiven({ person: p, username: r.username, password: r.temporaryPassword });
       } catch (e) {
         toast(`${p.name} was added, but the login could not be made: ${say(e)} You can try again on their page.`, "error");

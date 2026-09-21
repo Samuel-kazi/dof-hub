@@ -90,7 +90,7 @@ function Mine() {
           <h2>Put them in your calendar</h2>
           <p className="muted" style={{ margin: "8px 0 14px" }}>Download a calendar file with everything above. Open it to add the events to Google Calendar, Apple Calendar or Outlook. Each event has an alert {lead} hours before it, so your phone reminds you too.</p>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {isRemote() && g?.calendar && <button className="btn primary" disabled={rems.length === 0} onClick={async () => { try { const r = await api.post<{ added: number; already: number; failed: number }>("/api/google/calendar"); toast(r.added ? `${r.added} added to your Google Calendar` : "Your Google Calendar already has everything", "success"); } catch (e) { toast(e instanceof Error ? e.message : "Could not add them.", "error"); } }}>Add to my Google Calendar</button>}
+            {isRemote() && g?.calendar && <button className="btn primary" disabled={rems.length === 0} onClick={async () => { try { const r = await api.post<{ added: number; already: number; failed: number }>("/api/google-calendar"); toast(r.added ? `${r.added} added to your Google Calendar` : "Your Google Calendar already has everything", "success"); } catch (e) { toast(e instanceof Error ? e.message : "Could not add them.", "error"); } }}>Add to my Google Calendar</button>}
             <button className={`btn ${isRemote() && g?.calendar ? "" : "primary"}`} onClick={download} disabled={rems.length === 0}>Download my calendar (.ics)</button>
           </div>
           {isRemote() && g && !g.calendar && <p className="muted" style={{ marginTop: 10, fontSize: ".84rem" }}>{g.available ? "Want them added to Google Calendar automatically? Link your Google account in Settings. It is optional." : ""}</p>}
@@ -152,7 +152,7 @@ function Send() {
                     <span style={{ flex: 1 }} />
                     <button className="btn small" disabled={hidden || !person.email} onClick={() => send("email", person.personId)}>Email</button>
                     <button className="btn small" disabled={hidden || !person.phone} onClick={() => send("text", person.personId)}>Text</button>
-                    {isRemote() && g?.gmail && <button className="btn small primary" disabled={hidden || !person.email} onClick={async () => { try { const r = await api.post<{ to: string; items: number }>("/api/google/email", { personId: person.personId }); toast(`Email sent to ${r.to} from your Gmail`, "success"); } catch (e) { toast(e instanceof Error ? e.message : "Could not send it.", "error"); } }}>Send with Gmail</button>}
+                    {isRemote() && g?.gmail && <button className="btn small primary" disabled={hidden || !person.email} onClick={async () => { try { const r = await api.post<{ to: string; items: number }>("/api/google-email", { personId: person.personId }); toast(`Email sent to ${r.to} from your Gmail`, "success"); } catch (e) { toast(e instanceof Error ? e.message : "Could not send it.", "error"); } }}>Send with Gmail</button>}
                     <button className="btn small ghost" onClick={() => copy(person.personId)}>Copy message</button>
                   </div>
                   <div className="list">

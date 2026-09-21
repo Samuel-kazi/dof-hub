@@ -155,7 +155,7 @@ export function MustChange({ user, onDone }: { user: SessionUser; onDone: (u: Se
     e.preventDefault();
     if (f.next !== f.again) { setError("The two passwords are not the same."); return; }
     setBusy(true); setError("");
-    try { await api.post("/api/account/password", { current: f.current, next: f.next }); onDone(user); } catch (err) { setError(message(err)); setBusy(false); }
+    try { await api.post("/api/account-password", { current: f.current, next: f.next }); onDone(user); } catch (err) { setError(message(err)); setBusy(false); }
   };
   return (
     <Frame onSubmit={submit} title={`Welcome, ${user.name.split(" ")[0]}`} note="You signed in with a one-time password. Choose your own now. Use at least 10 characters. A few words together work well.">

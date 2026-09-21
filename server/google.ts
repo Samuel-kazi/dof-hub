@@ -20,7 +20,7 @@ const TIME_ZONE = "Africa/Nairobi";
 
 const cfg = () => ({ id: process.env.GOOGLE_CLIENT_ID ?? "", secret: process.env.GOOGLE_CLIENT_SECRET ?? "" });
 export const googleAvailable = (): boolean => !!(cfg().id && cfg().secret && process.env.TOKEN_ENCRYPTION_KEY);
-const redirectUri = (origin: string): string => `${origin}/api/google/callback`;
+const redirectUri = (origin: string): string => `${origin}/api/google-callback`;
 const web = (): typeof fetch => globalThis.fetch;
 
 export interface GoogleStatus { available: boolean; linked: boolean; email?: string; calendar?: boolean; gmail?: boolean; linkedAt?: string }

@@ -74,7 +74,7 @@ Nothing needs this. Do it only if people want reminders in their Google Calendar
 2. APIs and Services, Library: enable **Google Calendar API** and **Gmail API**.
 3. OAuth consent screen: type External, add the app name and your email.
 4. Credentials, Create credentials, OAuth client ID, type **Web application**. Under Authorised redirect URIs add exactly:
-   `https://YOUR-SITE.vercel.app/api/google/callback`
+   `https://YOUR-SITE.vercel.app/api/google-callback`
    (add your own domain the same way if you use one).
 5. Copy the client ID and secret into Vercel as `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. Redeploy.
 

@@ -46,9 +46,9 @@ export function RemoteLoginPanel({ person }: { person: Person }) {
           {mine && <p className="muted">Change your own password in Settings.</p>}
           {manage && !mine && person.category !== "HOP" && (
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button className="btn small" disabled={busy} onClick={async () => { if (await confirm({ title: `Reset ${person.name.split(" ")[0]}'s password?`, body: "They are signed out on every device and need the new one-time password to get back in.", confirmLabel: "Reset" })) void run(async () => { const r = await api.post<{ username: string; temporaryPassword: string }>("/api/accounts/reset", { personId: person.personId }); setShown({ title: "New one-time password", username: r.username, password: r.temporaryPassword }); }); }}>Reset password</button>
-              <button className="btn small" disabled={busy} onClick={() => void run(async () => { await api.post("/api/accounts/disable", { personId: person.personId, disabled: !person.loginOff }); toast(person.loginOff ? "Login switched on" : "Login switched off", "success"); })}>{person.loginOff ? "Switch login on" : "Switch login off"}</button>
-              <button className="btn small ghost" disabled={busy} onClick={() => void run(async () => { await api.post("/api/accounts/signout", { personId: person.personId }); toast("Signed out everywhere", "success"); })}>Sign out everywhere</button>
+              <button className="btn small" disabled={busy} onClick={async () => { if (await confirm({ title: `Reset ${person.name.split(" ")[0]}'s password?`, body: "They are signed out on every device and need the new one-time password to get back in.", confirmLabel: "Reset" })) void run(async () => { const r = await api.post<{ username: string; temporaryPassword: string }>("/api/accounts-reset", { personId: person.personId }); setShown({ title: "New one-time password", username: r.username, password: r.temporaryPassword }); }); }}>Reset password</button>
+              <button className="btn small" disabled={busy} onClick={() => void run(async () => { await api.post("/api/accounts-disable", { personId: person.personId, disabled: !person.loginOff }); toast(person.loginOff ? "Login switched on" : "Login switched off", "success"); })}>{person.loginOff ? "Switch login on" : "Switch login off"}</button>
+              <button className="btn small ghost" disabled={busy} onClick={() => void run(async () => { await api.post("/api/accounts-signout", { personId: person.personId }); toast("Signed out everywhere", "success"); })}>Sign out everywhere</button>
             </div>
           )}
         </div>
@@ -58,7 +58,7 @@ export function RemoteLoginPanel({ person }: { person: Person }) {
           {manage && person.status === "active" && (
             <>
               <Field label="Username"><input type="text" value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} autoCapitalize="none" spellCheck={false} /></Field>
-              <div><button className="btn primary" disabled={busy || !username} onClick={() => void run(async () => { const r = await api.post<{ username: string; temporaryPassword: string }>("/api/accounts/create", { personId: person.personId, username }); setShown({ title: "Login created", username: r.username, password: r.temporaryPassword }); })}>Create login</button></div>
+              <div><button className="btn primary" disabled={busy || !username} onClick={() => void run(async () => { const r = await api.post<{ username: string; temporaryPassword: string }>("/api/accounts-create", { personId: person.personId, username }); setShown({ title: "Login created", username: r.username, password: r.temporaryPassword }); })}>Create login</button></div>
             </>
           )}
         </div>
@@ -76,7 +76,7 @@ export function PasswordSettings({ username }: { username: string }) {
   const submit = async () => {
     if (f.next !== f.again) { toast("The two new passwords are not the same.", "error"); return; }
     setBusy(true);
-    try { await api.post("/api/account/password", { current: f.current, next: f.next }); setF({ current: "", next: "", again: "" }); toast("Password changed. You are signed out on your other devices.", "success"); } catch (e) { toast(say(e), "error"); } finally { setBusy(false); }
+    try { await api.post("/api/account-password", { current: f.current, next: f.next }); setF({ current: "", next: "", again: "" }); toast("Password changed. You are signed out on your other devices.", "success"); } catch (e) { toast(say(e), "error"); } finally { setBusy(false); }
   };
   return (
     <section className="glass panel" aria-label="Sign in">
@@ -97,7 +97,7 @@ interface GoogleStatus { available: boolean; linked: boolean; email?: string; ca
 export function useGoogle(): [GoogleStatus | null, () => void] {
   const [g, setG] = useState<GoogleStatus | null>(null);
   const [n, setN] = useState(0);
-  useEffect(() => { if (!isRemote()) return; let live = true; api.get<{ google: GoogleStatus }>("/api/google/status").then((r) => live && setG(r.google)).catch(() => live && setG({ available: false, linked: false })); return () => { live = false; }; }, [n]);
+  useEffect(() => { if (!isRemote()) return; let live = true; api.get<{ google: GoogleStatus }>("/api/google-status").then((r) => live && setG(r.google)).catch(() => live && setG({ available: false, linked: false })); return () => { live = false; }; }, [n]);
   return [g, () => setN((x) => x + 1)];
 }
 
@@ -130,8 +130,8 @@ export function ConnectedAccounts() {
         <div className="stack" style={{ marginTop: 8 }}>
           <dl className="kv"><dt>Google account</dt><dd>{g.email}</dd><dt>Linked</dt><dd>{g.linkedAt ? fmtDateTime(g.linkedAt) : ""}</dd><dt>Allowed to</dt><dd>{[g.calendar && "add reminders to your calendar", g.gmail && "send reminder emails from your Gmail"].filter(Boolean).join(", ") || "Nothing yet"}</dd></dl>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {g.calendar && <button className="btn" disabled={busy} onClick={() => void go(async () => { const r = await api.post<{ added: number; already: number; failed: number }>("/api/google/calendar"); toast(r.failed ? `${r.added} added, ${r.failed} could not be added` : r.added ? `${r.added} reminder${r.added === 1 ? "" : "s"} added to your Google Calendar` : "Your calendar already has everything", r.failed ? "error" : "success"); })}>Add my reminders to Google Calendar</button>}
-            <button className="btn ghost" disabled={busy} onClick={async () => { if (await confirm({ title: "Unlink your Google account?", body: "The app's access is cancelled at Google. Events already in your calendar stay there.", confirmLabel: "Unlink" })) void go(async () => { await api.post("/api/google/unlink"); reload(); toast("Google account unlinked", "success"); }); }}>Unlink</button>
+            {g.calendar && <button className="btn" disabled={busy} onClick={() => void go(async () => { const r = await api.post<{ added: number; already: number; failed: number }>("/api/google-calendar"); toast(r.failed ? `${r.added} added, ${r.failed} could not be added` : r.added ? `${r.added} reminder${r.added === 1 ? "" : "s"} added to your Google Calendar` : "Your calendar already has everything", r.failed ? "error" : "success"); })}>Add my reminders to Google Calendar</button>}
+            <button className="btn ghost" disabled={busy} onClick={async () => { if (await confirm({ title: "Unlink your Google account?", body: "The app's access is cancelled at Google. Events already in your calendar stay there.", confirmLabel: "Unlink" })) void go(async () => { await api.post("/api/google-unlink"); reload(); toast("Google account unlinked", "success"); }); }}>Unlink</button>
           </div>
         </div>
       ) : (
@@ -139,7 +139,7 @@ export function ConnectedAccounts() {
           <p className="muted">Link your Google account only if you want to. Choose what it may be used for. You can unlink at any time.</p>
           <label className="check"><input type="checkbox" checked={calendar} onChange={(e) => setCalendar(e.target.checked)} /> Add my reminders to my Google Calendar</label>
           <label className="check"><input type="checkbox" checked={gmail} onChange={(e) => setGmail(e.target.checked)} /> Send reminder emails from my Gmail (for people who send reminders to the team)</label>
-          <div><button className="btn primary" disabled={busy} onClick={() => void go(async () => { const r = await api.post<{ url: string }>("/api/google/link", { calendar, gmail }); window.location.href = r.url; })}>Link my Google account</button></div>
+          <div><button className="btn primary" disabled={busy} onClick={() => void go(async () => { const r = await api.post<{ url: string }>("/api/google-link", { calendar, gmail }); window.location.href = r.url; })}>Link my Google account</button></div>
         </div>
       )}
     </section>

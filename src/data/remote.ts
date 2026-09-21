@@ -28,7 +28,7 @@ async function call<T>(method: "GET" | "POST", path: string, body?: unknown): Pr
     throw new ApiError("The server could not be reached. Check your connection and try again.", "offline");
   }
   const json = (await res.json().catch(() => null)) as ({ ok: boolean; error?: string; code?: string } & Record<string, unknown>) | null;
-  if (!json || json.ok !== true) throw new ApiError(json?.error ?? "Something went wrong. Try again.", json?.code, res.status);
+  if (!json || json.ok !== true) throw new ApiError(json?.error ?? (res.status === 404 ? "The server could not find that address (404). If you have just updated the site, wait a minute, refresh the page and try again." : `The server sent an answer the app could not read (status ${res.status}). Try again. If it keeps happening, look at the Vercel logs for this deployment.`), json?.code, res.status);
   return json as T & { ok: true };
 }
 

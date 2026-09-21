@@ -12,7 +12,8 @@ const str = (v: unknown): string => (typeof v === "string" ? v : "");
 
 /** Every address the app answers on. One function handles them all, so the site stays within Vercel's free limits. */
 async function dispatch(store: Store, req: Req, res: ServerResponse): Promise<void> {
-  const route = `${req.method} ${req.path.replace(/^\/api/, "")}`;
+  // One-segment addresses (/api/accounts-create) are what the app uses, because they need no special routing on Vercel. The older two-segment forms still work.
+  const route = `${req.method} ${req.path.replace(/^\/api/, "").replace(/^\/(accounts|account|google)-/, "/$1/")}`;
   const cookieToken = req.cookies[COOKIE];
   const ok = (body: Record<string, unknown> = {}, extra: Record<string, string | string[]> = {}) => send(res, 200, { ok: true, ...body }, extra);
 
