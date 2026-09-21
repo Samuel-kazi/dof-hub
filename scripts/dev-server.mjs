@@ -16,7 +16,7 @@ process.env.SETUP_TOKEN ??= "local-setup-code";
 
 const { handler } = await import("../api/_server.mjs");
 const headers = Object.fromEntries((JSON.parse(readFileSync(join(root, "vercel.json"), "utf8")).headers[0].headers).map((h) => [h.key, h.value]));
-const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".json": "application/json", ".ico": "image/x-icon", ".woff2": "font/woff2" };
+const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".json": "application/json", ".ico": "image/x-icon", ".webmanifest": "application/manifest+json", ".woff2": "font/woff2" };
 const dist = join(root, "dist");
 const port = Number(process.env.PORT ?? 4173);
 

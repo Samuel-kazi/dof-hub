@@ -120,7 +120,10 @@ a { color: inherit; }
 /* Dock: a floating rail of round buttons. It widens to show labels and the pipeline categories. */
 .dock { width: var(--dock-w); flex: none; margin: 18px 0 18px 18px; display: flex; flex-direction: column; align-items: center; gap: 12px; transition: width .2s; }
 .dock.wide { width: var(--dock-wide); align-items: stretch; padding: 14px 12px; margin: 14px 0 14px 14px; border-radius: var(--radius); background: var(--glass); border: 1px solid var(--glass-line); box-shadow: var(--edge), var(--shadow); overflow-y: auto; gap: 6px; backdrop-filter: blur(22px) saturate(140%); -webkit-backdrop-filter: blur(22px) saturate(140%); }
+.dof-logo { display: block; flex: none; color: var(--ink); }
 .dock-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.dock.wide .dock-brand { flex-direction: column; align-items: flex-start; gap: 9px; padding: 8px 8px 4px; }
+.dock:not(.wide) .dock-brand { margin: 6px 0 4px; }
 .dock-brand-text b { display: block; font-size: .98rem; font-weight: 600; line-height: 1.15; }
 .dock-brand-text span { font-size: .78rem; color: var(--ink-3); }
 .logo { width: 52px; height: 52px; flex: none; border-radius: 17px; display: grid; place-items: center; color: #fff; background: radial-gradient(circle at 50% 120%, #ffc46b, var(--accent) 55%, #b8461a); box-shadow: 0 8px 22px rgba(232,112,58,.35), inset 0 1px 0 rgba(255,255,255,.35); }
@@ -136,7 +139,7 @@ a { color: inherit; }
 .dock-sub button:hover { background: var(--hover); color: var(--ink); }
 .dock-sub button.active { color: var(--ink); background: var(--accent-soft); }
 .dock-foot { margin-top: auto; padding: 10px 6px 0; font-size: .82rem; color: var(--ink-3); }
-.brand { padding: 6px 10px 16px; display: flex; align-items: center; gap: 12px; }
+.brand { padding: 6px 10px 16px; display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
 .brand b { display: block; font-size: .98rem; line-height: 1.15; font-weight: 600; }
 .brand span { font-size: .78rem; color: var(--ink-3); }
 
@@ -411,6 +414,9 @@ textarea { min-height: 84px; resize: vertical; }
 .theme-toggle button[aria-pressed="true"] { background: var(--rail-on-bg); color: var(--rail-on-ink); }
 
 .print-only { display: none; }
+.print-brand { display: none; }
+@media print { .print-brand { display: flex; align-items: center; gap: 14px; padding-bottom: 10px; margin-bottom: 14px; border-bottom: 1.5px solid #000; font-size: .9rem; } .dof-logo { color: #000 !important; } }
+.report-brand { margin-bottom: 12pt; } .report-page .dof-logo { color: #000; }
 @media print { .print-only { display: block; margin-bottom: 12px; font-size: .9rem; } }
 
 /* Printed equipment list */

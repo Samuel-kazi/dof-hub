@@ -39,7 +39,7 @@ export function Login({ onLogin }: { onLogin: (a: Actor) => void }) {
       </div>
       <form className="login glass" onSubmit={submit}>
         <div className="brand">
-          <Logo />
+          <Logo width={120} />
           <div>
             <b>Dawn of Faith</b>
             <span>Production Hub</span>
@@ -80,7 +80,7 @@ function Frame({ children, onSubmit, title, note }: { children: React.ReactNode;
         <button type="button" aria-pressed={theme === "dark"} aria-label="Night mode" title="Night mode" onClick={() => setPref("dark")}><IconMoon /></button>
       </div>
       <form className="login glass" onSubmit={onSubmit}>
-        <div className="brand"><Logo /><div><b>Dawn of Faith</b><span>Production Hub</span></div></div>
+        <div className="brand"><Logo width={120} /><div><b>Dawn of Faith</b><span>Production Hub</span></div></div>
         {title && <h2 style={{ fontSize: "1.1rem", fontWeight: 500 }}>{title}</h2>}
         {note && <p className="muted" style={{ fontSize: ".88rem" }}>{note}</p>}
         <div className="stack">{children}</div>

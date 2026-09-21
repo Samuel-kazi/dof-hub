@@ -1,9 +1,11 @@
 import type { ReportDoc } from "../services/reports";
+import { Logo } from "./Logo";
 
 /** A report laid out as a page, used when printing. */
 export function ReportView({ report }: { report: ReportDoc }) {
   return (
     <div className="report-page">
+      <div className="report-brand"><Logo width={120} /></div>
       <h1>{report.title}</h1>
       <p className="report-sub">{report.subtitle}</p>
       {report.blocks.map((b, i) => {

@@ -17,6 +17,8 @@ export function pdfSafe(text: string): string {
 }
 
 const INK: [number, number, number] = [36, 26, 20];
+import { LOGO_PNG, LOGO_PNG_ASPECT } from "../brand/logoPng";
+
 const MUTED: [number, number, number] = [110, 96, 86];
 const ACCENT: [number, number, number] = [212, 87, 31];
 const RULE: [number, number, number] = [214, 202, 192];
@@ -24,7 +26,7 @@ const HEAD_FILL: [number, number, number] = [243, 236, 229];
 
 export async function reportToPdf(report: ReportDoc): Promise<Uint8Array> {
   const { jsPDF } = await import("jspdf");
-  const doc = new jsPDF({ unit: "pt", format: "a4", orientation: report.landscape ? "landscape" : "portrait" });
+  const doc = new jsPDF({ unit: "pt", format: "a4", orientation: report.landscape ? "landscape" : "portrait", compress: true });
   const W = doc.internal.pageSize.getWidth();
   const H = doc.internal.pageSize.getHeight();
   const M = 42;
@@ -43,9 +45,16 @@ export async function reportToPdf(report: ReportDoc): Promise<Uint8Array> {
     for (const l of ls) { need(size * lead); y += size * lead - size * 0.25; doc.text(l, x, y); y += size * 0.25; }
   };
 
+  // Logo top right of the first page; the title keeps clear of it
+  const logoW = 92;
+  const logoH = logoW * LOGO_PNG_ASPECT;
+  doc.addImage(LOGO_PNG, "PNG", W - M - logoW, M - 4, logoW, logoH);
+  const titleW = usable - logoW - 16;
+
   // Title
-  write(report.title, M, 18, "bold", INK, usable, 1.25);
-  if (report.subtitle) { y += 2; write(report.subtitle, M, 9.5, "normal", MUTED, usable); }
+  write(report.title, M, 18, "bold", INK, titleW, 1.25);
+  if (report.subtitle) { y += 2; write(report.subtitle, M, 9.5, "normal", MUTED, titleW); }
+  y = Math.max(y, M - 4 + logoH + 2);
   y += 6; doc.setDrawColor(...ACCENT); doc.setLineWidth(1.4); doc.line(M, y, M + 54, y); y += 14;
 
   const block = (b: Block) => {
@@ -96,7 +105,9 @@ export async function reportToPdf(report: ReportDoc): Promise<Uint8Array> {
   const pages = doc.getNumberOfPages();
   for (let i = 1; i <= pages; i++) {
     doc.setPage(i); doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(...MUTED);
-    doc.text("Dawn of Faith Production Hub", M, H - 26);
+    const markW = 40;
+    doc.addImage(LOGO_PNG, "PNG", M, H - 26 - markW * LOGO_PNG_ASPECT + 3, markW, markW * LOGO_PNG_ASPECT);
+    doc.text("Dawn of Faith Production Hub", M + markW + 8, H - 26);
     doc.text(`Page ${i} of ${pages}`, W - M, H - 26, { align: "right" });
   }
   return new Uint8Array(doc.output("arraybuffer"));

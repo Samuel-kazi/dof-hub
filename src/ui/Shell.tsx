@@ -124,7 +124,7 @@ export function Shell() {
     <div className="app">
       <nav className={`dock ${wide ? "wide" : ""}`} aria-label="Main">
         <div className="dock-brand">
-          <Logo />
+          <Logo width={wide ? 132 : 44} />
           <div className="dock-brand-text">
             <b>Dawn of Faith</b>
             <span>Production Hub</span>
@@ -182,6 +182,7 @@ export function Shell() {
           <button className="icon-btn" onClick={logout} aria-label="Sign out" title="Sign out"><IconLogout /></button>
         </header>
         <main className="content" ref={contentRef}>
+          <div className="print-brand" aria-hidden="true"><Logo width={112} /><span>Dawn of Faith Production Hub</span></div>
           {didSaveFail() && <div className="banner bad no-print" role="alert" style={{ marginBottom: 16 }}><span className="grow"><b>Changes are not being saved.</b> This device is out of storage for the app, usually because of photos. Remove some photos or use links instead. Recent changes will be lost if you close the app.</span></div>}
           {route.n === "dashboard" && <Dashboard />}
           {route.n === "pipeline" && <Pipeline category={route.category} />}

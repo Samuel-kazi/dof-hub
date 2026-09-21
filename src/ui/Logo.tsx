@@ -1,13 +1,11 @@
-/** Sunrise mark: the app's identity, on an orange tile. */
-export function Logo({ size = 52 }: { size?: number }) {
+import { LOGO_H, LOGO_PATH, LOGO_W } from "../brand/logo";
+
+/** The DOF TV logo. It is drawn in the surrounding text colour, so it suits the day and night themes and printed paper by itself. */
+export function Logo({ width = 132, className = "" }: { width?: number; className?: string }) {
+  const height = Math.round((width * LOGO_H) / LOGO_W);
   return (
-    <div className="logo" style={{ width: size, height: size }} aria-hidden="true">
-      <svg width={size * 0.55} height={size * 0.55} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M5 17a7 7 0 0 1 14 0" />
-        <path d="M2.5 17h19" />
-        <path d="M12 4.5v2.5M4.6 8.6l1.8 1.8M19.4 8.6l-1.8 1.8" />
-        <path d="M7 20.5h10" />
-      </svg>
-    </div>
+    <svg className={`dof-logo ${className}`.trim()} width={width} height={height} viewBox={`0 0 ${LOGO_W} ${LOGO_H}`} role="img" aria-label="DOF TV" fill="currentColor" fillRule="evenodd">
+      <path d={LOGO_PATH} />
+    </svg>
   );
 }

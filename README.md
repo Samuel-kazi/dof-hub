@@ -165,3 +165,11 @@ Photos are shrunk and kept in the app's local storage for now, which holds rough
 - **After changing anything under `server/` or `src/services/`,** run `npm run build:server` and commit `api/_server.mjs`. `npm run build` does this automatically, and so does Vercel.
 
 `npm test` runs everything, including 34 checks on the server. `npm run dev:server` runs the real site on your own computer (in memory, so nothing is kept) after `npm run build`.
+
+## The DOF TV logo
+
+- **`brand/`** holds the artwork: `DOF-LOGO-original.jpg` (as supplied), `dof-logo.svg` (black) and `dof-logo-white.svg` for anything you make outside the app, and `app-icon.png` (1024 px, the source of the desktop icons). `brand/alt/app-icon-black.png` is the same icon reversed on black, if you prefer it.
+- **On the site:** `src/ui/Logo.tsx` draws the logo from one vector path (`src/brand/logo.ts`). It takes the surrounding text colour, so it suits day mode, night mode and printed paper. It is in the sidebar, on the sign-in and setup screens, at the top of every printed page and on printed reports.
+- **In PDFs:** `src/services/pdf.ts` puts the logo at the top right of page 1 and a small one in every footer (`src/brand/logoPng.ts` is the print copy).
+- **Browser tab and phones:** `public/` holds the favicon, the phone home-screen icon and the installable-app icons, linked from `index.html` and `public/site.webmanifest`.
+- **Desktop app:** `src-tauri/icons/` is made from `brand/app-icon.png`. To change the icon, replace that file and run `npm run icons`.
