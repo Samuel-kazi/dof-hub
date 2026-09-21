@@ -1,0 +1,100 @@
+import { useSyncExternalStore } from "react";
+import type { Database } from "../types";
+import { buildSeed } from "./seed";
+import { buildGearSeed } from "./seedGear";
+import { upgradeToV3, upgradeToV4, upgradeToV5, upgradeToV6, upgradeToV7 } from "./migrate";
+
+// In-memory store with localStorage persistence.
+// This is the ONLY file that knows where data lives. When the real database
+// arrives, services keep their signatures and only this layer changes.
+
+const KEY = "dof-hub-db";
+const SCHEMA_VERSION = 7;
+
+/** Older saved data keeps everything it has and gains the new modules with sample data. */
+function migrate(old: Database): Database {
+  const gear = buildGearSeed();
+  const next: Database = {
+    ...gear,
+    ...old,
+    equipment: old.equipment ?? gear.equipment,
+    manifests: old.manifests ?? gear.manifests,
+    incidents: old.incidents ?? gear.incidents,
+    equipmentHistory: old.equipmentHistory ?? gear.equipmentHistory,
+    drives: old.drives ?? gear.drives,
+    allocations: old.allocations ?? gear.allocations,
+    snapshots: old.snapshots ?? gear.snapshots,
+    counters: { ...gear.counters, ...old.counters },
+    settings: Object.assign({ stageReminderHours: 24, storageWarningThreshold: 85, checkoutReturnDays: 3 }, old.settings),
+    schemaVersion: 2,
+  };
+  // Keep call sheet links honest: a checkout list must point at a sheet that still exists.
+  for (const m of next.manifests) {
+    const cs = m.callSheetId ? next.callSheets.find((c) => c.id === m.callSheetId) : undefined;
+    if (m.callSheetId && !cs) m.callSheetId = null;
+    if (cs && m.status !== "released") cs.equipmentIds = m.lines.map((l) => l.equipmentId);
+  }
+  next.manifests = next.manifests.filter((m) => next.records.some((r) => r.contentId === m.contentId));
+  return next;
+}
+
+function load(): Database {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Database;
+      if (parsed.schemaVersion === SCHEMA_VERSION) return parsed;
+      if (parsed.schemaVersion === 1) return upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(migrate(parsed))))));
+      if (parsed.schemaVersion === 2) return upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(parsed)))));
+      if (parsed.schemaVersion === 3) return upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(parsed))));
+      if (parsed.schemaVersion === 4) return upgradeToV7(upgradeToV6(upgradeToV5(parsed)));
+      if (parsed.schemaVersion === 5) return upgradeToV7(upgradeToV6(parsed));
+      if (parsed.schemaVersion === 6) return upgradeToV7(parsed);
+    }
+  } catch {
+    /* fall through to seed data */
+  }
+  return buildSeed();
+}
+
+let db: Database = load();
+let tick = 0;
+const listeners = new Set<() => void>();
+
+export const getDb = (): Database => db;
+
+let saveFailed = false;
+/** True when the last save to this device failed, usually because photos filled the space. */
+export const didSaveFail = (): boolean => saveFailed;
+
+export function commit(): void {
+  tick++;
+  try {
+    localStorage.setItem(KEY, JSON.stringify(db));
+    saveFailed = false;
+  } catch {
+    saveFailed = true; // keep working in memory, but tell the user
+  }
+  listeners.forEach((l) => l());
+}
+
+export function resetDemoData(): void {
+  db = buildSeed();
+  commit();
+}
+
+export function nextCounter(name: string): number {
+  db.counters[name] = (db.counters[name] ?? 0) + 1;
+  return db.counters[name];
+}
+
+const subscribe = (l: () => void) => {
+  listeners.add(l);
+  return () => listeners.delete(l);
+};
+
+// Components call this to re-render whenever any data changes.
+export function useDb(): Database {
+  useSyncExternalStore(subscribe, () => tick, () => tick);
+  return db;
+}
