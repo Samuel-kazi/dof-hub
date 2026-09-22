@@ -2046,6 +2046,7 @@ __export(content_exports, {
   levelLabel: () => levelLabel,
   openTasks: () => openTasks,
   ownersOf: () => ownersOf,
+  productionUnits: () => productionUnits,
   removeFeatured: () => removeFeatured,
   removeLink: () => removeLink,
   removeStageOwner: () => removeStageOwner,
@@ -2908,7 +2909,11 @@ function inventoryReport(category, includeOutOfService) {
       free: qtyFree(i),
       condition: i.condition,
       status: displayStatus(i).label,
-      cost: i.unitCost
+      cost: i.unitCost,
+      vendor: i.vendor,
+      purchased: i.purchaseDate ? fmtShort(i.purchaseDate) : "",
+      packaging: i.packaging,
+      accessories: i.accessories
     }));
     groups.push({ category: cat.key, label: cat.label, rows, units: rows.reduce((n, r) => n + r.qty, 0) });
   }
@@ -3152,6 +3157,16 @@ function usesPipeline(r) {
 function leavesUnder(r) {
   if (usesPipeline(r)) return r.archived ? [] : [r];
   return getChildren(r.contentId).flatMap(leavesUnder);
+}
+function productionUnits(leaves) {
+  const map = /* @__PURE__ */ new Map();
+  for (const leaf of leaves) {
+    const show = leaf.category === "live" && leaf.hierarchyLevel > 0 ? getRecord(leaf.parentId) : null;
+    const owner = show ?? leaf;
+    if (!map.has(owner.contentId)) map.set(owner.contentId, { id: owner.contentId, title: owner.title, leaves: [] });
+    map.get(owner.contentId).leaves.push(leaf);
+  }
+  return [...map.values()];
 }
 function levelLabel(r) {
   const cfg2 = categoryOf(r.category);

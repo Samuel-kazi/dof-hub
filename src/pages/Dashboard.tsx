@@ -5,7 +5,7 @@ import { useDb } from "../data/store";
 import { ROLES } from "../config/roles";
 import { categoryOf } from "../config/categories";
 import { visibleCallSheets, visibleRecords, isHop } from "../services/access";
-import { currentStageDeadline, displayTitle, getBlockedOnUser, isComplete, leavesUnder, riskOf, usesPipeline } from "../services/wrapped/content";
+import { currentStageDeadline, displayTitle, getBlockedOnUser, isComplete, leavesUnder, productionUnits, riskOf, usesPipeline } from "../services/wrapped/content";
 import { nameOf } from "../services/wrapped/people";
 import { daysUntil, fmtShort, fmtSize, relativeDays, todayIso } from "../services/utils";
 import { RiskBadge } from "../ui/parts";
@@ -93,7 +93,12 @@ export function Dashboard() {
   const atRisk = leaves.filter((r) => riskOf(r) === "at-risk");
   const blocked = getBlockedOnUser(actor);
   const soon = visibleCallSheets(actor).filter((cs) => daysUntil(cs.date) >= 0 && daysUntil(cs.date) <= 7).sort((a, b) => a.date.localeCompare(b.date));
-  const onTrack = inProgress.length ? Math.round((100 * (inProgress.length - overdue.length - atRisk.length)) / inProgress.length) : 100;
+  // The Production card counts productions, not pipeline stages: a live show with several days is one production, not one per day.
+  const units = productionUnits(leaves);
+  const unitsInProgress = units.filter((u) => u.leaves.some((l) => !isComplete(l)));
+  const unitsOverdue = units.filter((u) => u.leaves.some((l) => riskOf(l) === "overdue"));
+  const unitsAtRisk = units.filter((u) => !unitsOverdue.includes(u) && u.leaves.some((l) => riskOf(l) === "at-risk"));
+  const onTrack = unitsInProgress.length ? Math.round((100 * (unitsInProgress.length - unitsOverdue.length - unitsAtRisk.length)) / unitsInProgress.length) : 100;
 
   const gearAccess = hasGearAccess(actor);
   const storageAccess = hasStorageAccess(actor);
@@ -136,7 +141,7 @@ export function Dashboard() {
       </div>
 
       <div className="stat-row">
-        <StatCard icon={<IconFilm />} title="Production" big={inProgress.length} unit=" in production" share={onTrack} foot={overdue.length || atRisk.length ? `${overdue.length} overdue, ${atRisk.length} at risk, ${activeProjects.length} active project${activeProjects.length === 1 ? "" : "s"}` : `${onTrack}% on track, ${activeProjects.length} active project${activeProjects.length === 1 ? "" : "s"}`} bad={overdue.length > 0} onClick={() => go({ n: "pipeline" })} />
+        <StatCard icon={<IconFilm />} title="Production" big={unitsInProgress.length} unit=" in production" share={onTrack} foot={unitsOverdue.length || unitsAtRisk.length ? `${unitsOverdue.length} overdue, ${unitsAtRisk.length} at risk, ${activeProjects.length} active project${activeProjects.length === 1 ? "" : "s"}` : `${onTrack}% on track, ${activeProjects.length} active project${activeProjects.length === 1 ? "" : "s"}`} bad={unitsOverdue.length > 0} onClick={() => go({ n: "pipeline" })} />
         {gearAccess && <StatCard icon={<IconCam />} title="Gear" big={gearUnitsOut} unit={gearUnitsOut === 1 ? " unit out" : " units out"} foot={gearLate.length ? `${gearLate.length} checkout list${gearLate.length === 1 ? "" : "s"} overdue` : gearOut.length ? "All on time" : "Everything is in the studio"} bad={gearLate.length > 0} onClick={() => go({ n: "equipment", tab: "checkouts" })} />}
         {storageAccess && <StatCard icon={<IconDrive />} title="Storage" big={(fleet.used / 1000).toFixed(1)} unit=" TB used" share={fleet.capacity ? (100 * fleet.used) / fleet.capacity : 0} foot={nearlyFull.length ? `${nearlyFull.length} drive${nearlyFull.length === 1 ? "" : "s"} nearly full` : fc && fc.slopeGBPerDay > 0 ? `${fmtSize(fc.slopeGBPerDay * 7)} added per week` : `${fmtSize(fleet.capacity - fleet.used)} free`} bad={nearlyFull.length > 0} onClick={() => go({ n: "storage" })} />}
         {crewAccess && (can(actor, "workload.viewAll")

@@ -17,6 +17,7 @@ import { Modal } from "../ui/Modal";
 import { Empty, Field } from "../ui/parts";
 import { IconPlus } from "../ui/Icons";
 import { GearPicker } from "../ui/GearPicker";
+import { ReportButton, ReportDialog } from "../ui/ReportDialog";
 import { addGearToSheet, getItem, gearIssues, hasGearAccess, manifestForSheet, manifestStatusView, removeGearFromSheet } from "../services/wrapped/equipment";
 
 export function CallSheets() {
@@ -24,6 +25,7 @@ export function CallSheets() {
   useDb();
   const [creating, setCreating] = useState(false);
   const [duplicating, setDuplicating] = useState<CallSheet | null>(null);
+  const [downloading, setDownloading] = useState<CallSheet | null>(null);
   const sheets = visibleCallSheets(actor).sort((a, b) => a.date.localeCompare(b.date));
   const writableProjects = visibleRecords(actor).filter((r) => r.hierarchyLevel === 0 && canWrite(actor, r));
 
@@ -56,6 +58,7 @@ export function CallSheets() {
                     onContextMenu={(e) =>
                       menu(e, [
                         { label: "Open", onClick: () => go({ n: "callsheet", id: cs.id }) },
+                        { label: "Download…", onClick: () => setDownloading(cs) },
                         { label: "Duplicate for another date…", disabled: !write, onClick: () => setDuplicating(cs) },
                         { divider: true, label: "", onClick: () => {} },
                         {
@@ -88,6 +91,7 @@ export function CallSheets() {
       </section>
       {creating && <NewSheetModal projects={writableProjects.map((p) => ({ id: p.contentId, title: p.title }))} onClose={() => setCreating(false)} onCreated={(cs) => { setCreating(false); go({ n: "callsheet", id: cs.id }); }} />}
       {duplicating && <DuplicateModal sheet={duplicating} onClose={() => setDuplicating(null)} onCreated={(cs) => { setDuplicating(null); go({ n: "callsheet", id: cs.id }); }} />}
+      {downloading && <ReportDialog scope="callsheet" params={{ callSheetId: downloading.id }} onClose={() => setDownloading(null)} />}
     </div>
   );
 }
@@ -177,6 +181,7 @@ export function CallSheetPage({ id }: { id: string }) {
           </div>
         </div>
         {write && <button className="btn" onClick={() => setDuplicating(true)}>Duplicate</button>}
+        <ReportButton scope="callsheet" params={{ callSheetId: cs.id }} label="Download…" />
         {write && (cs.status === "draft" ? (
           <button className="btn primary" onClick={() => attempt(() => finalizeCallSheet(actor, cs.id, cs.version), "Call sheet finalized")}>Finalize</button>
         ) : (

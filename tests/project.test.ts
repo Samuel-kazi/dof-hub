@@ -10,8 +10,8 @@ import * as CS from "../src/services/callsheets";
 import * as T from "../src/services/team";
 import * as P from "../src/services/people";
 import * as E from "../src/services/equipment";
-import { getRecord } from "../src/services/access";
-import { shootDateLabel } from "../src/config/categories";
+import { getRecord, visibleRecords } from "../src/services/access";
+import { categoryOf, shootDateLabel } from "../src/config/categories";
 
 let passed = 0;
 const t = (name: string, fn: () => void) => {
@@ -221,3 +221,25 @@ t("batches print with their count and how many are free", () => {
 });
 
 console.log(`\n${passed} passed`);
+
+// ── Production count: a live show with several days is one production, not one per day ──
+t("a multi-day live show collapses to one production unit; other categories stay one leaf each", () => {
+  const actor = login("hop@dof.demo", "demo");
+  const leaves = visibleRecords(actor).filter(C.usesPipeline);
+  const days = leaves.filter((r) => r.category === "live");
+  assert.ok(days.length >= 2, "the demo data has more than one live-show day to begin with");
+  const units = C.productionUnits(leaves);
+  assert.equal(units.length, leaves.length - days.length + new Set(days.map((d) => d.parentId)).size, "each show's days collapse into one unit, everything else stays as-is");
+  const show = units.find((u) => u.id === "DOF-LIVE-002")!;
+  assert.ok(show && show.leaves.length > 1, "the show with several days rolls all of them into one unit");
+  const episode = units.find((u) => u.id === "DOF-SER-001-S1-E01")!;
+  assert.equal(episode.leaves.length, 1, "a series episode is not collapsed with anything else");
+});
+
+t("a production unit is in progress if any of its days is, even once collapsed", () => {
+  const actor = login("hop@dof.demo", "demo");
+  const leaves = visibleRecords(actor).filter(C.usesPipeline);
+  const units = C.productionUnits(leaves);
+  const show = units.find((u) => u.id === "DOF-LIVE-002")!;
+  assert.ok(show.leaves.length > 1 && show.leaves.some((l) => !C.isComplete(l)), "the show counts as in production while any of its days is unfinished");
+});

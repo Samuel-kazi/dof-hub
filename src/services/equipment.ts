@@ -686,7 +686,7 @@ export function attachManifest(actor: Actor, manifestId: string, contentId: stri
   return m;
 }
 
-export interface ReportRow { id: string; name: string; detail: string; serial: string; qty: number; free: number; condition: EquipCondition; status: string; cost: number }
+export interface ReportRow { id: string; name: string; detail: string; serial: string; qty: number; free: number; condition: EquipCondition; status: string; cost: number; vendor: string; purchased: string; packaging: string; accessories: string }
 export interface ReportGroup { category: EquipCategoryKey; label: string; rows: ReportRow[]; units: number }
 
 /** The full equipment list, grouped by category, for printing. */
@@ -706,6 +706,10 @@ export function inventoryReport(category: EquipCategoryKey | "all", includeOutOf
       condition: i.condition,
       status: displayStatus(i).label,
       cost: i.unitCost,
+      vendor: i.vendor,
+      purchased: i.purchaseDate ? fmtShort(i.purchaseDate) : "",
+      packaging: i.packaging,
+      accessories: i.accessories,
     }));
     groups.push({ category: cat.key, label: cat.label, rows, units: rows.reduce((n, r) => n + r.qty, 0) });
   }

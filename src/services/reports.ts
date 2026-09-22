@@ -6,7 +6,7 @@ import { EQUIP_CATEGORIES } from "../config/equipment";
 import { getRecord, visibleRecords } from "./access";
 import { can, requireCan } from "./permissions";
 import { displayTitle, featuredFor, isComplete, ownersOf, riskOf, tasksOf, usesPipeline } from "./content";
-import { allIncidents, getItem, hasGearAccess, inventoryReport, listManifests, manifestStatusView, manifestsForContent, isOverdue } from "./equipment";
+import { allIncidents, getItem, hasGearAccess, inventoryReport, listManifests, manifestStatusView, manifestsForContent, isOverdue, type ReportRow } from "./equipment";
 import { allDriveUsage, fleetTotals, getDrive, hasStorageAccess, isNearlyFull } from "./storage";
 import { docsForRecord, getDoc, canViewDoc } from "./docs";
 import { nameOf } from "./people";
@@ -34,7 +34,7 @@ export interface ReportDoc {
   blocks: Block[];
 }
 
-export type ReportScope = "storage" | "drive" | "equipment" | "manifest" | "project" | "pipeline" | "workload" | "document" | "audit";
+export type ReportScope = "storage" | "drive" | "equipment" | "manifest" | "callsheet" | "project" | "pipeline" | "workload" | "document" | "audit";
 export type Params = Record<string, string | boolean>;
 
 export interface ReportField { key: string; label: string; kind: "select" | "checkbox"; options?: { value: string; label: string }[]; default: string | boolean }
@@ -140,14 +140,29 @@ export const REPORT_KINDS: ReportKind[] = [
   },
   // Equipment
   {
-    key: "equipment.inventory", scope: "equipment", label: "Equipment list by category", description: "Every item with asset code, serial number, condition and status.",
-    fields: [{ key: "category", label: "Category", kind: "select", options: CATS, default: "all" }, { key: "includeOut", label: "Include retired and lost items", kind: "checkbox", default: false }],
+    key: "equipment.inventory", scope: "equipment", label: "Equipment list by category", description: "Every item with asset code, serial number, condition and status. Choose which extra columns to include.",
+    fields: [
+      { key: "category", label: "Category", kind: "select", options: CATS, default: "all" },
+      { key: "includeOut", label: "Include retired and lost items", kind: "checkbox", default: false },
+      { key: "colVendor", label: "Column: Vendor", kind: "checkbox", default: false },
+      { key: "colPurchased", label: "Column: Purchase date", kind: "checkbox", default: false },
+      { key: "colCost", label: "Column: Cost", kind: "checkbox", default: false },
+      { key: "colPackaging", label: "Column: Packaging & accessories", kind: "checkbox", default: false },
+    ],
     build: (_a, p) => {
       const groups = inventoryReport(String(p.category ?? "all") as EquipCategoryKey | "all", !!p.includeOut);
       const units = groups.reduce((n, g) => n + g.units, 0);
+      const extra: { head: string; weight: number; cell: (r: ReportRow) => string }[] = [
+        ...(p.colVendor ? [{ head: "Vendor", weight: 1.6, cell: (r: ReportRow) => r.vendor }] : []),
+        ...(p.colPurchased ? [{ head: "Purchased", weight: 1.2, cell: (r: ReportRow) => r.purchased }] : []),
+        ...(p.colCost ? [{ head: "Cost", weight: 1, cell: (r: ReportRow) => r.cost ? r.cost.toLocaleString() : "" }] : []),
+        ...(p.colPackaging ? [{ head: "Packaging & accessories", weight: 2.6, cell: (r: ReportRow) => [r.packaging, r.accessories].filter(Boolean).join("; ") }] : []),
+      ];
+      const head = ["Asset code", "Item", "Serial", "Qty", "Free", "Condition", "Status", ...extra.map((c) => c.head)];
+      const weights = [3, 3.4, 2, 0.7, 0.7, 1.2, 1.4, ...extra.map((c) => c.weight)];
       return doc("Dawn of Faith equipment list", `${p.category && p.category !== "all" ? EQUIP_CATEGORIES.find((c) => c.key === p.category)?.label : "All categories"}, ${units} unit${units === 1 ? "" : "s"}`, "equipment-list", groups.flatMap((g): Block[] => [
         { type: "heading", text: `${g.label} (${g.units})` },
-        { type: "table", head: ["Asset code", "Item", "Serial", "Qty", "Free", "Condition", "Status"], weights: [3, 3.4, 2, 0.7, 0.7, 1.2, 1.4], rows: g.rows.map((r) => [r.id, `${r.name}${r.detail ? `, ${r.detail}` : ""}`, r.serial || "Batch", String(r.qty), String(r.free), r.condition, r.status]) },
+        { type: "table", head, weights, rows: g.rows.map((r) => [r.id, `${r.name}${r.detail ? `, ${r.detail}` : ""}`, r.serial || "Batch", String(r.qty), String(r.free), r.condition, r.status, ...extra.map((c) => c.cell(r))]) },
       ]), true);
     },
   },
@@ -187,6 +202,25 @@ export const REPORT_KINDS: ReportKind[] = [
         { type: "para", text: "Released by: ______________________________   Date: ______________" },
         { type: "para", text: "Received by: ______________________________   Date: ______________" },
       ]);
+    },
+  },
+  // Call sheets
+  {
+    key: "callsheet.pdf", scope: "callsheet", label: "This call sheet", description: "Shoot details, who is on it, the gear list and the run of show, ready to print or send.",
+    build: (actor, p) => {
+      const cs = getDb().callSheets.find((c) => c.id === p.callSheetId);
+      if (!cs) throw new RuleError("Call sheet not found.");
+      const root = getRecord(cs.contentId);
+      const blocks: Block[] = [
+        { type: "pairs", pairs: [["Date", fmtDate(cs.date)], ["Call time", cs.callTime || "Not set"], ["Location", cs.location || "Not set"], ["Format", cs.format || "Not set"], ["Status", cs.status === "final" ? "Final" : "Draft"], ["Project", root ? displayTitle(root) : cs.contentId]] },
+      ];
+      if (cs.notes) blocks.push({ type: "heading", text: "Notes" }, { type: "para", text: cs.notes });
+      const days = cs.linkedEpisodeIds.map((eid) => getRecord(eid)).filter((r): r is ContentRecord => !!r);
+      if (days.length) blocks.push({ type: "heading", text: root?.category === "live" ? "Days on this sheet" : "Episodes on this sheet" }, { type: "bullets", items: days.map((r) => r.category === "live" ? `${root?.title ?? ""}, ${r.title}` : r.title) });
+      if (cs.crewPersonIds.length) blocks.push({ type: "heading", text: "Crew" }, { type: "bullets", items: cs.crewPersonIds.map((pid) => nameOf(pid)) });
+      if (cs.equipmentIds.length) blocks.push({ type: "heading", text: "Gear" }, { type: "bullets", items: cs.equipmentIds.map((id) => { const it = getItem(id); return it ? `${it.name}${it.serialNumber ? `, serial ${it.serialNumber}` : ""}` : id; }) });
+      if (cs.runOfShow.length) blocks.push({ type: "heading", text: "Run of show" }, { type: "table", head: ["Time", "Item", "Duration", "Owner"], weights: [1.2, 4, 1.4, 2.4], rows: cs.runOfShow.map((r) => [r.time, r.title, `${r.durationMin} min`, r.ownerPersonId ? nameOf(r.ownerPersonId) : ""]) });
+      return doc(cs.title, cs.id, `callsheet-${cs.id}`, blocks);
     },
   },
   // Project

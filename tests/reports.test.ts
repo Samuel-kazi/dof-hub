@@ -18,7 +18,7 @@ const throwsRule = (fn: () => unknown, match?: RegExp) => assert.throws(fn, (e) 
 const hop = () => login("hop@dof.demo", "demo");
 const crew = () => login("crew2@dof.demo", "demo");
 const vol = () => login("volunteer1@dof.demo", "demo");
-const PARAMS: Record<string, Record<string, string>> = { "drive.detail": { driveId: "DRV-001" }, "manifest.list": { manifestId: "DOF-MF-002" }, "project.summary": { contentId: "DOF-SER-001-S1-E01" }, "doc.pdf": { docId: "DOF-DCS-002" } };
+const PARAMS: Record<string, Record<string, string>> = { "drive.detail": { driveId: "DRV-001" }, "manifest.list": { manifestId: "DOF-MF-002" }, "callsheet.pdf": { callSheetId: "DOF-CS-002" }, "project.summary": { contentId: "DOF-SER-001-S1-E01" }, "doc.pdf": { docId: "DOF-DCS-002" } };
 const pageCount = (bytes: Uint8Array) => (new TextDecoder("latin1").decode(bytes).match(/\/Type \/Page[^s]/g) ?? []).length;
 
 await t("every kind of report can be made, and has content", () => {
@@ -95,3 +95,24 @@ await t("saving uses the desktop save dialog when it is there, and does nothing 
 });
 
 console.log(`\n${passed} passed`);
+
+await t("a call sheet's report has its own shoot details, crew, gear and run of show, not a document", () => {
+  assert.equal(reportsFor("callsheet").length, 1, "call sheets have their own report scope, separate from documents");
+  const withGear = reportToText(buildReport(hop(), "callsheet.pdf", { callSheetId: "DOF-CS-001" }));
+  for (const expected of ["Whispers of Why", "Crew", "Gear"]) assert.ok(withGear.toLowerCase().includes(expected.toLowerCase()), expected);
+  const withRunOfShow = reportToText(buildReport(hop(), "callsheet.pdf", { callSheetId: "DOF-CS-002" }));
+  assert.ok(withRunOfShow.toLowerCase().includes("run of show"), "the run of show prints for a large production");
+  assert.ok(withRunOfShow.toLowerCase().includes("days on this sheet"), "a live show calls its episodes days");
+  throwsRule(() => buildReport(hop(), "callsheet.pdf", { callSheetId: "NOPE" }), /not found/);
+});
+
+await t("the equipment list's extra columns are opt-in, and only show what was asked for", () => {
+  const plain = reportToText(buildReport(hop(), "equipment.inventory", { category: "camera" }));
+  assert.ok(!plain.toLowerCase().includes("vendor") && !plain.toLowerCase().includes("packaging"), "no extra columns by default");
+  const withVendorAndCost = reportToText(buildReport(hop(), "equipment.inventory", { category: "camera", colVendor: true, colCost: true }));
+  assert.ok(withVendorAndCost.toLowerCase().includes("vendor") && withVendorAndCost.toLowerCase().includes("cost"), "the chosen columns appear");
+  assert.ok(!withVendorAndCost.toLowerCase().includes("packaging"), "a column not chosen stays out");
+  const full = reportToText(buildReport(hop(), "equipment.inventory", { category: "camera", colVendor: true, colPurchased: true, colCost: true, colPackaging: true }));
+  for (const col of ["Vendor", "Purchased", "Cost", "Packaging"]) assert.ok(full.includes(col), col);
+  assert.ok(full.includes("Pelican 1620"), "packaging values are pulled through");
+});

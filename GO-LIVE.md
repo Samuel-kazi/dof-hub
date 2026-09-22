@@ -93,3 +93,10 @@ While the consent screen says "Testing", only people you add as test users can l
 ## Several identical units at once (v6)
 
 Adding equipment now supports several units of the same model in one go — for example three Sony FX6 bodies with different serial numbers. Pick **One or more units**, type the shared details once, then list a serial number for each (type them one by one, or paste a list, one per line). Units that share a make and model group together in the inventory list and on each other's page, so opening one FX6 shows the other two. **Add another** on a group, or **Add another unit** on a single item's page, adds more later with the shared details already filled in.
+
+
+## v7: dashboard, call sheets, equipment reports
+
+- **Production metric**: a live show with several days now counts as one production on the Dashboard, not one per day.
+- **Call sheets**: each call sheet has its own **Download…** button (on the sheet itself, and on the list's right-click menu), producing a PDF with shoot details, crew, gear and run of show. This no longer goes through Documents.
+- **Equipment reports**: downloading the equipment list now offers optional columns — Vendor, Purchase date, Cost, and Packaging & accessories — so you can include only what you need.

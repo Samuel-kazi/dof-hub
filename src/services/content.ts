@@ -33,6 +33,24 @@ export function leavesUnder(r: ContentRecord): ContentRecord[] {
   return getChildren(r.contentId).flatMap(leavesUnder);
 }
 
+export interface ProductionUnit { id: string; title: string; leaves: ContentRecord[] }
+
+/**
+ * One row per production for dashboard counts. A live show with several days is many leaves
+ * (one per day) but one production, so its days collapse into the show they belong to.
+ * Every other category counts one leaf as one production, same as before.
+ */
+export function productionUnits(leaves: ContentRecord[]): ProductionUnit[] {
+  const map = new Map<string, ProductionUnit>();
+  for (const leaf of leaves) {
+    const show = leaf.category === "live" && leaf.hierarchyLevel > 0 ? getRecord(leaf.parentId!) : null;
+    const owner = show ?? leaf;
+    if (!map.has(owner.contentId)) map.set(owner.contentId, { id: owner.contentId, title: owner.title, leaves: [] });
+    map.get(owner.contentId)!.leaves.push(leaf);
+  }
+  return [...map.values()];
+}
+
 export function levelLabel(r: ContentRecord): string {
   const cfg = categoryOf(r.category);
   if (r.hierarchyLevel === 0) return cfg.singular;

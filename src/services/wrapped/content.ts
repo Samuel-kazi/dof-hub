@@ -25,5 +25,5 @@ export const setStageOutput = rpc("content.setStageOutput", core.setStageOutput)
 export const updateFeatured = rpc("content.updateFeatured", core.updateFeatured);
 export const updateRecord = rpc("content.updateRecord", core.updateRecord);
 export const updateTask = rpc("content.updateTask", core.updateTask);
-export { PROJECT_STAGE, canAdvance, canDelete, childKindFor, currentStageDeadline, deletionSummary, displayTitle, ensureStageTasks, featuredFor, getBreadcrumb, getChildren, getComments, getRollupStatus, isComplete, isOwnerNow, leavesUnder, levelLabel, openTasks, ownersOf, riskOf, tasksOf, usesPipeline } from "../content";
-export type { DeletionImpact, FeaturedInput, LinkBatchInput, LinkInput, NewRecordInput, Reminder, Risk, Rollup, TaskInput } from "../content";
+export { PROJECT_STAGE, canAdvance, canDelete, childKindFor, currentStageDeadline, deletionSummary, displayTitle, ensureStageTasks, featuredFor, getBreadcrumb, getChildren, getComments, getRollupStatus, isComplete, isOwnerNow, leavesUnder, levelLabel, openTasks, ownersOf, productionUnits, riskOf, tasksOf, usesPipeline } from "../content";
+export type { DeletionImpact, FeaturedInput, LinkBatchInput, LinkInput, NewRecordInput, ProductionUnit, Reminder, Risk, Rollup, TaskInput } from "../content";
