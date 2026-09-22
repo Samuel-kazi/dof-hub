@@ -1,203 +1,211 @@
-import type { Actor, Person, ProjectMember, RoleCode, User, ContentRecord } from "../types";
-import { RuleError } from "../types";
-import { commit, getDb } from "../data/store";
-import { ROLES } from "../config/roles";
-import { cleanRoles } from "../config/projectRoles";
-import { requireCan } from "./permissions";
-import { getRecord, isHop } from "./access";
-import { logAudit } from "./audit";
-import { pad, todayIso } from "./utils";
+import { useEffect, useRef, useState } from "react";
+import { useApp, type Route } from "./AppContext";
+import { didSaveFail, useDb } from "../data/store";
+import { modulesFor } from "../services/wrapped/permissions";
+import { CATEGORIES } from "../config/categories";
+import { MODULE_LABELS, ROLES, type ModuleKey } from "../config/roles";
+import { getReminders } from "../services/wrapped/content";
+import { relativeDays } from "../services/utils";
+import { IconBack, IconBell, IconCam, IconChevron, IconDoc, IconDrive, IconFilm, IconGear, IconHome, IconLogout, IconMenu, IconMoon, IconSheet, IconSun, IconUsers } from "./Icons";
+import { Logo } from "./Logo";
+import { applyAppearance, useTheme } from "./theme";
+import { Initials } from "./parts";
+import { Dashboard } from "../pages/Dashboard";
+import { Pipeline } from "../pages/Pipeline";
+import { RecordPage } from "../pages/RecordPage";
+import { CallSheets, CallSheetPage } from "../pages/CallSheets";
+import { Crew, PersonPage } from "../pages/Crew";
+import { Settings } from "../pages/Settings";
+import { Equipment } from "../pages/Equipment";
+import { EquipmentItemPage } from "../pages/EquipmentItem";
+import { ManifestPage } from "../pages/Manifest";
+import { Storage, DrivePage } from "../pages/Storage";
+import { Documents, DocPage } from "../pages/Documents";
+import { Access } from "../pages/Access";
+import { Reminders } from "../pages/Reminders";
+import { Soon } from "../pages/Soon";
 
-/** Highest existing number for the role prefix, plus one. Called once, at save time. */
-export function generatePersonId(category: RoleCode): string {
-  const prefix = ROLES[category].idPrefix;
-  const nums = getDb()
-    .people.filter((p) => p.personId.startsWith(prefix + "-"))
-    .map((p) => parseInt(p.personId.slice(prefix.length + 1), 10))
-    .filter((n) => !Number.isNaN(n));
-  return `${prefix}-${pad((nums.length ? Math.max(...nums) : 0) + 1)}`;
-}
+const ICONS: Record<ModuleKey, () => JSX.Element> = {
+  dashboard: IconHome,
+  pipeline: IconFilm,
+  callsheets: IconSheet,
+  equipment: IconCam,
+  storage: IconDrive,
+  crew: IconUsers,
+  documents: IconDoc,
+  reminders: IconBell,
+  settings: IconGear,
+};
+const BUILT: ModuleKey[] = ["dashboard", "pipeline", "callsheets", "equipment", "storage", "crew", "documents", "reminders", "settings"];
 
-function requireHop(actor: Actor, what: string) {
-  requireCan(actor, "people.manage", what);
-}
-
-export interface PersonInput {
-  category: Exclude<RoleCode, "HOP">;
-  name: string;
-  email: string;
-  phone: string;
-  skills: string[];
-  equipmentFamiliarity: string[];
-}
-
-export function getPerson(id: string): Person | undefined {
-  return getDb().people.find((p) => p.personId === id);
-}
-
-export const nameOf = (id: string | null | undefined): string => (id ? getPerson(id)?.name ?? id : "Unassigned");
-
-export function createLoginForPerson(actor: Actor, personId: string, email: string, password: string): User {
-  requireHop(actor, "create logins");
-  const p = getPerson(personId);
-  if (!p) throw new RuleError("Person not found.");
-  if (getDb().users.some((u) => u.personId === personId)) throw new RuleError("This person already has a login.");
-  if (!email.trim()) throw new RuleError("Enter an email address for the login.");
-  if (getDb().users.some((u) => u.email.toLowerCase() === email.trim().toLowerCase())) throw new RuleError("That email is already used by another login.");
-  if (password.length < 4) throw new RuleError("Password must be at least 4 characters.");
-  const user: User = {
-    userId: `U-${pad(getDb().users.length + 1)}`,
-    personId,
-    email: email.trim(),
-    password, // MOCK ONLY: hash with bcrypt once a real backend exists
-    role: p.category, // auto-set from category, overridable later without touching the profile
-    active: true,
-  };
-  getDb().users.push(user);
-  p.hasLogin = true;
-  logAudit(actor, "create-login", "person", personId, email);
-  commit();
-  return user;
-}
-
-/** Creates the profile, then the login if requested, as a single action from the user's view. */
-export function createPerson(actor: Actor, input: PersonInput, login?: { email: string; password: string }): Person {
-  requireHop(actor, "add people");
-  if (!input.name.trim()) throw new RuleError("Enter a name.");
-  if (login) {
-    // Validate the login half up front so we never end up with a half-created person.
-    if (!login.email.trim()) throw new RuleError("Enter an email address for the login.");
-    if (getDb().users.some((u) => u.email.toLowerCase() === login.email.trim().toLowerCase())) throw new RuleError("That email is already used by another login.");
-    if (login.password.length < 4) throw new RuleError("Password must be at least 4 characters.");
+function moduleOfRoute(r: Route): ModuleKey {
+  switch (r.n) {
+    case "dashboard": return "dashboard";
+    case "pipeline": case "record": return "pipeline";
+    case "callsheets": case "callsheet": return "callsheets";
+    case "crew": case "person": return "crew";
+    case "equipment": case "item": case "manifest": return "equipment";
+    case "storage": case "drive": return "storage";
+    case "documents": case "doc": return "documents";
+    case "reminders": return "reminders";
+    case "access": return "settings";
+    case "settings": return "settings";
+    case "soon": return r.module;
   }
-  const person: Person = {
-    personId: generatePersonId(input.category),
-    category: input.category,
-    name: input.name.trim(),
-    email: input.email.trim(),
-    phone: input.phone.trim(),
-    skills: input.skills,
-    equipmentFamiliarity: input.equipmentFamiliarity,
-    hasLogin: false,
-    status: "active",
-    createdAt: todayIso(),
-  };
-  getDb().people.push(person);
-  logAudit(actor, "create", "person", person.personId, person.name);
-  commit();
-  if (login) createLoginForPerson(actor, person.personId, login.email, login.password);
-  return person;
 }
 
-export function updatePerson(actor: Actor, personId: string, patch: Partial<Pick<Person, "name" | "email" | "phone" | "skills" | "equipmentFamiliarity">>): Person {
-  requireHop(actor, "edit people");
-  const p = getPerson(personId);
-  if (!p) throw new RuleError("Person not found.");
-  Object.assign(p, patch);
-  logAudit(actor, "update", "person", personId, Object.keys(patch).join(", "));
-  commit();
-  return p;
+function routeFor(m: ModuleKey): Route {
+  switch (m) {
+    case "dashboard": return { n: "dashboard" };
+    case "pipeline": return { n: "pipeline" };
+    case "callsheets": return { n: "callsheets" };
+    case "equipment": return { n: "equipment" };
+    case "storage": return { n: "storage" };
+    case "documents": return { n: "documents" };
+    case "crew": return { n: "crew" };
+    case "reminders": return { n: "reminders" };
+    case "settings": return { n: "settings" };
+    default: return { n: "soon", module: m };
+  }
 }
 
-/** Anyone can correct their own name and contact details. Access level and ID stay with the Head of Production. */
-export function updateOwnProfile(actor: Actor, patch: Partial<Pick<Person, "name" | "email" | "phone" | "notifyEmail" | "notifySms">>): Person {
-  const p = getPerson(actor.personId);
-  if (!p) throw new RuleError("Person not found.");
-  if (patch.name !== undefined && !patch.name.trim()) throw new RuleError("Enter your name.");
-  Object.assign(p, {
-    ...(patch.name !== undefined ? { name: patch.name.trim() } : {}),
-    ...(patch.email !== undefined ? { email: patch.email.trim() } : {}),
-    ...(patch.phone !== undefined ? { phone: patch.phone.trim() } : {}),
-    ...(patch.notifyEmail !== undefined ? { notifyEmail: patch.notifyEmail } : {}),
-    ...(patch.notifySms !== undefined ? { notifySms: patch.notifySms } : {}),
+export function Shell() {
+  const { actor, me, route, go, back, canBack, menu, toast, logout, notifications, clearNotifications } = useApp();
+  const db = useDb();
+  const dockKey = `dof-dock-${actor.personId}`;
+  const [wide, setWide] = useState(() => {
+    try { return localStorage.getItem(dockKey) === "wide"; } catch { return false; }
   });
-  logAudit(actor, "update-profile", "person", actor.personId, Object.keys(patch).join(", "));
-  commit();
-  return p;
-}
+  const { theme, setPref } = useTheme();
+  const pipeKey = `dof-pipe-${actor.personId}`;
+  const [pipeOpen, setPipeOpen] = useState(() => {
+    try { return localStorage.getItem(pipeKey) !== "closed"; } catch { return true; }
+  });
+  const togglePipe = () => setPipeOpen((o) => { try { localStorage.setItem(pipeKey, o ? "closed" : "open"); } catch { /* ignore */ } return !o; });
+  const contentRef = useRef<HTMLElement>(null);
+  const role = ROLES[actor.role];
+  const active = moduleOfRoute(route);
+  const reminders = getReminders(actor);
+  const accent = db.settings.workspaceAppearance?.accentColor ?? "terracotta";
+  void db;
 
-/** Promotion: the number in the ID never changes; only the category and login role do. */
-export function updatePersonCategory(actor: Actor, personId: string, newCategory: Exclude<RoleCode, "HOP">): Person {
-  requireHop(actor, "change someone's category");
-  const p = getPerson(personId);
-  if (!p) throw new RuleError("Person not found.");
-  if (p.category === "HOP") throw new RuleError("The Head of Production category cannot be changed here.");
-  const from = p.category;
-  p.category = newCategory;
-  const u = getDb().users.find((x) => x.personId === personId);
-  if (u) u.role = newCategory;
-  logAudit(actor, "change-category", "person", personId, `${from} → ${newCategory}`);
-  commit();
-  return p;
-}
+  useEffect(() => { applyAppearance(me, db.settings); }, [me, db.settings]);
 
-/** Deactivate, never delete: their history stays on past call sheets and projects. */
-export function deactivatePerson(actor: Actor, personId: string): void {
-  requireHop(actor, "deactivate people");
-  const p = getPerson(personId);
-  if (!p) throw new RuleError("Person not found.");
-  if (p.category === "HOP") throw new RuleError("The Head of Production cannot be deactivated.");
-  p.status = "inactive";
-  const u = getDb().users.find((x) => x.personId === personId);
-  if (u) u.active = false;
-  logAudit(actor, "deactivate", "person", personId);
-  commit();
-}
-
-export function reactivatePerson(actor: Actor, personId: string): void {
-  requireHop(actor, "reactivate people");
-  const p = getPerson(personId);
-  if (!p) throw new RuleError("Person not found.");
-  p.status = "active";
-  const u = getDb().users.find((x) => x.personId === personId);
-  if (u) u.active = true;
-  logAudit(actor, "reactivate", "person", personId);
-  commit();
-}
-
-export function projectHistory(personId: string): { member: ProjectMember; record: ContentRecord }[] {
-  return getDb()
-    .members.filter((m) => m.personId === personId)
-    .map((member) => ({ member, record: getRecord(member.projectContentId)! }))
-    .filter((x) => !!x.record);
-}
-
-export function assignToProject(actor: Actor, personId: string, contentId: string, roleOnProject: string, canComment: boolean): void {
-  requireHop(actor, "assign people to projects");
-  const rec = getRecord(contentId);
-  if (!rec) throw new RuleError("Project not found.");
-  if (getDb().members.some((m) => m.personId === personId && m.projectContentId === contentId)) throw new RuleError("Already assigned to this project.");
-  const roles = cleanRoles(roleOnProject.split(","));
-  getDb().members.push({ personId, projectContentId: contentId, roleOnProject: roles.join(", ") || "Team member", canComment });
-  logAudit(actor, "assign", "person", personId, contentId);
-  commit();
-}
-
-/** Stages and tasks a person still owns on a project. They have to be handed over before the person can leave it. */
-export function workOwnedOn(personId: string, contentId: string): { stages: number; tasks: number } {
-  const under = getDb().records.filter((r) => !r.archived && (r.contentId === contentId || r.contentId.startsWith(`${contentId}-`)));
-  return {
-    stages: under.reduce((n, r) => n + Object.values(r.stageAssignees).filter((list) => list.some((o) => o.personId === personId)).length, 0),
-    tasks: under.reduce((n, r) => n + r.tasks.filter((t) => t.assigneePersonId === personId && !t.done).length, 0),
+  const toggle = () => {
+    setWide((w) => {
+      try { localStorage.setItem(dockKey, w ? "icons" : "wide"); } catch { /* ignore */ }
+      return !w;
+    });
   };
-}
 
-export function removeFromProject(actor: Actor, personId: string, contentId: string): void {
-  requireHop(actor, "remove people from projects");
-  const owned = workOwnedOn(personId, contentId);
-  if (owned.stages || owned.tasks) {
-    const parts = [owned.stages ? `${owned.stages} stage${owned.stages > 1 ? "s" : ""}` : "", owned.tasks ? `${owned.tasks} open task${owned.tasks > 1 ? "s" : ""}` : ""].filter(Boolean).join(" and ");
-    throw new RuleError(`${getPerson(personId)?.name ?? personId} still owns ${parts} on this project. Hand them to someone else first.`);
-  }
-  getDb().members = getDb().members.filter((m) => !(m.personId === personId && m.projectContentId === contentId));
-  logAudit(actor, "unassign", "person", personId, contentId);
-  commit();
-}
+  useEffect(() => { contentRef.current?.scrollTo?.(0, 0); }, [route]);
 
-/** Active crew not booked on any call sheet for the given date. */
-export function crewAvailableOn(date: string): { available: Person[]; total: Person[] } {
-  const db = getDb();
-  const total = db.people.filter((p) => p.category === "CRW" && p.status === "active");
-  const busy = new Set(db.callSheets.filter((cs) => cs.date === date).flatMap((cs) => cs.crewPersonIds));
-  return { available: total.filter((p) => !busy.has(p.personId)), total };
+  useEffect(() => {
+    const n = getReminders(actor).length;
+    if (n) toast(`${n} stage deadline${n > 1 ? "s" : ""} need${n > 1 ? "" : "s"} your attention soon. Check the bell.`, "info");
+  }, []);
+
+  const openBell = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const r = e.currentTarget.getBoundingClientRect();
+    menu(
+      { clientX: r.right - 220, clientY: r.bottom + 6, preventDefault: () => {} },
+      [
+        ...notifications.slice(0, 5).map((n) => ({ label: `${n.title}: ${n.body}`, onClick: () => {} })),
+        ...(notifications.length ? [{ label: "Clear notifications", onClick: clearNotifications }, { label: "", divider: true, onClick: () => {} }] : []),
+        ...(reminders.length
+          ? reminders.map((x) => ({ label: `${x.record.title}: ${x.stage} due ${relativeDays(x.dueDate)}`, onClick: () => go({ n: "record", id: x.record.contentId }) }))
+          : [{ label: "No deadlines coming up for you", onClick: () => {}, disabled: true }]),
+      ],
+    );
+  };
+
+  return (
+    <div className="app">
+      <nav className={`dock ${wide ? "wide" : ""}`} aria-label="Main">
+        <div className="dock-brand">
+          <Logo width={wide ? 132 : 44} />
+          <div className="dock-brand-text">
+            <b>Dawn of Faith</b>
+            <span>Production Hub</span>
+          </div>
+        </div>
+        {modulesFor(actor).map((m) => {
+          const Icon = ICONS[m];
+          const built = BUILT.includes(m);
+          const label = MODULE_LABELS[m];
+          return (
+            <div key={m} style={wide ? undefined : { display: "contents" }}>
+              <div className="dock-row" style={wide ? undefined : { display: "contents" }}>
+                <button className={`dock-item ${active === m ? "active" : ""} ${m === "pipeline" && wide ? "has-chev" : ""}`} data-tip={label} aria-label={label} aria-current={active === m ? "page" : undefined} onClick={() => go(routeFor(m))}>
+                  <Icon />
+                  <span className="dock-label">{label}</span>
+                  {!built && <span className="soon">Next</span>}
+                </button>
+                {m === "pipeline" && wide && (
+                  <button className={`dock-chev ${pipeOpen ? "open" : ""}`} aria-expanded={pipeOpen} aria-label={pipeOpen ? "Hide the categories" : "Show the categories"} title={pipeOpen ? "Hide categories" : "Show categories"} onClick={() => togglePipe()}>
+                    <IconChevron />
+                  </button>
+                )}
+              </div>
+              {m === "pipeline" && wide && pipeOpen && (
+                <div className="dock-sub">
+                  {CATEGORIES.map((c) => (
+                    <button key={c.key} className={route.n === "pipeline" && route.category === c.key ? "active" : ""} onClick={() => go({ n: "pipeline", category: c.key })}>{c.label}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+        <div className="dock-foot">Signed in as {role.label}</div>
+      </nav>
+
+      <div className="main">
+        <header className="topbar">
+          <button className="icon-btn" onClick={back} disabled={!canBack} aria-label="Go back" title="Back"><IconBack /></button>
+          <button className="icon-btn" onClick={toggle} aria-label={wide ? "Collapse menu" : "Expand menu"} title={wide ? "Collapse menu" : "Expand menu"}><IconMenu /></button>
+          <div className="spacer" />
+          <div className="theme-toggle" role="group" aria-label="Colour mode">
+            <button aria-pressed={theme === "light"} aria-label="Light mode" title="Light mode" onClick={() => setPref("light")}><IconSun /></button>
+            <button aria-pressed={theme === "dark"} aria-label="Night mode" title="Night mode" onClick={() => setPref("dark")}><IconMoon /></button>
+          </div>
+          <button className="icon-btn" onClick={openBell} aria-label="Deadline reminders" title="Deadline reminders">
+            <IconBell />
+            {reminders.length + notifications.length > 0 && <span className="dot">{reminders.length + notifications.length}</span>}
+          </button>
+          <div className="user-chip glass">
+            <Initials name={me.name} photoUrl={me.appearance?.photoUrl} accent={accent} />
+            <div>
+              {me.name}
+              <small>{me.name === role.label ? me.personId : role.label}</small>
+            </div>
+          </div>
+          <button className="icon-btn" onClick={logout} aria-label="Sign out" title="Sign out"><IconLogout /></button>
+        </header>
+        <main className="content" ref={contentRef}>
+          <div className="print-brand" aria-hidden="true"><Logo width={112} /><span>Dawn of Faith Production Hub</span></div>
+          {didSaveFail() && <div className="banner bad no-print" role="alert" style={{ marginBottom: 16 }}><span className="grow"><b>Changes are not being saved.</b> This device is out of storage space.</span></div>}
+          {route.n === "dashboard" && <Dashboard />}
+          {route.n === "pipeline" && <Pipeline category={route.category} />}
+          {route.n === "record" && <RecordPage id={route.id} />}
+          {route.n === "callsheets" && <CallSheets />}
+          {route.n === "callsheet" && <CallSheetPage id={route.id} />}
+          {route.n === "crew" && <Crew tab={route.tab} />}
+          {route.n === "person" && <PersonPage id={route.id} />}
+          {route.n === "settings" && <Settings />}
+          {route.n === "equipment" && <Equipment tab={route.tab} />}
+          {route.n === "item" && <EquipmentItemPage id={route.id} />}
+          {route.n === "manifest" && <ManifestPage id={route.id} />}
+          {route.n === "storage" && <Storage />}
+          {route.n === "drive" && <DrivePage id={route.id} />}
+          {route.n === "access" && <Access />}
+          {route.n === "reminders" && <Reminders />}
+          {route.n === "documents" && <Documents />}
+          {route.n === "doc" && <DocPage id={route.id} />}
+          {route.n === "soon" && <Soon module={route.module} />}
+        </main>
+      </div>
+    </div>
+  );
 }
