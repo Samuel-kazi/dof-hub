@@ -224,6 +224,7 @@ var CATEGORIES = [
     label: "Series",
     singular: "Series",
     code: "SER",
+    color: "#e8703a",
     supportsChildren: true,
     childLevelLabel: "Season",
     grandchildLevelLabel: "Episode",
@@ -247,6 +248,7 @@ var CATEGORIES = [
     label: "Devotionals",
     singular: "Devotional",
     code: "DEV",
+    color: "#7fbf95",
     supportsChildren: false,
     childLevelLabel: null,
     grandchildLevelLabel: null,
@@ -268,6 +270,7 @@ var CATEGORIES = [
     label: "Live Shows",
     singular: "Live show",
     code: "LIVE",
+    color: "#f3b943",
     supportsChildren: true,
     childLevelLabel: "Day",
     grandchildLevelLabel: "Day",
@@ -291,6 +294,7 @@ var CATEGORIES = [
     label: "Documentaries",
     singular: "Documentary",
     code: "DOC",
+    color: "#8f9fdc",
     supportsChildren: false,
     childLevelLabel: null,
     grandchildLevelLabel: null,
@@ -314,6 +318,7 @@ var CATEGORIES = [
     label: "DOF Music",
     singular: "Music project",
     code: "MUS",
+    color: "#d58fb8",
     supportsChildren: true,
     childLevelLabel: "Album",
     grandchildLevelLabel: "Track",
@@ -932,7 +937,7 @@ function buildSeed() {
   mkDoc("DOF-DEV-001", "script", "Scripting", []);
   mkDoc("DOF-DOC-001", "research", "Research", [{ daysAgo: 12, by: "DOF-P-CRW-002" }]);
   return {
-    schemaVersion: 7,
+    schemaVersion: 10,
     people,
     users,
     members: [
@@ -1006,7 +1011,7 @@ function buildSeed() {
     docRevisions,
     outbox: [],
     ...gear,
-    settings: { stageReminderHours: 24, storageWarningThreshold: 85, checkoutReturnDays: 3, workDays: [1, 2, 3, 4, 5], effortOverrides: {} },
+    settings: { stageReminderHours: 24, storageWarningThreshold: 85, checkoutReturnDays: 3, workDays: [1, 2, 3, 4, 5], effortOverrides: {}, appearance: { accent: "terracotta", fontPairing: "modern" } },
     counters: { audit: 0, comment: 1, callsheet: 2, task: 6, link: 1, featured: 5, runitem: 5, doc: docN, docrev: revN, ...gear.counters }
   };
 }
@@ -1155,6 +1160,16 @@ function upgradeToV8(db2) {
   return db2;
 }
 function upgradeToV9(db2) {
+  db2.settings.appearance ??= { accent: "terracotta", fontPairing: "modern" };
+  for (const p of db2.people) {
+    p.photoUrl ??= null;
+    p.fontSize ??= "default";
+    p.density ??= "comfortable";
+  }
+  db2.schemaVersion = 9;
+  return db2;
+}
+function upgradeToV10(db2) {
   const RENAME = { Idea: "Prep", Scripting: "Build", Streaming: "Show" };
   const NEW_STAGES = ["Prep", "Build", "Rehearse", "Show", "Wrap", "Review", "Post Production"];
   for (const r of db2.records) {
@@ -1177,13 +1192,13 @@ function upgradeToV9(db2) {
       delete r.stageAssignees[from];
     }
   }
-  db2.schemaVersion = 9;
+  db2.schemaVersion = 10;
   return db2;
 }
 
 // src/data/store.ts
 var KEY = "dof-hub-db";
-var SCHEMA_VERSION = 9;
+var SCHEMA_VERSION = 10;
 function migrate(old) {
   const gear = buildGearSeed();
   const next = {
@@ -1213,21 +1228,23 @@ function upgradeDb(parsed) {
     case SCHEMA_VERSION:
       return parsed;
     case 1:
-      return upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(migrate(parsed))))))));
+      return upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(migrate(parsed)))))))));
     case 2:
-      return upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(parsed)))))));
+      return upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(parsed))))))));
     case 3:
-      return upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(parsed))))));
+      return upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(parsed)))))));
     case 4:
-      return upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(parsed)))));
+      return upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(parsed))))));
     case 5:
-      return upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(parsed))));
+      return upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(parsed)))));
     case 6:
-      return upgradeToV9(upgradeToV8(upgradeToV7(parsed)));
+      return upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(parsed))));
     case 7:
-      return upgradeToV9(upgradeToV8(parsed));
+      return upgradeToV10(upgradeToV9(upgradeToV8(parsed)));
     case 8:
-      return upgradeToV9(parsed);
+      return upgradeToV10(upgradeToV9(parsed));
+    case 9:
+      return upgradeToV10(parsed);
     default:
       return null;
   }
@@ -1379,6 +1396,7 @@ var MODULE_LABELS = {
   dashboard: "Dashboard",
   pipeline: "Content Pipeline",
   callsheets: "Call Sheets",
+  calendar: "Calendar",
   equipment: "Equipment",
   storage: "Storage & Media",
   crew: "Crew",
@@ -1443,8 +1461,8 @@ function customisations() {
 function effectiveGrants(role, personId) {
   return Object.fromEntries(ALL_CAPABILITIES.map((c) => [c, grantFor(role, personId, c)]));
 }
-var ORDER = ["dashboard", "pipeline", "callsheets", "equipment", "storage", "crew", "documents", "reminders", "settings"];
-var MODULE_CAP = { equipment: "equipment.use", storage: "storage.use", crew: "people.directory", reminders: "reminders.use" };
+var ORDER = ["dashboard", "pipeline", "callsheets", "calendar", "equipment", "storage", "crew", "documents", "reminders", "settings"];
+var MODULE_CAP = { equipment: "equipment.use", storage: "storage.use", crew: "people.directory", reminders: "reminders.use", calendar: "reminders.use" };
 function modulesFor(actor) {
   return ORDER.filter((m) => MODULE_CAP[m] ? can(actor, MODULE_CAP[m]) : ROLES[actor.role].modules.includes(m));
 }
@@ -2183,6 +2201,7 @@ __export(equipment_exports, {
   createSerializedUnits: () => createSerializedUnits,
   deleteItem: () => deleteItem,
   displayStatus: () => displayStatus,
+  endOf: () => endOf,
   familyOf: () => familyOf,
   finishRepair: () => finishRepair,
   gearIssues: () => gearIssues,
@@ -2336,12 +2355,16 @@ function updateOwnProfile(actor, patch) {
   const p = getPerson(actor.personId);
   if (!p) throw new RuleError("Person not found.");
   if (patch.name !== void 0 && !patch.name.trim()) throw new RuleError("Enter your name.");
+  if (patch.photoUrl && patch.photoUrl.length > 4e5) throw new RuleError("That photo is too large. Choose a smaller image.");
   Object.assign(p, {
     ...patch.name !== void 0 ? { name: patch.name.trim() } : {},
     ...patch.email !== void 0 ? { email: patch.email.trim() } : {},
     ...patch.phone !== void 0 ? { phone: patch.phone.trim() } : {},
     ...patch.notifyEmail !== void 0 ? { notifyEmail: patch.notifyEmail } : {},
-    ...patch.notifySms !== void 0 ? { notifySms: patch.notifySms } : {}
+    ...patch.notifySms !== void 0 ? { notifySms: patch.notifySms } : {},
+    ...patch.photoUrl !== void 0 ? { photoUrl: patch.photoUrl } : {},
+    ...patch.fontSize !== void 0 ? { fontSize: patch.fontSize } : {},
+    ...patch.density !== void 0 ? { density: patch.density } : {}
   });
   logAudit(actor, "update-profile", "person", actor.personId, Object.keys(patch).join(", "));
   commit();
@@ -4098,15 +4121,15 @@ function remindersFor(personId, asOf = todayIso(), days = 21) {
     stages.forEach((s2, i) => {
       const due = r.stageDeadlines[s2.name];
       const mine = i === idx ? isOwnerNow(r, personId) : ownersOf(r, s2.name).some((o) => o.personId === personId);
-      if (i >= idx && due && mine && !r.stageOutputs[s2.name]) add({ key: `stage:${r.contentId}:${s2.name}`, kind: "stage", title: `${displayTitle(r)}: ${s2.name} due`, detail: `${r.contentId}. ${s2.requiredOutput}.`, date: due, time: null, contentId: r.contentId });
+      if (i >= idx && due && mine && !r.stageOutputs[s2.name]) add({ key: `stage:${r.contentId}:${s2.name}`, kind: "stage", title: `${displayTitle(r)}: ${s2.name} due`, detail: `${r.contentId}. ${s2.requiredOutput}.`, date: due, time: null, contentId: r.contentId, category: r.category });
     });
-    for (const t2 of r.tasks) if (t2.assigneePersonId === personId && !t2.done && t2.dueDate) add({ key: `task:${t2.id}`, kind: "task", title: `${displayTitle(r)}: ${t2.label} due`, detail: `${r.contentId}, ${t2.stage}.`, date: t2.dueDate, time: null, contentId: r.contentId });
+    for (const t2 of r.tasks) if (t2.assigneePersonId === personId && !t2.done && t2.dueDate) add({ key: `task:${t2.id}`, kind: "task", title: `${displayTitle(r)}: ${t2.label} due`, detail: `${r.contentId}, ${t2.stage}.`, date: t2.dueDate, time: null, contentId: r.contentId, category: r.category });
   }
   for (const cs of db2.callSheets) {
-    if (cs.crewPersonIds.includes(personId) && cs.date >= asOf) add({ key: `sheet:${cs.id}`, kind: "shoot", title: `Shoot: ${cs.title}`, detail: `${cs.location || "Location to be confirmed"}. Call time ${cs.callTime}.`, date: cs.date, time: cs.callTime, contentId: cs.contentId });
+    if (cs.crewPersonIds.includes(personId) && cs.date >= asOf) add({ key: `sheet:${cs.id}`, kind: "shoot", title: `Shoot: ${cs.title}`, detail: `${cs.location || "Location to be confirmed"}. Call time ${cs.callTime}.`, date: cs.date, time: cs.callTime, contentId: cs.contentId, category: getRecord(cs.contentId)?.category ?? "series" });
   }
   for (const m of db2.manifests) {
-    if (m.responsiblePersonId === personId && m.destination === "outside" && m.status === "checked-out" && m.expectedReturn) add({ key: `gear:${m.id}`, kind: "gear", title: `Bring back the gear on ${m.id}`, detail: `${m.contentId}. ${m.lines.length} item${m.lines.length === 1 ? "" : "s"}.`, date: m.expectedReturn, time: null, contentId: m.contentId });
+    if (m.responsiblePersonId === personId && m.destination === "outside" && m.status === "checked-out" && m.expectedReturn) add({ key: `gear:${m.id}`, kind: "gear", title: `Bring back the gear on ${m.id}`, detail: `${m.contentId}. ${m.lines.length} item${m.lines.length === 1 ? "" : "s"}.`, date: m.expectedReturn, time: null, contentId: m.contentId, category: getRecord(m.contentId)?.category ?? "series" });
   }
   return out.sort((a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title));
 }
@@ -4153,8 +4176,26 @@ function alreadySent(personId, rems) {
 var settings_exports = {};
 __export(settings_exports, {
   changePassword: () => changePassword2,
-  updateSettings: () => updateSettings
+  updateSettings: () => updateSettings,
+  updateWorkspaceAppearance: () => updateWorkspaceAppearance
 });
+
+// src/config/appearance.ts
+var ACCENTS = [
+  { key: "terracotta", label: "Terracotta", dark: { accent: "#e8703a", hi: "#f28a55" }, light: { accent: "#dc5f26", hi: "#c2481a" } },
+  { key: "amber", label: "Amber", dark: { accent: "#d9a441", hi: "#e8bd66" }, light: { accent: "#b9812a", hi: "#96660f" } },
+  { key: "sage", label: "Sage", dark: { accent: "#6b9080", hi: "#87ac9c" }, light: { accent: "#4d7566", hi: "#365a4d" } },
+  { key: "ocean", label: "Ocean", dark: { accent: "#4f7cac", hi: "#6f9bc9" }, light: { accent: "#3a6389", hi: "#254a6b" } },
+  { key: "plum", label: "Plum", dark: { accent: "#a15c8f", hi: "#bd7cac" }, light: { accent: "#8a4576", hi: "#6c2e5b" } },
+  { key: "slate", label: "Slate", dark: { accent: "#5b6472", hi: "#77828f" }, light: { accent: "#454d59", hi: "#2f3540" } }
+];
+var FONT_PAIRINGS = [
+  { key: "modern", label: "Modern", heading: `"Avenir Next", "SF Pro Display", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif`, body: `"Avenir Next", "SF Pro Display", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif` },
+  { key: "editorial", label: "Editorial", heading: `Georgia, "Iowan Old Style", "Palatino Linotype", serif`, body: `"Avenir Next", "SF Pro Display", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif` },
+  { key: "classic", label: "Classic Serif", heading: `Georgia, "Iowan Old Style", "Palatino Linotype", serif`, body: `Georgia, "Iowan Old Style", "Times New Roman", serif` }
+];
+
+// src/services/settings.ts
 function updateSettings(actor, patch) {
   requireCan(actor, "backend.settings", "change system settings");
   if (patch.stageReminderHours !== void 0 && !(patch.stageReminderHours >= 1 && patch.stageReminderHours <= 240)) {
@@ -4176,6 +4217,15 @@ function updateSettings(actor, patch) {
   }
   Object.assign(getDb().settings, patch);
   logAudit(actor, "settings", "settings", "system", Object.keys(patch).join(", "));
+  commit();
+}
+function updateWorkspaceAppearance(actor, patch) {
+  if (!isHop(actor)) throw new RuleError("Only the Head of Production can change the workspace's accent colour and font.");
+  if (patch.accent !== void 0 && !ACCENTS.some((a) => a.key === patch.accent)) throw new RuleError("Choose one of the accent colours offered.");
+  if (patch.fontPairing !== void 0 && !FONT_PAIRINGS.some((f) => f.key === patch.fontPairing)) throw new RuleError("Choose one of the font pairings offered.");
+  const db2 = getDb();
+  db2.settings.appearance = { ...db2.settings.appearance ?? { accent: "terracotta", fontPairing: "modern" }, ...patch };
+  logAudit(actor, "settings", "settings", "appearance", Object.keys(patch).join(", "));
   commit();
 }
 function changePassword2(actor, current, next) {
@@ -4565,7 +4615,8 @@ var RPC_NAMES = {
     "logSent"
   ],
   "settings": [
-    "updateSettings"
+    "updateSettings",
+    "updateWorkspaceAppearance"
   ],
   "storage": [
     "addAllocation",

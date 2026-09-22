@@ -24,6 +24,7 @@ export type Route =
   | { n: "drive"; id: string }
   | { n: "access" }
   | { n: "reminders" }
+  | { n: "calendar" }
   | { n: "settings" };
 
 export interface MenuItem {

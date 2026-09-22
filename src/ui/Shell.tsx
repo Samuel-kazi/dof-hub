@@ -6,10 +6,11 @@ import { CATEGORIES } from "../config/categories";
 import { MODULE_LABELS, ROLES, type ModuleKey } from "../config/roles";
 import { getReminders } from "../services/wrapped/content";
 import { relativeDays } from "../services/utils";
-import { IconBack, IconBell, IconCam, IconChevron, IconDoc, IconDrive, IconFilm, IconGear, IconHome, IconLogout, IconMenu, IconMoon, IconSheet, IconSun, IconUsers } from "./Icons";
+import { IconBack, IconBell, IconCalendar, IconCam, IconChevron, IconDoc, IconDrive, IconFilm, IconGear, IconHome, IconLogout, IconMenu, IconMoon, IconSheet, IconSun, IconUsers } from "./Icons";
 import { Logo } from "./Logo";
 import { useTheme } from "./theme";
-import { Initials } from "./parts";
+import { useApplyAppearance } from "./appearance";
+import { Avatar } from "./parts";
 import { Dashboard } from "../pages/Dashboard";
 import { Pipeline } from "../pages/Pipeline";
 import { RecordPage } from "../pages/RecordPage";
@@ -23,12 +24,14 @@ import { Storage, DrivePage } from "../pages/Storage";
 import { Documents, DocPage } from "../pages/Documents";
 import { Access } from "../pages/Access";
 import { Reminders } from "../pages/Reminders";
+import { CalendarPage } from "../pages/Calendar";
 import { Soon } from "../pages/Soon";
 
 const ICONS: Record<ModuleKey, () => JSX.Element> = {
   dashboard: IconHome,
   pipeline: IconFilm,
   callsheets: IconSheet,
+  calendar: IconCalendar,
   equipment: IconCam,
   storage: IconDrive,
   crew: IconUsers,
@@ -36,13 +39,14 @@ const ICONS: Record<ModuleKey, () => JSX.Element> = {
   reminders: IconBell,
   settings: IconGear,
 };
-const BUILT: ModuleKey[] = ["dashboard", "pipeline", "callsheets", "equipment", "storage", "crew", "documents", "reminders", "settings"];
+const BUILT: ModuleKey[] = ["dashboard", "pipeline", "callsheets", "calendar", "equipment", "storage", "crew", "documents", "reminders", "settings"];
 
 function moduleOfRoute(r: Route): ModuleKey {
   switch (r.n) {
     case "dashboard": return "dashboard";
     case "pipeline": case "record": return "pipeline";
     case "callsheets": case "callsheet": return "callsheets";
+    case "calendar": return "calendar";
     case "crew": case "person": return "crew";
     case "equipment": case "item": case "manifest": return "equipment";
     case "storage": case "drive": return "storage";
@@ -59,6 +63,7 @@ function routeFor(m: ModuleKey): Route {
     case "dashboard": return { n: "dashboard" };
     case "pipeline": return { n: "pipeline" };
     case "callsheets": return { n: "callsheets" };
+    case "calendar": return { n: "calendar" };
     case "equipment": return { n: "equipment" };
     case "storage": return { n: "storage" };
     case "documents": return { n: "documents" };
@@ -77,6 +82,13 @@ export function Shell() {
     try { return localStorage.getItem(dockKey) === "wide"; } catch { return false; }
   });
   const { theme, setPref } = useTheme();
+  useApplyAppearance({
+    theme,
+    accent: db.settings.appearance?.accent ?? "terracotta",
+    fontPairing: db.settings.appearance?.fontPairing ?? "modern",
+    fontSize: me.fontSize ?? "default",
+    density: me.density ?? "comfortable",
+  });
   const pipeKey = `dof-pipe-${actor.personId}`;
   const [pipeOpen, setPipeOpen] = useState(() => {
     try { return localStorage.getItem(pipeKey) !== "closed"; } catch { return true; }
@@ -173,7 +185,7 @@ export function Shell() {
             {reminders.length + notifications.length > 0 && <span className="dot">{reminders.length + notifications.length}</span>}
           </button>
           <div className="user-chip glass">
-            <Initials name={me.name} />
+            <Avatar person={me} />
             <div>
               {me.name}
               <small>{me.name === role.label ? me.personId : role.label}</small>
@@ -199,6 +211,7 @@ export function Shell() {
           {route.n === "drive" && <DrivePage id={route.id} />}
           {route.n === "access" && <Access />}
           {route.n === "reminders" && <Reminders />}
+          {route.n === "calendar" && <CalendarPage />}
           {route.n === "documents" && <Documents />}
           {route.n === "doc" && <DocPage id={route.id} />}
           {route.n === "soon" && <Soon module={route.module} />}

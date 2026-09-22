@@ -107,3 +107,10 @@ Adding equipment now supports several units of the same model in one go — for 
 - **New stages**: a live day now goes Prep → Build → Rehearse → Show → Wrap → Review → Post Production, in place of the old Idea/Scripting/Streaming/Review/Post Production. Existing saved data upgrades automatically; nothing needs doing by hand.
 - **Strike plan**: on the show itself (not each day), set whether the rig is struck down every day or built once and struck only on the last day, and list what comes down nightly versus what stays up until the end. Each day's Wrap checklist is built from this automatically.
 - **Post-production fork**: each day's Post Production stage now asks whether anything was recorded. If yes, split the recording into a Music track or a Series episode before the day can be marked done — it starts already past the stages that assume there's no footage yet. If no, the day can be marked done straight away.
+
+
+## v9: merged with the Calendar and personalisation work
+
+This brings your `main` branch's Calendar module and personalisation (workspace accent colour, font pairing, per-person font size, density and profile photo) together with everything built in this update batch (the live-show workflow rebuild, equipment units, branding, dashboard and report changes). Nothing from either side was dropped.
+
+One thing worth knowing: both sets of changes had separately used "version 9" for a database migration, for two different things. This update keeps your appearance migration at version 9 and moves the live-show migration to version 10, layered on top, so real saved data upgrades correctly either way.

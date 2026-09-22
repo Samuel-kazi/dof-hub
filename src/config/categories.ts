@@ -27,6 +27,9 @@ export interface CategoryConfig {
   leafLevel: number;
   // From this stage on there is footage to store, so the item prompts for a drive.
   footageStage: string;
+  // The one place this category's colour is defined. Every view that renders a category (Kanban
+  // cards, the calendar, dashboard charts) reads it from here rather than choosing its own.
+  color: string;
 }
 
 const s = (name: string, requiredOutput: string, extra: { tasks?: string[]; docs?: string[] } = {}): StageDef => ({ name, requiredOutput, ...extra });
@@ -40,6 +43,7 @@ export const CATEGORIES: CategoryConfig[] = [
     label: "Series",
     singular: "Series",
     code: "SER",
+    color: "#e8703a",
     supportsChildren: true,
     childLevelLabel: "Season",
     grandchildLevelLabel: "Episode",
@@ -63,6 +67,7 @@ export const CATEGORIES: CategoryConfig[] = [
     label: "Devotionals",
     singular: "Devotional",
     code: "DEV",
+    color: "#7fbf95",
     supportsChildren: false,
     childLevelLabel: null,
     grandchildLevelLabel: null,
@@ -84,6 +89,7 @@ export const CATEGORIES: CategoryConfig[] = [
     label: "Live Shows",
     singular: "Live show",
     code: "LIVE",
+    color: "#f3b943",
     supportsChildren: true,
     childLevelLabel: "Day",
     grandchildLevelLabel: "Day",
@@ -107,6 +113,7 @@ export const CATEGORIES: CategoryConfig[] = [
     label: "Documentaries",
     singular: "Documentary",
     code: "DOC",
+    color: "#8f9fdc",
     supportsChildren: false,
     childLevelLabel: null,
     grandchildLevelLabel: null,
@@ -130,6 +137,7 @@ export const CATEGORIES: CategoryConfig[] = [
     label: "DOF Music",
     singular: "Music project",
     code: "MUS",
+    color: "#d58fb8",
     supportsChildren: true,
     childLevelLabel: "Album",
     grandchildLevelLabel: "Track",
@@ -155,6 +163,9 @@ export const categoryOf = (key: CategoryKey): CategoryConfig => {
   if (!c) throw new Error(`Unknown category ${key}`);
   return c;
 };
+
+/** The single source of truth for a category's colour. No view should hardcode or pick its own. */
+export const categoryColor = (key: CategoryKey): string => categoryOf(key).color;
 
 /** What a record's pipeline items are called: Episode, Track, Day, or the project itself. */
 export const leafLabel = (key: CategoryKey): string => {

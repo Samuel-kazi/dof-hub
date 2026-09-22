@@ -2,14 +2,14 @@ import { useSyncExternalStore } from "react";
 import type { Database } from "../types";
 import { buildSeed } from "./seed";
 import { buildGearSeed } from "./seedGear";
-import { upgradeToV3, upgradeToV4, upgradeToV5, upgradeToV6, upgradeToV7, upgradeToV8, upgradeToV9 } from "./migrate";
+import { upgradeToV10, upgradeToV3, upgradeToV4, upgradeToV5, upgradeToV6, upgradeToV7, upgradeToV8, upgradeToV9 } from "./migrate";
 
 // In-memory store with localStorage persistence.
 // This is the ONLY file that knows where data lives. When the real database
 // arrives, services keep their signatures and only this layer changes.
 
 const KEY = "dof-hub-db";
-const SCHEMA_VERSION = 9;
+const SCHEMA_VERSION = 10;
 
 /** Older saved data keeps everything it has and gains the new modules with sample data. */
 function migrate(old: Database): Database {
@@ -42,14 +42,15 @@ function migrate(old: Database): Database {
 export function upgradeDb(parsed: Database): Database | null {
   switch (parsed.schemaVersion) {
     case SCHEMA_VERSION: return parsed;
-    case 1: return upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(migrate(parsed))))))));
-    case 2: return upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(parsed)))))));
-    case 3: return upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(parsed))))));
-    case 4: return upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(parsed)))));
-    case 5: return upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(parsed))));
-    case 6: return upgradeToV9(upgradeToV8(upgradeToV7(parsed)));
-    case 7: return upgradeToV9(upgradeToV8(parsed));
-    case 8: return upgradeToV9(parsed);
+    case 1: return upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(migrate(parsed)))))))));
+    case 2: return upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(parsed))))))));
+    case 3: return upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(parsed)))))));
+    case 4: return upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(parsed))))));
+    case 5: return upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(parsed)))));
+    case 6: return upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(parsed))));
+    case 7: return upgradeToV10(upgradeToV9(upgradeToV8(parsed)));
+    case 8: return upgradeToV10(upgradeToV9(parsed));
+    case 9: return upgradeToV10(parsed);
     default: return null;
   }
 }
