@@ -116,7 +116,7 @@ function itemsFor(personId: string, asOf: string): { items: LoadItem[]; undated:
     if (r.scheduledDate && r.scheduledDate >= asOf && idx <= footageIdx && !shootKeys.has(`${rootId}|${r.scheduledDate}`)) {
       const crew = ownersOf(r, cfg.footageStage);
       if (crew.some((o) => o.personId === personId)) {
-        items.push({ id: `${r.contentId}#shoot`, kind: "shoot", label: `${cfg.footageStage === "Streaming" ? "Show" : "Shoot"}: ${subject}`, contentId: r.contentId, effort: 1, from: r.scheduledDate, to: r.scheduledDate, days: [r.scheduledDate], perDay: 1, late: false });
+        items.push({ id: `${r.contentId}#shoot`, kind: "shoot", label: `${cfg.footageStage === "Show" ? "Show" : "Shoot"}: ${subject}`, contentId: r.contentId, effort: 1, from: r.scheduledDate, to: r.scheduledDate, days: [r.scheduledDate], perDay: 1, late: false });
       }
     }
 

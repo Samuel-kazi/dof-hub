@@ -23,15 +23,7 @@ export interface Person {
   loginOff?: boolean; // the Head of Production switched their login off
   notifyEmail?: boolean; // also wants reminders by email, on top of the ones in the app
   notifySms?: boolean; // and by text message
-  photoUrl?: string | null; // profile photo, a data: URL. Falls back to colour-initials when not set.
-  fontSize?: FontSize; // per-user: Small/Default/Large/XL
-  density?: Density; // per-user: Comfortable/Compact
 }
-
-export type FontSize = "small" | "default" | "large" | "xl";
-export type Density = "comfortable" | "compact";
-export type AccentKey = "terracotta" | "amber" | "sage" | "ocean" | "plum" | "slate";
-export type FontPairingKey = "modern" | "editorial" | "classic";
 
 export interface User {
   userId: string;
@@ -109,6 +101,10 @@ export interface ContentRecord {
   featured: Featured[]; // hosts and guests
   showStart: string | null; // series and live shows: the first day of the show
   showEnd: string | null; // and the last
+  spunOffFrom: string | null; // for a Music track or Series episode created from a live recording: the live day it came from
+  postProductionNeeded: boolean | null; // live days only: was anything recorded that needs post-production? Set before Post Production can be confirmed done.
+  strikePattern: "daily" | "continuous" | null; // live shows only (level 0): struck down every day, or built once and struck only on the last day
+  strikeChecklist: { daily: string[]; final: string[] } | null; // live shows only (level 0): what comes down every night vs what stays rigged until the last day
   archived: boolean;
   version: number; // optimistic concurrency
   createdAt: string;
@@ -325,9 +321,6 @@ export interface Settings {
   workDays: number[]; // days of the week people are normally at work, 0 is Sunday
   effortOverrides: Record<string, number>; // person-days per stage, keyed "category:Stage", replacing the built-in estimates
   permissions?: { roles: Partial<Record<RoleCode, Partial<Record<string, boolean>>>>; people: Record<string, Partial<Record<string, boolean>>> }; // what the Head of Production has granted or denied
-  // Workspace-wide look and feel, set by the Head of Production. Per-user preferences (font size,
-  // density, photo) live on the Person record instead, since each person sets their own.
-  appearance?: { accent: AccentKey; fontPairing: FontPairingKey };
 }
 
 /** A reminder that was sent, or opened in the mail or messages app, so it is not sent twice by accident. */

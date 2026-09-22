@@ -20,10 +20,13 @@ export const removeStageOwner = rpc("content.removeStageOwner", core.removeStage
 export const removeTask = rpc("content.removeTask", core.removeTask);
 export const sendBackStage = rpc("content.sendBackStage", core.sendBackStage);
 export const setOwnerRoles = rpc("content.setOwnerRoles", core.setOwnerRoles);
+export const setPostProductionNeeded = rpc("content.setPostProductionNeeded", core.setPostProductionNeeded);
 export const setStageDeadline = rpc("content.setStageDeadline", core.setStageDeadline);
 export const setStageOutput = rpc("content.setStageOutput", core.setStageOutput);
+export const setStrikePlan = rpc("content.setStrikePlan", core.setStrikePlan);
+export const splitRecording = rpc("content.splitRecording", core.splitRecording);
 export const updateFeatured = rpc("content.updateFeatured", core.updateFeatured);
 export const updateRecord = rpc("content.updateRecord", core.updateRecord);
 export const updateTask = rpc("content.updateTask", core.updateTask);
-export { PROJECT_STAGE, canAdvance, canDelete, childKindFor, currentStageDeadline, deletionSummary, displayTitle, ensureStageTasks, featuredFor, getBreadcrumb, getChildren, getComments, getRollupStatus, isComplete, isOwnerNow, leavesUnder, levelLabel, openTasks, ownersOf, productionUnits, riskOf, tasksOf, usesPipeline } from "../content";
-export type { DeletionImpact, FeaturedInput, LinkBatchInput, LinkInput, NewRecordInput, ProductionUnit, Reminder, Risk, Rollup, TaskInput } from "../content";
+export { PROJECT_STAGE, canAdvance, canDelete, childKindFor, currentStageDeadline, deletionSummary, displayTitle, ensureStageTasks, featuredFor, getBreadcrumb, getChildren, getComments, getRollupStatus, isComplete, isOwnerNow, leavesUnder, levelLabel, openTasks, ownersOf, productionUnits, riskOf, spinOffCategories, spinOffsOf, tasksOf, usesPipeline } from "../content";
+export type { DeletionImpact, FeaturedInput, LinkBatchInput, LinkInput, NewRecordInput, ProductionUnit, Reminder, Risk, Rollup, SplitInput, TaskInput } from "../content";

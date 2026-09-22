@@ -33,8 +33,11 @@ export const RPC_NAMES: Record<string, string[]> = {
     "removeTask",
     "sendBackStage",
     "setOwnerRoles",
+    "setPostProductionNeeded",
     "setStageDeadline",
     "setStageOutput",
+    "setStrikePlan",
+    "splitRecording",
     "updateFeatured",
     "updateRecord",
     "updateTask"
@@ -104,8 +107,7 @@ export const RPC_NAMES: Record<string, string[]> = {
     "logSent"
   ],
   "settings": [
-    "updateSettings",
-    "updateWorkspaceAppearance"
+    "updateSettings"
   ],
   "storage": [
     "addAllocation",

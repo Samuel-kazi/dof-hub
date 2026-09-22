@@ -7,7 +7,7 @@ import { Empty, Field } from "../ui/parts";
 import { IconPlus } from "../ui/Icons";
 import { canJoin, canWrite, isHop } from "../services/access";
 import { can } from "../services/wrapped/permissions";
-import { PROJECT_STAGE, addLinks, addStageOwner, addTask, ownersOf, removeLink, removeStageOwner, removeTask, setOwnerRoles, setStageDeadline, tasksOf, updateTask, usesPipeline } from "../services/wrapped/content";
+import { PROJECT_STAGE, addLinks, addStageOwner, addTask, ownersOf, removeLink, removeStageOwner, removeTask, setOwnerRoles, setPostProductionNeeded, setStageDeadline, setStrikePlan, spinOffsOf, splitRecording, tasksOf, updateTask, usesPipeline } from "../services/wrapped/content";
 import { teamOf } from "../services/wrapped/team";
 import { effortFor } from "../config/capacity";
 import { Modal } from "../ui/Modal";
@@ -289,6 +289,134 @@ export function LinksPanel({ rec }: { rec: ContentRecord }) {
         </div>
       )}
       <p className="muted" style={{ marginTop: 10, fontSize: ".84rem" }}>Links are kept with the stage they were posted at.</p>
+    </section>
+  );
+}
+
+/**
+ * A live day's Post Production stage asks one question first: did this day record anything that needs work?
+ * If yes, the recording has to be split into its own Music track or Series episode — already past the stages
+ * that assume there is no footage yet — before the day itself can be marked done.
+ */
+export function PostProductionPanel({ rec }: { rec: ContentRecord }) {
+  const { actor, attempt } = useApp();
+  const write = canWrite(actor, rec);
+  const [splitting, setSplitting] = useState(false);
+  if (rec.category !== "live" || rec.pipelineStage !== "Post Production") return null;
+  const spinOffs = spinOffsOf(rec.contentId);
+
+  return (
+    <div className="stack" style={{ marginBottom: 12 }}>
+      <div className="seg" role="group" aria-label="Did this day record anything?">
+        <button type="button" className={rec.postProductionNeeded === true ? "on" : ""} disabled={!write} onClick={() => attempt(() => setPostProductionNeeded(actor, rec.contentId, true, rec.version))}>Yes, something was recorded</button>
+        <button type="button" className={rec.postProductionNeeded === false ? "on" : ""} disabled={!write} onClick={() => attempt(() => setPostProductionNeeded(actor, rec.contentId, false, rec.version))}>No, nothing to post-produce</button>
+      </div>
+      {rec.postProductionNeeded === true && (
+        <div className="stack" style={{ gap: 8 }}>
+          {spinOffs.length > 0 && (
+            <table className="table">
+              <thead><tr><th>New item</th><th>Now at</th></tr></thead>
+              <tbody>{spinOffs.map((s) => <tr key={s.contentId}><td>{s.contentId}: {s.title}</td><td>{s.pipelineStage}</td></tr>)}</tbody>
+            </table>
+          )}
+          {write && <button type="button" className="btn small" onClick={() => setSplitting(true)}><IconPlus /> Split off a recording</button>}
+          {!spinOffs.length && <p className="muted" style={{ fontSize: ".84rem" }}>Split at least one recording into a Music track or Series episode before this day can be marked done.</p>}
+        </div>
+      )}
+      {splitting && <SplitRecordingModal day={rec} onClose={() => setSplitting(false)} />}
+    </div>
+  );
+}
+
+function SplitRecordingModal({ day, onClose }: { day: ContentRecord; onClose: () => void }) {
+  const { actor, attempt, go } = useApp();
+  const [dest, setDest] = useState<"music" | "series">("series");
+  const options = getDb().records.filter((r) => r.category === dest && r.hierarchyLevel === 1 && canWrite(actor, r));
+  const [parentId, setParentId] = useState(options[0]?.contentId ?? "");
+  const [title, setTitle] = useState("");
+  const cfg = categoryOf(dest);
+
+  const save = () => {
+    const created = attempt(() => splitRecording(actor, day.contentId, { destCategory: dest, parentId, title }), "Split off");
+    if (created) { onClose(); go({ n: "record", id: created.contentId }); }
+  };
+
+  return (
+    <Modal title="Split off a recording" onClose={onClose} actions={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save} disabled={!parentId || !title.trim()}>Split off</button></>}>
+      <div className="stack">
+        <p className="muted">This creates a new item for what was recorded on {day.title}, already past the stages that assume there is no footage — it starts at {SPIN_OFF_LABEL[dest]}.</p>
+        <div className="seg" role="group" aria-label="Kind">
+          <button type="button" className={dest === "series" ? "on" : ""} onClick={() => { setDest("series"); setParentId(""); }}>A sermon (Series)</button>
+          <button type="button" className={dest === "music" ? "on" : ""} onClick={() => { setDest("music"); setParentId(""); }}>A song (Music)</button>
+        </div>
+        <Field label={cfg.childLevelLabel ?? "Put it in"}>
+          <select value={parentId} onChange={(e) => setParentId(e.target.value)}>
+            <option value="" disabled>Choose a {(cfg.childLevelLabel ?? "").toLowerCase()}…</option>
+            {options.map((o) => <option key={o.contentId} value={o.contentId}>{o.title}</option>)}
+          </select>
+        </Field>
+        {!options.length && <p className="muted">No {(cfg.childLevelLabel ?? "").toLowerCase()} you can edit exists yet. Create one under {cfg.label} first.</p>}
+        <Field label="Title"><input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={dest === "series" ? "Why do we doubt?" : "Song title"} autoFocus /></Field>
+      </div>
+    </Modal>
+  );
+}
+
+const SPIN_OFF_LABEL: Record<"music" | "series", string> = { music: "Audio post-production", series: "Editorial" };
+
+/**
+ * A live show's strike plan: what comes down every night, and what stays rigged until the last day.
+ * A day picks up whichever list applies once it reaches Wrap — every day gets the nightly list, and
+ * the show's last day gets the nightly list plus everything that stays up until then.
+ */
+export function StrikePlanPanel({ rec }: { rec: ContentRecord }) {
+  const { actor, attempt } = useApp();
+  const write = canWrite(actor, rec);
+  const [editing, setEditing] = useState(false);
+  const [pattern, setPattern] = useState<"daily" | "continuous">(rec.strikePattern ?? "daily");
+  const [daily, setDaily] = useState((rec.strikeChecklist?.daily ?? []).join("\n"));
+  const [final, setFinal] = useState((rec.strikeChecklist?.final ?? []).join("\n"));
+  if (rec.category !== "live" || rec.hierarchyLevel !== 0) return null;
+
+  const start = () => { setPattern(rec.strikePattern ?? "daily"); setDaily((rec.strikeChecklist?.daily ?? []).join("\n")); setFinal((rec.strikeChecklist?.final ?? []).join("\n")); setEditing(true); };
+  const save = () => {
+    const ok = attempt(() => setStrikePlan(actor, rec.contentId, pattern, daily.split("\n"), final.split("\n"), rec.version), "Strike plan saved");
+    if (ok) setEditing(false);
+  };
+
+  return (
+    <section className="glass panel" aria-label="Strike plan">
+      <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
+        <h2 style={{ flex: 1 }}>Strike plan</h2>
+        {write && !editing && <button className="btn small" onClick={start}>{rec.strikeChecklist ? "Edit" : "Set up"}</button>}
+      </div>
+      {editing ? (
+        <div className="stack">
+          <div className="seg" role="group" aria-label="How the rig is struck">
+            <button type="button" className={pattern === "daily" ? "on" : ""} onClick={() => setPattern("daily")}>Struck down every day</button>
+            <button type="button" className={pattern === "continuous" ? "on" : ""} onClick={() => setPattern("continuous")}>Built once, struck on the last day</button>
+          </div>
+          <Field label="Comes down every night, one per line"><textarea rows={4} value={daily} onChange={(e) => setDaily(e.target.value)} placeholder={"Cameras and tripods\nWireless mics"} /></Field>
+          <Field label="Stays rigged until the show's last day, one per line"><textarea rows={4} value={final} onChange={(e) => setFinal(e.target.value)} placeholder={"FOH snake\nLED screen and truss"} /></Field>
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+            <button className="btn" onClick={() => setEditing(false)}>Cancel</button>
+            <button className="btn primary" onClick={save}>Save</button>
+          </div>
+        </div>
+      ) : rec.strikeChecklist ? (
+        <div className="row">
+          <div>
+            <p className="muted" style={{ fontSize: ".84rem" }}>{pattern === "continuous" ? "Built once, struck on the last day." : "Struck down every day."} Every night:</p>
+            {rec.strikeChecklist.daily.length ? <ul>{rec.strikeChecklist.daily.map((x, i) => <li key={i}>{x}</li>)}</ul> : <Empty>Nothing listed.</Empty>}
+          </div>
+          <div>
+            <p className="muted" style={{ fontSize: ".84rem" }}>Only on the last day:</p>
+            {rec.strikeChecklist.final.length ? <ul>{rec.strikeChecklist.final.map((x, i) => <li key={i}>{x}</li>)}</ul> : <Empty>Nothing listed.</Empty>}
+          </div>
+        </div>
+      ) : (
+        <Empty>No strike plan yet. Each day's Wrap stage will have no checklist until one is set.</Empty>
+      )}
     </section>
   );
 }

@@ -5,10 +5,6 @@ import type { CategoryKey, ContentRecord } from "../types";
 import { useApp, type MenuItem } from "../ui/AppContext";
 import { useDb } from "../data/store";
 import { CATEGORIES, categoryOf } from "../config/categories";
-import type { CSSProperties } from "react";
-
-/** Sets the --cat-color custom property a card or row reads for its left-edge colour. */
-const catStyle = (category: CategoryKey): CSSProperties => ({ ["--cat-color" as string]: categoryOf(category).color });
 import { canWrite, isHop, visibleRecords } from "../services/access";
 import { canDelete, currentStageDeadline, deleteRecord, deletionImpact, deletionSummary, displayTitle, getChildren, getRollupStatus, isComplete, levelLabel, usesPipeline } from "../services/wrapped/content";
 import { nameOf } from "../services/wrapped/people";
@@ -87,7 +83,7 @@ export function Pipeline({ category }: { category?: CategoryKey }) {
 
       <div className="chips" role="group" aria-label="Category">
         <button className={`chip ${cfg ? "" : "on"}`} onClick={() => go({ n: "pipeline" })}>All</button>
-        {CATEGORIES.map((c) => <button key={c.key} className={`chip ${category === c.key ? "on" : ""}`} style={catStyle(c.key)} onClick={() => go({ n: "pipeline", category: c.key })}><span className="cat-dot" />{c.label}</button>)}
+        {CATEGORIES.map((c) => <button key={c.key} className={`chip ${category === c.key ? "on" : ""}`} onClick={() => go({ n: "pipeline", category: c.key })}>{c.label}</button>)}
       </div>
 
       {effective === "board" && cfg && (
@@ -98,7 +94,7 @@ export function Pipeline({ category }: { category?: CategoryKey }) {
               <section key={st.name} className="col glass" aria-label={st.name}>
                 <h3>{st.name}<span className="muted">{cards.length}</span></h3>
                 {cards.map((r) => (
-                  <div key={r.contentId} className="card" style={catStyle(r.category)} tabIndex={0} onClick={() => go({ n: "record", id: r.contentId })} onKeyDown={(e) => e.key === "Enter" && go({ n: "record", id: r.contentId })} onContextMenu={(e) => rm.onContext(e, r)}>
+                  <div key={r.contentId} className="card" tabIndex={0} onClick={() => go({ n: "record", id: r.contentId })} onKeyDown={(e) => e.key === "Enter" && go({ n: "record", id: r.contentId })} onContextMenu={(e) => rm.onContext(e, r)}>
                     <span className="t">{displayTitle(r)}</span>
                     <span className="cid">{r.contentId}</span>
                     <span className="muted" style={{ fontSize: ".82rem" }}>{nameOf(r.assigneePersonId)}{currentStageDeadline(r) ? `, due ${fmtShort(currentStageDeadline(r))}` : ""}</span>
@@ -117,7 +113,7 @@ export function Pipeline({ category }: { category?: CategoryKey }) {
             const rows = tops.filter((r) => r.category === c.key);
             return (
               <section key={c.key} className="glass panel">
-                {!cfg && <h2><span className="cat-dot" style={catStyle(c.key)} /> {c.label}</h2>}
+                {!cfg && <h2>{c.label}</h2>}
                 {rows.length === 0 ? <Empty>No {c.label.toLowerCase()} yet.</Empty> : rows.map((r) => <TreeNode key={r.contentId} record={r} onContext={rm.onContext} />)}
               </section>
             );
@@ -139,7 +135,7 @@ function TreeNode({ record, onContext }: { record: ContentRecord; onContext: (e:
   const roll = !usesPipeline(record) ? getRollupStatus(record.contentId) : null;
   return (
     <div>
-      <div className="tree-row" style={catStyle(record.category)} onContextMenu={(e) => onContext(e, record)} onClick={() => go({ n: "record", id: record.contentId })}>
+      <div className="tree-row" onContextMenu={(e) => onContext(e, record)} onClick={() => go({ n: "record", id: record.contentId })}>
         <button className={`tw ${open ? "open" : ""}`} style={{ visibility: hasKids ? "visible" : "hidden" }} onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }} aria-label={open ? "Collapse" : "Expand"}><IconChevron /></button>
         <div className="grow">
           <div className="title">{record.title}</div>

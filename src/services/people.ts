@@ -100,21 +100,16 @@ export function updatePerson(actor: Actor, personId: string, patch: Partial<Pick
 }
 
 /** Anyone can correct their own name and contact details. Access level and ID stay with the Head of Production. */
-export function updateOwnProfile(actor: Actor, patch: Partial<Pick<Person, "name" | "email" | "phone" | "notifyEmail" | "notifySms" | "photoUrl" | "fontSize" | "density">>): Person {
+export function updateOwnProfile(actor: Actor, patch: Partial<Pick<Person, "name" | "email" | "phone" | "notifyEmail" | "notifySms">>): Person {
   const p = getPerson(actor.personId);
   if (!p) throw new RuleError("Person not found.");
   if (patch.name !== undefined && !patch.name.trim()) throw new RuleError("Enter your name.");
-  // A data: URL photo, kept small so it does not blow the local-storage budget other people share.
-  if (patch.photoUrl && patch.photoUrl.length > 400_000) throw new RuleError("That photo is too large. Choose a smaller image.");
   Object.assign(p, {
     ...(patch.name !== undefined ? { name: patch.name.trim() } : {}),
     ...(patch.email !== undefined ? { email: patch.email.trim() } : {}),
     ...(patch.phone !== undefined ? { phone: patch.phone.trim() } : {}),
     ...(patch.notifyEmail !== undefined ? { notifyEmail: patch.notifyEmail } : {}),
     ...(patch.notifySms !== undefined ? { notifySms: patch.notifySms } : {}),
-    ...(patch.photoUrl !== undefined ? { photoUrl: patch.photoUrl } : {}),
-    ...(patch.fontSize !== undefined ? { fontSize: patch.fontSize } : {}),
-    ...(patch.density !== undefined ? { density: patch.density } : {}),
   });
   logAudit(actor, "update-profile", "person", actor.personId, Object.keys(patch).join(", "));
   commit();

@@ -238,9 +238,9 @@ await t("the server enforces the same rules as the app: view-only, jump in, and 
   const hop = await setupHop(true);
   const crew = await loginFor(hop, "DOF-P-CRW-002", "brian");
   assert.equal((await crew.act("content.addTask", "DOF-LIVE-001-D1", { label: "x" })).status, 400, "not on that project");
-  assert.equal((await crew.act("content.addStageOwner", "DOF-LIVE-001-D1", "Streaming", "DOF-P-CRW-002", ["Camera operator"])).status, 200, "jumping in is allowed");
+  assert.equal((await crew.act("content.addStageOwner", "DOF-LIVE-001-D1", "Show", "DOF-P-CRW-002", ["Camera operator"])).status, 200, "jumping in is allowed");
   assert.equal((await crew.act("content.addTask", "DOF-LIVE-001-D1", { label: "x" })).status, 200, "and then they can help");
-  assert.equal((await crew.act("content.addStageOwner", "DOF-LIVE-001-D1", "Streaming", "DOF-P-CRW-003", [])).status, 400, "but not put others on it");
+  assert.equal((await crew.act("content.addStageOwner", "DOF-LIVE-001-D1", "Show", "DOF-P-CRW-003", [])).status, 400, "but not put others on it");
 });
 await t("permissions the Head of Production changes take effect at once", async () => {
   const hop = await setupHop(true);

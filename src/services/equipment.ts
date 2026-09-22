@@ -82,7 +82,7 @@ export function isOverdue(m: Manifest): boolean {
 }
 
 /** A checked-out manifest occupies its items until it is checked in, even past the planned return. */
-export function endOf(m: Manifest): string {
+function endOf(m: Manifest): string {
   const planned = m.expectedReturn ?? m.date;
   if (m.status === "checked-out") {
     const t = todayIso();

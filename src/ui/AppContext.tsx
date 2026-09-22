@@ -12,7 +12,6 @@ export type Route =
   | { n: "record"; id: string }
   | { n: "callsheets" }
   | { n: "callsheet"; id: string }
-  | { n: "calendar" }
   | { n: "crew"; tab?: "crew" | "volunteers" | "partners" | "workload" }
   | { n: "person"; id: string }
   | { n: "soon"; module: ModuleKey }

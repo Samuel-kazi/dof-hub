@@ -20,7 +20,7 @@ import { useRecordMenu } from "./Pipeline";
 import { RecordExtras } from "./RecordExtras";
 import { RecordDetails } from "./RecordDetails";
 import { CastPanel } from "./CastPanel";
-import { LinksPanel, StageChecklist, StagePlan } from "./StagePanel";
+import { LinksPanel, PostProductionPanel, StageChecklist, StagePlan, StrikePlanPanel } from "./StagePanel";
 
 export function RecordPage({ id }: { id: string }) {
   const { actor, go, back, attempt, confirm, menu, toast } = useApp();
@@ -130,6 +130,7 @@ export function RecordPage({ id }: { id: string }) {
               <div key={s.name} className={`rail-step ${i < stageIdx ? "done" : i === stageIdx ? "now" : ""}`}>{s.name}</div>
             ))}
           </div>
+          <PostProductionPanel rec={rec} />
           <div className={`gate ${gate.ok ? "ready" : ""}`}>
             <label className="check">
               <input type="checkbox" checked={outputDone} disabled={!write} onChange={(e) => attempt(() => setStageOutput(actor, rec.contentId, e.target.checked, rec.version))} />
@@ -204,6 +205,7 @@ export function RecordPage({ id }: { id: string }) {
       )}
 
       {!leaf && <RecordDetails rec={rec} />}
+      {!leaf && <StrikePlanPanel rec={rec} />}
 
       {!leaf && <StagePlan rec={rec} />}
       {cfg.key !== "music" && <CastPanel rec={rec} />}

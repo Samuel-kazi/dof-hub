@@ -60,6 +60,8 @@ interface LeafInput {
   prod?: ProductionLevel;
   show?: [number, number];
   notes?: string;
+  strikePattern?: "daily" | "continuous";
+  strikeChecklist?: { daily: string[]; final: string[] };
 }
 
 const rec = (i: LeafInput): ContentRecord => ({
@@ -82,6 +84,10 @@ const rec = (i: LeafInput): ContentRecord => ({
   featured: [],
   showStart: i.show ? isoDay(i.show[0]) : null,
   showEnd: i.show ? isoDay(i.show[1]) : null,
+  spunOffFrom: null,
+  postProductionNeeded: null,
+  strikePattern: i.strikePattern ?? null,
+  strikeChecklist: i.strikeChecklist ?? null,
   archived: false,
   version: 1,
   createdAt: isoDay(-30),
@@ -128,15 +134,23 @@ export function buildSeed(): Database {
     rec({ contentId: "DOF-SER-001-S1-E03", title: "Why wait?", category: "series", parentId: "DOF-SER-001-S1", level: 2, stage: "Recording", stageOffset: 2, scheduled: 2, deadline: 26, assignee: "DOF-P-CRW-003" }),
     rec({ contentId: "DOF-SER-001-S1-E04", title: "Why forgive?", category: "series", parentId: "DOF-SER-001-S1", level: 2, stage: "Scripting", stageOffset: 5, scheduled: 9, deadline: 32, assignee: "DOF-P-CRW-001" }),
     // Flat categories
-    rec({ contentId: "DOF-LIVE-001", title: "Sunday Live Service", category: "live", parentId: null, level: 0, stage: null, show: [1, 1] }),
-    rec({ contentId: "DOF-LIVE-001-D1", title: "Day 1", category: "live", parentId: "DOF-LIVE-001", level: 1, stage: "Streaming", stageOffset: 1, scheduled: 1, deadline: 3, assignee: "DOF-P-CRW-003", prod: "large" }),
+    rec({
+      contentId: "DOF-LIVE-001", title: "Sunday Live Service", category: "live", parentId: null, level: 0, stage: null, show: [1, 1],
+      strikePattern: "daily",
+      strikeChecklist: { daily: ["Cameras and tripods", "Wireless mics and IEMs", "Stage monitors", "Switcher and stream laptop"], final: ["FOH snake and cable runs", "LED screen and truss", "House lighting rig"] },
+    }),
+    rec({ contentId: "DOF-LIVE-001-D1", title: "Day 1", category: "live", parentId: "DOF-LIVE-001", level: 1, stage: "Show", stageOffset: 1, scheduled: 1, deadline: 3, assignee: "DOF-P-CRW-003", prod: "large" }),
     // A five-day conference: every day is its own item with its own level, call sheet and run of show.
-    rec({ contentId: "DOF-LIVE-002", title: "Youth Conference", category: "live", parentId: null, level: 0, stage: null, show: [10, 14] }),
-    rec({ contentId: "DOF-LIVE-002-D1", title: "Day 1", category: "live", parentId: "DOF-LIVE-002", level: 1, stage: "Scripting", stageOffset: 4, scheduled: 10, deadline: 10, prod: "large" }),
-    rec({ contentId: "DOF-LIVE-002-D2", title: "Day 2", category: "live", parentId: "DOF-LIVE-002", level: 1, stage: "Scripting", stageOffset: 5, scheduled: 11, deadline: 11, prod: "medium" }),
-    rec({ contentId: "DOF-LIVE-002-D3", title: "Day 3", category: "live", parentId: "DOF-LIVE-002", level: 1, stage: "Idea", stageOffset: 6, scheduled: 12, deadline: 12, prod: "medium" }),
-    rec({ contentId: "DOF-LIVE-002-D4", title: "Day 4", category: "live", parentId: "DOF-LIVE-002", level: 1, stage: "Idea", stageOffset: 7, scheduled: 13, deadline: 13, prod: "small" }),
-    rec({ contentId: "DOF-LIVE-002-D5", title: "Day 5", category: "live", parentId: "DOF-LIVE-002", level: 1, stage: "Idea", stageOffset: 8, scheduled: 14, deadline: 14, prod: "large" }),
+    rec({
+      contentId: "DOF-LIVE-002", title: "Youth Conference", category: "live", parentId: null, level: 0, stage: null, show: [10, 14],
+      strikePattern: "continuous",
+      strikeChecklist: { daily: ["Cover cameras and lenses", "Lock instrument and mic cases", "Secure loose cabling"], final: ["Full rig: trusses, screens, staging", "FOH desk and snake", "All flight cases packed for return"] },
+    }),
+    rec({ contentId: "DOF-LIVE-002-D1", title: "Day 1", category: "live", parentId: "DOF-LIVE-002", level: 1, stage: "Build", stageOffset: 4, scheduled: 10, deadline: 10, prod: "large" }),
+    rec({ contentId: "DOF-LIVE-002-D2", title: "Day 2", category: "live", parentId: "DOF-LIVE-002", level: 1, stage: "Build", stageOffset: 5, scheduled: 11, deadline: 11, prod: "medium" }),
+    rec({ contentId: "DOF-LIVE-002-D3", title: "Day 3", category: "live", parentId: "DOF-LIVE-002", level: 1, stage: "Prep", stageOffset: 6, scheduled: 12, deadline: 12, prod: "medium" }),
+    rec({ contentId: "DOF-LIVE-002-D4", title: "Day 4", category: "live", parentId: "DOF-LIVE-002", level: 1, stage: "Prep", stageOffset: 7, scheduled: 13, deadline: 13, prod: "small" }),
+    rec({ contentId: "DOF-LIVE-002-D5", title: "Day 5", category: "live", parentId: "DOF-LIVE-002", level: 1, stage: "Prep", stageOffset: 8, scheduled: 14, deadline: 14, prod: "large" }),
     rec({ contentId: "DOF-DOC-001", title: "Samburu Stories", category: "documentary", parentId: null, level: 0, stage: "Ingest", stageOffset: -3, scheduled: -8, deadline: 20, assignee: "DOF-P-CRW-002", notes: "Footage from the field trip still needs checksum verification." }),
     rec({ contentId: "DOF-DEV-001", title: "Morning Light", category: "devotional", parentId: null, level: 0, stage: "Scripting", stageOffset: 0, scheduled: 4, deadline: 10, assignee: "DOF-P-CRW-001" }),
     // Music → Album → Tracks
@@ -207,9 +221,9 @@ export function buildSeed(): Database {
   mkDoc("DOF-SER-001-S1-E01", "edit-notes", "Editorial", [{ daysAgo: 1, by: "DOF-P-CRW-001", body: fillTemplate("edit-notes", { Story: "- [x] Story locked" }) }]);
   mkDoc("DOF-SER-001-S1-E02", "concept", "Idea", []);
   mkDoc("DOF-SER-001-S1-E02", "script", "Scripting", [{ daysAgo: 6, by: "DOF-P-CRW-002" }]);
-  mkDoc("DOF-LIVE-001-D1", "run-of-show", "Scripting", [{ daysAgo: 4, by: "DOF-P-CRW-003" }]);
-  mkDoc("DOF-LIVE-002-D1", "run-of-show", "Scripting", []);
-  mkDoc("DOF-LIVE-002-D2", "run-of-show", "Scripting", []);
+  mkDoc("DOF-LIVE-001-D1", "run-of-show", "Prep", [{ daysAgo: 4, by: "DOF-P-CRW-003" }]);
+  mkDoc("DOF-LIVE-002-D1", "run-of-show", "Prep", []);
+  mkDoc("DOF-LIVE-002-D2", "run-of-show", "Prep", []);
   mkDoc("DOF-DEV-001", "concept", "Idea", []);
   mkDoc("DOF-DEV-001", "script", "Scripting", []);
   mkDoc("DOF-DOC-001", "research", "Research", [{ daysAgo: 12, by: "DOF-P-CRW-002" }]);
@@ -289,7 +303,7 @@ export function buildSeed(): Database {
     docRevisions,
     outbox: [],
     ...gear,
-    settings: { stageReminderHours: 24, storageWarningThreshold: 85, checkoutReturnDays: 3, workDays: [1, 2, 3, 4, 5], effortOverrides: {}, appearance: { accent: "terracotta", fontPairing: "modern" } },
+    settings: { stageReminderHours: 24, storageWarningThreshold: 85, checkoutReturnDays: 3, workDays: [1, 2, 3, 4, 5], effortOverrides: {} },
     counters: { audit: 0, comment: 1, callsheet: 2, task: 6, link: 1, featured: 5, runitem: 5, doc: docN, docrev: revN, ...gear.counters },
   };
 }

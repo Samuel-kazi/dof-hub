@@ -48,7 +48,7 @@ t("crew can see completed projects too", () => {
 });
 t("crew can jump in: adding themselves to a project they are not on makes them part of it", () => {
   assert.equal(getDb().members.some((m) => m.personId === "DOF-P-CRW-002" && m.projectContentId === "DOF-LIVE-001"), false);
-  C.addStageOwner(crew2(), "DOF-LIVE-001-D1", "Streaming", "DOF-P-CRW-002", ["Camera operator"]);
+  C.addStageOwner(crew2(), "DOF-LIVE-001-D1", "Show", "DOF-P-CRW-002", ["Camera operator"]);
   assert.ok(getDb().members.some((m) => m.personId === "DOF-P-CRW-002" && m.projectContentId === "DOF-LIVE-001"));
   assert.equal(canWrite(crew2(), rec("DOF-LIVE-001-D1")), true);
   C.addTask(crew2(), "DOF-LIVE-001-D1", { label: "Extra camera check" });
@@ -58,7 +58,7 @@ t("crew can jump in on a whole project, and on a completed one", () => {
   assert.equal(canWrite(crew2(), rec("DOF-LIVE-002")), true);
 });
 t("crew still cannot put other people on a project they are not attached to", () => {
-  throwsRule(() => C.addStageOwner(crew2(), "DOF-LIVE-001-D1", "Streaming", "DOF-P-CRW-001", []), /view-only|change other people's work/);
+  throwsRule(() => C.addStageOwner(crew2(), "DOF-LIVE-001-D1", "Show", "DOF-P-CRW-001", []), /view-only|change other people's work/);
 });
 t("taking away 'see every project' sends crew back to their own projects", () => {
   P.setRoleGrant(hop(), "CRW", "pipeline.viewAll", false);

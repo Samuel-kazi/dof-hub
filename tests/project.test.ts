@@ -78,7 +78,7 @@ t("a five day show becomes five days, each its own item", () => {
   const days = C.getChildren(show.contentId);
   assert.deepEqual(days.map((d) => d.contentId), [1, 2, 3, 4, 5].map((n) => `${show.contentId}-D${n}`));
   assert.deepEqual(days.map((d) => d.scheduledDate), [40, 41, 42, 43, 44].map(isoDay));
-  assert.ok(days.every((d) => d.pipelineStage === "Idea" && d.productionLevel === "medium" && d.title.startsWith("Day ")));
+  assert.ok(days.every((d) => d.pipelineStage === "Prep" && d.productionLevel === "medium" && d.title.startsWith("Day ")));
   assert.equal(show.pipelineStage, null, "the show itself has no pipeline");
   assert.equal(C.getRollupStatus(show.contentId).total, 5);
 });
@@ -242,4 +242,83 @@ t("a production unit is in progress if any of its days is, even once collapsed",
   const units = C.productionUnits(leaves);
   const show = units.find((u) => u.id === "DOF-LIVE-002")!;
   assert.ok(show.leaves.length > 1 && show.leaves.some((l) => !C.isComplete(l)), "the show counts as in production while any of its days is unfinished");
+});
+
+// ── Live day: Prep → Build → Rehearse → Show → Wrap → Review → Post Production ──
+function pushToStage(actor: ReturnType<typeof login>, id: string, target: string) {
+  let r = getRecord(id)!;
+  while (r.pipelineStage !== target) {
+    for (const t of r.tasks.filter((t) => t.stage === r.pipelineStage)) C.updateTask(actor, id, t.id, { done: true });
+    C.setStageOutput(actor, id, true, r.version);
+    r = getRecord(id)!;
+    C.advanceStage(actor, id, r.version);
+    r = getRecord(id)!;
+  }
+  return r;
+}
+
+t("Wrap pulls the show's nightly strike list every day, and adds the final list only on the last day", () => {
+  const actor = login("hop@dof.demo", "demo");
+  // DOF-LIVE-002 is seeded "continuous": daily = light security checks, final = the full rig
+  const d1 = pushToStage(actor, "DOF-LIVE-002-D1", "Wrap");
+  const d1Tasks = d1.tasks.filter((t) => t.stage === "Wrap").map((t) => t.label);
+  assert.ok(d1Tasks.includes("Cover cameras and lenses"), "day 1 gets the nightly list");
+  assert.ok(!d1Tasks.includes("Full rig: trusses, screens, staging"), "day 1 does not strike the full rig");
+  const d5 = pushToStage(actor, "DOF-LIVE-002-D5", "Wrap");
+  const d5Tasks = d5.tasks.filter((t) => t.stage === "Wrap").map((t) => t.label);
+  assert.ok(d5Tasks.includes("Cover cameras and lenses") && d5Tasks.includes("Full rig: trusses, screens, staging"), "the last day gets both lists");
+});
+
+t("a live day with no strike checklist set gets no Wrap tasks, and does not block on an empty checklist", () => {
+  const actor = login("hop@dof.demo", "demo");
+  const show = C.createRecord(actor, { category: "live", title: "No checklist yet" });
+  const day = getRecord(`${show.contentId}-D1`)!;
+  const atWrap = pushToStage(actor, day.contentId, "Wrap");
+  assert.equal(atWrap.tasks.filter((t) => t.stage === "Wrap").length, 0);
+  assert.deepEqual(C.openTasks(atWrap), []);
+});
+
+t("Post Production asks whether anything was recorded, and blocks being marked done until answered", () => {
+  const actor = login("hop@dof.demo", "demo");
+  const day = pushToStage(actor, "DOF-LIVE-001-D1", "Post Production");
+  assert.equal(day.postProductionNeeded, null);
+  throwsRule(() => C.setStageOutput(actor, day.contentId, true, day.version), /whether anything recorded/);
+});
+
+t("saying yes requires an actual split before the day can be marked done; saying no does not", () => {
+  const actor = login("hop@dof.demo", "demo");
+  const yes = pushToStage(actor, "DOF-LIVE-001-D1", "Post Production");
+  C.setPostProductionNeeded(actor, yes.contentId, true);
+  const afterYes = getRecord(yes.contentId)!;
+  throwsRule(() => C.setStageOutput(actor, yes.contentId, true, afterYes.version), /Attach the recording/);
+  const made = C.splitRecording(actor, yes.contentId, { destCategory: "series", parentId: "DOF-SER-001-S1", title: "Sunday message" });
+  assert.equal(made.spunOffFrom, yes.contentId);
+  assert.equal(made.pipelineStage, "Editorial", "a sermon starts at Editorial, skipping the stages that assume no footage");
+  assert.deepEqual(C.spinOffsOf(yes.contentId).map((r) => r.contentId), [made.contentId]);
+  const afterSplit = getRecord(yes.contentId)!;
+  C.setStageOutput(actor, yes.contentId, true, afterSplit.version); // now allowed
+  assert.equal(C.isComplete(getRecord(yes.contentId)!), true);
+
+  const no = pushToStage(actor, "DOF-LIVE-002-D2", "Post Production");
+  C.setPostProductionNeeded(actor, no.contentId, false);
+  const afterNo = getRecord(no.contentId)!;
+  C.setStageOutput(actor, no.contentId, true, afterNo.version); // allowed straight away
+  assert.equal(C.isComplete(getRecord(no.contentId)!), true);
+});
+
+t("a recording split into Music starts at Audio post-production, skipping Recording", () => {
+  const actor = login("hop@dof.demo", "demo");
+  const day = pushToStage(actor, "DOF-LIVE-002-D3", "Post Production");
+  C.setPostProductionNeeded(actor, day.contentId, true);
+  const album = getDb().records.find((r) => r.category === "music" && r.hierarchyLevel === 1)!;
+  const made = C.splitRecording(actor, day.contentId, { destCategory: "music", parentId: album.contentId, title: "Live worship medley" });
+  assert.equal(made.pipelineStage, "Audio post-production");
+  assert.equal(made.category, "music");
+});
+
+t("splitting off a recording needs write access to both the live day and the destination", () => {
+  const actor = login("hop@dof.demo", "demo");
+  const day = pushToStage(actor, "DOF-LIVE-001-D1", "Post Production");
+  const vol = login("volunteer1@dof.demo", "demo");
+  throwsRule(() => C.splitRecording(vol, day.contentId, { destCategory: "series", parentId: "DOF-SER-001-S1", title: "x" }));
 });

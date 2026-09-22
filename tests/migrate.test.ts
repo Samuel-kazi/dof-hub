@@ -47,15 +47,28 @@ old.settings = { stageReminderHours: 24, storageWarningThreshold: 85, checkoutRe
 old.schemaVersion = from === "5" ? 5 : 4;
 
 // Before version 8 a unit had no label of its own.
-if (from === "7") {
-  old.schemaVersion = 7;
+if (from === "7" || from === "8") {
+  old.schemaVersion = from === "8" ? 8 : 7;
   old.settings = { ...(old.settings as Rec), workDays: [1, 2, 3, 4, 5], effortOverrides: {} };
-  for (const e of old.equipment as Rec[]) delete e.unitLabel;
+  if (from === "7") for (const e of old.equipment as Rec[]) delete e.unitLabel;
 }
-// Before version 9 there was no accent/font/density/photo personalisation.
+
+// Before version 9 a live show had 5 stages (Idea, Scripting, Streaming, Review, Post Production), no strike
+// checklist, and nothing linking a Music track or Series episode back to the live day it was recorded on.
 if (from === "8") {
   old.schemaVersion = 8;
-  old.settings = { ...(old.settings as Rec), workDays: [1, 2, 3, 4, 5], effortOverrides: {} };
+  const DOWN: Record<string, string> = { Prep: "Idea", Build: "Scripting", Show: "Streaming" };
+  for (const r of old.records as Rec[]) {
+    delete r.spunOffFrom; delete r.postProductionNeeded; delete r.strikePattern; delete r.strikeChecklist;
+    if (r.category !== "live" || !r.pipelineStage) continue;
+    if (r.pipelineStage in DOWN) r.pipelineStage = DOWN[r.pipelineStage as string];
+    for (const dict of [r.stageOutputs, r.stageDeadlines] as Record<string, unknown>[]) {
+      for (const [to, from2] of Object.entries(DOWN)) if (to in dict) { dict[from2] = dict[to]; delete dict[to]; }
+      delete dict.Wrap;
+    }
+    for (const t of r.tasks as Rec[]) if (t.stage in DOWN) t.stage = DOWN[t.stage as string];
+    for (const [to, from2] of Object.entries(DOWN)) if (to in (r.stageAssignees as Rec)) { (r.stageAssignees as Rec)[from2] = (r.stageAssignees as Rec)[to]; delete (r.stageAssignees as Rec)[to]; }
+  }
 }
 
 if (from === "1" || from === "2") {
@@ -90,8 +103,6 @@ const db = getDb();
 assert.equal(db.schemaVersion, 9);
 assert.deepEqual(db.outbox, [], "the record of sent reminders exists");
 assert.ok(db.equipment.every((e) => e.unitLabel === null || typeof e.unitLabel === "string"), "every unit has a label field, even if blank");
-assert.ok(db.settings.appearance && db.settings.appearance.accent === "terracotta" && db.settings.appearance.fontPairing === "modern", "workspace appearance defaults to terracotta and the modern font pairing");
-assert.ok(db.people.every((p) => p.fontSize === "default" && p.density === "comfortable" && p.photoUrl === null), "every person has personalisation defaults");
 assert.equal(db.records[0].title, "Edited before the upgrade", "earlier edits survive");
 assert.ok(db.equipment.length > 10 && db.drives.length === 9, "gear and drives exist");
 if (from === "1" || from === "2") {
@@ -119,7 +130,11 @@ const liveShow = db.records.find((r) => r.contentId === "DOF-LIVE-001")!;
 const liveDay = db.records.find((r) => r.contentId === "DOF-LIVE-001-D1")!;
 assert.equal(liveShow.pipelineStage, null, "the show itself has no pipeline");
 assert.equal(liveDay.hierarchyLevel, 1); assert.equal(liveDay.parentId, "DOF-LIVE-001");
-assert.equal(liveDay.pipelineStage, "Streaming"); if (from === "4" || from === "5") assert.equal(liveDay.productionLevel, "large", "the level moves to the day");
+assert.equal(liveDay.pipelineStage, "Show"); if (from === "4" || from === "5") assert.equal(liveDay.productionLevel, "large", "the level moves to the day");
+assert.equal(liveDay.postProductionNeeded, null, "the post-production question is unanswered on old data");
+assert.equal(liveDay.spunOffFrom, null);
+assert.ok("Wrap" in liveDay.stageOutputs && liveDay.stageOutputs.Wrap === false, "the new Wrap stage exists, not yet confirmed");
+if (from === "8") { assert.equal(liveShow.strikePattern, null); assert.equal(liveShow.strikeChecklist, null); }
 assert.equal(liveDay.assigneePersonId, "DOF-P-CRW-003");
 assert.ok(liveShow.showStart && liveShow.showStart === liveShow.showEnd, "show dates come from the single day");
 assert.ok(db.callSheets.some((c) => c.linkedEpisodeIds.includes("DOF-LIVE-001-D1")), "call sheet follows the day");

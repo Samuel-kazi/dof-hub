@@ -17,9 +17,6 @@ export interface CategoryConfig {
   label: string;
   singular: string;
   code: string; // used in Content IDs: DOF-SER-001
-  // The one place this category's colour is defined. Every view that renders a category (Kanban
-  // cards, the calendar, dashboard charts) reads it from here rather than choosing its own.
-  color: string;
   supportsChildren: boolean;
   childLevelLabel: string | null; // "Season", "Album"
   grandchildLevelLabel: string | null; // "Episode", "Track"
@@ -43,7 +40,6 @@ export const CATEGORIES: CategoryConfig[] = [
     label: "Series",
     singular: "Series",
     code: "SER",
-    color: "#e8703a",
     supportsChildren: true,
     childLevelLabel: "Season",
     grandchildLevelLabel: "Episode",
@@ -67,7 +63,6 @@ export const CATEGORIES: CategoryConfig[] = [
     label: "Devotionals",
     singular: "Devotional",
     code: "DEV",
-    color: "#7fbf95",
     supportsChildren: false,
     childLevelLabel: null,
     grandchildLevelLabel: null,
@@ -89,7 +84,6 @@ export const CATEGORIES: CategoryConfig[] = [
     label: "Live Shows",
     singular: "Live show",
     code: "LIVE",
-    color: "#f3b943",
     supportsChildren: true,
     childLevelLabel: "Day",
     grandchildLevelLabel: "Day",
@@ -97,13 +91,15 @@ export const CATEGORIES: CategoryConfig[] = [
     grandchildToken: "D",
     // A show can run for one day or several. Each day is its own item with its own pipeline, call sheet and run of show.
     stages: [
-      s("Idea", "Approved run of show"),
-      s("Scripting", "Locked script or run of show", { docs: ["run-of-show"] }),
-      s("Streaming", "Stream completed"),
+      s("Prep", "Gear tested and packed", { docs: ["run-of-show"] }),
+      s("Build", "Rig built and safety-checked"),
+      s("Rehearse", "Camera, audio and stream checks passed"),
+      s("Show", "Stream completed"),
+      s("Wrap", "Strike checklist complete"),
       s("Review", "Stream review notes"),
       s("Post Production", "Archive and clips exported", { docs: ["analysis"] }),
     ],
-    footageStage: "Streaming",
+    footageStage: "Show",
     leafLevel: 1,
   },
   {
@@ -111,7 +107,6 @@ export const CATEGORIES: CategoryConfig[] = [
     label: "Documentaries",
     singular: "Documentary",
     code: "DOC",
-    color: "#8f9fdc",
     supportsChildren: false,
     childLevelLabel: null,
     grandchildLevelLabel: null,
@@ -135,7 +130,6 @@ export const CATEGORIES: CategoryConfig[] = [
     label: "DOF Music",
     singular: "Music project",
     code: "MUS",
-    color: "#d58fb8",
     supportsChildren: true,
     childLevelLabel: "Album",
     grandchildLevelLabel: "Track",
@@ -170,9 +164,6 @@ export const leafLabel = (key: CategoryKey): string => {
 
 /** The shoot date is a show date for live days, which are streamed rather than shot. */
 export const shootDateLabel = (key: CategoryKey): string => (key === "live" ? "Show date" : "Shoot date");
-
-/** The single source of truth for a category's colour. No view should hardcode or pick its own. */
-export const categoryColor = (key: CategoryKey): string => categoryOf(key).color;
 
 export const finalStageOf = (key: CategoryKey): StageDef => {
   const st = categoryOf(key).stages;

@@ -170,16 +170,25 @@ export function upgradeToV8(db: Database): Database {
   return db;
 }
 
-/**
- * Version 9: personalisation. A workspace-wide accent colour and font pairing, set by the Head of
- * Production, plus per-person font size, density and profile photo.
- */
+/** Version 9: the live-show pipeline gets more stages (Prep, Build, Rehearse, Show, Wrap, Review, Post Production),
+ *  a per-show strike checklist, a yes/no on whether a day needs post-production, and a link from a Music track
+ *  or Series episode back to the live day it was recorded on. */
 export function upgradeToV9(db: Database): Database {
-  db.settings.appearance ??= { accent: "terracotta", fontPairing: "modern" };
-  for (const p of db.people) {
-    p.photoUrl ??= null;
-    p.fontSize ??= "default";
-    p.density ??= "comfortable";
+  const RENAME: Record<string, string> = { Idea: "Prep", Scripting: "Build", Streaming: "Show" };
+  const NEW_STAGES = ["Prep", "Build", "Rehearse", "Show", "Wrap", "Review", "Post Production"];
+  for (const r of db.records) {
+    (r as { spunOffFrom?: string | null }).spunOffFrom ??= null;
+    (r as { postProductionNeeded?: boolean | null }).postProductionNeeded ??= null;
+    (r as { strikePattern?: string | null }).strikePattern ??= null;
+    (r as { strikeChecklist?: unknown }).strikeChecklist ??= null;
+    if (r.category !== "live" || !r.pipelineStage) continue;
+    if (r.pipelineStage in RENAME) r.pipelineStage = RENAME[r.pipelineStage];
+    for (const dict of [r.stageOutputs, r.stageDeadlines] as Record<string, unknown>[]) {
+      for (const [from, to] of Object.entries(RENAME)) if (from in dict) { dict[to] = dict[from]; delete dict[from]; }
+      for (const s of NEW_STAGES) if (!(s in dict)) dict[s] = dict === r.stageOutputs ? false : null;
+    }
+    for (const t of r.tasks) if (t.stage in RENAME) t.stage = RENAME[t.stage];
+    for (const [from, to] of Object.entries(RENAME)) if (from in r.stageAssignees) { r.stageAssignees[to] = r.stageAssignees[from]; delete r.stageAssignees[from]; }
   }
   db.schemaVersion = 9;
   return db;

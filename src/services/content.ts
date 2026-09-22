@@ -197,6 +197,10 @@ function blankRecord(id: string, category: CategoryKey, title: string, parentId:
     featured: [],
     showStart: null,
     showEnd: null,
+    spunOffFrom: null,
+    postProductionNeeded: null,
+    strikePattern: null,
+    strikeChecklist: null,
     archived: false,
     version: 1,
     createdAt: new Date().toISOString(),
@@ -204,9 +208,9 @@ function blankRecord(id: string, category: CategoryKey, title: string, parentId:
   };
 }
 
-function initPipeline(actor: Actor, r: ContentRecord, stepDays = 4): void {
+function initPipeline(actor: Actor, r: ContentRecord, stepDays = 4, startStage?: string): void {
   const stages = categoryOf(r.category).stages;
-  r.pipelineStage = stages[0].name;
+  r.pipelineStage = startStage ?? stages[0].name;
   r.stageOutputs = Object.fromEntries(stages.map((s) => [s.name, false]));
   const base = new Date();
   r.stageDeadlines = Object.fromEntries(
@@ -220,11 +224,21 @@ function initPipeline(actor: Actor, r: ContentRecord, stepDays = 4): void {
   attachStageDocs(actor, r, r.pipelineStage);
 }
 
+/** What a live day's Wrap checklist should contain: what comes down every night, plus, on the show's last day, what stays rigged until then. */
+function wrapTasksFor(r: ContentRecord): string[] {
+  if (r.category !== "live") return [];
+  const show = r.parentId ? getRecord(r.parentId) : null;
+  if (!show?.strikeChecklist) return [];
+  const isLastDay = !show.showEnd || r.scheduledDate === show.showEnd;
+  return isLastDay ? [...show.strikeChecklist.daily, ...show.strikeChecklist.final] : show.strikeChecklist.daily;
+}
+
 /** Creates the default checklist for a stage the first time an item enters it. */
 export function ensureStageTasks(r: ContentRecord, stage: string): void {
   if (r.tasks.some((t) => t.stage === stage)) return;
   const def = categoryOf(r.category).stages.find((x) => x.name === stage);
-  for (const label of def?.tasks ?? []) {
+  const labels = stage === "Wrap" ? wrapTasksFor(r) : (def?.tasks ?? []);
+  for (const label of labels) {
     r.tasks.push({ id: `T-${pad(nextCounter("task"), 4)}`, stage, label, done: false, dueDate: r.stageDeadlines[stage] ?? null, assigneePersonId: null, doneAt: null, doneBy: null });
   }
 }
@@ -319,6 +333,57 @@ export function createChildRecord(actor: Actor, parentId: string, input: Omit<Ne
   return r;
 }
 
+// A recording made on a live day, spun off into its own item. It starts past the stages that assume
+// there is no footage yet, since the footage already exists — it lands where editing begins.
+const SPIN_OFF_START_STAGE: Record<"music" | "series", string> = { music: "Audio post-production", series: "Editorial" };
+export const spinOffCategories: ("music" | "series")[] = ["music", "series"];
+
+export interface SplitInput { destCategory: "music" | "series"; parentId: string; title: string }
+
+/** Splits a recording made on a live day into its own Music track or Series episode, already past Recording. */
+export function splitRecording(actor: Actor, dayId: string, input: SplitInput): ContentRecord {
+  const day = getRecord(dayId);
+  if (!day) throw new RuleError("Live day not found.");
+  if (day.category !== "live" || !usesPipeline(day)) throw new RuleError("Only a live day's recording can be split off like this.");
+  if (!canWrite(actor, day)) throw new RuleError("You are not assigned to this project.");
+  if (!spinOffCategories.includes(input.destCategory)) throw new RuleError("Choose Music or Series.");
+  const parent = getRecord(input.parentId);
+  if (!parent || parent.category !== input.destCategory) throw new RuleError(`Choose an ${categoryOf(input.destCategory).childLevelLabel?.toLowerCase()} to put it in.`);
+  if (!canWrite(actor, parent)) throw new RuleError("You are not assigned to that project.");
+  if (!input.title.trim()) throw new RuleError(`Give the ${categoryOf(input.destCategory).grandchildLevelLabel?.toLowerCase()} a title.`);
+  const r = blankRecord(nextChildId(parent), input.destCategory, input.title.trim(), parent.contentId, parent.hierarchyLevel + 1);
+  r.scheduledDate = day.scheduledDate;
+  r.spunOffFrom = day.contentId;
+  r.notes = `Recorded live on ${day.title} (${day.contentId}).`;
+  initPipeline(actor, r, 4, SPIN_OFF_START_STAGE[input.destCategory]);
+  getDb().records.push(r);
+  logAudit(actor, "create", "record", r.contentId, `${categoryOf(input.destCategory).grandchildLevelLabel}: ${r.title}, split from ${day.contentId}`);
+  commit();
+  return r;
+}
+
+/** Every Music track or Series episode that was split off from this live day. */
+export function spinOffsOf(dayId: string): ContentRecord[] {
+  return getDb().records.filter((r) => r.spunOffFrom === dayId);
+}
+
+/** The show's strike plan: what comes down every night, and what stays rigged until the last day. Live shows only. */
+export function setStrikePlan(actor: Actor, id: string, pattern: "daily" | "continuous", daily: string[], final: string[], expectedVersion?: number): ContentRecord {
+  const r = loadForWrite(actor, id, expectedVersion);
+  if (r.category !== "live" || r.hierarchyLevel !== 0) throw new RuleError("Only a live show itself has a strike plan.");
+  const clean = (list: string[]) => list.map((s) => s.trim()).filter(Boolean);
+  r.strikePattern = pattern;
+  r.strikeChecklist = { daily: clean(daily), final: clean(final) };
+  // Any day already at or past Wrap keeps its checklist as it was when it entered; only days that have not reached Wrap yet pick up the change.
+  for (const day of getChildren(id)) {
+    if (day.pipelineStage === "Wrap" && !day.tasks.some((t) => t.stage === "Wrap")) ensureStageTasks(day, "Wrap");
+  }
+  r.version += 1;
+  logAudit(actor, "update", "record", id, "Strike plan");
+  commit();
+  return r;
+}
+
 function loadForWrite(actor: Actor, id: string, expectedVersion?: number): ContentRecord {
   const r = getRecord(id);
   if (!r) throw new RuleError("Record not found.");
@@ -367,9 +432,27 @@ export function setStageDeadline(actor: Actor, id: string, stage: string, date: 
 }
 
 /** Mark the current stage's required output as present (or not). */
+/** Live days only: was anything recorded on this day that needs post-production? Must be answered before Post Production can be confirmed done. */
+export function setPostProductionNeeded(actor: Actor, id: string, needed: boolean, expectedVersion?: number): ContentRecord {
+  const r = loadForWrite(actor, id, expectedVersion);
+  if (r.category !== "live") throw new RuleError("Only live days ask this.");
+  r.postProductionNeeded = needed;
+  r.stageOutputs["Post Production"] = false; // re-confirm after answering (or changing the answer)
+  r.version += 1;
+  logAudit(actor, "output-cleared", "record", id, `Post-production needed: ${needed ? "yes" : "no"}`);
+  commit();
+  return r;
+}
+
 export function setStageOutput(actor: Actor, id: string, present: boolean, expectedVersion?: number): void {
   const r = loadForWrite(actor, id, expectedVersion);
   if (!r.pipelineStage) throw new RuleError("This record has no pipeline.");
+  if (present && r.category === "live" && r.pipelineStage === "Post Production") {
+    if (r.postProductionNeeded === null) throw new RuleError("First say whether anything recorded on this day needs post-production.");
+    if (r.postProductionNeeded && !getDb().records.some((x) => x.spunOffFrom === r.contentId)) {
+      throw new RuleError("Attach the recording that needs post-production first (split it into a Music track or Series episode), or say that nothing was recorded.");
+    }
+  }
   r.stageOutputs[r.pipelineStage] = present;
   r.version += 1;
   logAudit(actor, present ? "output-confirmed" : "output-cleared", "record", id, `${r.pipelineStage}: ${categoryOf(r.category).stages.find((s) => s.name === r.pipelineStage)?.requiredOutput}`);

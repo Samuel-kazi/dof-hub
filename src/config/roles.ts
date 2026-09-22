@@ -4,7 +4,6 @@ export type ModuleKey =
   | "dashboard"
   | "pipeline"
   | "callsheets"
-  | "calendar"
   | "equipment"
   | "storage"
   | "crew"
@@ -65,7 +64,6 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
   dashboard: "Dashboard",
   pipeline: "Content Pipeline",
   callsheets: "Call Sheets",
-  calendar: "Calendar",
   equipment: "Equipment",
   storage: "Storage & Media",
   crew: "Crew",

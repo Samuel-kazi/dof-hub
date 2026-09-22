@@ -275,13 +275,15 @@ var CATEGORIES = [
     grandchildToken: "D",
     // A show can run for one day or several. Each day is its own item with its own pipeline, call sheet and run of show.
     stages: [
-      s("Idea", "Approved run of show"),
-      s("Scripting", "Locked script or run of show", { docs: ["run-of-show"] }),
-      s("Streaming", "Stream completed"),
+      s("Prep", "Gear tested and packed", { docs: ["run-of-show"] }),
+      s("Build", "Rig built and safety-checked"),
+      s("Rehearse", "Camera, audio and stream checks passed"),
+      s("Show", "Stream completed"),
+      s("Wrap", "Strike checklist complete"),
       s("Review", "Stream review notes"),
       s("Post Production", "Archive and clips exported", { docs: ["analysis"] })
     ],
-    footageStage: "Streaming",
+    footageStage: "Show",
     leafLevel: 1
   },
   {
@@ -770,6 +772,10 @@ var rec = (i) => ({
   featured: [],
   showStart: i.show ? isoDay(i.show[0]) : null,
   showEnd: i.show ? isoDay(i.show[1]) : null,
+  spunOffFrom: null,
+  postProductionNeeded: null,
+  strikePattern: i.strikePattern ?? null,
+  strikeChecklist: i.strikeChecklist ?? null,
   archived: false,
   version: 1,
   createdAt: isoDay(-30),
@@ -809,15 +815,35 @@ function buildSeed() {
     rec({ contentId: "DOF-SER-001-S1-E03", title: "Why wait?", category: "series", parentId: "DOF-SER-001-S1", level: 2, stage: "Recording", stageOffset: 2, scheduled: 2, deadline: 26, assignee: "DOF-P-CRW-003" }),
     rec({ contentId: "DOF-SER-001-S1-E04", title: "Why forgive?", category: "series", parentId: "DOF-SER-001-S1", level: 2, stage: "Scripting", stageOffset: 5, scheduled: 9, deadline: 32, assignee: "DOF-P-CRW-001" }),
     // Flat categories
-    rec({ contentId: "DOF-LIVE-001", title: "Sunday Live Service", category: "live", parentId: null, level: 0, stage: null, show: [1, 1] }),
-    rec({ contentId: "DOF-LIVE-001-D1", title: "Day 1", category: "live", parentId: "DOF-LIVE-001", level: 1, stage: "Streaming", stageOffset: 1, scheduled: 1, deadline: 3, assignee: "DOF-P-CRW-003", prod: "large" }),
+    rec({
+      contentId: "DOF-LIVE-001",
+      title: "Sunday Live Service",
+      category: "live",
+      parentId: null,
+      level: 0,
+      stage: null,
+      show: [1, 1],
+      strikePattern: "daily",
+      strikeChecklist: { daily: ["Cameras and tripods", "Wireless mics and IEMs", "Stage monitors", "Switcher and stream laptop"], final: ["FOH snake and cable runs", "LED screen and truss", "House lighting rig"] }
+    }),
+    rec({ contentId: "DOF-LIVE-001-D1", title: "Day 1", category: "live", parentId: "DOF-LIVE-001", level: 1, stage: "Show", stageOffset: 1, scheduled: 1, deadline: 3, assignee: "DOF-P-CRW-003", prod: "large" }),
     // A five-day conference: every day is its own item with its own level, call sheet and run of show.
-    rec({ contentId: "DOF-LIVE-002", title: "Youth Conference", category: "live", parentId: null, level: 0, stage: null, show: [10, 14] }),
-    rec({ contentId: "DOF-LIVE-002-D1", title: "Day 1", category: "live", parentId: "DOF-LIVE-002", level: 1, stage: "Scripting", stageOffset: 4, scheduled: 10, deadline: 10, prod: "large" }),
-    rec({ contentId: "DOF-LIVE-002-D2", title: "Day 2", category: "live", parentId: "DOF-LIVE-002", level: 1, stage: "Scripting", stageOffset: 5, scheduled: 11, deadline: 11, prod: "medium" }),
-    rec({ contentId: "DOF-LIVE-002-D3", title: "Day 3", category: "live", parentId: "DOF-LIVE-002", level: 1, stage: "Idea", stageOffset: 6, scheduled: 12, deadline: 12, prod: "medium" }),
-    rec({ contentId: "DOF-LIVE-002-D4", title: "Day 4", category: "live", parentId: "DOF-LIVE-002", level: 1, stage: "Idea", stageOffset: 7, scheduled: 13, deadline: 13, prod: "small" }),
-    rec({ contentId: "DOF-LIVE-002-D5", title: "Day 5", category: "live", parentId: "DOF-LIVE-002", level: 1, stage: "Idea", stageOffset: 8, scheduled: 14, deadline: 14, prod: "large" }),
+    rec({
+      contentId: "DOF-LIVE-002",
+      title: "Youth Conference",
+      category: "live",
+      parentId: null,
+      level: 0,
+      stage: null,
+      show: [10, 14],
+      strikePattern: "continuous",
+      strikeChecklist: { daily: ["Cover cameras and lenses", "Lock instrument and mic cases", "Secure loose cabling"], final: ["Full rig: trusses, screens, staging", "FOH desk and snake", "All flight cases packed for return"] }
+    }),
+    rec({ contentId: "DOF-LIVE-002-D1", title: "Day 1", category: "live", parentId: "DOF-LIVE-002", level: 1, stage: "Build", stageOffset: 4, scheduled: 10, deadline: 10, prod: "large" }),
+    rec({ contentId: "DOF-LIVE-002-D2", title: "Day 2", category: "live", parentId: "DOF-LIVE-002", level: 1, stage: "Build", stageOffset: 5, scheduled: 11, deadline: 11, prod: "medium" }),
+    rec({ contentId: "DOF-LIVE-002-D3", title: "Day 3", category: "live", parentId: "DOF-LIVE-002", level: 1, stage: "Prep", stageOffset: 6, scheduled: 12, deadline: 12, prod: "medium" }),
+    rec({ contentId: "DOF-LIVE-002-D4", title: "Day 4", category: "live", parentId: "DOF-LIVE-002", level: 1, stage: "Prep", stageOffset: 7, scheduled: 13, deadline: 13, prod: "small" }),
+    rec({ contentId: "DOF-LIVE-002-D5", title: "Day 5", category: "live", parentId: "DOF-LIVE-002", level: 1, stage: "Prep", stageOffset: 8, scheduled: 14, deadline: 14, prod: "large" }),
     rec({ contentId: "DOF-DOC-001", title: "Samburu Stories", category: "documentary", parentId: null, level: 0, stage: "Ingest", stageOffset: -3, scheduled: -8, deadline: 20, assignee: "DOF-P-CRW-002", notes: "Footage from the field trip still needs checksum verification." }),
     rec({ contentId: "DOF-DEV-001", title: "Morning Light", category: "devotional", parentId: null, level: 0, stage: "Scripting", stageOffset: 0, scheduled: 4, deadline: 10, assignee: "DOF-P-CRW-001" }),
     // Music → Album → Tracks
@@ -899,9 +925,9 @@ function buildSeed() {
   mkDoc("DOF-SER-001-S1-E01", "edit-notes", "Editorial", [{ daysAgo: 1, by: "DOF-P-CRW-001", body: fillTemplate("edit-notes", { Story: "- [x] Story locked" }) }]);
   mkDoc("DOF-SER-001-S1-E02", "concept", "Idea", []);
   mkDoc("DOF-SER-001-S1-E02", "script", "Scripting", [{ daysAgo: 6, by: "DOF-P-CRW-002" }]);
-  mkDoc("DOF-LIVE-001-D1", "run-of-show", "Scripting", [{ daysAgo: 4, by: "DOF-P-CRW-003" }]);
-  mkDoc("DOF-LIVE-002-D1", "run-of-show", "Scripting", []);
-  mkDoc("DOF-LIVE-002-D2", "run-of-show", "Scripting", []);
+  mkDoc("DOF-LIVE-001-D1", "run-of-show", "Prep", [{ daysAgo: 4, by: "DOF-P-CRW-003" }]);
+  mkDoc("DOF-LIVE-002-D1", "run-of-show", "Prep", []);
+  mkDoc("DOF-LIVE-002-D2", "run-of-show", "Prep", []);
   mkDoc("DOF-DEV-001", "concept", "Idea", []);
   mkDoc("DOF-DEV-001", "script", "Scripting", []);
   mkDoc("DOF-DOC-001", "research", "Research", [{ daysAgo: 12, by: "DOF-P-CRW-002" }]);
@@ -1128,10 +1154,36 @@ function upgradeToV8(db2) {
   db2.schemaVersion = 8;
   return db2;
 }
+function upgradeToV9(db2) {
+  const RENAME = { Idea: "Prep", Scripting: "Build", Streaming: "Show" };
+  const NEW_STAGES = ["Prep", "Build", "Rehearse", "Show", "Wrap", "Review", "Post Production"];
+  for (const r of db2.records) {
+    r.spunOffFrom ??= null;
+    r.postProductionNeeded ??= null;
+    r.strikePattern ??= null;
+    r.strikeChecklist ??= null;
+    if (r.category !== "live" || !r.pipelineStage) continue;
+    if (r.pipelineStage in RENAME) r.pipelineStage = RENAME[r.pipelineStage];
+    for (const dict of [r.stageOutputs, r.stageDeadlines]) {
+      for (const [from, to] of Object.entries(RENAME)) if (from in dict) {
+        dict[to] = dict[from];
+        delete dict[from];
+      }
+      for (const s2 of NEW_STAGES) if (!(s2 in dict)) dict[s2] = dict === r.stageOutputs ? false : null;
+    }
+    for (const t2 of r.tasks) if (t2.stage in RENAME) t2.stage = RENAME[t2.stage];
+    for (const [from, to] of Object.entries(RENAME)) if (from in r.stageAssignees) {
+      r.stageAssignees[to] = r.stageAssignees[from];
+      delete r.stageAssignees[from];
+    }
+  }
+  db2.schemaVersion = 9;
+  return db2;
+}
 
 // src/data/store.ts
 var KEY = "dof-hub-db";
-var SCHEMA_VERSION = 8;
+var SCHEMA_VERSION = 9;
 function migrate(old) {
   const gear = buildGearSeed();
   const next = {
@@ -1161,19 +1213,21 @@ function upgradeDb(parsed) {
     case SCHEMA_VERSION:
       return parsed;
     case 1:
-      return upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(migrate(parsed)))))));
+      return upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(migrate(parsed))))))));
     case 2:
-      return upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(parsed))))));
+      return upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(parsed)))))));
     case 3:
-      return upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(parsed)))));
+      return upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(parsed))))));
     case 4:
-      return upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(parsed))));
+      return upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(parsed)))));
     case 5:
-      return upgradeToV8(upgradeToV7(upgradeToV6(parsed)));
+      return upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(parsed))));
     case 6:
-      return upgradeToV8(upgradeToV7(parsed));
+      return upgradeToV9(upgradeToV8(upgradeToV7(parsed)));
     case 7:
-      return upgradeToV8(parsed);
+      return upgradeToV9(upgradeToV8(parsed));
+    case 8:
+      return upgradeToV9(parsed);
     default:
       return null;
   }
@@ -2054,8 +2108,13 @@ __export(content_exports, {
   riskOf: () => riskOf,
   sendBackStage: () => sendBackStage,
   setOwnerRoles: () => setOwnerRoles,
+  setPostProductionNeeded: () => setPostProductionNeeded,
   setStageDeadline: () => setStageDeadline,
   setStageOutput: () => setStageOutput,
+  setStrikePlan: () => setStrikePlan,
+  spinOffCategories: () => spinOffCategories,
+  spinOffsOf: () => spinOffsOf,
+  splitRecording: () => splitRecording,
   tasksOf: () => tasksOf,
   updateFeatured: () => updateFeatured,
   updateRecord: () => updateRecord,
@@ -3268,15 +3327,19 @@ function blankRecord(id, category, title, parentId, level) {
     featured: [],
     showStart: null,
     showEnd: null,
+    spunOffFrom: null,
+    postProductionNeeded: null,
+    strikePattern: null,
+    strikeChecklist: null,
     archived: false,
     version: 1,
     createdAt: (/* @__PURE__ */ new Date()).toISOString(),
     notes: ""
   };
 }
-function initPipeline(actor, r, stepDays = 4) {
+function initPipeline(actor, r, stepDays = 4, startStage) {
   const stages = categoryOf(r.category).stages;
-  r.pipelineStage = stages[0].name;
+  r.pipelineStage = startStage ?? stages[0].name;
   r.stageOutputs = Object.fromEntries(stages.map((s2) => [s2.name, false]));
   const base = /* @__PURE__ */ new Date();
   r.stageDeadlines = Object.fromEntries(
@@ -3289,10 +3352,18 @@ function initPipeline(actor, r, stepDays = 4) {
   ensureStageTasks(r, r.pipelineStage);
   attachStageDocs(actor, r, r.pipelineStage);
 }
+function wrapTasksFor(r) {
+  if (r.category !== "live") return [];
+  const show = r.parentId ? getRecord(r.parentId) : null;
+  if (!show?.strikeChecklist) return [];
+  const isLastDay = !show.showEnd || r.scheduledDate === show.showEnd;
+  return isLastDay ? [...show.strikeChecklist.daily, ...show.strikeChecklist.final] : show.strikeChecklist.daily;
+}
 function ensureStageTasks(r, stage) {
   if (r.tasks.some((t2) => t2.stage === stage)) return;
   const def = categoryOf(r.category).stages.find((x) => x.name === stage);
-  for (const label of def?.tasks ?? []) {
+  const labels = stage === "Wrap" ? wrapTasksFor(r) : def?.tasks ?? [];
+  for (const label of labels) {
     r.tasks.push({ id: `T-${pad(nextCounter("task"), 4)}`, stage, label, done: false, dueDate: r.stageDeadlines[stage] ?? null, assigneePersonId: null, doneAt: null, doneBy: null });
   }
 }
@@ -3377,6 +3448,45 @@ function createChildRecord(actor, parentId, input) {
   commit();
   return r;
 }
+var SPIN_OFF_START_STAGE = { music: "Audio post-production", series: "Editorial" };
+var spinOffCategories = ["music", "series"];
+function splitRecording(actor, dayId, input) {
+  const day = getRecord(dayId);
+  if (!day) throw new RuleError("Live day not found.");
+  if (day.category !== "live" || !usesPipeline(day)) throw new RuleError("Only a live day's recording can be split off like this.");
+  if (!canWrite(actor, day)) throw new RuleError("You are not assigned to this project.");
+  if (!spinOffCategories.includes(input.destCategory)) throw new RuleError("Choose Music or Series.");
+  const parent = getRecord(input.parentId);
+  if (!parent || parent.category !== input.destCategory) throw new RuleError(`Choose an ${categoryOf(input.destCategory).childLevelLabel?.toLowerCase()} to put it in.`);
+  if (!canWrite(actor, parent)) throw new RuleError("You are not assigned to that project.");
+  if (!input.title.trim()) throw new RuleError(`Give the ${categoryOf(input.destCategory).grandchildLevelLabel?.toLowerCase()} a title.`);
+  const r = blankRecord(nextChildId(parent), input.destCategory, input.title.trim(), parent.contentId, parent.hierarchyLevel + 1);
+  r.scheduledDate = day.scheduledDate;
+  r.spunOffFrom = day.contentId;
+  r.notes = `Recorded live on ${day.title} (${day.contentId}).`;
+  initPipeline(actor, r, 4, SPIN_OFF_START_STAGE[input.destCategory]);
+  getDb().records.push(r);
+  logAudit(actor, "create", "record", r.contentId, `${categoryOf(input.destCategory).grandchildLevelLabel}: ${r.title}, split from ${day.contentId}`);
+  commit();
+  return r;
+}
+function spinOffsOf(dayId) {
+  return getDb().records.filter((r) => r.spunOffFrom === dayId);
+}
+function setStrikePlan(actor, id, pattern, daily, final, expectedVersion) {
+  const r = loadForWrite(actor, id, expectedVersion);
+  if (r.category !== "live" || r.hierarchyLevel !== 0) throw new RuleError("Only a live show itself has a strike plan.");
+  const clean = (list) => list.map((s2) => s2.trim()).filter(Boolean);
+  r.strikePattern = pattern;
+  r.strikeChecklist = { daily: clean(daily), final: clean(final) };
+  for (const day of getChildren(id)) {
+    if (day.pipelineStage === "Wrap" && !day.tasks.some((t2) => t2.stage === "Wrap")) ensureStageTasks(day, "Wrap");
+  }
+  r.version += 1;
+  logAudit(actor, "update", "record", id, "Strike plan");
+  commit();
+  return r;
+}
 function loadForWrite(actor, id, expectedVersion) {
   const r = getRecord(id);
   if (!r) throw new RuleError("Record not found.");
@@ -3414,9 +3524,25 @@ function setStageDeadline(actor, id, stage, date, expectedVersion) {
   logAudit(actor, "stage-deadline", "record", id, `${stage} \u2192 ${date}`);
   commit();
 }
+function setPostProductionNeeded(actor, id, needed, expectedVersion) {
+  const r = loadForWrite(actor, id, expectedVersion);
+  if (r.category !== "live") throw new RuleError("Only live days ask this.");
+  r.postProductionNeeded = needed;
+  r.stageOutputs["Post Production"] = false;
+  r.version += 1;
+  logAudit(actor, "output-cleared", "record", id, `Post-production needed: ${needed ? "yes" : "no"}`);
+  commit();
+  return r;
+}
 function setStageOutput(actor, id, present, expectedVersion) {
   const r = loadForWrite(actor, id, expectedVersion);
   if (!r.pipelineStage) throw new RuleError("This record has no pipeline.");
+  if (present && r.category === "live" && r.pipelineStage === "Post Production") {
+    if (r.postProductionNeeded === null) throw new RuleError("First say whether anything recorded on this day needs post-production.");
+    if (r.postProductionNeeded && !getDb().records.some((x) => x.spunOffFrom === r.contentId)) {
+      throw new RuleError("Attach the recording that needs post-production first (split it into a Music track or Series episode), or say that nothing was recorded.");
+    }
+  }
   r.stageOutputs[r.pipelineStage] = present;
   r.version += 1;
   logAudit(actor, present ? "output-confirmed" : "output-cleared", "record", id, `${r.pipelineStage}: ${categoryOf(r.category).stages.find((s2) => s2.name === r.pipelineStage)?.requiredOutput}`);
@@ -4365,8 +4491,11 @@ var RPC_NAMES = {
     "removeTask",
     "sendBackStage",
     "setOwnerRoles",
+    "setPostProductionNeeded",
     "setStageDeadline",
     "setStageOutput",
+    "setStrikePlan",
+    "splitRecording",
     "updateFeatured",
     "updateRecord",
     "updateTask"

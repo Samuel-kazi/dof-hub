@@ -85,8 +85,8 @@ export function effectiveGrants(role: RoleCode, personId: string): Record<Capabi
 
 // ── Modules in the side menu ─────────────────────────────────
 
-const ORDER: ModuleKey[] = ["dashboard", "pipeline", "callsheets", "calendar", "equipment", "storage", "crew", "documents", "reminders", "settings"];
-const MODULE_CAP: Partial<Record<ModuleKey, Capability>> = { equipment: "equipment.use", storage: "storage.use", crew: "people.directory", reminders: "reminders.use", calendar: "reminders.use" };
+const ORDER: ModuleKey[] = ["dashboard", "pipeline", "callsheets", "equipment", "storage", "crew", "documents", "reminders", "settings"];
+const MODULE_CAP: Partial<Record<ModuleKey, Capability>> = { equipment: "equipment.use", storage: "storage.use", crew: "people.directory", reminders: "reminders.use" };
 
 /** The modules a person sees. Those that depend on a permission follow it. */
 export function modulesFor(actor: Actor): ModuleKey[] {
