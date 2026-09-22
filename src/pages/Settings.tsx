@@ -7,18 +7,19 @@ import { getDb, resetDemoData, useDb } from "../data/store";
 import { ROLES } from "../config/roles";
 import { isHop } from "../services/access";
 import { can, customisations } from "../services/wrapped/permissions";
-import { changePassword, updateSettings } from "../services/wrapped/settings";
+import { changePassword, updateSettings, updateWorkspaceAppearance } from "../services/wrapped/settings";
 import { updateOwnProfile } from "../services/wrapped/people";
 import { CATEGORIES } from "../config/categories";
+import { ACCENTS, DENSITIES, FONT_PAIRINGS, FONT_SIZES } from "../config/appearance";
 import { DEFAULT_WORK_DAYS, effortFor, effortKey } from "../config/capacity";
-import type { CategoryKey } from "../types";
+import type { AccentKey, CategoryKey, FontPairingKey } from "../types";
 import { nameOf } from "../services/wrapped/people";
 import { useTheme } from "../ui/theme";
-import { Field } from "../ui/parts";
+import { AvatarUpload, Field } from "../ui/parts";
 import { Empty } from "../ui/parts";
 
 export function Settings() {
-  const { actor, me, attempt, confirm, go } = useApp();
+  const { actor, me, attempt, confirm, go, toast } = useApp();
   const custom = customisations();
   const db = useDb();
   const [current, setCurrent] = useState("");
@@ -32,6 +33,7 @@ export function Settings() {
   const audit = [...getDb().audit].reverse().slice(0, 40);
 
   const { pref, setPref } = useTheme();
+  const appearance = db.settings.appearance ?? { accent: "terracotta" as AccentKey, fontPairing: "modern" as FontPairingKey };
   const [workDays, setWorkDays] = useState<number[]>(db.settings.workDays ?? DEFAULT_WORK_DAYS);
   const [effort, setEffort] = useState<Record<string, string>>({});
   const effortValue = (cat: CategoryKey, stage: string): string => effort[effortKey(cat, stage)] ?? String(effortFor(cat, stage, db.settings.effortOverrides));
@@ -56,26 +58,86 @@ export function Settings() {
       <div><h1>Settings</h1><p className="sub">Your account{sys ? " and system defaults" : ""}.</p></div>
 
       <section className="glass panel">
-        <h2>Appearance</h2>
-        <div className="seg" role="group" aria-label="Theme">
-          {([["dark", "Night"], ["light", "Light"], ["system", "Match my computer"]] as const).map(([k, label]) => <button key={k} className={pref === k ? "on" : ""} onClick={() => setPref(k)}>{label}</button>)}
-        </div>
-        <p className="muted" style={{ marginTop: 10 }}>The moon and sun button at the top switches quickly. Your choice is remembered on this computer.</p>
-      </section>
-
-      <section className="glass panel">
         <h2>Your account</h2>
-        <div className="row" style={{ alignItems: "end" }}>
+        <div className="row" style={{ alignItems: "end", gap: 20 }}>
+          <div style={{ flex: "none" }}>
+            <AvatarUpload person={me} onChange={(photoUrl) => attempt(() => updateOwnProfile(actor, { photoUrl }), "Photo saved")} onError={(msg) => toast(msg, "error")} />
+          </div>
           <Field label="Your name"><input type="text" value={name} onChange={(e) => setName(e.target.value)} /></Field>
           <Field label="Email"><input type="text" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
           <Field label="Phone"><input type="text" value={phone} onChange={(e) => setPhone(e.target.value)} /></Field>
           <div style={{ flex: "none", minWidth: 0 }}><button className="btn primary" disabled={name === me.name && email === me.email && phone === me.phone} onClick={() => attempt(() => updateOwnProfile(actor, { name, email, phone }), "Profile saved")}>Save profile</button></div>
         </div>
+        {me.photoUrl && <button className="btn small ghost" style={{ marginTop: 10 }} onClick={() => attempt(() => updateOwnProfile(actor, { photoUrl: null }), "Photo removed")}>Remove photo</button>}
         <dl className="kv" style={{ marginTop: 14 }}><dt>Person ID</dt><dd className="cid" style={{ fontSize: ".95rem" }}>{me.personId}</dd><dt>Access level</dt><dd>{ROLES[actor.role].label}<span className="muted" style={{ fontSize: ".84rem" }}> (set by the Head of Production)</span></dd></dl>
         <div className="row" style={{ marginTop: 16, alignItems: "end" }}>
           <Field label="Current password"><input type="password" value={current} onChange={(e) => setCurrent(e.target.value)} /></Field>
           <Field label="New password"><input type="password" value={next} onChange={(e) => setNext(e.target.value)} /></Field>
           <div style={{ flex: "none", minWidth: 0 }}><button className="btn primary" onClick={() => { if (attempt(() => changePassword(actor, current, next), "Password changed")) { setCurrent(""); setNext(""); } }}>Change password</button></div>
+        </div>
+      </section>
+
+      <section className="glass panel">
+        <h2>Appearance</h2>
+        <div className="stack" style={{ gap: 20, marginTop: 4 }}>
+          <div>
+            <p className="app-label">Theme</p>
+            <div className="seg" role="group" aria-label="Theme">
+              {([["dark", "Night"], ["light", "Light"], ["system", "Match my computer"]] as const).map(([k, label]) => <button key={k} className={pref === k ? "on" : ""} onClick={() => setPref(k)}>{label}</button>)}
+            </div>
+            <p className="muted" style={{ marginTop: 8, fontSize: ".84rem" }}>The moon and sun button at the top switches quickly. Your choice is remembered on this computer.</p>
+          </div>
+
+          {hop && (
+            <div>
+              <p className="app-label">Accent colour<span className="muted" style={{ fontWeight: 400 }}> — sets the accent for everyone</span></p>
+              <div className="swatch-grid" role="group" aria-label="Accent colour">
+                {ACCENTS.map((a) => (
+                  <button key={a.key} type="button" className={`swatch ${appearance.accent === a.key ? "on" : ""}`} aria-label={a.label} aria-pressed={appearance.accent === a.key} title={a.label} onClick={() => attempt(() => updateWorkspaceAppearance(actor, { accent: a.key }), `Accent set to ${a.label}`)}>
+                    <span className="swatch-dot" style={{ background: a.dark.accent }} />
+                    {a.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {hop && (
+            <div>
+              <p className="app-label">Font pairing<span className="muted" style={{ fontWeight: 400 }}> — sets the typeface for everyone</span></p>
+              <div className="chips" role="group" aria-label="Font pairing">
+                {FONT_PAIRINGS.map((f) => (
+                  <button key={f.key} type="button" className={`chip font-pick ${appearance.fontPairing === f.key ? "on" : ""}`} style={{ fontFamily: f.heading }} onClick={() => attempt(() => updateWorkspaceAppearance(actor, { fontPairing: f.key }), `Font set to ${f.label}`)}>
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div>
+            <p className="app-label">Text size</p>
+            <input
+              type="range"
+              min={0}
+              max={FONT_SIZES.length - 1}
+              step={1}
+              value={FONT_SIZES.findIndex((f) => f.key === (me.fontSize ?? "default"))}
+              onChange={(e) => attempt(() => updateOwnProfile(actor, { fontSize: FONT_SIZES[Number(e.target.value)].key }))}
+              aria-label="Text size"
+              style={{ width: 260 }}
+            />
+            <div className="chips" style={{ marginTop: 4 }}>{FONT_SIZES.map((f) => <span key={f.key} className="muted" style={{ fontSize: ".76rem", width: 60, textAlign: "center" }}>{f.label}</span>)}</div>
+            <p className="app-sample" style={{ fontSize: `${(FONT_SIZES.find((f) => f.key === (me.fontSize ?? "default"))?.scale ?? 1) * 1}rem` }}>The quick brown fox jumps over the lazy dog.</p>
+          </div>
+
+          <div>
+            <p className="app-label">Density</p>
+            <div className="seg" role="group" aria-label="Density">
+              {DENSITIES.map((d) => <button key={d.key} className={(me.density ?? "comfortable") === d.key ? "on" : ""} onClick={() => attempt(() => updateOwnProfile(actor, { density: d.key }))}>{d.label}</button>)}
+            </div>
+            <p className="muted" style={{ marginTop: 8, fontSize: ".84rem" }}>Compact tightens the space around panels, cards and tables. This is just for you.</p>
+          </div>
         </div>
       </section>
 

@@ -71,14 +71,14 @@ t("the calendar file is valid, with an alert on every event", () => {
   assert.ok(ics.includes("DTSTAMP:20300107T090000Z"));
 });
 t("all-day deadlines end the next day, and shoots start at their call time", () => {
-  const ics = icsFor(getPerson(B)!, [{ key: "a", kind: "stage", title: "T", detail: "d", date: "2030-01-31", time: null, contentId: "x", overdue: false }, { key: "b", kind: "shoot", title: "S", detail: "d", date: "2030-02-01", time: "08:30", contentId: "x", overdue: false }], 12);
+  const ics = icsFor(getPerson(B)!, [{ key: "a", kind: "stage", title: "T", detail: "d", date: "2030-01-31", time: null, contentId: "x", category: "series", overdue: false }, { key: "b", kind: "shoot", title: "S", detail: "d", date: "2030-02-01", time: "08:30", contentId: "x", category: "series", overdue: false }], 12);
   assert.ok(ics.includes("DTSTART;VALUE=DATE:20300131\r\nDTEND;VALUE=DATE:20300201"));
   assert.ok(ics.includes("DTSTART:20300201T083000\r\nDURATION:PT8H"));
   assert.ok(ics.includes("TRIGGER:-PT12H"));
 });
 t("commas, semicolons and line breaks are escaped, and each event has its own ID", () => {
-  const ics = icsFor(getPerson(B)!, [{ key: "stage:A-1:Editorial", kind: "stage", title: "One, two; three", detail: "line\nbreak", date: "2030-01-31", time: null, contentId: "x", overdue: false }, { key: "stage:A-2:Editorial", kind: "stage", title: "Two", detail: "d", date: "2030-01-31", time: null, contentId: "x", overdue: false }], 24);
-  assert.ok(ics.includes("SUMMARY:One\\, two\\; three")); assert.ok(ics.includes("DESCRIPTION:line\\nbreak"));
+  const ics = icsFor(getPerson(B)!, [{ key: "stage:A-1:Editorial", kind: "stage", title: "One, two; three", detail: "line\nbreak", date: "2030-01-31", time: null, contentId: "x", category: "series", overdue: false }, { key: "stage:A-2:Editorial", kind: "stage", title: "Two", detail: "d", date: "2030-01-31", time: null, contentId: "x", category: "series", overdue: false }], 24);
+  assert.ok(ics.includes("SUMMARY:▢ One\\, two\\; three")); assert.ok(ics.includes("DESCRIPTION:line\\nbreak"));
   const uids = ics.match(/UID:.+/g)!; assert.equal(new Set(uids).size, 2);
 });
 t("long lines are folded at 75 bytes and unfold to the original", () => {
@@ -90,11 +90,12 @@ t("long lines are folded at 75 bytes and unfold to the original", () => {
   assert.ok(accented.split("\r\n").every((l) => new TextEncoder().encode(l).length <= 75));
 });
 t("the Google Calendar link carries the title, date and details", () => {
-  const link = googleCalendarLink({ key: "k", kind: "stage", title: "Why do we doubt?: Editorial due", detail: "DOF-SER-001-S1-E01.", date: "2030-01-31", time: null, contentId: "x", overdue: false });
+  const link = googleCalendarLink({ key: "k", kind: "stage", title: "Why do we doubt?: Editorial due", detail: "DOF-SER-001-S1-E01.", date: "2030-01-31", time: null, contentId: "x", category: "series", overdue: false });
   const u = new URL(link);
   assert.equal(u.host, "calendar.google.com"); assert.equal(u.searchParams.get("action"), "TEMPLATE");
-  assert.equal(u.searchParams.get("text"), "Why do we doubt?: Editorial due"); assert.equal(u.searchParams.get("dates"), "20300131/20300201");
-  const timed = new URL(googleCalendarLink({ key: "k", kind: "shoot", title: "S", detail: "d", date: "2030-02-01", time: "08:00", contentId: "x", overdue: false }));
+  assert.equal(u.searchParams.get("text"), "▢ Why do we doubt?: Editorial due"); assert.equal(u.searchParams.get("dates"), "20300131/20300201");
+  assert.equal(u.searchParams.get("colorId"), "6", "series gets its own Google colour");
+  const timed = new URL(googleCalendarLink({ key: "k", kind: "shoot", title: "S", detail: "d", date: "2030-02-01", time: "08:00", contentId: "x", category: "series", overdue: false }));
   assert.equal(timed.searchParams.get("dates"), "20300201T080000/20300201T160000");
 });
 

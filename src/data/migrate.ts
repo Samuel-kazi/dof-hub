@@ -169,3 +169,18 @@ export function upgradeToV8(db: Database): Database {
   db.schemaVersion = 8;
   return db;
 }
+
+/**
+ * Version 9: personalisation. A workspace-wide accent colour and font pairing, set by the Head of
+ * Production, plus per-person font size, density and profile photo.
+ */
+export function upgradeToV9(db: Database): Database {
+  db.settings.appearance ??= { accent: "terracotta", fontPairing: "modern" };
+  for (const p of db.people) {
+    p.photoUrl ??= null;
+    p.fontSize ??= "default";
+    p.density ??= "comfortable";
+  }
+  db.schemaVersion = 9;
+  return db;
+}

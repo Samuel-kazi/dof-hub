@@ -289,7 +289,7 @@ export function buildSeed(): Database {
     docRevisions,
     outbox: [],
     ...gear,
-    settings: { stageReminderHours: 24, storageWarningThreshold: 85, checkoutReturnDays: 3, workDays: [1, 2, 3, 4, 5], effortOverrides: {} },
+    settings: { stageReminderHours: 24, storageWarningThreshold: 85, checkoutReturnDays: 3, workDays: [1, 2, 3, 4, 5], effortOverrides: {}, appearance: { accent: "terracotta", fontPairing: "modern" } },
     counters: { audit: 0, comment: 1, callsheet: 2, task: 6, link: 1, featured: 5, runitem: 5, doc: docN, docrev: revN, ...gear.counters },
   };
 }

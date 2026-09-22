@@ -1,7 +1,8 @@
-import type { Actor, OutboxEntry, Person } from "../types";
+import type { Actor, CategoryKey, OutboxEntry, Person } from "../types";
 import { RuleError } from "../types";
 import { commit, getDb, nextCounter } from "../data/store";
 import { categoryOf } from "../config/categories";
+import { getRecord } from "./access";
 import { logAudit } from "./audit";
 import { displayTitle, isComplete, isOwnerNow, ownersOf, usesPipeline } from "./content";
 import { can, requireCan } from "./permissions";
@@ -19,6 +20,7 @@ export interface Reminder {
   date: string; // YYYY-MM-DD
   time: string | null; // HH:MM for shoot days
   contentId: string;
+  category: CategoryKey; // for colouring, matching the calendar's category colours
   overdue: boolean;
 }
 
@@ -36,15 +38,15 @@ export function remindersFor(personId: string, asOf: string = todayIso(), days =
     stages.forEach((s, i) => {
       const due = r.stageDeadlines[s.name];
       const mine = i === idx ? isOwnerNow(r, personId) : ownersOf(r, s.name).some((o) => o.personId === personId);
-      if (i >= idx && due && mine && !r.stageOutputs[s.name]) add({ key: `stage:${r.contentId}:${s.name}`, kind: "stage", title: `${displayTitle(r)}: ${s.name} due`, detail: `${r.contentId}. ${s.requiredOutput}.`, date: due, time: null, contentId: r.contentId });
+      if (i >= idx && due && mine && !r.stageOutputs[s.name]) add({ key: `stage:${r.contentId}:${s.name}`, kind: "stage", title: `${displayTitle(r)}: ${s.name} due`, detail: `${r.contentId}. ${s.requiredOutput}.`, date: due, time: null, contentId: r.contentId, category: r.category });
     });
-    for (const t of r.tasks) if (t.assigneePersonId === personId && !t.done && t.dueDate) add({ key: `task:${t.id}`, kind: "task", title: `${displayTitle(r)}: ${t.label} due`, detail: `${r.contentId}, ${t.stage}.`, date: t.dueDate, time: null, contentId: r.contentId });
+    for (const t of r.tasks) if (t.assigneePersonId === personId && !t.done && t.dueDate) add({ key: `task:${t.id}`, kind: "task", title: `${displayTitle(r)}: ${t.label} due`, detail: `${r.contentId}, ${t.stage}.`, date: t.dueDate, time: null, contentId: r.contentId, category: r.category });
   }
   for (const cs of db.callSheets) {
-    if (cs.crewPersonIds.includes(personId) && cs.date >= asOf) add({ key: `sheet:${cs.id}`, kind: "shoot", title: `Shoot: ${cs.title}`, detail: `${cs.location || "Location to be confirmed"}. Call time ${cs.callTime}.`, date: cs.date, time: cs.callTime, contentId: cs.contentId });
+    if (cs.crewPersonIds.includes(personId) && cs.date >= asOf) add({ key: `sheet:${cs.id}`, kind: "shoot", title: `Shoot: ${cs.title}`, detail: `${cs.location || "Location to be confirmed"}. Call time ${cs.callTime}.`, date: cs.date, time: cs.callTime, contentId: cs.contentId, category: getRecord(cs.contentId)?.category ?? "series" });
   }
   for (const m of db.manifests) {
-    if (m.responsiblePersonId === personId && m.destination === "outside" && m.status === "checked-out" && m.expectedReturn) add({ key: `gear:${m.id}`, kind: "gear", title: `Bring back the gear on ${m.id}`, detail: `${m.contentId}. ${m.lines.length} item${m.lines.length === 1 ? "" : "s"}.`, date: m.expectedReturn, time: null, contentId: m.contentId });
+    if (m.responsiblePersonId === personId && m.destination === "outside" && m.status === "checked-out" && m.expectedReturn) add({ key: `gear:${m.id}`, kind: "gear", title: `Bring back the gear on ${m.id}`, detail: `${m.contentId}. ${m.lines.length} item${m.lines.length === 1 ? "" : "s"}.`, date: m.expectedReturn, time: null, contentId: m.contentId, category: getRecord(m.contentId)?.category ?? "series" });
   }
   return out.sort((a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title));
 }

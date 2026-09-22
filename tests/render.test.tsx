@@ -8,6 +8,7 @@ import { Dashboard } from "../src/pages/Dashboard";
 import { Pipeline } from "../src/pages/Pipeline";
 import { RecordPage } from "../src/pages/RecordPage";
 import { CallSheets, CallSheetPage } from "../src/pages/CallSheets";
+import { CalendarPage } from "../src/pages/Calendar";
 import { Crew, PersonPage } from "../src/pages/Crew";
 import { Settings } from "../src/pages/Settings";
 import { Soon } from "../src/pages/Soon";
@@ -68,6 +69,7 @@ for (const [role, email] of Object.entries(roles)) {
   for (const [scope, params] of [["storage", {}], ["drive", { driveId: "DRV-001" }], ["equipment", {}], ["manifest", { manifestId: "DOF-MF-001" }], ["project", { contentId: "DOF-SER-001" }], ["pipeline", {}], ["workload", {}], ["document", { docId: "DOF-DCS-001" }], ["audit", {}]] as const) render(`${role} report dialog ${scope}`, email, <ReportDialog scope={scope} params={params} onClose={() => {}} />);
   render(`${role} access`, email, <Access />);
   render(`${role} reminders`, email, <Reminders />);
+  render(`${role} calendar`, email, <CalendarPage />);
   for (const id of ["DRV-001", "DRV-006", "DRV-008"]) render(`${role} drive ${id}`, email, <DrivePage id={id} />);
   if (role === "hop" || role === "crew") {
     render(`${role} picker`, email, <GearPicker from="2099-01-01" to="2099-01-02" onConfirm={() => {}} onClose={() => {}} />);

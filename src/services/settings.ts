@@ -2,6 +2,8 @@ import type { Actor, Settings } from "../types";
 import { RuleError } from "../types";
 import { commit, getDb } from "../data/store";
 import { requireCan } from "./permissions";
+import { isHop } from "./access";
+import { ACCENTS, FONT_PAIRINGS } from "../config/appearance";
 import { logAudit } from "./audit";
 
 export function updateSettings(actor: Actor, patch: Partial<Settings>): void {
@@ -25,6 +27,21 @@ export function updateSettings(actor: Actor, patch: Partial<Settings>): void {
   }
   Object.assign(getDb().settings, patch);
   logAudit(actor, "settings", "settings", "system", Object.keys(patch).join(", "));
+  commit();
+}
+
+/**
+ * The workspace's accent colour and font pairing. Unlike the rest of Settings, this is not covered
+ * by the "change system settings" capability: only the Head of Production sets the workspace look,
+ * same as access and permissions.
+ */
+export function updateWorkspaceAppearance(actor: Actor, patch: Partial<NonNullable<Settings["appearance"]>>): void {
+  if (!isHop(actor)) throw new RuleError("Only the Head of Production can change the workspace's accent colour and font.");
+  if (patch.accent !== undefined && !ACCENTS.some((a) => a.key === patch.accent)) throw new RuleError("Choose one of the accent colours offered.");
+  if (patch.fontPairing !== undefined && !FONT_PAIRINGS.some((f) => f.key === patch.fontPairing)) throw new RuleError("Choose one of the font pairings offered.");
+  const db = getDb();
+  db.settings.appearance = { ...(db.settings.appearance ?? { accent: "terracotta", fontPairing: "modern" }), ...patch };
+  logAudit(actor, "settings", "settings", "appearance", Object.keys(patch).join(", "));
   commit();
 }
 

@@ -104,7 +104,8 @@ export const RPC_NAMES: Record<string, string[]> = {
     "logSent"
   ],
   "settings": [
-    "updateSettings"
+    "updateSettings",
+    "updateWorkspaceAppearance"
   ],
   "storage": [
     "addAllocation",
