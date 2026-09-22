@@ -88,3 +88,8 @@ While the consent screen says "Testing", only people you add as test users can l
 - Reminders are still sent by a person pressing a button. Sending on a schedule is not built.
 - Equipment photos are still kept inside the data. Fine for now; a separate file store is the next step before there are many.
 - Everything was tested here with a stand-in database and a stand-in Google. Your real MongoDB is checked by step 3, and Google by trying it once.
+
+
+## Several identical units at once (v6)
+
+Adding equipment now supports several units of the same model in one go — for example three Sony FX6 bodies with different serial numbers. Pick **One or more units**, type the shared details once, then list a serial number for each (type them one by one, or paste a list, one per line). Units that share a make and model group together in the inventory list and on each other's page, so opening one FX6 shows the other two. **Add another** on a group, or **Add another unit** on a single item's page, adds more later with the shared details already filled in.

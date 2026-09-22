@@ -7,7 +7,7 @@ import { EQUIP_CATEGORIES, equipCategory } from "../config/equipment";
 import { Empty, Field } from "../ui/parts";
 import { IconPlus } from "../ui/Icons";
 import {
-  allIncidents, displayStatus, hasGearAccess, groupByFamily, isOverdue, listManifests, manifestStatusView, manifestSummary, projectLabel, qtyAssigned, qtyOut, type Family,
+  allIncidents, displayStatus, hasGearAccess, groupByFamily, groupSerializedByModel, isOverdue, listManifests, manifestStatusView, manifestSummary, projectLabel, qtyAssigned, qtyOut, type Family,
 } from "../services/wrapped/equipment";
 import { getDb } from "../data/store";
 import { nameOf } from "../services/wrapped/people";
@@ -46,7 +46,7 @@ export function Equipment({ tab: initial }: { tab?: Tab }) {
       {tab === "checkouts" && <Checkouts />}
       {tab === "incidents" && <Incidents />}
       {actions.modals}
-      {adding && <ItemFormModal onClose={() => setAdding(false)} onSaved={(i) => { setAdding(false); go({ n: "item", id: i.id }); }} />}
+      {adding && <ItemFormModal onClose={() => setAdding(false)} onSaved={(items) => { setAdding(false); if (items[0]) go({ n: "item", id: items[0].id }); }} />}
       {checkout && <NewCheckoutModal onClose={() => setCheckout(false)} onCreated={(m) => { setCheckout(false); go({ n: "manifest", id: m.id }); }} />}
     </div>
   );
@@ -58,12 +58,17 @@ function Inventory({ actions }: { actions: ReturnType<typeof useItemActions> }) 
   const [cat, setCat] = useState<EquipCategoryKey | "">("");
   const [st, setSt] = useState("");
   const [openFam, setOpenFam] = useState<Set<string>>(new Set());
+  const [openModel, setOpenModel] = useState<Set<string>>(new Set());
   const all = getDb().equipment;
-  const match = (i: EquipmentItem) => (!cat || i.category === cat) && (!st || statusKey(i) === st) && (!q.trim() || `${i.name} ${i.make} ${i.model} ${i.id} ${i.serialNumber ?? ""} ${i.itemFamily ?? ""}`.toLowerCase().includes(q.trim().toLowerCase()));
-  const serialized = all.filter((i) => i.trackingType === "serialized" && match(i));
+  const match = (i: EquipmentItem) => (!cat || i.category === cat) && (!st || statusKey(i) === st) && (!q.trim() || `${i.name} ${i.make} ${i.model} ${i.id} ${i.serialNumber ?? ""} ${i.unitLabel ?? ""} ${i.itemFamily ?? ""}`.toLowerCase().includes(q.trim().toLowerCase()));
+  const serializedAll = all.filter((i) => i.trackingType === "serialized" && match(i));
+  const modelGroups = groupSerializedByModel(serializedAll).filter((g) => g.items.length > 1);
+  const groupedIds = new Set(modelGroups.flatMap((g) => g.items.map((i) => i.id)));
+  const singles = serializedAll.filter((i) => !groupedIds.has(i.id));
   const families = groupByFamily(all).map((f) => ({ ...f, items: f.items.filter(match) })).filter((f) => f.items.length);
   const rows: { key: string; sortName: string; render: () => JSX.Element[] }[] = [
-    ...serialized.map((i) => ({ key: i.id, sortName: i.name, render: () => [itemRow(i)] })),
+    ...singles.map((i) => ({ key: i.id, sortName: i.name, render: () => [itemRow(i)] })),
+    ...modelGroups.map((g) => ({ key: g.key, sortName: g.name, render: () => modelRows(g) })),
     ...families.map((f) => ({ key: f.key, sortName: f.name, render: () => familyRows(f) })),
   ].sort((a, b) => a.sortName.localeCompare(b.sortName));
 
@@ -71,17 +76,42 @@ function Inventory({ actions }: { actions: ReturnType<typeof useItemActions> }) 
     const s = displayStatus(i);
     return <span className={`badge ${s.tone}`}>{s.label}</span>;
   }
-  function itemRow(i: EquipmentItem, sub = false) {
+  function itemRow(i: EquipmentItem, subDetail?: "purchase" | "serial") {
     return (
-      <tr key={i.id} className={`clickable ${sub ? "sub-row" : ""}`} onClick={() => go({ n: "item", id: i.id })} onContextMenu={(e) => menu(e, actions.menuItems(i))}>
+      <tr key={i.id} className={`clickable ${subDetail ? "sub-row" : ""}`} onClick={() => go({ n: "item", id: i.id })} onContextMenu={(e) => menu(e, actions.menuItems(i))}>
         <td><span className="cid">{i.id}</span></td>
-        <td>{sub ? <span className="muted">Bought {i.purchaseDate ? fmtShort(i.purchaseDate) : "unknown"}{i.vendor ? `, ${i.vendor}` : ""}</span> : <><div>{i.name}</div><div className="muted" style={{ fontSize: ".82rem" }}>{[i.make, i.model].filter(Boolean).join(" ")}</div></>}</td>
-        <td>{sub ? "" : equipCategory(i.category).label}</td>
+        <td>
+          {subDetail === "purchase" && <span className="muted">Bought {i.purchaseDate ? fmtShort(i.purchaseDate) : "unknown"}{i.vendor ? `, ${i.vendor}` : ""}</span>}
+          {subDetail === "serial" && <><span>Serial {i.serialNumber}</span>{i.unitLabel && <span className="muted"> · {i.unitLabel}</span>}</>}
+          {!subDetail && <><div>{i.name}</div><div className="muted" style={{ fontSize: ".82rem" }}>{[i.make, i.model].filter(Boolean).join(" ")}{i.trackingType === "serialized" && (i.serialNumber || i.unitLabel) ? ` · ${[i.unitLabel, i.serialNumber ? `Serial ${i.serialNumber}` : null].filter(Boolean).join(", ")}` : ""}</div></>}
+        </td>
+        <td>{subDetail ? "" : equipCategory(i.category).label}</td>
         <td>{i.trackingType === "aggregate" ? `${i.quantityTotal}` : "1"}</td>
         <td>{i.condition}</td>
         <td>{statusBadge(i)}{displayStatus(i).detail && i.trackingType === "aggregate" && <span className="muted" style={{ fontSize: ".8rem", marginLeft: 6 }}>{displayStatus(i).detail}</span>}</td>
       </tr>
     );
+  }
+  function modelRows(g: Family & { items: EquipmentItem[] }) {
+    const open = openModel.has(g.key);
+    const free = g.items.filter((i) => i.baseStatus === "active" && qtyOut(i) === 0 && qtyAssigned(i) === 0).length;
+    const head = (
+      <tr key={g.key} className="clickable fam-row" onClick={() => setOpenModel((s) => { const n = new Set(s); n.has(g.key) ? n.delete(g.key) : n.add(g.key); return n; })}>
+        <td><span className="cid">{g.items.length} units</span></td>
+        <td>
+          <div>{g.name}</div>
+          <div className="muted" style={{ fontSize: ".82rem" }}>
+            {g.items.length} units. Click to {open ? "hide" : "show"} them.{" "}
+            <button type="button" className="link" onClick={(e) => { e.stopPropagation(); actions.setAddUnit(g.items[0]); }}>Add another</button>
+          </div>
+        </td>
+        <td>{equipCategory(g.category).label}</td>
+        <td>{g.items.length}</td>
+        <td>Mixed</td>
+        <td><span className={`badge ${free > 0 ? "ok" : "accent"}`}>{free} of {g.items.length} available</span></td>
+      </tr>
+    );
+    return [head, ...(open ? g.items.map((i) => itemRow(i, "serial")) : [])];
   }
   function familyRows(f: Family & { items: EquipmentItem[] }) {
     const open = openFam.has(f.key);
@@ -97,7 +127,7 @@ function Inventory({ actions }: { actions: ReturnType<typeof useItemActions> }) 
         <td><span className={`badge ${free > 0 ? "ok" : "accent"}`}>{free} of {total} free</span></td>
       </tr>
     );
-    return [head, ...(open ? f.items.map((i) => itemRow(i, true)) : [])];
+    return [head, ...(open ? f.items.map((i) => itemRow(i, "purchase")) : [])];
   }
 
   return (

@@ -162,3 +162,10 @@ export function upgradeToV7(db: Database): Database {
   db.schemaVersion = 7;
   return db;
 }
+
+/** Version 8: a single unit (for example one of several identical cameras) can carry its own label, such as "A-cam". */
+export function upgradeToV8(db: Database): Database {
+  for (const item of db.equipment) (item as { unitLabel?: string | null }).unitLabel ??= null;
+  db.schemaVersion = 8;
+  return db;
+}

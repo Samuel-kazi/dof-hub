@@ -302,6 +302,8 @@ textarea { min-height: 84px; resize: vertical; }
 .thumb-wrap { position: relative; display: inline-block; }
 .thumb { width: 96px; height: 72px; object-fit: cover; border-radius: 9px; border: 1px solid var(--glass-line); cursor: zoom-in; background: var(--inset); display: grid; place-items: center; font-size: .78rem; text-decoration: none; color: var(--gold); }
 .thumb.link { cursor: pointer; }
+button.link { border: 0; background: none; padding: 0; font: inherit; color: var(--accent-hi); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+button.link:hover { color: var(--accent); }
 .thumb-x { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 50%; border: 0; background: var(--bad); color: #fff; cursor: pointer; line-height: 1; }
 
 /* Gear picker */

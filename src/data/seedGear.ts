@@ -23,21 +23,21 @@ export function buildGearSeed(): GearParts {
 
   const serial = (id: string, cat: EquipCategoryKey, name: string, make: string, model: string, sn: string, cost: number, condition: EquipCondition, ageDays: number, extra: Partial<EquipmentItem> = {}) => {
     equipment.push({
-      id, trackingType: "serialized", name, make, model, category: cat, itemFamily: null, serialNumber: sn, quantityTotal: 1, quantityDamaged: 0, quantityLost: 0,
+      id, trackingType: "serialized", name, make, model, category: cat, itemFamily: null, serialNumber: sn, unitLabel: null, quantityTotal: 1, quantityDamaged: 0, quantityLost: 0,
       unitCost: cost, purchaseDate: isoDay(-ageDays), vendor: "", condition, packaging: "", accessories: "", info: "", photos: [], receipts: [], baseStatus: "active", createdAt: stamp(ageDays), ...extra,
     });
     hist(id, ageDays, "created", "Added to inventory");
   };
   const batch = (id: string, cat: EquipCategoryKey, family: string, name: string, make: string, qty: number, unitCost: number, ageDays: number, vendor: string) => {
     equipment.push({
-      id, trackingType: "aggregate", name, make, model: "", category: cat, itemFamily: family, serialNumber: null, quantityTotal: qty, quantityDamaged: 0, quantityLost: 0,
+      id, trackingType: "aggregate", name, make, model: "", category: cat, itemFamily: family, serialNumber: null, unitLabel: null, quantityTotal: qty, quantityDamaged: 0, quantityLost: 0,
       unitCost, purchaseDate: isoDay(-ageDays), vendor, condition: "Good", packaging: "", accessories: "", info: "", photos: [], receipts: [], baseStatus: "active", createdAt: stamp(ageDays),
     });
     hist(id, ageDays, "created", `New batch of ${qty}`);
   };
 
-  serial("DOF-EQ-CAM-001", "camera", "Sony FX3 camera body", "Sony", "FX3", "S-FX3-0412", 3900, "Good", 400, { accessories: "2 batteries, cage, top handle", packaging: "Pelican 1620" });
-  serial("DOF-EQ-CAM-002", "camera", "Sony FX3 camera body (B cam)", "Sony", "FX3", "S-FX3-0433", 3900, "Good", 380, { accessories: "2 batteries, cage" });
+  serial("DOF-EQ-CAM-001", "camera", "Sony FX3 camera body", "Sony", "FX3", "S-FX3-0412", 3900, "Good", 400, { unitLabel: "A-cam", accessories: "2 batteries, cage, top handle", packaging: "Pelican 1620" });
+  serial("DOF-EQ-CAM-002", "camera", "Sony FX3 camera body", "Sony", "FX3", "S-FX3-0433", 3900, "Good", 380, { unitLabel: "B-cam", accessories: "2 batteries, cage" });
   serial("DOF-EQ-CAM-003", "camera", "Sony 24-70mm f/2.8 GM lens", "Sony", "SEL2470GM", "S-2470-7781", 2200, "Fair", 300, { accessories: "Hood, front and rear caps" });
   serial("DOF-EQ-CAM-004", "camera", "Fluid-head tripod", "Manfrotto", "MVK504", "M-504-2210", 420, "Good", 500);
   serial("DOF-EQ-AUD-001", "audio", "Wireless lavalier kit", "Rode", "Wireless PRO", "R-WP-3309", 700, "Good", 200, { accessories: "2 transmitters, receiver, charging case" });

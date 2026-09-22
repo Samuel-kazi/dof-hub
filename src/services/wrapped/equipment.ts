@@ -11,6 +11,7 @@ export const checkIn = rpc("equipment.checkIn", core.checkIn);
 export const copyGearBetweenSheets = rpc("equipment.copyGearBetweenSheets", core.copyGearBetweenSheets);
 export const createItem = rpc("equipment.createItem", core.createItem);
 export const createManifest = rpc("equipment.createManifest", core.createManifest);
+export const createSerializedUnits = rpc("equipment.createSerializedUnits", core.createSerializedUnits);
 export const deleteItem = rpc("equipment.deleteItem", core.deleteItem);
 export const finishRepair = rpc("equipment.finishRepair", core.finishRepair);
 export const hasGearAccess = rpc("equipment.hasGearAccess", core.hasGearAccess);
@@ -29,5 +30,5 @@ export const requireGearAccess = rpc("equipment.requireGearAccess", core.require
 export const retireItem = rpc("equipment.retireItem", core.retireItem);
 export const startRepair = rpc("equipment.startRepair", core.startRepair);
 export const updateItem = rpc("equipment.updateItem", core.updateItem);
-export { addDays, allIncidents, allocateFifo, availabilityOn, checkedOutFor, checkedOutManifests, displayStatus, familyOf, gearIssues, getItem, getManifest, goneOutDefaults, groupByFamily, inventoryReport, isOverdue, itemHistory, itemIncidents, manifestForSheet, manifestStatusView, manifestSummary, manifestsForContent, overdueManifests, pickerRows, qtyAssigned, qtyFree, qtyOut, reservedFor } from "../equipment";
-export type { Availability, Family, ItemInput, ItemPatch, LineRequest, ManifestInput, PhotoInput, PickerRow, ReportGroup, ReportRow, ReturnInput, SheetRef, StatusView } from "../equipment";
+export { addDays, allIncidents, allocateFifo, availabilityOn, checkedOutFor, checkedOutManifests, displayStatus, familyOf, gearIssues, getItem, getManifest, goneOutDefaults, groupByFamily, groupSerializedByModel, inventoryReport, isOverdue, itemHistory, itemIncidents, manifestForSheet, manifestStatusView, manifestSummary, manifestsForContent, modelKeyOf, overdueManifests, pickerRows, qtyAssigned, qtyFree, qtyOut, reservedFor } from "../equipment";
+export type { Availability, Family, ItemInput, ItemPatch, LineRequest, ManifestInput, PhotoInput, PickerRow, ReportGroup, ReportRow, ReturnInput, SheetRef, StatusView, UnitInput, UnitsInput } from "../equipment";

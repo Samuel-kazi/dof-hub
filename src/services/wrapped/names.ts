@@ -62,6 +62,7 @@ export const RPC_NAMES: Record<string, string[]> = {
     "copyGearBetweenSheets",
     "createItem",
     "createManifest",
+    "createSerializedUnits",
     "deleteItem",
     "finishRepair",
     "hasGearAccess",

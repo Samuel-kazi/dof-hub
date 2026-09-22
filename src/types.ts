@@ -183,6 +183,7 @@ export interface EquipmentItem {
   category: EquipCategoryKey;
   itemFamily: string | null; // aggregate only: groups batches, e.g. XLR-10M
   serialNumber: string | null; // serialized only
+  unitLabel: string | null; // serialized only: an optional name for this one unit, e.g. "A-cam", to tell identical units apart
   quantityTotal: number; // serialized is always 1
   quantityDamaged: number; // cumulative units removed as damaged (aggregate)
   quantityLost: number; // cumulative units removed as lost (aggregate)

@@ -32,7 +32,7 @@ export function searchAll(actor: Actor, query: string, perKind = 4): Hit[] {
   }
   if (hasGearAccess(actor)) {
     for (const e of getDb().equipment) {
-      if (match(`${e.name} ${e.make} ${e.model} ${e.id} ${e.serialNumber ?? ""} ${e.itemFamily ?? ""}`)) out.gear.push({ kind: "gear", id: e.id, title: e.name, sub: e.id });
+      if (match(`${e.name} ${e.make} ${e.model} ${e.id} ${e.serialNumber ?? ""} ${e.unitLabel ?? ""} ${e.itemFamily ?? ""}`)) out.gear.push({ kind: "gear", id: e.id, title: e.name, sub: e.id });
     }
   }
   if (hasStorageAccess(actor)) {

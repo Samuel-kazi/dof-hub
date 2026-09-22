@@ -402,6 +402,7 @@ function buildGearSeed() {
       category: cat,
       itemFamily: null,
       serialNumber: sn,
+      unitLabel: null,
       quantityTotal: 1,
       quantityDamaged: 0,
       quantityLost: 0,
@@ -430,6 +431,7 @@ function buildGearSeed() {
       category: cat,
       itemFamily: family,
       serialNumber: null,
+      unitLabel: null,
       quantityTotal: qty,
       quantityDamaged: 0,
       quantityLost: 0,
@@ -447,8 +449,8 @@ function buildGearSeed() {
     });
     hist2(id, ageDays, "created", `New batch of ${qty}`);
   };
-  serial("DOF-EQ-CAM-001", "camera", "Sony FX3 camera body", "Sony", "FX3", "S-FX3-0412", 3900, "Good", 400, { accessories: "2 batteries, cage, top handle", packaging: "Pelican 1620" });
-  serial("DOF-EQ-CAM-002", "camera", "Sony FX3 camera body (B cam)", "Sony", "FX3", "S-FX3-0433", 3900, "Good", 380, { accessories: "2 batteries, cage" });
+  serial("DOF-EQ-CAM-001", "camera", "Sony FX3 camera body", "Sony", "FX3", "S-FX3-0412", 3900, "Good", 400, { unitLabel: "A-cam", accessories: "2 batteries, cage, top handle", packaging: "Pelican 1620" });
+  serial("DOF-EQ-CAM-002", "camera", "Sony FX3 camera body", "Sony", "FX3", "S-FX3-0433", 3900, "Good", 380, { unitLabel: "B-cam", accessories: "2 batteries, cage" });
   serial("DOF-EQ-CAM-003", "camera", "Sony 24-70mm f/2.8 GM lens", "Sony", "SEL2470GM", "S-2470-7781", 2200, "Fair", 300, { accessories: "Hood, front and rear caps" });
   serial("DOF-EQ-CAM-004", "camera", "Fluid-head tripod", "Manfrotto", "MVK504", "M-504-2210", 420, "Good", 500);
   serial("DOF-EQ-AUD-001", "audio", "Wireless lavalier kit", "Rode", "Wireless PRO", "R-WP-3309", 700, "Good", 200, { accessories: "2 transmitters, receiver, charging case" });
@@ -1121,10 +1123,15 @@ function upgradeToV7(db2) {
   db2.schemaVersion = 7;
   return db2;
 }
+function upgradeToV8(db2) {
+  for (const item of db2.equipment) item.unitLabel ??= null;
+  db2.schemaVersion = 8;
+  return db2;
+}
 
 // src/data/store.ts
 var KEY = "dof-hub-db";
-var SCHEMA_VERSION = 7;
+var SCHEMA_VERSION = 8;
 function migrate(old) {
   const gear = buildGearSeed();
   const next = {
@@ -1154,17 +1161,19 @@ function upgradeDb(parsed) {
     case SCHEMA_VERSION:
       return parsed;
     case 1:
-      return upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(migrate(parsed))))));
+      return upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(migrate(parsed)))))));
     case 2:
-      return upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(parsed)))));
+      return upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(parsed))))));
     case 3:
-      return upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(parsed))));
+      return upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(parsed)))));
     case 4:
-      return upgradeToV7(upgradeToV6(upgradeToV5(parsed)));
+      return upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(parsed))));
     case 5:
-      return upgradeToV7(upgradeToV6(parsed));
+      return upgradeToV8(upgradeToV7(upgradeToV6(parsed)));
     case 6:
-      return upgradeToV7(parsed);
+      return upgradeToV8(upgradeToV7(parsed));
+    case 7:
+      return upgradeToV8(parsed);
     default:
       return null;
   }
@@ -2111,6 +2120,7 @@ __export(equipment_exports, {
   copyGearBetweenSheets: () => copyGearBetweenSheets,
   createItem: () => createItem,
   createManifest: () => createManifest,
+  createSerializedUnits: () => createSerializedUnits,
   deleteItem: () => deleteItem,
   displayStatus: () => displayStatus,
   familyOf: () => familyOf,
@@ -2120,6 +2130,7 @@ __export(equipment_exports, {
   getManifest: () => getManifest,
   goneOutDefaults: () => goneOutDefaults,
   groupByFamily: () => groupByFamily,
+  groupSerializedByModel: () => groupSerializedByModel,
   hasGearAccess: () => hasGearAccess,
   inventoryReport: () => inventoryReport,
   isOverdue: () => isOverdue,
@@ -2131,6 +2142,7 @@ __export(equipment_exports, {
   manifestSummary: () => manifestSummary,
   manifestsForContent: () => manifestsForContent,
   markGoneOut: () => markGoneOut,
+  modelKeyOf: () => modelKeyOf,
   overdueManifests: () => overdueManifests,
   pickerRows: () => pickerRows,
   projectLabel: () => projectLabel,
@@ -2450,6 +2462,12 @@ function nextAssetCode(cat) {
   const nums = getDb().equipment.filter((e) => e.trackingType === "serialized" && e.id.startsWith(prefix)).map((e) => parseInt(e.id.slice(prefix.length), 10)).filter((n) => !Number.isNaN(n));
   return `${prefix}${pad((nums.length ? Math.max(...nums) : 0) + 1)}`;
 }
+function nextAssetCodes(cat, count) {
+  const prefix = `DOF-EQ-${equipCategory(cat).code}-`;
+  const nums = getDb().equipment.filter((e) => e.trackingType === "serialized" && e.id.startsWith(prefix)).map((e) => parseInt(e.id.slice(prefix.length), 10)).filter((n) => !Number.isNaN(n));
+  const start = (nums.length ? Math.max(...nums) : 0) + 1;
+  return Array.from({ length: count }, (_, i) => `${prefix}${pad(start + i)}`);
+}
 function nextBatchCode(cat, family) {
   const token = family.toUpperCase().replace(/[^A-Z0-9]/g, "");
   const prefix = `DOF-EQ-${equipCategory(cat).code}-${token}-B`;
@@ -2481,6 +2499,7 @@ function createItem(actor, input) {
     category: input.category,
     itemFamily: input.trackingType === "aggregate" ? family : null,
     serialNumber: input.trackingType === "serialized" ? serial : null,
+    unitLabel: input.trackingType === "serialized" ? (input.unitLabel ?? "").trim() || null : null,
     quantityTotal: quantity,
     quantityDamaged: 0,
     quantityLost: 0,
@@ -2502,6 +2521,58 @@ function createItem(actor, input) {
   commit();
   return item;
 }
+function createSerializedUnits(actor, input) {
+  requireGearAccess(actor);
+  if (!input.name.trim()) throw new RuleError("Give the item a name.");
+  if (!Number.isFinite(input.unitCost) || input.unitCost < 0) throw new RuleError("Cost must be zero or more.");
+  if (input.units.length < 1) throw new RuleError("Add at least one serial number.");
+  if (input.units.length > 200) throw new RuleError("Add units in smaller groups of 200 or fewer.");
+  const seen = /* @__PURE__ */ new Map();
+  const cleaned = input.units.map((u, i) => {
+    const serial = u.serialNumber.trim();
+    if (!serial) throw new RuleError(`Unit ${i + 1} needs a serial number.`);
+    const key2 = serial.toLowerCase();
+    if (seen.has(key2)) throw new RuleError(`Serial number ${serial} is entered twice, for unit ${seen.get(key2) + 1} and unit ${i + 1}.`);
+    seen.set(key2, i);
+    const existing = getDb().equipment.find((e) => e.serialNumber && e.serialNumber.toLowerCase() === key2);
+    if (existing) throw new RuleError(`Serial number ${serial} is already registered as ${existing.id} (${existing.name}).`);
+    return { serial, label: (u.label ?? "").trim() || null };
+  });
+  const codes = nextAssetCodes(input.category, cleaned.length);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const items = cleaned.map((u, i) => ({
+    id: codes[i],
+    trackingType: "serialized",
+    name: input.name.trim(),
+    make: input.make.trim(),
+    model: input.model.trim(),
+    category: input.category,
+    itemFamily: null,
+    serialNumber: u.serial,
+    unitLabel: u.label,
+    quantityTotal: 1,
+    quantityDamaged: 0,
+    quantityLost: 0,
+    unitCost: input.unitCost,
+    purchaseDate: input.purchaseDate || null,
+    vendor: input.vendor.trim(),
+    condition: input.condition,
+    packaging: input.packaging.trim(),
+    accessories: input.accessories.trim(),
+    info: input.info.trim(),
+    photos: [],
+    receipts: [],
+    baseStatus: "active",
+    createdAt: now
+  }));
+  getDb().equipment.push(...items);
+  for (const it of items) {
+    hist(actor, it.id, "created", cleaned.length > 1 ? `Added with ${cleaned.length - 1} other unit${cleaned.length - 1 === 1 ? "" : "s"} of ${it.name}` : "Added to inventory");
+    logAudit(actor, "create", "equipment", it.id, it.name);
+  }
+  commit();
+  return items;
+}
 function updateItem(actor, id, patch) {
   requireGearAccess(actor);
   const item = getItem(id);
@@ -2514,6 +2585,10 @@ function updateItem(actor, id, patch) {
     const dupe = getDb().equipment.find((e) => e.id !== id && e.serialNumber && e.serialNumber.toLowerCase() === s2.toLowerCase());
     if (dupe) throw new RuleError(`Serial number ${s2} is already registered as ${dupe.id}.`);
     patch.serialNumber = s2;
+  }
+  if (patch.unitLabel !== void 0) {
+    if (item.trackingType !== "serialized") throw new RuleError("Only single units can have a label.");
+    patch.unitLabel = patch.unitLabel?.trim() || null;
   }
   if (patch.quantityTotal !== void 0) {
     if (item.trackingType !== "aggregate") throw new RuleError("Only batches have a quantity.");
@@ -2828,7 +2903,7 @@ function inventoryReport(category, includeOutOfService) {
       id: i.id,
       name: i.name,
       detail: [i.make, i.model].filter(Boolean).join(" "),
-      serial: i.serialNumber ?? "",
+      serial: [i.serialNumber, i.unitLabel].filter(Boolean).join(" ") || "",
       qty: i.quantityTotal,
       free: qtyFree(i),
       condition: i.condition,
@@ -2905,6 +2980,22 @@ function groupByFamily(items) {
   for (const i of items.filter((x) => x.trackingType === "aggregate")) {
     const k = familyOf(i);
     if (!map.has(k)) map.set(k, { key: k, name: i.name, category: i.category, items: [] });
+    map.get(k).items.push(i);
+  }
+  for (const f of map.values()) f.items.sort((a, b) => (a.purchaseDate ?? a.createdAt).localeCompare(b.purchaseDate ?? b.createdAt));
+  return [...map.values()];
+}
+var modelKeyOf = (i) => {
+  const make = i.make.trim().toLowerCase();
+  const model = i.model.trim().toLowerCase();
+  return make && model ? `${i.category}::${make}::${model}` : null;
+};
+function groupSerializedByModel(items) {
+  const map = /* @__PURE__ */ new Map();
+  for (const i of items.filter((x) => x.trackingType === "serialized")) {
+    const k = modelKeyOf(i);
+    if (!k) continue;
+    if (!map.has(k)) map.set(k, { key: k, name: `${i.make.trim()} ${i.model.trim()}`.trim(), category: i.category, items: [] });
     map.get(k).items.push(i);
   }
   for (const f of map.values()) f.items.sort((a, b) => (a.purchaseDate ?? a.createdAt).localeCompare(b.purchaseDate ?? b.createdAt));
@@ -4288,6 +4379,7 @@ var RPC_NAMES = {
     "copyGearBetweenSheets",
     "createItem",
     "createManifest",
+    "createSerializedUnits",
     "deleteItem",
     "finishRepair",
     "hasGearAccess",

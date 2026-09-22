@@ -301,3 +301,70 @@ t("a record shows storage from itself, its children and its show", () => {
 });
 
 console.log(`\n${passed} passed`);
+
+// ── Several identical units added at once (e.g. 3 Sony FX6 bodies) ──
+const unitsInput = (over: Partial<E.UnitsInput> = {}): E.UnitsInput => ({
+  name: "Sony FX6 camera body", make: "Sony", model: "FX6", category: "camera",
+  unitCost: 6000, vendor: "B&H", condition: "Good", packaging: "", accessories: "", info: "",
+  units: [{ serialNumber: "FX6-001" }, { serialNumber: "FX6-002", label: "B-cam" }, { serialNumber: "FX6-003" }],
+  ...over,
+});
+
+t("adding several units at once creates one record per serial, with sequential asset codes", () => {
+  const made = E.createSerializedUnits(hop(), unitsInput());
+  assert.equal(made.length, 3);
+  assert.deepEqual(made.map((m) => m.id), ["DOF-EQ-CAM-005", "DOF-EQ-CAM-006", "DOF-EQ-CAM-007"]);
+  assert.deepEqual(made.map((m) => m.serialNumber), ["FX6-001", "FX6-002", "FX6-003"]);
+  assert.equal(made[1].unitLabel, "B-cam");
+  assert.equal(made[0].unitLabel, null);
+  for (const m of made) { assert.equal(m.make, "Sony"); assert.equal(m.model, "FX6"); assert.equal(m.unitCost, 6000); assert.equal(m.trackingType, "serialized"); }
+});
+
+t("a repeated serial number within the same batch saves nothing", () => {
+  const before = getDb().equipment.length;
+  throwsRule(() => E.createSerializedUnits(hop(), unitsInput({ units: [{ serialNumber: "FX6-001" }, { serialNumber: "fx6-001" }] })), /entered twice/);
+  assert.equal(getDb().equipment.length, before);
+});
+
+t("a serial that already exists elsewhere in the inventory saves nothing", () => {
+  const before = getDb().equipment.length;
+  throwsRule(() => E.createSerializedUnits(hop(), unitsInput({ units: [{ serialNumber: "FX6-100" }, { serialNumber: "S-FX3-0412" }] })), /already registered as DOF-EQ-CAM-001/);
+  assert.equal(getDb().equipment.length, before);
+});
+
+t("a blank serial number saves nothing, and names which unit needs one", () => {
+  const before = getDb().equipment.length;
+  throwsRule(() => E.createSerializedUnits(hop(), unitsInput({ units: [{ serialNumber: "FX6-001" }, { serialNumber: "  " }] })), /Unit 2 needs a serial number/);
+  assert.equal(getDb().equipment.length, before);
+});
+
+t("adding units in this way is only for equipment.use holders, same as adding one item", () => {
+  const db = getDb();
+  const outsider = { personId: "DOF-P-VOL-002", role: "VOL" as const };
+  throwsRule(() => E.createSerializedUnits(outsider, unitsInput()), /managed by crew/);
+  void db;
+});
+
+t("units of the same make and model group together; a lone unit does not", () => {
+  E.createSerializedUnits(hop(), unitsInput());
+  const groups = E.groupSerializedByModel(getDb().equipment);
+  const fx6 = groups.find((g) => g.name === "Sony FX6");
+  assert.ok(fx6 && fx6.items.length === 3);
+  const fx3 = groups.find((g) => g.name === "Sony FX3"); // two FX3 bodies already in the demo data
+  assert.ok(fx3 && fx3.items.length === 2);
+  const lens = groups.find((g) => g.items.some((i) => i.id === "DOF-EQ-CAM-003")); // one-off lens: its own group of one
+  assert.equal(lens?.items.length, 1);
+});
+
+t("blank make or model never groups items together", () => {
+  E.updateItem(hop(), "DOF-EQ-CAM-004", { make: "", model: "" }); // the tripod, made blank
+  assert.equal(E.modelKeyOf(item("DOF-EQ-CAM-004")), null);
+});
+
+t("a label can be added or cleared when editing a single unit", () => {
+  const i = E.updateItem(hop(), "DOF-EQ-CAM-001", { unitLabel: "  Main cam  " });
+  assert.equal(i.unitLabel, "Main cam");
+  assert.equal(E.updateItem(hop(), "DOF-EQ-CAM-001", { unitLabel: "" }).unitLabel, null);
+});
+
+t("a label cannot be set on a batch item", () => throwsRule(() => E.updateItem(hop(), "DOF-EQ-CAB-XLR10M-B01", { unitLabel: "x" }), /Only single units/));

@@ -147,6 +147,7 @@ export interface ItemInput {
   category: EquipCategoryKey;
   itemFamily?: string;
   serialNumber?: string;
+  unitLabel?: string;
   quantity?: number;
   unitCost: number;
   purchaseDate?: string | null;
@@ -161,6 +162,14 @@ function nextAssetCode(cat: EquipCategoryKey): string {
   const prefix = `DOF-EQ-${equipCategory(cat).code}-`;
   const nums = getDb().equipment.filter((e) => e.trackingType === "serialized" && e.id.startsWith(prefix)).map((e) => parseInt(e.id.slice(prefix.length), 10)).filter((n) => !Number.isNaN(n));
   return `${prefix}${pad((nums.length ? Math.max(...nums) : 0) + 1)}`;
+}
+
+/** The next `count` asset codes for this category, in order, as if reserved one after another. */
+function nextAssetCodes(cat: EquipCategoryKey, count: number): string[] {
+  const prefix = `DOF-EQ-${equipCategory(cat).code}-`;
+  const nums = getDb().equipment.filter((e) => e.trackingType === "serialized" && e.id.startsWith(prefix)).map((e) => parseInt(e.id.slice(prefix.length), 10)).filter((n) => !Number.isNaN(n));
+  const start = (nums.length ? Math.max(...nums) : 0) + 1;
+  return Array.from({ length: count }, (_, i) => `${prefix}${pad(start + i)}`);
 }
 function nextBatchCode(cat: EquipCategoryKey, family: string): string {
   const token = family.toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -194,6 +203,7 @@ export function createItem(actor: Actor, input: ItemInput): EquipmentItem {
     category: input.category,
     itemFamily: input.trackingType === "aggregate" ? family : null,
     serialNumber: input.trackingType === "serialized" ? serial : null,
+    unitLabel: input.trackingType === "serialized" ? (input.unitLabel ?? "").trim() || null : null,
     quantityTotal: quantity,
     quantityDamaged: 0,
     quantityLost: 0,
@@ -216,7 +226,85 @@ export function createItem(actor: Actor, input: ItemInput): EquipmentItem {
   return item;
 }
 
-export type ItemPatch = Partial<Pick<EquipmentItem, "name" | "make" | "model" | "vendor" | "packaging" | "accessories" | "info" | "unitCost" | "purchaseDate" | "serialNumber" | "condition" | "quantityTotal">>;
+export interface UnitInput { serialNumber: string; label?: string }
+
+export interface UnitsInput {
+  name: string;
+  make: string;
+  model: string;
+  category: EquipCategoryKey;
+  unitCost: number;
+  purchaseDate?: string | null;
+  vendor: string;
+  condition: EquipCondition;
+  packaging: string;
+  accessories: string;
+  info: string;
+  units: UnitInput[];
+}
+
+/**
+ * Several identical units of the same equipment (for example three Sony FX6 bodies), added in one go.
+ * The general details are typed once; each unit gets its own serial number, an optional label, and its own asset code.
+ * All or nothing: if any serial number is missing, repeated in the list, or already in the inventory, nothing is added.
+ */
+export function createSerializedUnits(actor: Actor, input: UnitsInput): EquipmentItem[] {
+  requireGearAccess(actor);
+  if (!input.name.trim()) throw new RuleError("Give the item a name.");
+  if (!Number.isFinite(input.unitCost) || input.unitCost < 0) throw new RuleError("Cost must be zero or more.");
+  if (input.units.length < 1) throw new RuleError("Add at least one serial number.");
+  if (input.units.length > 200) throw new RuleError("Add units in smaller groups of 200 or fewer.");
+
+  const seen = new Map<string, number>(); // lowercase serial -> position, to catch repeats within this list
+  const cleaned = input.units.map((u, i) => {
+    const serial = u.serialNumber.trim();
+    if (!serial) throw new RuleError(`Unit ${i + 1} needs a serial number.`);
+    const key = serial.toLowerCase();
+    if (seen.has(key)) throw new RuleError(`Serial number ${serial} is entered twice, for unit ${seen.get(key)! + 1} and unit ${i + 1}.`);
+    seen.set(key, i);
+    const existing = getDb().equipment.find((e) => e.serialNumber && e.serialNumber.toLowerCase() === key);
+    if (existing) throw new RuleError(`Serial number ${serial} is already registered as ${existing.id} (${existing.name}).`);
+    return { serial, label: (u.label ?? "").trim() || null };
+  });
+
+  const codes = nextAssetCodes(input.category, cleaned.length);
+  const now = new Date().toISOString();
+  const items: EquipmentItem[] = cleaned.map((u, i) => ({
+    id: codes[i],
+    trackingType: "serialized",
+    name: input.name.trim(),
+    make: input.make.trim(),
+    model: input.model.trim(),
+    category: input.category,
+    itemFamily: null,
+    serialNumber: u.serial,
+    unitLabel: u.label,
+    quantityTotal: 1,
+    quantityDamaged: 0,
+    quantityLost: 0,
+    unitCost: input.unitCost,
+    purchaseDate: input.purchaseDate || null,
+    vendor: input.vendor.trim(),
+    condition: input.condition,
+    packaging: input.packaging.trim(),
+    accessories: input.accessories.trim(),
+    info: input.info.trim(),
+    photos: [],
+    receipts: [],
+    baseStatus: "active",
+    createdAt: now,
+  }));
+
+  getDb().equipment.push(...items);
+  for (const it of items) {
+    hist(actor, it.id, "created", cleaned.length > 1 ? `Added with ${cleaned.length - 1} other unit${cleaned.length - 1 === 1 ? "" : "s"} of ${it.name}` : "Added to inventory");
+    logAudit(actor, "create", "equipment", it.id, it.name);
+  }
+  commit();
+  return items;
+}
+
+export type ItemPatch = Partial<Pick<EquipmentItem, "name" | "make" | "model" | "vendor" | "packaging" | "accessories" | "info" | "unitCost" | "purchaseDate" | "serialNumber" | "unitLabel" | "condition" | "quantityTotal">>;
 
 export function updateItem(actor: Actor, id: string, patch: ItemPatch): EquipmentItem {
   requireGearAccess(actor);
@@ -230,6 +318,10 @@ export function updateItem(actor: Actor, id: string, patch: ItemPatch): Equipmen
     const dupe = getDb().equipment.find((e) => e.id !== id && e.serialNumber && e.serialNumber.toLowerCase() === s.toLowerCase());
     if (dupe) throw new RuleError(`Serial number ${s} is already registered as ${dupe.id}.`);
     patch.serialNumber = s;
+  }
+  if (patch.unitLabel !== undefined) {
+    if (item.trackingType !== "serialized") throw new RuleError("Only single units can have a label.");
+    patch.unitLabel = patch.unitLabel?.trim() || null;
   }
   if (patch.quantityTotal !== undefined) {
     if (item.trackingType !== "aggregate") throw new RuleError("Only batches have a quantity.");
@@ -608,7 +700,7 @@ export function inventoryReport(category: EquipCategoryKey | "all", includeOutOf
       id: i.id,
       name: i.name,
       detail: [i.make, i.model].filter(Boolean).join(" "),
-      serial: i.serialNumber ?? "",
+      serial: [i.serialNumber, i.unitLabel].filter(Boolean).join(" ") || "",
       qty: i.quantityTotal,
       free: qtyFree(i),
       condition: i.condition,
@@ -702,6 +794,26 @@ export function groupByFamily(items: EquipmentItem[]): Family[] {
   for (const i of items.filter((x) => x.trackingType === "aggregate")) {
     const k = familyOf(i);
     if (!map.has(k)) map.set(k, { key: k, name: i.name, category: i.category, items: [] });
+    map.get(k)!.items.push(i);
+  }
+  for (const f of map.values()) f.items.sort((a, b) => (a.purchaseDate ?? a.createdAt).localeCompare(b.purchaseDate ?? b.createdAt));
+  return [...map.values()];
+}
+
+/** Same make and same model, letter for letter once extra spaces and capitals are ignored. Blank make or model never groups. */
+export const modelKeyOf = (i: EquipmentItem): string | null => {
+  const make = i.make.trim().toLowerCase();
+  const model = i.model.trim().toLowerCase();
+  return make && model ? `${i.category}::${make}::${model}` : null;
+};
+
+/** Serialized units of the same make and model (for example three Sony FX6 bodies) roll up together, oldest first. */
+export function groupSerializedByModel(items: EquipmentItem[]): Family[] {
+  const map = new Map<string, Family>();
+  for (const i of items.filter((x) => x.trackingType === "serialized")) {
+    const k = modelKeyOf(i);
+    if (!k) continue;
+    if (!map.has(k)) map.set(k, { key: k, name: `${i.make.trim()} ${i.model.trim()}`.trim(), category: i.category, items: [] });
     map.get(k)!.items.push(i);
   }
   for (const f of map.values()) f.items.sort((a, b) => (a.purchaseDate ?? a.createdAt).localeCompare(b.purchaseDate ?? b.createdAt));

@@ -8,7 +8,7 @@ import { buildSeed } from "../src/data/seed";
 const from = process.env.MIGRATE_FROM;
 
 if (!from) {
-  for (const v of ["1", "2", "4", "5"]) {
+  for (const v of ["1", "2", "4", "5", "7"]) {
     const r = spawnSync("npx", ["tsx", "tests/migrate.test.ts"], { env: { ...process.env, MIGRATE_FROM: v }, encoding: "utf8" });
     process.stdout.write(r.stdout);
     if (r.status !== 0) { process.stderr.write(r.stderr); process.exit(1); }
@@ -24,7 +24,7 @@ let records = old.records as Rec[];
 // A project deleted before version 4 left its drive entry behind.
 if (from === "1" || from === "2") (records.find((r) => r.contentId === "DOF-DEV-001") as { archived: boolean }).archived = true;
 
-if (from !== "5") {
+if (from !== "5" && from !== "7") {
   // Before version 5 a live show was one flat item that carried its own pipeline, and records had no show dates or hosts.
   const day = records.find((r) => r.contentId === "DOF-LIVE-001-D1")!;
   const show = records.find((r) => r.contentId === "DOF-LIVE-001")!;
@@ -37,12 +37,21 @@ if (from !== "5") {
   for (const c of old.callSheets as { linkedEpisodeIds: string[] }[]) c.linkedEpisodeIds = c.linkedEpisodeIds.map((x) => (x === "DOF-LIVE-001-D1" ? "DOF-LIVE-001" : x));
 }
 // Before version 6 a stage had one owner, kept as a single ID, and there were no working-day settings.
-for (const r of records) {
-  const owners = (r.stageAssignees ?? {}) as Record<string, { personId: string }[]>;
-  r.stageAssignees = Object.fromEntries(Object.entries(owners).filter(([k]) => k !== "Project").map(([k, list]) => [k, list[0]?.personId]).filter(([, v]) => v));
+if (from !== "7") {
+  for (const r of records) {
+    const owners = (r.stageAssignees ?? {}) as Record<string, { personId: string }[]>;
+    r.stageAssignees = Object.fromEntries(Object.entries(owners).filter(([k]) => k !== "Project").map(([k, list]) => [k, list[0]?.personId]).filter(([, v]) => v));
+  }
 }
 old.settings = { stageReminderHours: 24, storageWarningThreshold: 85, checkoutReturnDays: 3 };
 old.schemaVersion = from === "5" ? 5 : 4;
+
+// Before version 8 a unit had no label of its own.
+if (from === "7") {
+  old.schemaVersion = 7;
+  old.settings = { ...(old.settings as Rec), workDays: [1, 2, 3, 4, 5], effortOverrides: {} };
+  for (const e of old.equipment as Rec[]) delete e.unitLabel;
+}
 
 if (from === "1" || from === "2") {
   for (const r of records) { delete r.stageAssignees; delete r.tasks; delete r.links; delete r.productionLevel; }
@@ -73,8 +82,9 @@ const { getDb } = await import("../src/data/store");
 const { categoryOf } = await import("../src/config/categories");
 
 const db = getDb();
-assert.equal(db.schemaVersion, 7);
+assert.equal(db.schemaVersion, 8);
 assert.deepEqual(db.outbox, [], "the record of sent reminders exists");
+assert.ok(db.equipment.every((e) => e.unitLabel === null || typeof e.unitLabel === "string"), "every unit has a label field, even if blank");
 assert.equal(db.records[0].title, "Edited before the upgrade", "earlier edits survive");
 assert.ok(db.equipment.length > 10 && db.drives.length === 9, "gear and drives exist");
 if (from === "1" || from === "2") {
@@ -119,7 +129,9 @@ if (from === "1" || from === "2") assert.equal(db.snapshots[db.snapshots.length 
 // Version 6: stages have lists of owners with roles, and there are working-day settings.
 assert.ok(db.records.every((r) => Object.values(r.stageAssignees).every((list) => Array.isArray(list) && list.every((o) => typeof o.personId === "string" && Array.isArray(o.roles)))), "owners are lists");
 assert.deepEqual(db.settings.workDays, [1, 2, 3, 4, 5]); assert.deepEqual(db.settings.effortOverrides, {});
-const e01Owners = db.records.find((r) => r.contentId === "DOF-SER-001-S1-E01")!.stageAssignees.Editorial;
-assert.equal(e01Owners[0].personId, "DOF-P-CRW-001", "the single owner is now the first owner");
-assert.ok(e01Owners[0].roles.includes("Director"), "and keeps the role they had on the project");
+if (from !== "7") {
+  const e01Owners = db.records.find((r) => r.contentId === "DOF-SER-001-S1-E01")!.stageAssignees.Editorial;
+  assert.equal(e01Owners[0].personId, "DOF-P-CRW-001", "the single owner is now the first owner");
+  assert.ok(e01Owners[0].roles.includes("Director"), "and keeps the role they had on the project");
+}
 console.log(`migration from version ${from} ok`);

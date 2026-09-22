@@ -3,7 +3,7 @@ import { useDb } from "../data/store";
 import { equipCategory } from "../config/equipment";
 import { Attachments, PhotoAdd } from "../ui/Photos";
 import { Empty } from "../ui/parts";
-import { addAttachment, availabilityOn, hasGearAccess, displayStatus, getItem, itemHistory, itemIncidents, manifestStatusView, projectLabel, qtyAssigned, qtyOut, removeAttachment, getManifest } from "../services/wrapped/equipment";
+import { addAttachment, availabilityOn, hasGearAccess, displayStatus, getItem, itemHistory, itemIncidents, manifestStatusView, modelKeyOf, projectLabel, qtyAssigned, qtyOut, removeAttachment, getManifest } from "../services/wrapped/equipment";
 import { getDb } from "../data/store";
 import { nameOf } from "../services/wrapped/people";
 import { fmtDate, fmtShort } from "../services/utils";
@@ -41,6 +41,7 @@ export function EquipmentItemPage({ id }: { id: string }) {
           </div>
         </div>
         <button className="btn" onClick={() => actions.setCheckout(item)} disabled={!inService}>Add to checkout list</button>
+        {item.trackingType === "serialized" && <button className="btn" onClick={() => actions.setAddUnit(item)}>Add another unit</button>}
         <button className="btn" onClick={() => actions.setEdit(item)}>Edit</button>
         <button className="btn ghost" onClick={(e) => { e.stopPropagation(); menu({ clientX: e.clientX - 180, clientY: e.clientY + 8, preventDefault: () => {} }, actions.menuItems(item)); }}>More</button>
       </div>
@@ -50,7 +51,7 @@ export function EquipmentItemPage({ id }: { id: string }) {
           <h2>Details</h2>
           <dl className="kv">
             <dt>Make and model</dt><dd>{[item.make, item.model].filter(Boolean).join(" ") || <span className="muted">Not set</span>}</dd>
-            {item.trackingType === "serialized" ? (<><dt>Serial number</dt><dd>{item.serialNumber}</dd></>) : (<><dt>Item family</dt><dd>{item.itemFamily}</dd></>)}
+            {item.trackingType === "serialized" ? (<><dt>Serial number</dt><dd>{item.serialNumber}{item.unitLabel ? ` (${item.unitLabel})` : ""}</dd></>) : (<><dt>Item family</dt><dd>{item.itemFamily}</dd></>)}
             <dt>Condition</dt><dd>{item.condition}</dd>
             <dt>{item.trackingType === "aggregate" ? "Cost per unit" : "Cost"}</dt><dd>{item.unitCost.toLocaleString()}</dd>
             <dt>Purchased</dt><dd>{item.purchaseDate ? fmtDate(item.purchaseDate) : <span className="muted">Not set</span>}{item.vendor ? `, ${item.vendor}` : ""}</dd>
@@ -93,6 +94,30 @@ export function EquipmentItemPage({ id }: { id: string }) {
           </section>
         )}
       </div>
+
+      {item.trackingType === "serialized" && modelKeyOf(item) && (() => {
+        const siblings = getDb().equipment.filter((e) => e.id !== item.id && e.trackingType === "serialized" && modelKeyOf(e) === modelKeyOf(item)).sort((a, b) => (a.serialNumber ?? "").localeCompare(b.serialNumber ?? ""));
+        if (!siblings.length) return null;
+        return (
+          <section className="glass panel">
+            <h2>Other {[item.make, item.model].filter(Boolean).join(" ")} units</h2>
+            <table className="table">
+              <thead><tr><th>Asset code</th><th>Serial number</th><th>Label</th><th>Condition</th><th>Status</th></tr></thead>
+              <tbody>
+                {siblings.map((s) => (
+                  <tr key={s.id} className="clickable" onClick={() => go({ n: "item", id: s.id })}>
+                    <td><span className="cid">{s.id}</span></td>
+                    <td>{s.serialNumber}</td>
+                    <td>{s.unitLabel || <span className="muted">None</span>}</td>
+                    <td>{s.condition}</td>
+                    <td><span className={`badge ${displayStatus(s).tone}`}>{displayStatus(s).label}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        );
+      })()}
 
       <div className="grid-2">
         <section className="glass panel">
