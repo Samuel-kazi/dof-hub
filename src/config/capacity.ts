@@ -7,7 +7,7 @@ import type { CategoryKey } from "../types";
 export const DEFAULT_STAGE_EFFORT: Record<CategoryKey, Record<string, number>> = {
   series: { Idea: 0.5, Scripting: 2, "Pre-production": 1.5, Ingest: 0.5, Editorial: 2, Review: 0.5, Delivered: 0.5 },
   devotional: { Idea: 0.5, Scripting: 1, Editorial: 1, Review: 0.5, Delivered: 0.5 },
-  live: { Idea: 0.5, Scripting: 1, Review: 0.5, "Post Production": 1 },
+  live: { Prep: 0.5, Build: 1.5, Rehearse: 0.5, Show: 1, Wrap: 0.5, Review: 0.5, "Post Production": 1 },
   documentary: { Idea: 1, Research: 3, "Pre-production": 2, Ingest: 1, Editorial: 5, Review: 1, Delivered: 0.5 },
   music: { Idea: 0.5, "Pre-production": 1, "Audio post-production": 2, "Video editing": 2, Review: 0.5, Publish: 0.5 },
 };

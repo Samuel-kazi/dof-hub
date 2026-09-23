@@ -1,6 +1,8 @@
 // Run with: npx tsx tests/project.test.ts
 // Hosts and guests, show dates, live days, project teams and roles, several links, checkout list IDs, printable equipment list.
 import assert from "node:assert/strict";
+import React from "react";
+import { renderToString } from "react-dom/server";
 import { getDb, resetDemoData } from "../src/data/store";
 import { RuleError } from "../src/types";
 import { login } from "../src/services/auth";
@@ -12,6 +14,11 @@ import * as P from "../src/services/people";
 import * as E from "../src/services/equipment";
 import { getRecord, visibleRecords } from "../src/services/access";
 import { categoryOf, shootDateLabel } from "../src/config/categories";
+import { effortFor } from "../src/config/capacity";
+import { remindersFor } from "../src/services/reminders";
+import { AppProvider } from "../src/ui/AppContext";
+import { Pipeline } from "../src/pages/Pipeline";
+import { RecordPage } from "../src/pages/RecordPage";
 
 let passed = 0;
 const t = (name: string, fn: () => void) => {
@@ -220,8 +227,6 @@ t("batches print with their count and how many are free", () => {
   assert.equal(row.qty, 12); assert.equal(row.free, 8); assert.equal(row.serial, "");
 });
 
-console.log(`\n${passed} passed`);
-
 // ── Production count: a live show with several days is one production, not one per day ──
 t("a multi-day live show collapses to one production unit; other categories stay one leaf each", () => {
   const actor = login("hop@dof.demo", "demo");
@@ -322,3 +327,111 @@ t("splitting off a recording needs write access to both the live day and the des
   const vol = login("volunteer1@dof.demo", "demo");
   throwsRule(() => C.splitRecording(vol, day.contentId, { destCategory: "series", parentId: "DOF-SER-001-S1", title: "x" }));
 });
+
+// ── Stage staleness: a stage that has sat idle far past what it normally takes ──
+t("a stage just entered is never stale, however small its typical effort", () => {
+  const actor = login("hop@dof.demo", "demo");
+  const r = getRecord("DOF-SER-001-S1-E01")!;
+  getDb().records.find((x) => x.contentId === r.contentId)!.stageEnteredAt = isoDay(0);
+  const fresh = getRecord(r.contentId)!;
+  assert.equal(C.isStale(fresh), false);
+  assert.notEqual(C.riskOf(fresh), "stale");
+  assert.equal(C.daysInStage(fresh), 0);
+  void actor;
+});
+
+t("a stage that has sat idle well past 2.5x its typical effort is stale", () => {
+  const r = getRecord("DOF-SER-001-S1-E01")!;
+  const typical = effortFor(r.category, r.pipelineStage!, {});
+  getDb().records.find((x) => x.contentId === r.contentId)!.stageEnteredAt = isoDay(-Math.ceil(typical * 2.5) - 3);
+  const stalled = getRecord(r.contentId)!;
+  assert.equal(C.isStale(stalled), true);
+  assert.equal(C.riskOf(stalled), "stale");
+  assert.ok(C.daysInStage(stalled) > typical * 2.5);
+});
+
+t("just short of 2.5x is not yet stale; the multiplier is generous, not a hair trigger", () => {
+  const r = getRecord("DOF-SER-001-S1-E01")!;
+  const typical = effortFor(r.category, r.pipelineStage!, {});
+  getDb().records.find((x) => x.contentId === r.contentId)!.stageEnteredAt = isoDay(-Math.floor(typical * 2.5) + 1);
+  assert.equal(C.isStale(getRecord(r.contentId)!), false);
+});
+
+t("a completed item is never stale, however long ago its last stage was entered", () => {
+  const actor = login("hop@dof.demo", "demo");
+  const done = C.createRecord(actor, { category: "devotional", title: "Old and finished" });
+  const stages = categoryOf("devotional").stages;
+  while (getRecord(done.contentId)!.pipelineStage !== stages[stages.length - 1].name) {
+    const cur = getRecord(done.contentId)!;
+    for (const task of cur.tasks.filter((x) => x.stage === cur.pipelineStage)) C.updateTask(actor, done.contentId, task.id, { done: true });
+    C.setStageOutput(actor, done.contentId, true, getRecord(done.contentId)!.version);
+    C.advanceStage(actor, done.contentId, getRecord(done.contentId)!.version);
+  }
+  const last = getRecord(done.contentId)!;
+  for (const task of last.tasks.filter((x) => x.stage === last.pipelineStage)) C.updateTask(actor, done.contentId, task.id, { done: true });
+  C.setStageOutput(actor, done.contentId, true, getRecord(done.contentId)!.version);
+  getDb().records.find((x) => x.contentId === done.contentId)!.stageEnteredAt = isoDay(-500);
+  assert.equal(C.isComplete(getRecord(done.contentId)!), true);
+  assert.equal(C.isStale(getRecord(done.contentId)!), false);
+  assert.equal(C.riskOf(getRecord(done.contentId)!), "done");
+});
+
+t("a longer effort override raises the bar for staleness on that stage", () => {
+  const r = getRecord("DOF-SER-001-S1-E01")!;
+  const stage = r.pipelineStage!;
+  const key = `${r.category}:${stage}`;
+  getDb().records.find((x) => x.contentId === r.contentId)!.stageEnteredAt = isoDay(-10);
+  const before = C.isStale(getRecord(r.contentId)!);
+  getDb().settings.effortOverrides = { ...getDb().settings.effortOverrides, [key]: 20 };
+  assert.equal(C.isStale(getRecord(r.contentId)!), false, "a big enough override for this stage pushes the threshold well past 10 days");
+  getDb().settings.effortOverrides = Object.fromEntries(Object.entries(getDb().settings.effortOverrides).filter(([k]) => k !== key));
+  void before;
+});
+
+t("advancing or sending back a stage resets stageEnteredAt to now", () => {
+  const actor = login("hop@dof.demo", "demo");
+  const r = getRecord("DOF-SER-001-S1-E01")!;
+  getDb().records.find((x) => x.contentId === r.contentId)!.stageEnteredAt = isoDay(-40);
+  for (const task of r.tasks.filter((x) => x.stage === r.pipelineStage)) C.updateTask(actor, r.contentId, task.id, { done: true });
+  C.setStageOutput(actor, r.contentId, true, getRecord(r.contentId)!.version);
+  const advanced = C.advanceStage(actor, r.contentId, getRecord(r.contentId)!.version);
+  assert.equal(advanced.stageEnteredAt, isoDay(0));
+  const back = C.sendBackStage(actor, r.contentId, getRecord(r.contentId)!.version);
+  assert.equal(back.stageEnteredAt, isoDay(0));
+});
+
+t("a stalled item's reminder goes to whoever is responsible now, with 'no update' wording, not 'due'", () => {
+  const actor = login("hop@dof.demo", "demo");
+  const r = getRecord("DOF-SER-001-S1-E01")!;
+  const owner = C.ownersOf(r, r.pipelineStage!)[0]?.personId ?? r.assigneePersonId!;
+  getDb().records.find((x) => x.contentId === r.contentId)!.stageEnteredAt = isoDay(-40);
+  const mine = remindersFor(owner);
+  const staleOne = mine.find((x: { kind: string; contentId: string }) => x.kind === "stale" && x.contentId === r.contentId);
+  assert.ok(staleOne, "the person responsible for the stalled stage gets a stale reminder");
+  assert.match(staleOne.title, /no update/i);
+  assert.doesNotMatch(staleOne.title, /due/i);
+  const someoneElse = remindersFor("DOF-P-VOL-002");
+  assert.ok(!someoneElse.some((x: { kind: string; contentId: string }) => x.kind === "stale" && x.contentId === r.contentId), "someone not responsible for the stage does not get nudged about it");
+  void actor;
+});
+
+t("a stalled item shows 'Stalled' on the Pipeline board and its own page", () => {
+  const actor = login("hop@dof.demo", "demo");
+  const r = getRecord("DOF-SER-001-S1-E01")!;
+  getDb().records.find((x) => x.contentId === r.contentId)!.stageEnteredAt = isoDay(-40);
+  assert.equal(C.riskOf(getRecord(r.contentId)!), "stale");
+  void actor;
+});
+
+t("a stalled item renders as 'Stalled' on the Pipeline board and its own page", () => {
+  const actor = login("hop@dof.demo", "demo");
+  const r = getRecord("DOF-SER-001-S1-E01")!;
+  getDb().records.find((x) => x.contentId === r.contentId)!.stageEnteredAt = isoDay(-40);
+  const withCtx = (el: React.ReactElement) => React.createElement(AppProvider, { actor, onLogout: () => {} }, el);
+  const pipelineHtml = renderToString(withCtx(React.createElement(Pipeline, {})));
+  assert.match(pipelineHtml, /Stalled/);
+  const pageHtml = renderToString(withCtx(React.createElement(RecordPage, { id: r.contentId })));
+  assert.match(pageHtml, /Stalled/);
+});
+
+console.log(`\n${passed} passed`);

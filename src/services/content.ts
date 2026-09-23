@@ -4,6 +4,7 @@ import { can, requireCan } from "./permissions";
 import { ConflictError, RuleError } from "../types";
 import { commit, getDb, nextCounter } from "../data/store";
 import { categoryOf, finalStageOf } from "../config/categories";
+import { effortFor } from "../config/capacity";
 import { archiveDocsFor, attachStageDocs, docSubject } from "./docs";
 import { checkedOutFor, releaseReservedFor, reservedFor } from "./equipment";
 import { recordSnapshot } from "./driveUsage";
@@ -11,7 +12,7 @@ import { fmtSize } from "./utils";
 import { canComment, canJoin, canView, canWrite, getRecord, isHop, selfAndAncestors, visibleRecords } from "./access";
 import { getPerson } from "./people";
 import { logAudit } from "./audit";
-import { daysUntil, hoursUntilEndOfDay, pad, todayIso } from "./utils";
+import { dayNumber, daysUntil, hoursUntilEndOfDay, pad, todayIso } from "./utils";
 
 // ── Hierarchy helpers ────────────────────────────────────────
 
@@ -79,13 +80,30 @@ export function isComplete(r: ContentRecord): boolean {
   return r.pipelineStage === last && !!r.stageOutputs[last];
 }
 
-export type Risk = "done" | "overdue" | "at-risk" | "ok";
+export type Risk = "done" | "overdue" | "stale" | "at-risk" | "ok";
+
+// A stage is stalled, not just running long, once it has sat far past what it normally takes — generous,
+// so this only fires on a genuine stall and not the normal spread of how long real work takes.
+const STALE_MULTIPLIER = 2.5;
+
+/** Days since the item entered its current stage. Never negative: stageEnteredAt is never in the future. */
+export function daysInStage(r: ContentRecord): number {
+  return r.pipelineStage ? dayNumber(todayIso()) - dayNumber(r.stageEnteredAt) : 0;
+}
+
+/** Whether the current stage has sat idle well past its typical duration, regardless of any deadline. */
+export function isStale(r: ContentRecord): boolean {
+  if (!r.pipelineStage || isComplete(r)) return false;
+  const typical = effortFor(r.category, r.pipelineStage, getDb().settings.effortOverrides);
+  return daysInStage(r) > typical * STALE_MULTIPLIER;
+}
 
 export function riskOf(r: ContentRecord): Risk {
   if (isComplete(r)) return "done";
   const stageDue = currentStageDeadline(r);
   if (stageDue && daysUntil(stageDue) < 0 && !r.stageOutputs[r.pipelineStage!]) return "overdue";
   if (r.deadline && daysUntil(r.deadline) < 0) return "overdue";
+  if (isStale(r)) return "stale";
   if (r.deadline && r.pipelineStage) {
     const stages = categoryOf(r.category).stages;
     const progress = stages.findIndex((s) => s.name === r.pipelineStage) / (stages.length - 1);
@@ -186,6 +204,7 @@ function blankRecord(id: string, category: CategoryKey, title: string, parentId:
     pipelineStage: null,
     stageOutputs: {},
     stageDeadlines: {},
+    stageEnteredAt: todayIso(),
     scheduledDate: null,
     startDate: todayIso(),
     deadline: null,
@@ -211,6 +230,7 @@ function blankRecord(id: string, category: CategoryKey, title: string, parentId:
 function initPipeline(actor: Actor, r: ContentRecord, stepDays = 4, startStage?: string): void {
   const stages = categoryOf(r.category).stages;
   r.pipelineStage = startStage ?? stages[0].name;
+  r.stageEnteredAt = todayIso();
   r.stageOutputs = Object.fromEntries(stages.map((s) => [s.name, false]));
   const base = new Date();
   r.stageDeadlines = Object.fromEntries(
@@ -468,6 +488,7 @@ export function advanceStage(actor: Actor, id: string, expectedVersion?: number)
   const idx = stages.findIndex((s) => s.name === r.pipelineStage);
   const from = r.pipelineStage!;
   r.pipelineStage = stages[idx + 1].name;
+  r.stageEnteredAt = todayIso();
   ensureStageTasks(r, r.pipelineStage);
   attachStageDocs(actor, r, r.pipelineStage);
   // The next stage's owner takes over. With no owner set yet, responsibility stays where it was.
@@ -486,6 +507,7 @@ export function sendBackStage(actor: Actor, id: string, expectedVersion?: number
   if (idx <= 0) throw new RuleError("Already at the first stage.");
   const from = r.pipelineStage!;
   r.pipelineStage = stages[idx - 1].name;
+  r.stageEnteredAt = todayIso();
   r.stageOutputs[r.pipelineStage] = false; // must be re-verified
   const owner = ownersOf(r, r.pipelineStage)[0];
   if (owner) r.assigneePersonId = owner.personId;

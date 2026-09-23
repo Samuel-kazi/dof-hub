@@ -8,6 +8,7 @@ export function RiskBadge({ record }: { record: ContentRecord }) {
   const r = riskOf(record);
   if (r === "done") return <span className="badge ok">Complete</span>;
   if (r === "overdue") return <span className="badge bad">Overdue</span>;
+  if (r === "stale") return <span className="badge accent">Stalled</span>;
   if (r === "at-risk") return <span className="badge warn">At risk</span>;
   return null;
 }

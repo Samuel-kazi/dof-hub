@@ -114,3 +114,14 @@ Adding equipment now supports several units of the same model in one go — for 
 This brings your `main` branch's Calendar module and personalisation (workspace accent colour, font pairing, per-person font size, density and profile photo) together with everything built in this update batch (the live-show workflow rebuild, equipment units, branding, dashboard and report changes). Nothing from either side was dropped.
 
 One thing worth knowing: both sets of changes had separately used "version 9" for a database migration, for two different things. This update keeps your appearance migration at version 9 and moves the live-show migration to version 10, layered on top, so real saved data upgrades correctly either way.
+
+
+## v10: CI, a self-checking codegen step, the equipment file split, and stage staleness
+
+- **Continuous integration**: every push and pull request now runs automatically on GitHub (`.github/workflows/ci.yml`) — install, type-check, confirm the generated server-replay code is current, then the full test suite. A failing step blocks the run (and blocks merging, if branch protection is turned on for the repo).
+- **`npm run gen:check`**: catches a service function that was added or renamed without running `npm run gen` afterwards, before it reaches GitHub. Run it yourself any time with `npm run gen:check`.
+- **`src/services/equipment.ts`** is now three files under the hood (`equipment-items.ts`, `equipment-manifests.ts`, `equipment-reports.ts`), with `equipment.ts` kept as a plain pass-through so nothing elsewhere in the app needed to change. Behaviour is identical — this was purely a file-organisation change, checked against the original file's full export list to confirm nothing moved or went missing.
+- **Stalled work is now flagged on its own**, separately from missed deadlines: a project that has sat in one stage for a long time — 2.5× longer than that stage normally takes — now shows a **Stalled** badge on the Pipeline board and on its own page, and nudges whoever is responsible for it with a reminder that says "no update in X days" rather than "due", since the cause is different. This catches stalls even when nobody set a deadline in the first place. Advancing or sending back a stage resets the clock. A longer effort estimate (Settings) raises the bar before something counts as stalled.
+
+### To set up branch protection (optional, on GitHub)
+Repo Settings → Branches → add a rule for `main` → **Require status checks to pass before merging** → select the `test` check once it has run at least once.

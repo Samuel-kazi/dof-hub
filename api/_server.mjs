@@ -398,7 +398,7 @@ function buildGearSeed() {
   const equipment = [];
   const history = [];
   let h = 0;
-  const hist2 = (equipmentId, daysAgo, kind, detail, contentId = null, manifestId = null, by = "DOF-P-HOP-001") => history.push({ id: `H-${String(++h).padStart(5, "0")}`, equipmentId, at: stamp(daysAgo), byPersonId: by, kind, detail, contentId, manifestId });
+  const hist3 = (equipmentId, daysAgo, kind, detail, contentId = null, manifestId = null, by = "DOF-P-HOP-001") => history.push({ id: `H-${String(++h).padStart(5, "0")}`, equipmentId, at: stamp(daysAgo), byPersonId: by, kind, detail, contentId, manifestId });
   const serial = (id, cat, name, make, model, sn, cost2, condition, ageDays, extra = {}) => {
     equipment.push({
       id,
@@ -426,7 +426,7 @@ function buildGearSeed() {
       createdAt: stamp(ageDays),
       ...extra
     });
-    hist2(id, ageDays, "created", "Added to inventory");
+    hist3(id, ageDays, "created", "Added to inventory");
   };
   const batch = (id, cat, family, name, make, qty, unitCost, ageDays, vendor) => {
     equipment.push({
@@ -454,7 +454,7 @@ function buildGearSeed() {
       baseStatus: "active",
       createdAt: stamp(ageDays)
     });
-    hist2(id, ageDays, "created", `New batch of ${qty}`);
+    hist3(id, ageDays, "created", `New batch of ${qty}`);
   };
   serial("DOF-EQ-CAM-001", "camera", "Sony FX3 camera body", "Sony", "FX3", "S-FX3-0412", 3900, "Good", 400, { unitLabel: "A-cam", accessories: "2 batteries, cage, top handle", packaging: "Pelican 1620" });
   serial("DOF-EQ-CAM-002", "camera", "Sony FX3 camera body", "Sony", "FX3", "S-FX3-0433", 3900, "Good", 380, { unitLabel: "B-cam", accessories: "2 batteries, cage" });
@@ -473,8 +473,8 @@ function buildGearSeed() {
   batch("DOF-EQ-CAB-XLR10M-B02", "cabling", "XLR-10M", "XLR cable 10 m", "Generic", 8, 20, 60, "Nairobi Pro Audio");
   batch("DOF-EQ-CAB-HDMI3M-B01", "cabling", "HDMI-3M", "HDMI cable 3 m", "Generic", 10, 9, 200, "Online");
   batch("DOF-EQ-PWR-SANDBAG-B01", "power", "SANDBAG", "Sandbag 7 kg", "Generic", 6, 12, 350, "Local");
-  hist2("DOF-EQ-LGT-002", 5, "repair-start", "Fan noise. Sent to the vendor for service");
-  hist2("DOF-EQ-AUD-004", 120, "retired", "Channel 3 faulty. Retired from inventory");
+  hist3("DOF-EQ-LGT-002", 5, "repair-start", "Fan noise. Sent to the vendor for service");
+  hist3("DOF-EQ-AUD-004", 120, "retired", "Channel 3 faulty. Retired from inventory");
   const line = (equipmentId, quantity, conditionOut, extra = {}) => ({
     equipmentId,
     quantity,
@@ -559,18 +559,18 @@ function buildGearSeed() {
   ];
   const inc = (n, equipmentId, daysAgo, description, contentId, manifestId) => {
     incidents.push({ id: `DOF-INC-${String(n).padStart(3, "0")}`, equipmentId, at: stamp(daysAgo), type: "damage", quantity: 1, description, personId: "DOF-P-CRW-002", contentId, manifestId });
-    hist2(equipmentId, daysAgo, "incident", `Damaged: ${description}`, contentId, manifestId, "DOF-P-CRW-002");
+    hist3(equipmentId, daysAgo, "incident", `Damaged: ${description}`, contentId, manifestId, "DOF-P-CRW-002");
   };
-  hist2("DOF-EQ-CAM-003", 73, "assigned", "DOF-DOC-001", "DOF-DOC-001", "DOF-MF-003", "DOF-P-CRW-002");
-  hist2("DOF-EQ-CAM-003", 72, "checked-out", `DOF-DOC-001, back by ${fmtShort(isoDay(-69))}`, "DOF-DOC-001", "DOF-MF-003", "DOF-P-CRW-002");
+  hist3("DOF-EQ-CAM-003", 73, "assigned", "DOF-DOC-001", "DOF-DOC-001", "DOF-MF-003", "DOF-P-CRW-002");
+  hist3("DOF-EQ-CAM-003", 72, "checked-out", `DOF-DOC-001, back by ${fmtShort(isoDay(-69))}`, "DOF-DOC-001", "DOF-MF-003", "DOF-P-CRW-002");
   inc(1, "DOF-EQ-CAM-003", 69, "Light scratch on the front element from dust at the shoot.", "DOF-DOC-001", "DOF-MF-003");
-  hist2("DOF-EQ-CAM-003", 69, "checked-in", "DOF-DOC-001, back in Good condition", "DOF-DOC-001", "DOF-MF-003", "DOF-P-CRW-002");
-  hist2("DOF-EQ-CAM-003", 36, "assigned", "DOF-DOC-001", "DOF-DOC-001", "DOF-MF-004", "DOF-P-CRW-002");
-  hist2("DOF-EQ-CAM-003", 35, "checked-out", `DOF-DOC-001, back by ${fmtShort(isoDay(-32))}`, "DOF-DOC-001", "DOF-MF-004", "DOF-P-CRW-002");
+  hist3("DOF-EQ-CAM-003", 69, "checked-in", "DOF-DOC-001, back in Good condition", "DOF-DOC-001", "DOF-MF-003", "DOF-P-CRW-002");
+  hist3("DOF-EQ-CAM-003", 36, "assigned", "DOF-DOC-001", "DOF-DOC-001", "DOF-MF-004", "DOF-P-CRW-002");
+  hist3("DOF-EQ-CAM-003", 35, "checked-out", `DOF-DOC-001, back by ${fmtShort(isoDay(-32))}`, "DOF-DOC-001", "DOF-MF-004", "DOF-P-CRW-002");
   inc(2, "DOF-EQ-CAM-003", 32, "Second scratch near the edge of the front element.", "DOF-DOC-001", "DOF-MF-004");
-  hist2("DOF-EQ-CAM-003", 32, "checked-in", "DOF-DOC-001, back in Fair condition", "DOF-DOC-001", "DOF-MF-004", "DOF-P-CRW-002");
-  for (const id of ["DOF-EQ-CAM-002", "DOF-EQ-CAM-004", "DOF-EQ-AUD-003"]) hist2(id, 8, "checked-out", `DOF-DOC-001, back by ${fmtShort(isoDay(-2))}`, "DOF-DOC-001", "DOF-MF-002", "DOF-P-CRW-002");
-  for (const id of ["DOF-EQ-CAM-001", "DOF-EQ-CAM-003", "DOF-EQ-AUD-001", "DOF-EQ-CAB-XLR10M-B01"]) hist2(id, 1, "assigned", `${id.includes("XLR") ? "4 units, " : ""}DOF-SER-001, ${fmtShort(isoDay(2))}`, "DOF-SER-001", "DOF-MF-001", "DOF-P-CRW-002");
+  hist3("DOF-EQ-CAM-003", 32, "checked-in", "DOF-DOC-001, back in Fair condition", "DOF-DOC-001", "DOF-MF-004", "DOF-P-CRW-002");
+  for (const id of ["DOF-EQ-CAM-002", "DOF-EQ-CAM-004", "DOF-EQ-AUD-003"]) hist3(id, 8, "checked-out", `DOF-DOC-001, back by ${fmtShort(isoDay(-2))}`, "DOF-DOC-001", "DOF-MF-002", "DOF-P-CRW-002");
+  for (const id of ["DOF-EQ-CAM-001", "DOF-EQ-CAM-003", "DOF-EQ-AUD-001", "DOF-EQ-CAB-XLR10M-B01"]) hist3(id, 1, "assigned", `${id.includes("XLR") ? "4 units, " : ""}DOF-SER-001, ${fmtShort(isoDay(2))}`, "DOF-SER-001", "DOF-MF-001", "DOF-P-CRW-002");
   const drives = [
     { id: "DRV-001", name: "Added", capacityGB: 4e3, otherUsedGB: 120, notes: "" },
     { id: "DRV-002", name: "Taji", capacityGB: 4e3, otherUsedGB: 0, notes: "" },
@@ -766,6 +766,7 @@ var rec = (i) => ({
   pipelineStage: i.stage,
   stageOutputs: i.stage ? outputsBefore(i.category, i.stage) : {},
   stageDeadlines: i.stage ? deadlinesFor(i.category, i.stage, i.stageOffset ?? 3) : {},
+  stageEnteredAt: i.stage ? isoDay(Math.min(0, (i.stageOffset ?? 3) - 4)) : isoDay(-30),
   scheduledDate: i.scheduled != null ? isoDay(i.scheduled) : null,
   startDate: isoDay(-30),
   deadline: i.deadline != null ? isoDay(i.deadline) : null,
@@ -1195,10 +1196,15 @@ function upgradeToV10(db2) {
   db2.schemaVersion = 10;
   return db2;
 }
+function upgradeToV11(db2) {
+  for (const r of db2.records) r.stageEnteredAt ??= r.createdAt;
+  db2.schemaVersion = 11;
+  return db2;
+}
 
 // src/data/store.ts
 var KEY = "dof-hub-db";
-var SCHEMA_VERSION = 10;
+var SCHEMA_VERSION = 11;
 function migrate(old) {
   const gear = buildGearSeed();
   const next = {
@@ -1228,23 +1234,25 @@ function upgradeDb(parsed) {
     case SCHEMA_VERSION:
       return parsed;
     case 1:
-      return upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(migrate(parsed)))))))));
+      return upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(migrate(parsed))))))))));
     case 2:
-      return upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(parsed))))))));
+      return upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(parsed)))))))));
     case 3:
-      return upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(parsed)))))));
+      return upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(parsed))))))));
     case 4:
-      return upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(parsed))))));
+      return upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(parsed)))))));
     case 5:
-      return upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(parsed)))));
+      return upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(parsed))))));
     case 6:
-      return upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(parsed))));
+      return upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(parsed)))));
     case 7:
-      return upgradeToV10(upgradeToV9(upgradeToV8(parsed)));
+      return upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(parsed))));
     case 8:
-      return upgradeToV10(upgradeToV9(parsed));
+      return upgradeToV11(upgradeToV10(upgradeToV9(parsed)));
     case 9:
-      return upgradeToV10(parsed);
+      return upgradeToV11(upgradeToV10(parsed));
+    case 10:
+      return upgradeToV11(parsed);
     default:
       return null;
   }
@@ -2100,6 +2108,7 @@ __export(content_exports, {
   createChildRecord: () => createChildRecord,
   createRecord: () => createRecord,
   currentStageDeadline: () => currentStageDeadline,
+  daysInStage: () => daysInStage,
   deleteRecord: () => deleteRecord,
   deletionImpact: () => deletionImpact,
   deletionSummary: () => deletionSummary,
@@ -2114,6 +2123,7 @@ __export(content_exports, {
   getRollupStatus: () => getRollupStatus,
   isComplete: () => isComplete,
   isOwnerNow: () => isOwnerNow,
+  isStale: () => isStale,
   leavesUnder: () => leavesUnder,
   levelLabel: () => levelLabel,
   openTasks: () => openTasks,
@@ -2177,6 +2187,19 @@ function cleanRoles(roles) {
     if (!out.some((x) => x.toLowerCase() === role.toLowerCase())) out.push(role);
   }
   return out;
+}
+
+// src/config/capacity.ts
+var DEFAULT_STAGE_EFFORT = {
+  series: { Idea: 0.5, Scripting: 2, "Pre-production": 1.5, Ingest: 0.5, Editorial: 2, Review: 0.5, Delivered: 0.5 },
+  devotional: { Idea: 0.5, Scripting: 1, Editorial: 1, Review: 0.5, Delivered: 0.5 },
+  live: { Prep: 0.5, Build: 1.5, Rehearse: 0.5, Show: 1, Wrap: 0.5, Review: 0.5, "Post Production": 1 },
+  documentary: { Idea: 1, Research: 3, "Pre-production": 2, Ingest: 1, Editorial: 5, Review: 1, Delivered: 0.5 },
+  music: { Idea: 0.5, "Pre-production": 1, "Audio post-production": 2, "Video editing": 2, Review: 0.5, Publish: 0.5 }
+};
+var effortKey = (category, stage) => `${category}:${stage}`;
+function effortFor(category, stage, overrides = {}) {
+  return overrides[effortKey(category, stage)] ?? DEFAULT_STAGE_EFFORT[category]?.[stage] ?? 0.5;
 }
 
 // src/services/equipment.ts
@@ -2261,193 +2284,12 @@ var equipCategory = (k) => EQUIP_CATEGORIES.find((c) => c.key === k);
 var CONDITIONS = ["New", "Good", "Fair", "Poor"];
 var conditionRank = (c) => CONDITIONS.indexOf(c);
 
-// src/services/people.ts
-var people_exports = {};
-__export(people_exports, {
-  assignToProject: () => assignToProject,
-  createLoginForPerson: () => createLoginForPerson,
-  createPerson: () => createPerson,
-  crewAvailableOn: () => crewAvailableOn,
-  deactivatePerson: () => deactivatePerson,
-  generatePersonId: () => generatePersonId,
-  getPerson: () => getPerson,
-  nameOf: () => nameOf,
-  projectHistory: () => projectHistory,
-  reactivatePerson: () => reactivatePerson,
-  removeFromProject: () => removeFromProject,
-  updateOwnProfile: () => updateOwnProfile,
-  updatePerson: () => updatePerson,
-  updatePersonCategory: () => updatePersonCategory,
-  workOwnedOn: () => workOwnedOn
-});
-function generatePersonId(category) {
-  const prefix = ROLES[category].idPrefix;
-  const nums = getDb().people.filter((p) => p.personId.startsWith(prefix + "-")).map((p) => parseInt(p.personId.slice(prefix.length + 1), 10)).filter((n) => !Number.isNaN(n));
-  return `${prefix}-${pad((nums.length ? Math.max(...nums) : 0) + 1)}`;
-}
-function requireHop(actor, what) {
-  requireCan(actor, "people.manage", what);
-}
-function getPerson(id) {
-  return getDb().people.find((p) => p.personId === id);
-}
-var nameOf = (id) => id ? getPerson(id)?.name ?? id : "Unassigned";
-function createLoginForPerson(actor, personId, email, password) {
-  requireHop(actor, "create logins");
-  const p = getPerson(personId);
-  if (!p) throw new RuleError("Person not found.");
-  if (getDb().users.some((u) => u.personId === personId)) throw new RuleError("This person already has a login.");
-  if (!email.trim()) throw new RuleError("Enter an email address for the login.");
-  if (getDb().users.some((u) => u.email.toLowerCase() === email.trim().toLowerCase())) throw new RuleError("That email is already used by another login.");
-  if (password.length < 4) throw new RuleError("Password must be at least 4 characters.");
-  const user = {
-    userId: `U-${pad(getDb().users.length + 1)}`,
-    personId,
-    email: email.trim(),
-    password,
-    // MOCK ONLY: hash with bcrypt once a real backend exists
-    role: p.category,
-    // auto-set from category, overridable later without touching the profile
-    active: true
-  };
-  getDb().users.push(user);
-  p.hasLogin = true;
-  logAudit(actor, "create-login", "person", personId, email);
-  commit();
-  return user;
-}
-function createPerson(actor, input, login2) {
-  requireHop(actor, "add people");
-  if (!input.name.trim()) throw new RuleError("Enter a name.");
-  if (login2) {
-    if (!login2.email.trim()) throw new RuleError("Enter an email address for the login.");
-    if (getDb().users.some((u) => u.email.toLowerCase() === login2.email.trim().toLowerCase())) throw new RuleError("That email is already used by another login.");
-    if (login2.password.length < 4) throw new RuleError("Password must be at least 4 characters.");
-  }
-  const person2 = {
-    personId: generatePersonId(input.category),
-    category: input.category,
-    name: input.name.trim(),
-    email: input.email.trim(),
-    phone: input.phone.trim(),
-    skills: input.skills,
-    equipmentFamiliarity: input.equipmentFamiliarity,
-    hasLogin: false,
-    status: "active",
-    createdAt: todayIso()
-  };
-  getDb().people.push(person2);
-  logAudit(actor, "create", "person", person2.personId, person2.name);
-  commit();
-  if (login2) createLoginForPerson(actor, person2.personId, login2.email, login2.password);
-  return person2;
-}
-function updatePerson(actor, personId, patch) {
-  requireHop(actor, "edit people");
-  const p = getPerson(personId);
-  if (!p) throw new RuleError("Person not found.");
-  Object.assign(p, patch);
-  logAudit(actor, "update", "person", personId, Object.keys(patch).join(", "));
-  commit();
-  return p;
-}
-function updateOwnProfile(actor, patch) {
-  const p = getPerson(actor.personId);
-  if (!p) throw new RuleError("Person not found.");
-  if (patch.name !== void 0 && !patch.name.trim()) throw new RuleError("Enter your name.");
-  if (patch.photoUrl && patch.photoUrl.length > 4e5) throw new RuleError("That photo is too large. Choose a smaller image.");
-  Object.assign(p, {
-    ...patch.name !== void 0 ? { name: patch.name.trim() } : {},
-    ...patch.email !== void 0 ? { email: patch.email.trim() } : {},
-    ...patch.phone !== void 0 ? { phone: patch.phone.trim() } : {},
-    ...patch.notifyEmail !== void 0 ? { notifyEmail: patch.notifyEmail } : {},
-    ...patch.notifySms !== void 0 ? { notifySms: patch.notifySms } : {},
-    ...patch.photoUrl !== void 0 ? { photoUrl: patch.photoUrl } : {},
-    ...patch.fontSize !== void 0 ? { fontSize: patch.fontSize } : {},
-    ...patch.density !== void 0 ? { density: patch.density } : {}
-  });
-  logAudit(actor, "update-profile", "person", actor.personId, Object.keys(patch).join(", "));
-  commit();
-  return p;
-}
-function updatePersonCategory(actor, personId, newCategory) {
-  requireHop(actor, "change someone's category");
-  const p = getPerson(personId);
-  if (!p) throw new RuleError("Person not found.");
-  if (p.category === "HOP") throw new RuleError("The Head of Production category cannot be changed here.");
-  const from = p.category;
-  p.category = newCategory;
-  const u = getDb().users.find((x) => x.personId === personId);
-  if (u) u.role = newCategory;
-  logAudit(actor, "change-category", "person", personId, `${from} \u2192 ${newCategory}`);
-  commit();
-  return p;
-}
-function deactivatePerson(actor, personId) {
-  requireHop(actor, "deactivate people");
-  const p = getPerson(personId);
-  if (!p) throw new RuleError("Person not found.");
-  if (p.category === "HOP") throw new RuleError("The Head of Production cannot be deactivated.");
-  p.status = "inactive";
-  const u = getDb().users.find((x) => x.personId === personId);
-  if (u) u.active = false;
-  logAudit(actor, "deactivate", "person", personId);
-  commit();
-}
-function reactivatePerson(actor, personId) {
-  requireHop(actor, "reactivate people");
-  const p = getPerson(personId);
-  if (!p) throw new RuleError("Person not found.");
-  p.status = "active";
-  const u = getDb().users.find((x) => x.personId === personId);
-  if (u) u.active = true;
-  logAudit(actor, "reactivate", "person", personId);
-  commit();
-}
-function projectHistory(personId) {
-  return getDb().members.filter((m) => m.personId === personId).map((member) => ({ member, record: getRecord(member.projectContentId) })).filter((x) => !!x.record);
-}
-function assignToProject(actor, personId, contentId, roleOnProject, canComment2) {
-  requireHop(actor, "assign people to projects");
-  const rec2 = getRecord(contentId);
-  if (!rec2) throw new RuleError("Project not found.");
-  if (getDb().members.some((m) => m.personId === personId && m.projectContentId === contentId)) throw new RuleError("Already assigned to this project.");
-  const roles = cleanRoles(roleOnProject.split(","));
-  getDb().members.push({ personId, projectContentId: contentId, roleOnProject: roles.join(", ") || "Team member", canComment: canComment2 });
-  logAudit(actor, "assign", "person", personId, contentId);
-  commit();
-}
-function workOwnedOn(personId, contentId) {
-  const under = getDb().records.filter((r) => !r.archived && (r.contentId === contentId || r.contentId.startsWith(`${contentId}-`)));
-  return {
-    stages: under.reduce((n, r) => n + Object.values(r.stageAssignees).filter((list) => list.some((o) => o.personId === personId)).length, 0),
-    tasks: under.reduce((n, r) => n + r.tasks.filter((t2) => t2.assigneePersonId === personId && !t2.done).length, 0)
-  };
-}
-function removeFromProject(actor, personId, contentId) {
-  requireHop(actor, "remove people from projects");
-  const owned = workOwnedOn(personId, contentId);
-  if (owned.stages || owned.tasks) {
-    const parts = [owned.stages ? `${owned.stages} stage${owned.stages > 1 ? "s" : ""}` : "", owned.tasks ? `${owned.tasks} open task${owned.tasks > 1 ? "s" : ""}` : ""].filter(Boolean).join(" and ");
-    throw new RuleError(`${getPerson(personId)?.name ?? personId} still owns ${parts} on this project. Hand them to someone else first.`);
-  }
-  getDb().members = getDb().members.filter((m) => !(m.personId === personId && m.projectContentId === contentId));
-  logAudit(actor, "unassign", "person", personId, contentId);
-  commit();
-}
-function crewAvailableOn(date) {
-  const db2 = getDb();
-  const total = db2.people.filter((p) => p.category === "CRW" && p.status === "active");
-  const busy = new Set(db2.callSheets.filter((cs) => cs.date === date).flatMap((cs) => cs.crewPersonIds));
-  return { available: total.filter((p) => !busy.has(p.personId)), total };
-}
-
-// src/services/equipment.ts
+// src/services/equipment-items.ts
 var hasGearAccess = (actor) => can(actor, "equipment.use");
 function requireGearAccess(actor) {
   if (!hasGearAccess(actor)) throw new RuleError("Equipment is managed by crew and the Head of Production. Ask the Head of Production for access.");
 }
-function requireHop2(actor, what) {
+function requireHop(actor, what) {
   requireCan(actor, "equipment.admin", what);
 }
 function projectLabel(actor, contentId) {
@@ -2455,15 +2297,8 @@ function projectLabel(actor, contentId) {
   return r && canView(actor, r) ? r.title : contentId;
 }
 var getItem = (id) => getDb().equipment.find((e) => e.id === id);
-var getManifest = (id) => getDb().manifests.find((m) => m.id === id);
 var isActive = (m) => m.status === "assigned" || m.status === "checked-out";
 var familyOf = (i) => i.itemFamily ? i.itemFamily.toUpperCase() : i.id;
-function addDays(iso, n) {
-  const [y, m, d] = iso.split("-").map(Number);
-  const dt = new Date(y, m - 1, d + n);
-  const p = (x) => String(x).padStart(2, "0");
-  return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`;
-}
 function hist(actor, equipmentId, kind, detail, extra = {}) {
   getDb().equipmentHistory.push({
     id: `H-${pad(nextCounter("history"), 5)}`,
@@ -2730,7 +2565,7 @@ function finishRepair(actor, id, condition, note) {
   commit();
 }
 function retireItem(actor, id, kind, note) {
-  requireHop2(actor, "retire equipment");
+  requireHop(actor, "retire equipment");
   const item = getItem(id);
   if (!item) throw new RuleError("Item not found.");
   if (item.baseStatus === "retired" || item.baseStatus === "lost") throw new RuleError("This item is already out of service.");
@@ -2741,7 +2576,7 @@ function retireItem(actor, id, kind, note) {
   commit();
 }
 function reinstateItem(actor, id) {
-  requireHop2(actor, "reinstate equipment");
+  requireHop(actor, "reinstate equipment");
   const item = getItem(id);
   if (!item || item.baseStatus !== "retired" && item.baseStatus !== "lost") throw new RuleError("This item is not retired or lost.");
   item.baseStatus = "active";
@@ -2750,7 +2585,7 @@ function reinstateItem(actor, id) {
   commit();
 }
 function deleteItem(actor, id) {
-  requireHop2(actor, "delete equipment");
+  requireHop(actor, "delete equipment");
   const item = getItem(id);
   if (!item) throw new RuleError("Item not found.");
   const used = getDb().manifests.some((m) => m.lines.some((l) => l.equipmentId === id)) || getDb().incidents.some((i) => i.equipmentId === id);
@@ -2759,6 +2594,275 @@ function deleteItem(actor, id) {
   getDb().equipmentHistory = getDb().equipmentHistory.filter((h) => h.equipmentId !== id);
   logAudit(actor, "delete", "equipment", id, item.name);
   commit();
+}
+
+// src/services/people.ts
+var people_exports = {};
+__export(people_exports, {
+  assignToProject: () => assignToProject,
+  createLoginForPerson: () => createLoginForPerson,
+  createPerson: () => createPerson,
+  crewAvailableOn: () => crewAvailableOn,
+  deactivatePerson: () => deactivatePerson,
+  generatePersonId: () => generatePersonId,
+  getPerson: () => getPerson,
+  nameOf: () => nameOf,
+  projectHistory: () => projectHistory,
+  reactivatePerson: () => reactivatePerson,
+  removeFromProject: () => removeFromProject,
+  updateOwnProfile: () => updateOwnProfile,
+  updatePerson: () => updatePerson,
+  updatePersonCategory: () => updatePersonCategory,
+  workOwnedOn: () => workOwnedOn
+});
+function generatePersonId(category) {
+  const prefix = ROLES[category].idPrefix;
+  const nums = getDb().people.filter((p) => p.personId.startsWith(prefix + "-")).map((p) => parseInt(p.personId.slice(prefix.length + 1), 10)).filter((n) => !Number.isNaN(n));
+  return `${prefix}-${pad((nums.length ? Math.max(...nums) : 0) + 1)}`;
+}
+function requireHop2(actor, what) {
+  requireCan(actor, "people.manage", what);
+}
+function getPerson(id) {
+  return getDb().people.find((p) => p.personId === id);
+}
+var nameOf = (id) => id ? getPerson(id)?.name ?? id : "Unassigned";
+function createLoginForPerson(actor, personId, email, password) {
+  requireHop2(actor, "create logins");
+  const p = getPerson(personId);
+  if (!p) throw new RuleError("Person not found.");
+  if (getDb().users.some((u) => u.personId === personId)) throw new RuleError("This person already has a login.");
+  if (!email.trim()) throw new RuleError("Enter an email address for the login.");
+  if (getDb().users.some((u) => u.email.toLowerCase() === email.trim().toLowerCase())) throw new RuleError("That email is already used by another login.");
+  if (password.length < 4) throw new RuleError("Password must be at least 4 characters.");
+  const user = {
+    userId: `U-${pad(getDb().users.length + 1)}`,
+    personId,
+    email: email.trim(),
+    password,
+    // MOCK ONLY: hash with bcrypt once a real backend exists
+    role: p.category,
+    // auto-set from category, overridable later without touching the profile
+    active: true
+  };
+  getDb().users.push(user);
+  p.hasLogin = true;
+  logAudit(actor, "create-login", "person", personId, email);
+  commit();
+  return user;
+}
+function createPerson(actor, input, login2) {
+  requireHop2(actor, "add people");
+  if (!input.name.trim()) throw new RuleError("Enter a name.");
+  if (login2) {
+    if (!login2.email.trim()) throw new RuleError("Enter an email address for the login.");
+    if (getDb().users.some((u) => u.email.toLowerCase() === login2.email.trim().toLowerCase())) throw new RuleError("That email is already used by another login.");
+    if (login2.password.length < 4) throw new RuleError("Password must be at least 4 characters.");
+  }
+  const person2 = {
+    personId: generatePersonId(input.category),
+    category: input.category,
+    name: input.name.trim(),
+    email: input.email.trim(),
+    phone: input.phone.trim(),
+    skills: input.skills,
+    equipmentFamiliarity: input.equipmentFamiliarity,
+    hasLogin: false,
+    status: "active",
+    createdAt: todayIso()
+  };
+  getDb().people.push(person2);
+  logAudit(actor, "create", "person", person2.personId, person2.name);
+  commit();
+  if (login2) createLoginForPerson(actor, person2.personId, login2.email, login2.password);
+  return person2;
+}
+function updatePerson(actor, personId, patch) {
+  requireHop2(actor, "edit people");
+  const p = getPerson(personId);
+  if (!p) throw new RuleError("Person not found.");
+  Object.assign(p, patch);
+  logAudit(actor, "update", "person", personId, Object.keys(patch).join(", "));
+  commit();
+  return p;
+}
+function updateOwnProfile(actor, patch) {
+  const p = getPerson(actor.personId);
+  if (!p) throw new RuleError("Person not found.");
+  if (patch.name !== void 0 && !patch.name.trim()) throw new RuleError("Enter your name.");
+  if (patch.photoUrl && patch.photoUrl.length > 4e5) throw new RuleError("That photo is too large. Choose a smaller image.");
+  Object.assign(p, {
+    ...patch.name !== void 0 ? { name: patch.name.trim() } : {},
+    ...patch.email !== void 0 ? { email: patch.email.trim() } : {},
+    ...patch.phone !== void 0 ? { phone: patch.phone.trim() } : {},
+    ...patch.notifyEmail !== void 0 ? { notifyEmail: patch.notifyEmail } : {},
+    ...patch.notifySms !== void 0 ? { notifySms: patch.notifySms } : {},
+    ...patch.photoUrl !== void 0 ? { photoUrl: patch.photoUrl } : {},
+    ...patch.fontSize !== void 0 ? { fontSize: patch.fontSize } : {},
+    ...patch.density !== void 0 ? { density: patch.density } : {}
+  });
+  logAudit(actor, "update-profile", "person", actor.personId, Object.keys(patch).join(", "));
+  commit();
+  return p;
+}
+function updatePersonCategory(actor, personId, newCategory) {
+  requireHop2(actor, "change someone's category");
+  const p = getPerson(personId);
+  if (!p) throw new RuleError("Person not found.");
+  if (p.category === "HOP") throw new RuleError("The Head of Production category cannot be changed here.");
+  const from = p.category;
+  p.category = newCategory;
+  const u = getDb().users.find((x) => x.personId === personId);
+  if (u) u.role = newCategory;
+  logAudit(actor, "change-category", "person", personId, `${from} \u2192 ${newCategory}`);
+  commit();
+  return p;
+}
+function deactivatePerson(actor, personId) {
+  requireHop2(actor, "deactivate people");
+  const p = getPerson(personId);
+  if (!p) throw new RuleError("Person not found.");
+  if (p.category === "HOP") throw new RuleError("The Head of Production cannot be deactivated.");
+  p.status = "inactive";
+  const u = getDb().users.find((x) => x.personId === personId);
+  if (u) u.active = false;
+  logAudit(actor, "deactivate", "person", personId);
+  commit();
+}
+function reactivatePerson(actor, personId) {
+  requireHop2(actor, "reactivate people");
+  const p = getPerson(personId);
+  if (!p) throw new RuleError("Person not found.");
+  p.status = "active";
+  const u = getDb().users.find((x) => x.personId === personId);
+  if (u) u.active = true;
+  logAudit(actor, "reactivate", "person", personId);
+  commit();
+}
+function projectHistory(personId) {
+  return getDb().members.filter((m) => m.personId === personId).map((member) => ({ member, record: getRecord(member.projectContentId) })).filter((x) => !!x.record);
+}
+function assignToProject(actor, personId, contentId, roleOnProject, canComment2) {
+  requireHop2(actor, "assign people to projects");
+  const rec2 = getRecord(contentId);
+  if (!rec2) throw new RuleError("Project not found.");
+  if (getDb().members.some((m) => m.personId === personId && m.projectContentId === contentId)) throw new RuleError("Already assigned to this project.");
+  const roles = cleanRoles(roleOnProject.split(","));
+  getDb().members.push({ personId, projectContentId: contentId, roleOnProject: roles.join(", ") || "Team member", canComment: canComment2 });
+  logAudit(actor, "assign", "person", personId, contentId);
+  commit();
+}
+function workOwnedOn(personId, contentId) {
+  const under = getDb().records.filter((r) => !r.archived && (r.contentId === contentId || r.contentId.startsWith(`${contentId}-`)));
+  return {
+    stages: under.reduce((n, r) => n + Object.values(r.stageAssignees).filter((list) => list.some((o) => o.personId === personId)).length, 0),
+    tasks: under.reduce((n, r) => n + r.tasks.filter((t2) => t2.assigneePersonId === personId && !t2.done).length, 0)
+  };
+}
+function removeFromProject(actor, personId, contentId) {
+  requireHop2(actor, "remove people from projects");
+  const owned = workOwnedOn(personId, contentId);
+  if (owned.stages || owned.tasks) {
+    const parts = [owned.stages ? `${owned.stages} stage${owned.stages > 1 ? "s" : ""}` : "", owned.tasks ? `${owned.tasks} open task${owned.tasks > 1 ? "s" : ""}` : ""].filter(Boolean).join(" and ");
+    throw new RuleError(`${getPerson(personId)?.name ?? personId} still owns ${parts} on this project. Hand them to someone else first.`);
+  }
+  getDb().members = getDb().members.filter((m) => !(m.personId === personId && m.projectContentId === contentId));
+  logAudit(actor, "unassign", "person", personId, contentId);
+  commit();
+}
+function crewAvailableOn(date) {
+  const db2 = getDb();
+  const total = db2.people.filter((p) => p.category === "CRW" && p.status === "active");
+  const busy = new Set(db2.callSheets.filter((cs) => cs.date === date).flatMap((cs) => cs.crewPersonIds));
+  return { available: total.filter((p) => !busy.has(p.personId)), total };
+}
+
+// src/services/equipment-reports.ts
+function inventoryReport(category, includeOutOfService) {
+  const groups = [];
+  for (const cat of EQUIP_CATEGORIES) {
+    if (category !== "all" && cat.key !== category) continue;
+    const items = getDb().equipment.filter((i) => i.category === cat.key && (includeOutOfService || i.baseStatus === "active" || i.baseStatus === "in-repair")).sort((a, b) => a.id.localeCompare(b.id));
+    if (!items.length) continue;
+    const rows = items.map((i) => ({
+      id: i.id,
+      name: i.name,
+      detail: [i.make, i.model].filter(Boolean).join(" "),
+      serial: [i.serialNumber, i.unitLabel].filter(Boolean).join(" ") || "",
+      qty: i.quantityTotal,
+      free: qtyFree(i),
+      condition: i.condition,
+      status: displayStatus(i).label,
+      cost: i.unitCost,
+      vendor: i.vendor,
+      purchased: i.purchaseDate ? fmtShort(i.purchaseDate) : "",
+      packaging: i.packaging,
+      accessories: i.accessories
+    }));
+    groups.push({ category: cat.key, label: cat.label, rows, units: rows.reduce((n, r) => n + r.qty, 0) });
+  }
+  return groups;
+}
+function groupByFamily(items) {
+  const map = /* @__PURE__ */ new Map();
+  for (const i of items.filter((x) => x.trackingType === "aggregate")) {
+    const k = familyOf(i);
+    if (!map.has(k)) map.set(k, { key: k, name: i.name, category: i.category, items: [] });
+    map.get(k).items.push(i);
+  }
+  for (const f of map.values()) f.items.sort((a, b) => (a.purchaseDate ?? a.createdAt).localeCompare(b.purchaseDate ?? b.createdAt));
+  return [...map.values()];
+}
+var modelKeyOf = (i) => {
+  const make = i.make.trim().toLowerCase();
+  const model = i.model.trim().toLowerCase();
+  return make && model ? `${i.category}::${make}::${model}` : null;
+};
+function groupSerializedByModel(items) {
+  const map = /* @__PURE__ */ new Map();
+  for (const i of items.filter((x) => x.trackingType === "serialized")) {
+    const k = modelKeyOf(i);
+    if (!k) continue;
+    if (!map.has(k)) map.set(k, { key: k, name: `${i.make.trim()} ${i.model.trim()}`.trim(), category: i.category, items: [] });
+    map.get(k).items.push(i);
+  }
+  for (const f of map.values()) f.items.sort((a, b) => (a.purchaseDate ?? a.createdAt).localeCompare(b.purchaseDate ?? b.createdAt));
+  return [...map.values()];
+}
+var itemHistory = (id) => getDb().equipmentHistory.filter((h) => h.equipmentId === id).sort((a, b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id));
+var itemIncidents = (id) => getDb().incidents.filter((i) => i.equipmentId === id).sort((a, b) => b.at.localeCompare(a.at));
+var allIncidents = () => [...getDb().incidents].sort((a, b) => b.at.localeCompare(a.at));
+
+// src/services/equipment-manifests.ts
+function hist2(actor, equipmentId, kind, detail, extra = {}) {
+  getDb().equipmentHistory.push({
+    id: `H-${pad(nextCounter("history"), 5)}`,
+    equipmentId,
+    at: (/* @__PURE__ */ new Date()).toISOString(),
+    byPersonId: actor.personId,
+    kind,
+    detail,
+    contentId: extra.contentId ?? null,
+    manifestId: extra.manifestId ?? null
+  });
+}
+function makeAttachment2(actor, input) {
+  const url = input.url.trim();
+  if (!url) throw new RuleError("Add a photo or paste a link.");
+  if (url.startsWith("data:")) {
+    if (!url.startsWith("data:image/")) throw new RuleError("Only images can be attached.");
+    if (url.length > 42e4) throw new RuleError("That image is too large. Try a smaller photo.");
+  } else if (!/^https?:\/\//i.test(url)) {
+    throw new RuleError("Links must start with http:// or https://.");
+  }
+  return { id: `ATT-${pad(nextCounter("attachment"), 5)}`, url, caption: (input.caption ?? "").trim(), at: (/* @__PURE__ */ new Date()).toISOString(), byPersonId: actor.personId };
+}
+var getManifest = (id) => getDb().manifests.find((m) => m.id === id);
+function addDays(iso, n) {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(y, m - 1, d + n);
+  const p = (x) => String(x).padStart(2, "0");
+  return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`;
 }
 function checkLine(item, qty, from, to, excludeManifestId) {
   if (!item) throw new RuleError("That item no longer exists.");
@@ -2825,7 +2929,7 @@ function createManifest(actor, input) {
     returnedAt: null
   };
   getDb().manifests.push(m);
-  for (const l of m.lines) hist(actor, l.equipmentId, m.status === "checked-out" ? "checked-out" : "assigned", `${l.quantity > 1 ? `${l.quantity} units, ` : ""}${m.contentId}, ${fmtShort(m.date)}`, { contentId: m.contentId, manifestId: m.id });
+  for (const l of m.lines) hist2(actor, l.equipmentId, m.status === "checked-out" ? "checked-out" : "assigned", `${l.quantity > 1 ? `${l.quantity} units, ` : ""}${m.contentId}, ${fmtShort(m.date)}`, { contentId: m.contentId, manifestId: m.id });
   logAudit(actor, "create", "manifest", m.id, `${m.status}, ${m.lines.length} lines`);
   syncSheetEquipment(m.callSheetId);
   commit();
@@ -2838,7 +2942,7 @@ function addLine(actor, manifestId, equipmentId, quantity) {
   const item = checkLine(getItem(equipmentId), (existing?.quantity ?? 0) + quantity, m.date, m.expectedReturn ?? m.date, m.id);
   if (existing) existing.quantity += quantity;
   else m.lines.push(newLine(item, quantity));
-  hist(actor, equipmentId, "assigned", `${quantity > 1 ? `${quantity} units, ` : ""}${m.contentId}, ${fmtShort(m.date)}`, { contentId: m.contentId, manifestId: m.id });
+  hist2(actor, equipmentId, "assigned", `${quantity > 1 ? `${quantity} units, ` : ""}${m.contentId}, ${fmtShort(m.date)}`, { contentId: m.contentId, manifestId: m.id });
   syncSheetEquipment(m.callSheetId);
   commit();
   return m;
@@ -2858,7 +2962,7 @@ function removeLine(actor, manifestId, equipmentId) {
   const m = loadManifest(actor, manifestId);
   if (m.status !== "assigned") throw new RuleError("Items can only be removed before the gear goes out.");
   m.lines = m.lines.filter((l) => l.equipmentId !== equipmentId);
-  hist(actor, equipmentId, "released", `Taken off ${m.id}`, { contentId: m.contentId, manifestId: m.id });
+  hist2(actor, equipmentId, "released", `Taken off ${m.id}`, { contentId: m.contentId, manifestId: m.id });
   if (!m.lines.length) m.status = "released";
   syncSheetEquipment(m.callSheetId);
   commit();
@@ -2876,11 +2980,11 @@ function markGoneOut(actor, manifestId, opts = {}) {
   const person2 = getPerson(responsible);
   if (!person2 || person2.status !== "active") throw new RuleError("The person responsible must be active crew.");
   const items = m.lines.map((l) => checkLine(getItem(l.equipmentId), l.quantity, m.date, expectedReturn, m.id));
-  const photoAtts = m.lines.map((l) => (opts.photos?.[l.equipmentId] ?? []).map((p) => makeAttachment(actor, p)));
+  const photoAtts = m.lines.map((l) => (opts.photos?.[l.equipmentId] ?? []).map((p) => makeAttachment2(actor, p)));
   m.lines.forEach((l, i) => {
     l.conditionOut = items[i].condition;
     l.photosOut.push(...photoAtts[i]);
-    hist(actor, l.equipmentId, "checked-out", `${m.contentId}, back by ${fmtShort(expectedReturn)}`, { contentId: m.contentId, manifestId: m.id });
+    hist2(actor, l.equipmentId, "checked-out", `${m.contentId}, back by ${fmtShort(expectedReturn)}`, { contentId: m.contentId, manifestId: m.id });
   });
   m.status = "checked-out";
   m.destination = "outside";
@@ -2919,7 +3023,7 @@ function checkIn(actor, manifestId, returns) {
     const desc = (r.description ?? "").trim();
     if (damaged + lost > 0 && !desc) throw new RuleError(`Describe what happened to ${item.name}.`);
     if (damaged + lost > item.quantityTotal) throw new RuleError(`${item.name}: more units damaged or lost than the batch holds.`);
-    return { line, item, good, damaged, lost, cond, desc, repair: !!r.sendToRepair && item.trackingType === "serialized" && damaged === 1, photos: (r.photos ?? []).map((p) => makeAttachment(actor, p)) };
+    return { line, item, good, damaged, lost, cond, desc, repair: !!r.sendToRepair && item.trackingType === "serialized" && damaged === 1, photos: (r.photos ?? []).map((p) => makeAttachment2(actor, p)) };
   });
   const now = (/* @__PURE__ */ new Date()).toISOString();
   for (const p of plans) {
@@ -2938,7 +3042,7 @@ function checkIn(actor, manifestId, returns) {
     const addIncident = (type, qty) => {
       const inc = { id: `DOF-INC-${pad(nextCounter("incident"))}`, equipmentId: p.item.id, at: now, type, quantity: qty, description: p.desc, personId: m.responsiblePersonId, contentId: m.contentId, manifestId: m.id };
       getDb().incidents.push(inc);
-      hist(actor, p.item.id, "incident", `${type === "damage" ? "Damaged" : "Lost"}${qty > 1 ? ` (${qty} units)` : ""}: ${p.desc}`, { contentId: m.contentId, manifestId: m.id });
+      hist2(actor, p.item.id, "incident", `${type === "damage" ? "Damaged" : "Lost"}${qty > 1 ? ` (${qty} units)` : ""}: ${p.desc}`, { contentId: m.contentId, manifestId: m.id });
     };
     if (p.damaged) addIncident("damage", p.damaged);
     if (p.lost) {
@@ -2947,9 +3051,9 @@ function checkIn(actor, manifestId, returns) {
     }
     if (p.repair) {
       p.item.baseStatus = "in-repair";
-      hist(actor, p.item.id, "repair-start", `Sent for repair after ${m.contentId}`, { contentId: m.contentId, manifestId: m.id });
+      hist2(actor, p.item.id, "repair-start", `Sent for repair after ${m.contentId}`, { contentId: m.contentId, manifestId: m.id });
     }
-    hist(actor, p.item.id, "checked-in", `${m.contentId}${p.cond ? `, back in ${p.cond} condition` : ""}${p.good && p.item.trackingType === "aggregate" ? `, ${p.good} returned` : ""}`, { contentId: m.contentId, manifestId: m.id });
+    hist2(actor, p.item.id, "checked-in", `${m.contentId}${p.cond ? `, back in ${p.cond} condition` : ""}${p.good && p.item.trackingType === "aggregate" ? `, ${p.good} returned` : ""}`, { contentId: m.contentId, manifestId: m.id });
   }
   m.status = "returned";
   m.returnedAt = now;
@@ -2971,35 +3075,10 @@ function attachManifest(actor, manifestId, contentId) {
   if (m.contentId === contentId) throw new RuleError("This list is already attached here.");
   const from = m.contentId;
   m.contentId = contentId;
-  for (const l of m.lines) hist(actor, l.equipmentId, "edited", `${m.id} moved from ${from} to ${contentId}`, { contentId, manifestId: m.id });
+  for (const l of m.lines) hist2(actor, l.equipmentId, "edited", `${m.id} moved from ${from} to ${contentId}`, { contentId, manifestId: m.id });
   logAudit(actor, "attach", "manifest", m.id, `${from} to ${contentId}`);
   commit();
   return m;
-}
-function inventoryReport(category, includeOutOfService) {
-  const groups = [];
-  for (const cat of EQUIP_CATEGORIES) {
-    if (category !== "all" && cat.key !== category) continue;
-    const items = getDb().equipment.filter((i) => i.category === cat.key && (includeOutOfService || i.baseStatus === "active" || i.baseStatus === "in-repair")).sort((a, b) => a.id.localeCompare(b.id));
-    if (!items.length) continue;
-    const rows = items.map((i) => ({
-      id: i.id,
-      name: i.name,
-      detail: [i.make, i.model].filter(Boolean).join(" "),
-      serial: [i.serialNumber, i.unitLabel].filter(Boolean).join(" ") || "",
-      qty: i.quantityTotal,
-      free: qtyFree(i),
-      condition: i.condition,
-      status: displayStatus(i).label,
-      cost: i.unitCost,
-      vendor: i.vendor,
-      purchased: i.purchaseDate ? fmtShort(i.purchaseDate) : "",
-      packaging: i.packaging,
-      accessories: i.accessories
-    }));
-    groups.push({ category: cat.key, label: cat.label, rows, units: rows.reduce((n, r) => n + r.qty, 0) });
-  }
-  return groups;
 }
 var checkedOutFor = (contentId) => getDb().manifests.filter((m) => m.contentId === contentId && m.status === "checked-out");
 var reservedFor = (contentId) => getDb().manifests.filter((m) => m.contentId === contentId && m.status === "assigned");
@@ -3007,7 +3086,7 @@ function releaseReservedFor(actor, contentId) {
   const lists = reservedFor(contentId);
   for (const m of lists) {
     m.status = "released";
-    for (const l of m.lines) hist(actor, l.equipmentId, "released", `Released: ${contentId} was deleted`, { contentId, manifestId: m.id });
+    for (const l of m.lines) hist2(actor, l.equipmentId, "released", `Released: ${contentId} was deleted`, { contentId, manifestId: m.id });
     logAudit(actor, "release", "manifest", m.id, "project deleted");
     syncSheetEquipment(m.callSheetId);
   }
@@ -3017,7 +3096,7 @@ function releaseManifest(actor, manifestId) {
   const m = loadManifest(actor, manifestId);
   if (m.status !== "assigned") throw new RuleError("Only assigned gear can be released. Checked-out gear is checked in.");
   m.status = "released";
-  for (const l of m.lines) hist(actor, l.equipmentId, "released", `Released from ${m.contentId}`, { contentId: m.contentId, manifestId: m.id });
+  for (const l of m.lines) hist2(actor, l.equipmentId, "released", `Released from ${m.contentId}`, { contentId: m.contentId, manifestId: m.id });
   logAudit(actor, "release", "manifest", m.id);
   syncSheetEquipment(m.callSheetId);
   commit();
@@ -3028,7 +3107,7 @@ function addLinePhoto(actor, manifestId, equipmentId, input) {
   if (m.status !== "assigned" && m.status !== "checked-out") throw new RuleError("Photos are added while the gear is out.");
   const line = m.lines.find((l) => l.equipmentId === equipmentId);
   if (!line) throw new RuleError("That item is not on this list.");
-  line.photosOut.push(makeAttachment(actor, input));
+  line.photosOut.push(makeAttachment2(actor, input));
   commit();
 }
 function listManifests(actor) {
@@ -3042,9 +3121,6 @@ function listManifests(actor) {
 var manifestsForContent = (contentId) => getDb().manifests.filter((m) => m.contentId === contentId && m.status !== "released").sort((a, b) => a.date.localeCompare(b.date));
 var overdueManifests = () => getDb().manifests.filter(isOverdue).sort((a, b) => (a.expectedReturn ?? "").localeCompare(b.expectedReturn ?? ""));
 var checkedOutManifests = () => getDb().manifests.filter((m) => m.status === "checked-out").sort((a, b) => (a.expectedReturn ?? "").localeCompare(b.expectedReturn ?? ""));
-var itemHistory = (id) => getDb().equipmentHistory.filter((h) => h.equipmentId === id).sort((a, b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id));
-var itemIncidents = (id) => getDb().incidents.filter((i) => i.equipmentId === id).sort((a, b) => b.at.localeCompare(a.at));
-var allIncidents = () => [...getDb().incidents].sort((a, b) => b.at.localeCompare(a.at));
 function manifestSummary(m) {
   const units = m.lines.reduce((n, l) => n + l.quantity, 0);
   return `${m.lines.length} item${m.lines.length === 1 ? "" : "s"}, ${units} unit${units === 1 ? "" : "s"}`;
@@ -3061,32 +3137,6 @@ function manifestStatusView(m) {
     case "released":
       return { label: "Released", tone: "" };
   }
-}
-function groupByFamily(items) {
-  const map = /* @__PURE__ */ new Map();
-  for (const i of items.filter((x) => x.trackingType === "aggregate")) {
-    const k = familyOf(i);
-    if (!map.has(k)) map.set(k, { key: k, name: i.name, category: i.category, items: [] });
-    map.get(k).items.push(i);
-  }
-  for (const f of map.values()) f.items.sort((a, b) => (a.purchaseDate ?? a.createdAt).localeCompare(b.purchaseDate ?? b.createdAt));
-  return [...map.values()];
-}
-var modelKeyOf = (i) => {
-  const make = i.make.trim().toLowerCase();
-  const model = i.model.trim().toLowerCase();
-  return make && model ? `${i.category}::${make}::${model}` : null;
-};
-function groupSerializedByModel(items) {
-  const map = /* @__PURE__ */ new Map();
-  for (const i of items.filter((x) => x.trackingType === "serialized")) {
-    const k = modelKeyOf(i);
-    if (!k) continue;
-    if (!map.has(k)) map.set(k, { key: k, name: `${i.make.trim()} ${i.model.trim()}`.trim(), category: i.category, items: [] });
-    map.get(k).items.push(i);
-  }
-  for (const f of map.values()) f.items.sort((a, b) => (a.purchaseDate ?? a.createdAt).localeCompare(b.purchaseDate ?? b.createdAt));
-  return [...map.values()];
 }
 function pickerRows(from, to, excludeManifestId) {
   const all = getDb().equipment;
@@ -3270,11 +3320,21 @@ function isComplete(r) {
   const last = stages[stages.length - 1].name;
   return r.pipelineStage === last && !!r.stageOutputs[last];
 }
+var STALE_MULTIPLIER = 2.5;
+function daysInStage(r) {
+  return r.pipelineStage ? dayNumber(todayIso()) - dayNumber(r.stageEnteredAt) : 0;
+}
+function isStale(r) {
+  if (!r.pipelineStage || isComplete(r)) return false;
+  const typical = effortFor(r.category, r.pipelineStage, getDb().settings.effortOverrides);
+  return daysInStage(r) > typical * STALE_MULTIPLIER;
+}
 function riskOf(r) {
   if (isComplete(r)) return "done";
   const stageDue = currentStageDeadline(r);
   if (stageDue && daysUntil(stageDue) < 0 && !r.stageOutputs[r.pipelineStage]) return "overdue";
   if (r.deadline && daysUntil(r.deadline) < 0) return "overdue";
+  if (isStale(r)) return "stale";
   if (r.deadline && r.pipelineStage) {
     const stages = categoryOf(r.category).stages;
     const progress = stages.findIndex((s2) => s2.name === r.pipelineStage) / (stages.length - 1);
@@ -3339,6 +3399,7 @@ function blankRecord(id, category, title, parentId, level) {
     pipelineStage: null,
     stageOutputs: {},
     stageDeadlines: {},
+    stageEnteredAt: todayIso(),
     scheduledDate: null,
     startDate: todayIso(),
     deadline: null,
@@ -3363,6 +3424,7 @@ function blankRecord(id, category, title, parentId, level) {
 function initPipeline(actor, r, stepDays = 4, startStage) {
   const stages = categoryOf(r.category).stages;
   r.pipelineStage = startStage ?? stages[0].name;
+  r.stageEnteredAt = todayIso();
   r.stageOutputs = Object.fromEntries(stages.map((s2) => [s2.name, false]));
   const base = /* @__PURE__ */ new Date();
   r.stageDeadlines = Object.fromEntries(
@@ -3579,6 +3641,7 @@ function advanceStage(actor, id, expectedVersion) {
   const idx = stages.findIndex((s2) => s2.name === r.pipelineStage);
   const from = r.pipelineStage;
   r.pipelineStage = stages[idx + 1].name;
+  r.stageEnteredAt = todayIso();
   ensureStageTasks(r, r.pipelineStage);
   attachStageDocs(actor, r, r.pipelineStage);
   const nextOwner = ownersOf(r, r.pipelineStage)[0];
@@ -3595,6 +3658,7 @@ function sendBackStage(actor, id, expectedVersion) {
   if (idx <= 0) throw new RuleError("Already at the first stage.");
   const from = r.pipelineStage;
   r.pipelineStage = stages[idx - 1].name;
+  r.stageEnteredAt = todayIso();
   r.stageOutputs[r.pipelineStage] = false;
   const owner = ownersOf(r, r.pipelineStage)[0];
   if (owner) r.assigneePersonId = owner.personId;
@@ -4123,6 +4187,9 @@ function remindersFor(personId, asOf = todayIso(), days = 21) {
       const mine = i === idx ? isOwnerNow(r, personId) : ownersOf(r, s2.name).some((o) => o.personId === personId);
       if (i >= idx && due && mine && !r.stageOutputs[s2.name]) add({ key: `stage:${r.contentId}:${s2.name}`, kind: "stage", title: `${displayTitle(r)}: ${s2.name} due`, detail: `${r.contentId}. ${s2.requiredOutput}.`, date: due, time: null, contentId: r.contentId, category: r.category });
     });
+    if (isOwnerNow(r, personId) && isStale(r)) {
+      add({ key: `stale:${r.contentId}:${r.pipelineStage}`, kind: "stale", title: `${displayTitle(r)}: no update in ${r.pipelineStage}`, detail: `${r.contentId}. No update in ${daysInStage(r)} days.`, date: asOf, time: null, contentId: r.contentId, category: r.category });
+    }
     for (const t2 of r.tasks) if (t2.assigneePersonId === personId && !t2.done && t2.dueDate) add({ key: `task:${t2.id}`, kind: "task", title: `${displayTitle(r)}: ${t2.label} due`, detail: `${r.contentId}, ${t2.stage}.`, date: t2.dueDate, time: null, contentId: r.contentId, category: r.category });
   }
   for (const cs of db2.callSheets) {

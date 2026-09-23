@@ -211,3 +211,12 @@ export function upgradeToV10(db: Database): Database {
   db.schemaVersion = 10;
   return db;
 }
+
+/** Version 11: how long an item has sat in its current stage, for stalled-work detection, on top of the
+ *  deadline-based checks that already existed. Older records get their creation date, the earliest true
+ *  answer available for them. */
+export function upgradeToV11(db: Database): Database {
+  for (const r of db.records) (r as { stageEnteredAt?: string }).stageEnteredAt ??= r.createdAt;
+  db.schemaVersion = 11;
+  return db;
+}

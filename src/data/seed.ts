@@ -73,6 +73,7 @@ const rec = (i: LeafInput): ContentRecord => ({
   pipelineStage: i.stage,
   stageOutputs: i.stage ? outputsBefore(i.category, i.stage) : {},
   stageDeadlines: i.stage ? deadlinesFor(i.category, i.stage, i.stageOffset ?? 3) : {},
+  stageEnteredAt: i.stage ? isoDay(Math.min(0, (i.stageOffset ?? 3) - 4)) : isoDay(-30),
   scheduledDate: i.scheduled != null ? isoDay(i.scheduled) : null,
   startDate: isoDay(-30),
   deadline: i.deadline != null ? isoDay(i.deadline) : null,

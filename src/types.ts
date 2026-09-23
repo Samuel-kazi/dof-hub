@@ -98,6 +98,7 @@ export interface ContentRecord {
   pipelineStage: string | null; // only populated on the level that does production work
   stageOutputs: Record<string, boolean>; // stage-gate: required output present?
   stageDeadlines: Record<string, string>; // ISO date per stage
+  stageEnteredAt: string; // ISO date the item arrived at its current pipelineStage; for staleness, not deadlines
   scheduledDate: string | null; // the shoot date (for a live day, the show date)
   startDate: string;
   deadline: string | null; // the publish date

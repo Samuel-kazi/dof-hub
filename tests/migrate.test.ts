@@ -8,7 +8,7 @@ import { buildSeed } from "../src/data/seed";
 const from = process.env.MIGRATE_FROM;
 
 if (!from) {
-  for (const v of ["1", "2", "4", "5", "7", "8", "9"]) {
+  for (const v of ["1", "2", "4", "5", "7", "8", "9", "10"]) {
     const r = spawnSync("npx", ["tsx", "tests/migrate.test.ts"], { env: { ...process.env, MIGRATE_FROM: v }, encoding: "utf8" });
     process.stdout.write(r.stdout);
     if (r.status !== 0) { process.stderr.write(r.stderr); process.exit(1); }
@@ -21,10 +21,12 @@ const old: Record<string, unknown> = { ...(buildSeed() as unknown as Record<stri
 type Rec = Record<string, unknown>;
 let records = old.records as Rec[];
 (records[0] as { title: string }).title = "Edited before the upgrade";
+// stageEnteredAt (staleness tracking) only exists from version 11 on; every version below here predates it.
+for (const r of records) delete r.stageEnteredAt;
 // A project deleted before version 4 left its drive entry behind.
 if (from === "1" || from === "2") (records.find((r) => r.contentId === "DOF-DEV-001") as { archived: boolean }).archived = true;
 
-if (from !== "5" && from !== "7" && from !== "8" && from !== "9") {
+if (from !== "5" && from !== "7" && from !== "8" && from !== "9" && from !== "10") {
   // Before version 5 a live show was one flat item that carried its own pipeline, and records had no show dates or hosts.
   const day = records.find((r) => r.contentId === "DOF-LIVE-001-D1")!;
   const show = records.find((r) => r.contentId === "DOF-LIVE-001")!;
@@ -37,7 +39,7 @@ if (from !== "5" && from !== "7" && from !== "8" && from !== "9") {
   for (const c of old.callSheets as { linkedEpisodeIds: string[] }[]) c.linkedEpisodeIds = c.linkedEpisodeIds.map((x) => (x === "DOF-LIVE-001-D1" ? "DOF-LIVE-001" : x));
 }
 // Before version 6 a stage had one owner, kept as a single ID, and there were no working-day settings.
-if (from !== "7" && from !== "8" && from !== "9") {
+if (from !== "7" && from !== "8" && from !== "9" && from !== "10") {
   for (const r of records) {
     const owners = (r.stageAssignees ?? {}) as Record<string, { personId: string }[]>;
     r.stageAssignees = Object.fromEntries(Object.entries(owners).filter(([k]) => k !== "Project").map(([k, list]) => [k, list[0]?.personId]).filter(([, v]) => v));
@@ -47,12 +49,12 @@ old.settings = { stageReminderHours: 24, storageWarningThreshold: 85, checkoutRe
 old.schemaVersion = from === "5" ? 5 : 4;
 
 // Before version 8 a unit had no label of its own.
-if (from === "7" || from === "8" || from === "9") {
-  old.schemaVersion = from === "9" ? 9 : from === "8" ? 8 : 7;
+if (from === "7" || from === "8" || from === "9" || from === "10") {
+  old.schemaVersion = from === "10" ? 10 : from === "9" ? 9 : from === "8" ? 8 : 7;
   old.settings = { ...(old.settings as Rec), workDays: [1, 2, 3, 4, 5], effortOverrides: {} };
   if (from === "7") for (const e of old.equipment as Rec[]) delete e.unitLabel;
-  // Version 9 already has the workspace accent/font and per-person photo, font size and density.
-  if (from === "9") (old.settings as Rec).appearance = { accent: "terracotta", fontPairing: "modern" };
+  // Version 9 and up already have the workspace accent/font and per-person photo, font size and density.
+  if (from === "9" || from === "10") (old.settings as Rec).appearance = { accent: "terracotta", fontPairing: "modern" };
 }
 
 // Before version 9 there was no workspace accent/font, and no per-person photo, font size or density.
@@ -103,7 +105,7 @@ const { getDb } = await import("../src/data/store");
 const { categoryOf } = await import("../src/config/categories");
 
 const db = getDb();
-assert.equal(db.schemaVersion, 10);
+assert.equal(db.schemaVersion, 11);
 assert.deepEqual(db.outbox, [], "the record of sent reminders exists");
 assert.ok(db.equipment.every((e) => e.unitLabel === null || typeof e.unitLabel === "string"), "every unit has a label field, even if blank");
 assert.equal(db.records[0].title, "Edited before the upgrade", "earlier edits survive");
@@ -138,6 +140,8 @@ assert.equal(liveDay.postProductionNeeded, null, "the post-production question i
 assert.equal(liveDay.spunOffFrom, null);
 assert.ok("Wrap" in liveDay.stageOutputs && liveDay.stageOutputs.Wrap === false, "the new Wrap stage exists, not yet confirmed");
 if (from === "8") { assert.equal(liveShow.strikePattern, null); assert.equal(liveShow.strikeChecklist, null); }
+assert.ok(typeof liveDay.stageEnteredAt === "string" && liveDay.stageEnteredAt.length > 0, "an old record gets a stageEnteredAt, even with nothing else to go on");
+assert.equal(liveDay.stageEnteredAt, liveDay.createdAt, "with nothing better to go on, an old record's stage is assumed entered when the record was created");
 if (from === "8" || from === "9") assert.equal(db.settings.appearance?.accent, "terracotta", "the workspace appearance survives the live-show migration unchanged");
 if (from === "8") {
   const anyPerson = db.people[0];
@@ -159,7 +163,7 @@ if (from === "1" || from === "2") assert.equal(db.snapshots[db.snapshots.length 
 // Version 6: stages have lists of owners with roles, and there are working-day settings.
 assert.ok(db.records.every((r) => Object.values(r.stageAssignees).every((list) => Array.isArray(list) && list.every((o) => typeof o.personId === "string" && Array.isArray(o.roles)))), "owners are lists");
 assert.deepEqual(db.settings.workDays, [1, 2, 3, 4, 5]); assert.deepEqual(db.settings.effortOverrides, {});
-if (from !== "7" && from !== "8" && from !== "9") {
+if (from !== "7" && from !== "8" && from !== "9" && from !== "10") {
   const e01Owners = db.records.find((r) => r.contentId === "DOF-SER-001-S1-E01")!.stageAssignees.Editorial;
   assert.equal(e01Owners[0].personId, "DOF-P-CRW-001", "the single owner is now the first owner");
   assert.ok(e01Owners[0].roles.includes("Director"), "and keeps the role they had on the project");

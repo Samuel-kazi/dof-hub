@@ -3,7 +3,7 @@ import { RuleError } from "../types";
 import { commit, getDb, nextCounter } from "../data/store";
 import { categoryOf } from "../config/categories";
 import { logAudit } from "./audit";
-import { displayTitle, isComplete, isOwnerNow, ownersOf, usesPipeline } from "./content";
+import { daysInStage, displayTitle, isComplete, isOwnerNow, isStale, ownersOf, usesPipeline } from "./content";
 import { getRecord } from "./access";
 import { can, requireCan } from "./permissions";
 import { getPerson } from "./people";
@@ -14,7 +14,7 @@ import { dayNumber, fmtShort, fromDayNumber, hoursUntilEndOfDay, pad, todayIso }
 
 export interface Reminder {
   key: string; // stable, so a reminder that was already sent can be recognised
-  kind: "stage" | "task" | "shoot" | "gear";
+  kind: "stage" | "task" | "shoot" | "gear" | "stale";
   title: string;
   detail: string;
   date: string; // YYYY-MM-DD
@@ -40,6 +40,11 @@ export function remindersFor(personId: string, asOf: string = todayIso(), days =
       const mine = i === idx ? isOwnerNow(r, personId) : ownersOf(r, s.name).some((o) => o.personId === personId);
       if (i >= idx && due && mine && !r.stageOutputs[s.name]) add({ key: `stage:${r.contentId}:${s.name}`, kind: "stage", title: `${displayTitle(r)}: ${s.name} due`, detail: `${r.contentId}. ${s.requiredOutput}.`, date: due, time: null, contentId: r.contentId, category: r.category });
     });
+    // A stall has no deadline of its own to be "due", so it is surfaced right away, to the person
+    // currently responsible for the stage — the same wording would be misleading for a real deadline.
+    if (isOwnerNow(r, personId) && isStale(r)) {
+      add({ key: `stale:${r.contentId}:${r.pipelineStage}`, kind: "stale", title: `${displayTitle(r)}: no update in ${r.pipelineStage}`, detail: `${r.contentId}. No update in ${daysInStage(r)} days.`, date: asOf, time: null, contentId: r.contentId, category: r.category });
+    }
     for (const t of r.tasks) if (t.assigneePersonId === personId && !t.done && t.dueDate) add({ key: `task:${t.id}`, kind: "task", title: `${displayTitle(r)}: ${t.label} due`, detail: `${r.contentId}, ${t.stage}.`, date: t.dueDate, time: null, contentId: r.contentId, category: r.category });
   }
   for (const cs of db.callSheets) {

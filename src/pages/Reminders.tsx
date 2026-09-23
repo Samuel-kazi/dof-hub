@@ -13,7 +13,7 @@ import { saveFile } from "../services/download";
 import { fmtDateTime, fmtShort, relativeDays } from "../services/utils";
 import { nameOf } from "../services/wrapped/people";
 
-const KIND: Record<Reminder["kind"], string> = { stage: "Stage", task: "Checklist", shoot: "Shoot", gear: "Gear" };
+const KIND: Record<Reminder["kind"], string> = { stage: "Stage", task: "Checklist", shoot: "Shoot", gear: "Gear", stale: "Stalled" };
 
 /** Opens a link the way a click would, so the mail or messages app takes over. */
 function openLink(url: string) {
