@@ -108,6 +108,7 @@ function itemsFor(personId: string, asOf: string): { items: LoadItem[]; undated:
     const cfg = categoryOf(r.category);
     const stages = cfg.stages;
     const idx = stages.findIndex((s) => s.name === r.pipelineStage);
+    if (idx === -1) continue; // stage name doesn't match this category's current stages — skip rather than crash
     const subject = docSubject(r);
     const rootId = r.contentId.split("-").slice(0, 3).join("-");
 
