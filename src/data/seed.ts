@@ -62,6 +62,18 @@ interface LeafInput {
   notes?: string;
   strikePattern?: "daily" | "continuous";
   strikeChecklist?: { daily: string[]; final: string[] };
+  guestName?: string;
+  guestContact?: string;
+  reviewerName?: string;
+  reviewApprovedAt?: string;
+  closedReason?: string;
+  cardStorage?: string;
+  publishDate?: string;
+  recordingDurationMin?: number;
+  recordingNotes?: string;
+  readyForReview?: boolean;
+  editorNotes?: string;
+  sendBackReason?: string;
 }
 
 const rec = (i: LeafInput): ContentRecord => ({
@@ -89,6 +101,18 @@ const rec = (i: LeafInput): ContentRecord => ({
   postProductionNeeded: null,
   strikePattern: i.strikePattern ?? null,
   strikeChecklist: i.strikeChecklist ?? null,
+  guestName: i.guestName ?? "",
+  guestContact: i.guestContact ?? "",
+  reviewerName: i.reviewerName ?? null,
+  reviewApprovedAt: i.reviewApprovedAt ?? null,
+  closedReason: i.closedReason ?? null,
+  cardStorage: i.cardStorage ?? "",
+  publishDate: i.publishDate ?? null,
+  recordingDurationMin: i.recordingDurationMin ?? null,
+  recordingNotes: i.recordingNotes ?? "",
+  readyForReview: i.readyForReview ?? false,
+  editorNotes: i.editorNotes ?? "",
+  sendBackReason: i.sendBackReason ?? null,
   archived: false,
   version: 1,
   createdAt: isoDay(-30),
@@ -108,6 +132,7 @@ export function buildSeed(): Database {
     person("DOF-P-CRW-001", "CRW", "Wanjiru Kamau", ["Directing", "Editing"], true),
     person("DOF-P-CRW-002", "CRW", "Brian Otieno", ["Camera", "Lighting"], true),
     person("DOF-P-CRW-003", "CRW", "Faith Mwangi", ["Audio", "Live switching"], true),
+    person("DOF-P-CRW-004", "CRW", "Ruth Jepkorir", ["Producing", "Devotionals"], true),
     person("DOF-P-VOL-001", "VOL", "Joseph Kiptoo", ["Floor crew"], true),
     person("DOF-P-VOL-002", "VOL", "Grace Achieng", ["Logging", "Runner"], false),
     person("DOF-P-PTR-001", "PTR", "Partner Representative", [], true),
@@ -153,7 +178,10 @@ export function buildSeed(): Database {
     rec({ contentId: "DOF-LIVE-002-D4", title: "Day 4", category: "live", parentId: "DOF-LIVE-002", level: 1, stage: "Prep", stageOffset: 7, scheduled: 13, deadline: 13, prod: "small" }),
     rec({ contentId: "DOF-LIVE-002-D5", title: "Day 5", category: "live", parentId: "DOF-LIVE-002", level: 1, stage: "Prep", stageOffset: 8, scheduled: 14, deadline: 14, prod: "large" }),
     rec({ contentId: "DOF-DOC-001", title: "Samburu Stories", category: "documentary", parentId: null, level: 0, stage: "Ingest", stageOffset: -3, scheduled: -8, deadline: 20, assignee: "DOF-P-CRW-002", notes: "Footage from the field trip still needs checksum verification." }),
-    rec({ contentId: "DOF-DEV-001", title: "Morning Light", category: "devotional", parentId: null, level: 0, stage: "Scripting", stageOffset: 0, scheduled: 4, deadline: 10, assignee: "DOF-P-CRW-001" }),
+    rec({
+      contentId: "DOF-DEV-001", title: "Morning Light", category: "devotional", parentId: null, level: 0, stage: "Prep/Scripting", stageOffset: 0, scheduled: 4, deadline: 10, assignee: "DOF-P-CRW-004",
+      guestName: "Rev. Grace Achieng", guestContact: "grace.achieng@example.com", reviewerName: "Pastor Daniel Otieno", reviewApprovedAt: isoDay(-6),
+    }),
     // Music → Album → Tracks
     rec({ contentId: "DOF-MUS-001", title: "Dawn Songs", category: "music", parentId: null, level: 0, stage: null, deadline: 70 }),
     rec({ contentId: "DOF-MUS-001-A1", title: "Album 1", category: "music", parentId: "DOF-MUS-001", level: 1, stage: null, deadline: 60 }),
@@ -225,8 +253,8 @@ export function buildSeed(): Database {
   mkDoc("DOF-LIVE-001-D1", "run-of-show", "Prep", [{ daysAgo: 4, by: "DOF-P-CRW-003" }]);
   mkDoc("DOF-LIVE-002-D1", "run-of-show", "Prep", []);
   mkDoc("DOF-LIVE-002-D2", "run-of-show", "Prep", []);
-  mkDoc("DOF-DEV-001", "concept", "Idea", []);
-  mkDoc("DOF-DEV-001", "script", "Scripting", []);
+  mkDoc("DOF-DEV-001", "concept", "Creation", []);
+  mkDoc("DOF-DEV-001", "script", "Prep/Scripting", []);
   mkDoc("DOF-DOC-001", "research", "Research", [{ daysAgo: 12, by: "DOF-P-CRW-002" }]);
 
   return {
@@ -236,6 +264,7 @@ export function buildSeed(): Database {
     members: [
       { personId: "DOF-P-CRW-001", projectContentId: "DOF-SER-001", roleOnProject: "Director, Editor", canComment: true },
       { personId: "DOF-P-CRW-001", projectContentId: "DOF-DEV-001", roleOnProject: "Producer", canComment: true },
+      { personId: "DOF-P-CRW-004", projectContentId: "DOF-DEV-001", roleOnProject: "Producer", canComment: true },
       { personId: "DOF-P-CRW-001", projectContentId: "DOF-MUS-001", roleOnProject: "Producer", canComment: true },
       { personId: "DOF-P-CRW-002", projectContentId: "DOF-SER-001", roleOnProject: "Camera operator, Colorist", canComment: true },
       { personId: "DOF-P-CRW-002", projectContentId: "DOF-DOC-001", roleOnProject: "Camera / DIT", canComment: true },

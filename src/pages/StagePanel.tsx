@@ -4,13 +4,13 @@ import { useApp } from "../ui/AppContext";
 import { getDb } from "../data/store";
 import { categoryOf, finalStageOf } from "../config/categories";
 import { Empty, Field } from "../ui/parts";
+import { Modal } from "../ui/Modal";
 import { IconPlus } from "../ui/Icons";
 import { canJoin, canWrite, isHop } from "../services/access";
 import { can } from "../services/wrapped/permissions";
-import { PROJECT_STAGE, addLinks, addStageOwner, addTask, ownersOf, removeLink, removeStageOwner, removeTask, setOwnerRoles, setPostProductionNeeded, setStageDeadline, setStrikePlan, spinOffsOf, splitRecording, tasksOf, updateTask, usesPipeline } from "../services/wrapped/content";
+import { PROJECT_STAGE, addLinks, addStageOwner, addTask, approveDevotionalReview, approveGuestReview, closeDevotional, ownersOf, removeLink, removeStageOwner, removeTask, sendBackDevotionalToEditing, setDevotionalReadyForReview, setOwnerRoles, setPostProductionNeeded, setStageDeadline, setStrikePlan, spinOffsOf, splitRecording, tasksOf, updateTask, usesPipeline } from "../services/wrapped/content";
 import { teamOf } from "../services/wrapped/team";
 import { effortFor } from "../config/capacity";
-import { Modal } from "../ui/Modal";
 import { RolePicker } from "../ui/RolePicker";
 import { fmtDays, freeDaysBefore, overloadWarning } from "../services/workload";
 import { nameOf } from "../services/wrapped/people";
@@ -419,4 +419,78 @@ export function StrikePlanPanel({ rec }: { rec: ContentRecord }) {
       )}
     </section>
   );
+}
+
+/**
+ * Devotional's own branch points, in place of the generic advance/send-back buttons: the Guest
+ * stage's Approved-or-Closed decision, Editing's ready-for-review checkbox, Review's Approve-or-
+ * send-back-with-reason decision, and a plain summary once the project is Closed.
+ */
+export function DevotionalPanel({ rec }: { rec: ContentRecord }) {
+  const { actor, attempt } = useApp();
+  const write = canWrite(actor, rec);
+  const [reviewer, setReviewer] = useState("");
+  const [closing, setClosing] = useState(false);
+  const [closeReason, setCloseReason] = useState("");
+  const [sendingBack, setSendingBack] = useState(false);
+  const [backReason, setBackReason] = useState("");
+  if (rec.category !== "devotional") return null;
+
+  if (rec.pipelineStage === "Closed") {
+    return (
+      <div className="stack" style={{ marginBottom: 12 }}>
+        <div className="banner">
+          <span className="grow"><b>Closed.</b> {rec.closedReason}</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (rec.pipelineStage === "Guest") {
+    return (
+      <div className="stack" style={{ marginBottom: 12, gap: 10 }}>
+        <div className="row" style={{ alignItems: "end" }}>
+          <Field label="Reviewer's name"><input type="text" value={reviewer} onChange={(e) => setReviewer(e.target.value)} placeholder="Who did the theological review" disabled={!write} /></Field>
+          <button className="btn primary" disabled={!write || !reviewer.trim()} onClick={() => attempt(() => approveGuestReview(actor, rec.contentId, reviewer, rec.version), "Approved")}>Approved, move to Prep/Scripting</button>
+        </div>
+        {write && <button className="btn ghost small" style={{ alignSelf: "flex-start" }} onClick={() => setClosing(true)}>Guest is non-compliant, close this project…</button>}
+        {closing && (
+          <Modal title="Close this project" onClose={() => setClosing(false)} actions={<><button className="btn" onClick={() => setClosing(false)}>Cancel</button><button className="btn danger" disabled={!closeReason.trim()} onClick={() => { if (attempt(() => closeDevotional(actor, rec.contentId, closeReason, rec.version), "Closed")) setClosing(false); }}>Close project</button></>}>
+            <Field label="Why the guest did not work out"><textarea rows={4} value={closeReason} onChange={(e) => setCloseReason(e.target.value)} autoFocus /></Field>
+          </Modal>
+        )}
+      </div>
+    );
+  }
+
+  if (rec.pipelineStage === "Editing") {
+    return (
+      <div className="gate" style={{ marginBottom: 12 }}>
+        <label className="check">
+          <input type="checkbox" checked={rec.readyForReview} disabled={!write} onChange={(e) => attempt(() => setDevotionalReadyForReview(actor, rec.contentId, e.target.checked, rec.version))} />
+          <span>Ready for review</span>
+        </label>
+        <span className="muted grow" style={{ flex: 1 }}>{rec.readyForReview ? "Once its output is confirmed below, it can move to Review." : "Tick this once the edit is ready to be reviewed."}</span>
+      </div>
+    );
+  }
+
+  if (rec.pipelineStage === "Review") {
+    return (
+      <div className="stack" style={{ marginBottom: 12, gap: 10 }}>
+        <div className="gate">
+          <span className="muted grow" style={{ flex: 1 }}>{rec.readyForReview ? "Editing marked this ready for review." : "Editing has not marked this ready yet."}</span>
+          {write && <button className="btn primary" disabled={!rec.readyForReview} onClick={() => attempt(() => approveDevotionalReview(actor, rec.contentId, rec.version), "Approved, published")}>Approve, move to Published</button>}
+          {write && <button className="btn small ghost" onClick={() => setSendingBack(true)}>Send back to Editing</button>}
+        </div>
+        {sendingBack && (
+          <Modal title="Send back to Editing" onClose={() => setSendingBack(false)} actions={<><button className="btn" onClick={() => setSendingBack(false)}>Cancel</button><button className="btn primary" disabled={!backReason.trim()} onClick={() => { if (attempt(() => sendBackDevotionalToEditing(actor, rec.contentId, backReason, rec.version), "Sent back")) setSendingBack(false); }}>Send back</button></>}>
+            <Field label="Why it is going back"><textarea rows={4} value={backReason} onChange={(e) => setBackReason(e.target.value)} autoFocus /></Field>
+          </Modal>
+        )}
+      </div>
+    );
+  }
+
+  return null;
 }

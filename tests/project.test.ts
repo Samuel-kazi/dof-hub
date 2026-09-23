@@ -359,8 +359,8 @@ t("just short of 2.5x is not yet stale; the multiplier is generous, not a hair t
 
 t("a completed item is never stale, however long ago its last stage was entered", () => {
   const actor = login("hop@dof.demo", "demo");
-  const done = C.createRecord(actor, { category: "devotional", title: "Old and finished" });
-  const stages = categoryOf("devotional").stages;
+  const done = C.createRecord(actor, { category: "documentary", title: "Old and finished" });
+  const stages = categoryOf("documentary").stages;
   while (getRecord(done.contentId)!.pipelineStage !== stages[stages.length - 1].name) {
     const cur = getRecord(done.contentId)!;
     for (const task of cur.tasks.filter((x) => x.stage === cur.pipelineStage)) C.updateTask(actor, done.contentId, task.id, { done: true });
@@ -432,6 +432,153 @@ t("a stalled item renders as 'Stalled' on the Pipeline board and its own page", 
   assert.match(pipelineHtml, /Stalled/);
   const pageHtml = renderToString(withCtx(React.createElement(RecordPage, { id: r.contentId })));
   assert.match(pageHtml, /Stalled/);
+});
+
+// ── Devotional: Creation → Guest → Prep/Scripting → Recording → Editing → Review → Published,
+// with a Closed branch off Guest and a required-reason send-back from Review ──
+
+function freshDevotional(actor: ReturnType<typeof login> = login("hop@dof.demo", "demo")) {
+  return C.createRecord(actor, { category: "devotional", title: "Test devotional" });
+}
+
+t("a new Devotional starts at Creation, defaults to Ruth Jepkorir, and stays a flat project", () => {
+  const d = freshDevotional();
+  assert.equal(d.pipelineStage, "Creation");
+  assert.equal(d.assigneePersonId, "DOF-P-CRW-004");
+  assert.equal(C.childKindFor(d), null, "a Devotional never splits into episodes, even in a batch");
+});
+
+t("the default producer is reassignable per project, same as any assignee", () => {
+  const hop = login("hop@dof.demo", "demo");
+  const d = freshDevotional(hop);
+  const updated = C.updateRecord(hop, d.contentId, { assigneePersonId: "DOF-P-CRW-001" });
+  assert.equal(updated.assigneePersonId, "DOF-P-CRW-001");
+});
+
+t("the general advance and send-back buttons refuse Guest going forward, but sending it back to Creation still works; Closed is final either way", () => {
+  const hop = login("hop@dof.demo", "demo");
+  const d = freshDevotional(hop);
+  C.setStageOutput(hop, d.contentId, true);
+  C.advanceStage(hop, d.contentId); // Creation -> Guest, generic advance still works here
+  throwsRule(() => C.advanceStage(hop, d.contentId), /theological review/);
+  const back = C.sendBackStage(hop, d.contentId); // going back is not one of the gated branches
+  assert.equal(back.pipelineStage, "Creation");
+});
+
+t("Guest, approved: records the reviewer and timestamp, and moves on to Prep/Scripting", () => {
+  const hop = login("hop@dof.demo", "demo");
+  const d = freshDevotional(hop);
+  C.setStageOutput(hop, d.contentId, true);
+  C.advanceStage(hop, d.contentId); // -> Guest
+  throwsRule(() => C.approveGuestReview(hop, d.contentId, ""), /Name who did the theological review/);
+  for (const task of getRecord(d.contentId)!.tasks.filter((x) => x.stage === "Guest")) {
+    throwsRule(() => C.approveGuestReview(hop, d.contentId, "Pastor Samuel"), /Finish/);
+    C.updateTask(hop, d.contentId, task.id, { done: true });
+  }
+  const approved = C.approveGuestReview(hop, d.contentId, "Pastor Samuel");
+  assert.equal(approved.reviewerName, "Pastor Samuel");
+  assert.ok(approved.reviewApprovedAt);
+  assert.equal(approved.pipelineStage, "Prep/Scripting");
+});
+
+t("Guest, non-compliant: closes the project, requires a reason, and it is no longer complete or advanceable", () => {
+  const hop = login("hop@dof.demo", "demo");
+  const d = freshDevotional(hop);
+  C.setStageOutput(hop, d.contentId, true);
+  C.advanceStage(hop, d.contentId); // -> Guest
+  throwsRule(() => C.closeDevotional(hop, d.contentId, ""), /Say why the guest did not work out/);
+  const closed = C.closeDevotional(hop, d.contentId, "Guest stopped responding after setup was shared.");
+  assert.equal(closed.pipelineStage, "Closed");
+  assert.equal(closed.closedReason, "Guest stopped responding after setup was shared.");
+  assert.equal(C.isComplete(closed), false);
+  throwsRule(() => C.closeDevotional(hop, d.contentId, "again"), /Already closed/);
+  throwsRule(() => C.advanceStage(hop, d.contentId), /Closed is final/);
+});
+
+t("Closed and Published never show a risk, and never generate a reminder — devotional has none of that yet", () => {
+  const hop = login("hop@dof.demo", "demo");
+  const d = freshDevotional(hop);
+  C.setStageOutput(hop, d.contentId, true);
+  C.advanceStage(hop, d.contentId);
+  const closed = C.closeDevotional(hop, d.contentId, "Non-compliant guest.");
+  assert.equal(C.riskOf(closed), "ok");
+  assert.equal(C.isStale(closed), false);
+  const reminders = C.getReminders(hop);
+  assert.ok(!reminders.some((r) => r.record.contentId === closed.contentId));
+});
+
+function toReview(hop: ReturnType<typeof login>): string {
+  const d = freshDevotional(hop);
+  const id = d.contentId;
+  C.setStageOutput(hop, id, true); C.advanceStage(hop, id); // Creation -> Guest
+  for (const task of getRecord(id)!.tasks.filter((x) => x.stage === "Guest")) C.updateTask(hop, id, task.id, { done: true });
+  C.approveGuestReview(hop, id, "Pastor Samuel"); // -> Prep/Scripting
+  C.setStageOutput(hop, id, true); C.advanceStage(hop, id); // -> Recording
+  C.setStageOutput(hop, id, true); C.advanceStage(hop, id); // -> Editing
+  return id;
+}
+
+t("Editing's ready-for-review checkbox only exists at Editing, and Review checks it before approving", () => {
+  const hop = login("hop@dof.demo", "demo");
+  const id = toReview(hop);
+  assert.equal(getRecord(id)!.pipelineStage, "Editing");
+  throwsRule(() => C.approveDevotionalReview(hop, id), /not at the Review stage/);
+  const ready = C.setDevotionalReadyForReview(hop, id, true);
+  assert.equal(ready.readyForReview, true);
+  C.setStageOutput(hop, id, true); C.advanceStage(hop, id); // -> Review
+  throwsRule(() => C.setDevotionalReadyForReview(hop, id, true), /not at the Editing stage/);
+});
+
+t("Review, approved: only once ready for review is set, and it moves straight to Published", () => {
+  const hop = login("hop@dof.demo", "demo");
+  const id = toReview(hop);
+  C.setDevotionalReadyForReview(hop, id, true);
+  C.setStageOutput(hop, id, true); C.advanceStage(hop, id); // -> Review
+  throwsRule(() => { getRecord(id)!.readyForReview = false; C.approveDevotionalReview(hop, id); }, /not marked this ready/);
+  getRecord(id)!.readyForReview = true;
+  const done = C.approveDevotionalReview(hop, id);
+  assert.equal(done.pipelineStage, "Published");
+  assert.equal(C.isComplete(done), false, "Published still needs its own required output confirmed, same as any other category's final stage");
+  C.setStageOutput(hop, id, true);
+  assert.ok(C.isComplete(getRecord(id)!));
+});
+
+t("Review, sent back: needs a reason, returns to Editing, and resets ready-for-review", () => {
+  const hop = login("hop@dof.demo", "demo");
+  const id = toReview(hop);
+  C.setDevotionalReadyForReview(hop, id, true);
+  C.setStageOutput(hop, id, true); C.advanceStage(hop, id); // -> Review
+  throwsRule(() => C.sendBackDevotionalToEditing(hop, id, ""), /Say why it is going back/);
+  const back = C.sendBackDevotionalToEditing(hop, id, "Audio needs a re-mix on the second half.");
+  assert.equal(back.pipelineStage, "Editing");
+  assert.equal(back.sendBackReason, "Audio needs a re-mix on the second half.");
+  assert.equal(back.readyForReview, false);
+});
+
+t("the recording-day view is a live filter across projects, not a stored relationship", () => {
+  const hop = login("hop@dof.demo", "demo");
+  const a = freshDevotional(hop);
+  const b = freshDevotional(hop);
+  const c = freshDevotional(hop);
+  C.updateRecord(hop, a.contentId, { scheduledDate: "2026-11-03" });
+  C.updateRecord(hop, b.contentId, { scheduledDate: "2026-11-03" });
+  C.updateRecord(hop, c.contentId, { scheduledDate: "2026-11-04" });
+  const day = C.devotionalsOnRecordingDate(hop, "2026-11-03");
+  assert.deepEqual(day.map((r) => r.contentId).sort(), [a.contentId, b.contentId].sort());
+  C.updateRecord(hop, b.contentId, { scheduledDate: "2026-11-09" }); // changing the date is all it takes
+  assert.equal(C.devotionalsOnRecordingDate(hop, "2026-11-03").length, 1);
+});
+
+t("recording duration and notes, and the Prep/Scripting fields, are plain edits on the project itself", () => {
+  const hop = login("hop@dof.demo", "demo");
+  const d = freshDevotional(hop);
+  const updated = C.updateRecord(hop, d.contentId, {
+    guestName: "Rev. Ann Wanjala", guestContact: "ann@example.com", cardStorage: "Card B, slot 2",
+    publishDate: "2026-12-01", recordingDurationMin: 24, recordingNotes: "Two retakes on the opening line.",
+  });
+  assert.equal(updated.guestName, "Rev. Ann Wanjala");
+  assert.equal(updated.recordingDurationMin, 24);
+  assert.equal(updated.publishDate, "2026-12-01");
 });
 
 console.log(`\n${passed} passed`);

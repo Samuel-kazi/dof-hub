@@ -114,6 +114,20 @@ export interface ContentRecord {
   postProductionNeeded: boolean | null; // live days only: was anything recorded that needs post-production? Set before Post Production can be confirmed done.
   strikePattern: "daily" | "continuous" | null; // live shows only (level 0): struck down every day, or built once and struck only on the last day
   strikeChecklist: { daily: string[]; final: string[] } | null; // live shows only (level 0): what comes down every night vs what stays rigged until the last day
+  // Devotionals only: a flat project never splits into episodes, so its own pipeline's extra fields
+  // live directly here rather than on a child record. Null/blank for every other category.
+  guestName: string;
+  guestContact: string;
+  reviewerName: string | null; // theological reviewer, named, not just a role
+  reviewApprovedAt: string | null; // ISO timestamp the reviewer approved the Guest stage
+  closedReason: string | null; // set only when Closed: why the guest was non-compliant
+  cardStorage: string; // Prep/Scripting: which card or storage slot this was recorded to
+  publishDate: string | null; // Prep/Scripting: the target date, separate from the project's own deadline
+  recordingDurationMin: number | null;
+  recordingNotes: string;
+  readyForReview: boolean; // Editing: set before it can move to Review
+  editorNotes: string;
+  sendBackReason: string | null; // most recent reason Review sent it back to Editing
   archived: boolean;
   version: number; // optimistic concurrency
   createdAt: string;

@@ -141,3 +141,13 @@ Multi-day items now draw as horizontal bars across the days they cover, instead 
 ## v12: fixed a live show cluttering the calendar with a bar for every day
 
 A live show with several days was showing a separate stage bar for each of its days ("Medical Missionary Movement, Day 2: Prep", "Day 3: Prep"...), stacking into a wall of near-duplicate bars. Now, same as the Dashboard, a multi-day live show shows as one bar with just the show's name — its days no longer add bars of their own. A show with only one day is unaffected.
+
+
+## v13: the Devotional pipeline is wired in
+
+Kanban and Calendar now show the new Devotional flow (Creation → Guest → Prep/Scripting → Recording → Editing → Review → Published):
+
+- **Guest** shows a reviewer-name field and an Approve button, plus a "Guest is non-compliant" action that requires a reason and closes the project. The ordinary advance button is turned off here on purpose — those two are the only ways forward.
+- **Closed** projects vanish from the Pipeline board and the Calendar by default. A **Closed (N)** filter next to the category chips brings them back into view, each showing its reason.
+- **Editing** shows the ready-for-review checkbox; **Review** shows Approve (only once that checkbox is ticked) and Send back, which requires a reason and resets the checkbox.
+- No deadlines, overdue badges, staleness, or reminders anywhere in this pipeline, as asked — checked through the Dashboard, the reminders bell, the Calendar's deadline bars, and workload scheduling, not just the obvious places.

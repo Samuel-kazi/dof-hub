@@ -255,12 +255,13 @@ var CATEGORIES = [
     childToken: null,
     grandchildToken: null,
     stages: [
-      s("Idea", "Approved topic", { docs: ["concept"] }),
-      s("Scripting", "Locked script", { docs: ["script"] }),
-      s("Recording", "Recorded footage"),
-      s("Editorial", "Finished edit", { tasks: EDIT_TASKS, docs: ["edit-notes"] }),
+      s("Creation", "Theme, guest and producer set"),
+      s("Guest", "Theological review approved", { tasks: ["Guest outreach", "Setup shared", "Summary submitted"] }),
+      s("Prep/Scripting", "Locked script", { docs: ["script"] }),
+      s("Recording", "Recording logged"),
+      s("Editing", "Ready for review", { docs: ["edit-notes"] }),
       s("Review", "Approved cut"),
-      s("Delivered", "Final delivery file", { docs: ["analysis"] })
+      s("Published", "Final delivery file", { docs: ["analysis"] })
     ],
     footageStage: "Recording",
     leafLevel: 0
@@ -782,6 +783,18 @@ var rec = (i) => ({
   postProductionNeeded: null,
   strikePattern: i.strikePattern ?? null,
   strikeChecklist: i.strikeChecklist ?? null,
+  guestName: i.guestName ?? "",
+  guestContact: i.guestContact ?? "",
+  reviewerName: i.reviewerName ?? null,
+  reviewApprovedAt: i.reviewApprovedAt ?? null,
+  closedReason: i.closedReason ?? null,
+  cardStorage: i.cardStorage ?? "",
+  publishDate: i.publishDate ?? null,
+  recordingDurationMin: i.recordingDurationMin ?? null,
+  recordingNotes: i.recordingNotes ?? "",
+  readyForReview: i.readyForReview ?? false,
+  editorNotes: i.editorNotes ?? "",
+  sendBackReason: i.sendBackReason ?? null,
   archived: false,
   version: 1,
   createdAt: isoDay(-30),
@@ -799,6 +812,7 @@ function buildSeed() {
     person("DOF-P-CRW-001", "CRW", "Wanjiru Kamau", ["Directing", "Editing"], true),
     person("DOF-P-CRW-002", "CRW", "Brian Otieno", ["Camera", "Lighting"], true),
     person("DOF-P-CRW-003", "CRW", "Faith Mwangi", ["Audio", "Live switching"], true),
+    person("DOF-P-CRW-004", "CRW", "Ruth Jepkorir", ["Producing", "Devotionals"], true),
     person("DOF-P-VOL-001", "VOL", "Joseph Kiptoo", ["Floor crew"], true),
     person("DOF-P-VOL-002", "VOL", "Grace Achieng", ["Logging", "Runner"], false),
     person("DOF-P-PTR-001", "PTR", "Partner Representative", [], true)
@@ -851,7 +865,22 @@ function buildSeed() {
     rec({ contentId: "DOF-LIVE-002-D4", title: "Day 4", category: "live", parentId: "DOF-LIVE-002", level: 1, stage: "Prep", stageOffset: 7, scheduled: 13, deadline: 13, prod: "small" }),
     rec({ contentId: "DOF-LIVE-002-D5", title: "Day 5", category: "live", parentId: "DOF-LIVE-002", level: 1, stage: "Prep", stageOffset: 8, scheduled: 14, deadline: 14, prod: "large" }),
     rec({ contentId: "DOF-DOC-001", title: "Samburu Stories", category: "documentary", parentId: null, level: 0, stage: "Ingest", stageOffset: -3, scheduled: -8, deadline: 20, assignee: "DOF-P-CRW-002", notes: "Footage from the field trip still needs checksum verification." }),
-    rec({ contentId: "DOF-DEV-001", title: "Morning Light", category: "devotional", parentId: null, level: 0, stage: "Scripting", stageOffset: 0, scheduled: 4, deadline: 10, assignee: "DOF-P-CRW-001" }),
+    rec({
+      contentId: "DOF-DEV-001",
+      title: "Morning Light",
+      category: "devotional",
+      parentId: null,
+      level: 0,
+      stage: "Prep/Scripting",
+      stageOffset: 0,
+      scheduled: 4,
+      deadline: 10,
+      assignee: "DOF-P-CRW-004",
+      guestName: "Rev. Grace Achieng",
+      guestContact: "grace.achieng@example.com",
+      reviewerName: "Pastor Daniel Otieno",
+      reviewApprovedAt: isoDay(-6)
+    }),
     // Music → Album → Tracks
     rec({ contentId: "DOF-MUS-001", title: "Dawn Songs", category: "music", parentId: null, level: 0, stage: null, deadline: 70 }),
     rec({ contentId: "DOF-MUS-001-A1", title: "Album 1", category: "music", parentId: "DOF-MUS-001", level: 1, stage: null, deadline: 60 }),
@@ -934,8 +963,8 @@ function buildSeed() {
   mkDoc("DOF-LIVE-001-D1", "run-of-show", "Prep", [{ daysAgo: 4, by: "DOF-P-CRW-003" }]);
   mkDoc("DOF-LIVE-002-D1", "run-of-show", "Prep", []);
   mkDoc("DOF-LIVE-002-D2", "run-of-show", "Prep", []);
-  mkDoc("DOF-DEV-001", "concept", "Idea", []);
-  mkDoc("DOF-DEV-001", "script", "Scripting", []);
+  mkDoc("DOF-DEV-001", "concept", "Creation", []);
+  mkDoc("DOF-DEV-001", "script", "Prep/Scripting", []);
   mkDoc("DOF-DOC-001", "research", "Research", [{ daysAgo: 12, by: "DOF-P-CRW-002" }]);
   return {
     schemaVersion: 10,
@@ -944,6 +973,7 @@ function buildSeed() {
     members: [
       { personId: "DOF-P-CRW-001", projectContentId: "DOF-SER-001", roleOnProject: "Director, Editor", canComment: true },
       { personId: "DOF-P-CRW-001", projectContentId: "DOF-DEV-001", roleOnProject: "Producer", canComment: true },
+      { personId: "DOF-P-CRW-004", projectContentId: "DOF-DEV-001", roleOnProject: "Producer", canComment: true },
       { personId: "DOF-P-CRW-001", projectContentId: "DOF-MUS-001", roleOnProject: "Producer", canComment: true },
       { personId: "DOF-P-CRW-002", projectContentId: "DOF-SER-001", roleOnProject: "Camera operator, Colorist", canComment: true },
       { personId: "DOF-P-CRW-002", projectContentId: "DOF-DOC-001", roleOnProject: "Camera / DIT", canComment: true },
@@ -2102,9 +2132,12 @@ __export(content_exports, {
   addStageOwner: () => addStageOwner,
   addTask: () => addTask,
   advanceStage: () => advanceStage,
+  approveDevotionalReview: () => approveDevotionalReview,
+  approveGuestReview: () => approveGuestReview,
   canAdvance: () => canAdvance,
   canDelete: () => canDelete,
   childKindFor: () => childKindFor,
+  closeDevotional: () => closeDevotional,
   createChildRecord: () => createChildRecord,
   createRecord: () => createRecord,
   currentStageDeadline: () => currentStageDeadline,
@@ -2112,6 +2145,7 @@ __export(content_exports, {
   deleteRecord: () => deleteRecord,
   deletionImpact: () => deletionImpact,
   deletionSummary: () => deletionSummary,
+  devotionalsOnRecordingDate: () => devotionalsOnRecordingDate,
   displayTitle: () => displayTitle,
   ensureStageTasks: () => ensureStageTasks,
   featuredFor: () => featuredFor,
@@ -2134,7 +2168,9 @@ __export(content_exports, {
   removeStageOwner: () => removeStageOwner,
   removeTask: () => removeTask,
   riskOf: () => riskOf,
+  sendBackDevotionalToEditing: () => sendBackDevotionalToEditing,
   sendBackStage: () => sendBackStage,
+  setDevotionalReadyForReview: () => setDevotionalReadyForReview,
   setOwnerRoles: () => setOwnerRoles,
   setPostProductionNeeded: () => setPostProductionNeeded,
   setStageDeadline: () => setStageDeadline,
@@ -2192,7 +2228,7 @@ function cleanRoles(roles) {
 // src/config/capacity.ts
 var DEFAULT_STAGE_EFFORT = {
   series: { Idea: 0.5, Scripting: 2, "Pre-production": 1.5, Ingest: 0.5, Editorial: 2, Review: 0.5, Delivered: 0.5 },
-  devotional: { Idea: 0.5, Scripting: 1, Editorial: 1, Review: 0.5, Delivered: 0.5 },
+  devotional: { Creation: 0.3, Guest: 1.5, "Prep/Scripting": 1, Recording: 0.5, Editing: 1, Review: 0.3, Published: 0.2 },
   live: { Prep: 0.5, Build: 1.5, Rehearse: 0.5, Show: 1, Wrap: 0.5, Review: 0.5, "Post Production": 1 },
   documentary: { Idea: 1, Research: 3, "Pre-production": 2, Ingest: 1, Editorial: 5, Review: 1, Delivered: 0.5 },
   music: { Idea: 0.5, "Pre-production": 1, "Audio post-production": 2, "Video editing": 2, Review: 0.5, Publish: 0.5 }
@@ -3325,12 +3361,13 @@ function daysInStage(r) {
   return r.pipelineStage ? dayNumber(todayIso()) - dayNumber(r.stageEnteredAt) : 0;
 }
 function isStale(r) {
-  if (!r.pipelineStage || isComplete(r)) return false;
+  if (!r.pipelineStage || isComplete(r) || r.category === "devotional") return false;
   const typical = effortFor(r.category, r.pipelineStage, getDb().settings.effortOverrides);
   return daysInStage(r) > typical * STALE_MULTIPLIER;
 }
 function riskOf(r) {
   if (isComplete(r)) return "done";
+  if (r.category === "devotional") return "ok";
   const stageDue = currentStageDeadline(r);
   if (stageDue && daysUntil(stageDue) < 0 && !r.stageOutputs[r.pipelineStage]) return "overdue";
   if (r.deadline && daysUntil(r.deadline) < 0) return "overdue";
@@ -3356,6 +3393,10 @@ var tasksOf = (r, stage = r.pipelineStage) => r.tasks.filter((t2) => t2.stage ==
 var openTasks = (r) => tasksOf(r).filter((t2) => !t2.done);
 function canAdvance(r) {
   if (!usesPipeline(r) || !r.pipelineStage) return { ok: false, reason: "This record is a container. Its episodes or tracks carry the pipeline." };
+  if (r.category === "devotional" && (r.pipelineStage === "Guest" || r.pipelineStage === "Review" || r.pipelineStage === "Closed")) {
+    const action = r.pipelineStage === "Guest" ? "the theological review decision" : r.pipelineStage === "Review" ? "Approve or Send back" : "Closed is final";
+    return { ok: false, reason: r.pipelineStage === "Closed" ? action : `Use ${action}, not the general advance button, to leave ${r.pipelineStage}.` };
+  }
   const stages = categoryOf(r.category).stages;
   const idx = stages.findIndex((s2) => s2.name === r.pipelineStage);
   if (idx === stages.length - 1) return { ok: false, reason: "Already at the final stage." };
@@ -3415,6 +3456,18 @@ function blankRecord(id, category, title, parentId, level) {
     postProductionNeeded: null,
     strikePattern: null,
     strikeChecklist: null,
+    guestName: "",
+    guestContact: "",
+    reviewerName: null,
+    reviewApprovedAt: null,
+    closedReason: null,
+    cardStorage: "",
+    publishDate: null,
+    recordingDurationMin: null,
+    recordingNotes: "",
+    readyForReview: false,
+    editorNotes: "",
+    sendBackReason: null,
     archived: false,
     version: 1,
     createdAt: (/* @__PURE__ */ new Date()).toISOString(),
@@ -3496,7 +3549,7 @@ function createRecord(actor, input) {
   r.showEnd = input.showEnd || null;
   r.deadline = input.deadline || null;
   r.scheduledDate = input.scheduledDate || null;
-  r.assigneePersonId = input.assigneePersonId || null;
+  r.assigneePersonId = input.assigneePersonId || (input.category === "devotional" ? DEFAULT_DEVOTIONAL_PRODUCER : null);
   r.notes = input.notes ?? "";
   if (usesPipeline(r)) {
     if (input.productionLevel) r.productionLevel = validLevel(r, input.productionLevel);
@@ -3633,10 +3686,7 @@ function setStageOutput(actor, id, present, expectedVersion) {
   logAudit(actor, present ? "output-confirmed" : "output-cleared", "record", id, `${r.pipelineStage}: ${categoryOf(r.category).stages.find((s2) => s2.name === r.pipelineStage)?.requiredOutput}`);
   commit();
 }
-function advanceStage(actor, id, expectedVersion) {
-  const r = loadForWrite(actor, id, expectedVersion);
-  const gate = canAdvance(r);
-  if (!gate.ok) throw new RuleError(gate.reason);
+function stepForward(actor, r) {
   const stages = categoryOf(r.category).stages;
   const idx = stages.findIndex((s2) => s2.name === r.pipelineStage);
   const from = r.pipelineStage;
@@ -3647,12 +3697,17 @@ function advanceStage(actor, id, expectedVersion) {
   const nextOwner = ownersOf(r, r.pipelineStage)[0];
   if (nextOwner) r.assigneePersonId = nextOwner.personId;
   r.version += 1;
-  logAudit(actor, "stage-advance", "record", id, `${from} \u2192 ${r.pipelineStage}`);
+  logAudit(actor, "stage-advance", "record", r.contentId, `${from} \u2192 ${r.pipelineStage}`);
+}
+function advanceStage(actor, id, expectedVersion) {
+  const r = loadForWrite(actor, id, expectedVersion);
+  const gate = canAdvance(r);
+  if (!gate.ok) throw new RuleError(gate.reason);
+  stepForward(actor, r);
   commit();
   return r;
 }
-function sendBackStage(actor, id, expectedVersion) {
-  const r = loadForWrite(actor, id, expectedVersion);
+function stepBack(actor, r) {
   const stages = categoryOf(r.category).stages;
   const idx = stages.findIndex((s2) => s2.name === r.pipelineStage);
   if (idx <= 0) throw new RuleError("Already at the first stage.");
@@ -3663,9 +3718,79 @@ function sendBackStage(actor, id, expectedVersion) {
   const owner = ownersOf(r, r.pipelineStage)[0];
   if (owner) r.assigneePersonId = owner.personId;
   r.version += 1;
-  logAudit(actor, "stage-back", "record", id, `${from} \u2192 ${r.pipelineStage}`);
+  logAudit(actor, "stage-back", "record", r.contentId, `${from} \u2192 ${r.pipelineStage}`);
+}
+function sendBackStage(actor, id, expectedVersion) {
+  const r = loadForWrite(actor, id, expectedVersion);
+  if (r.category === "devotional" && r.pipelineStage === "Review") throw new RuleError("Use Send back with a reason, not the general button, to leave Review.");
+  stepBack(actor, r);
   commit();
   return r;
+}
+var DEFAULT_DEVOTIONAL_PRODUCER = "DOF-P-CRW-004";
+function approveGuestReview(actor, id, reviewerName, expectedVersion) {
+  const r = loadForWrite(actor, id, expectedVersion);
+  if (r.category !== "devotional") throw new RuleError("Only a Devotional has a theological review.");
+  if (r.pipelineStage !== "Guest") throw new RuleError("This project is not at the Guest stage.");
+  if (!reviewerName.trim()) throw new RuleError("Name who did the theological review.");
+  const open = openTasks(r);
+  if (open.length) throw new RuleError(`Finish ${open.map((t2) => t2.label).join(", ")} before the review.`);
+  r.reviewerName = reviewerName.trim();
+  r.reviewApprovedAt = (/* @__PURE__ */ new Date()).toISOString();
+  r.stageOutputs.Guest = true;
+  stepForward(actor, r);
+  commit();
+  return r;
+}
+function closeDevotional(actor, id, reason, expectedVersion) {
+  const r = loadForWrite(actor, id, expectedVersion);
+  if (r.category !== "devotional") throw new RuleError("Only a Devotional can be closed this way.");
+  if (r.pipelineStage === "Closed") throw new RuleError("Already closed.");
+  if (isComplete(r)) throw new RuleError("This project is already published.");
+  if (!reason.trim()) throw new RuleError("Say why the guest did not work out.");
+  const from = r.pipelineStage;
+  r.closedReason = reason.trim();
+  r.pipelineStage = "Closed";
+  r.stageEnteredAt = todayIso();
+  r.version += 1;
+  logAudit(actor, "stage-advance", "record", id, `${from} \u2192 Closed`);
+  commit();
+  return r;
+}
+function setDevotionalReadyForReview(actor, id, ready, expectedVersion) {
+  const r = loadForWrite(actor, id, expectedVersion);
+  if (r.category !== "devotional") throw new RuleError("Only a Devotional has this checkbox.");
+  if (r.pipelineStage !== "Editing") throw new RuleError("This project is not at the Editing stage.");
+  r.readyForReview = ready;
+  r.stageOutputs.Editing = ready;
+  r.version += 1;
+  logAudit(actor, "update", "record", id, ready ? "Ready for review" : "Not ready for review");
+  commit();
+  return r;
+}
+function approveDevotionalReview(actor, id, expectedVersion) {
+  const r = loadForWrite(actor, id, expectedVersion);
+  if (r.category !== "devotional") throw new RuleError("Only a Devotional is approved this way.");
+  if (r.pipelineStage !== "Review") throw new RuleError("This project is not at the Review stage.");
+  if (!r.readyForReview) throw new RuleError("Editing has not marked this ready for review.");
+  r.stageOutputs.Review = true;
+  stepForward(actor, r);
+  commit();
+  return r;
+}
+function sendBackDevotionalToEditing(actor, id, reason, expectedVersion) {
+  const r = loadForWrite(actor, id, expectedVersion);
+  if (r.category !== "devotional") throw new RuleError("Only a Devotional sends back this way.");
+  if (r.pipelineStage !== "Review") throw new RuleError("This project is not at the Review stage.");
+  if (!reason.trim()) throw new RuleError("Say why it is going back to Editing.");
+  r.sendBackReason = reason.trim();
+  r.readyForReview = false;
+  stepBack(actor, r);
+  commit();
+  return r;
+}
+function devotionalsOnRecordingDate(actor, date) {
+  return visibleRecords(actor).filter((r) => r.category === "devotional" && r.scheduledDate === date).sort((a, b) => a.contentId.localeCompare(b.contentId));
 }
 function ownerTarget(actor, id, stage, personId, expectedVersion) {
   const mine = personId === actor.personId;
@@ -4179,7 +4304,7 @@ function remindersFor(personId, asOf = todayIso(), days = 21) {
     if (r.date <= horizon) out.push({ ...r, overdue: r.date < asOf });
   };
   for (const r of db2.records) {
-    if (r.archived || !usesPipeline(r) || !r.pipelineStage || isComplete(r)) continue;
+    if (r.archived || !usesPipeline(r) || !r.pipelineStage || isComplete(r) || r.category === "devotional") continue;
     const stages = categoryOf(r.category).stages;
     const idx = stages.findIndex((s2) => s2.name === r.pipelineStage);
     stages.forEach((s2, i) => {
@@ -4596,17 +4721,23 @@ var RPC_NAMES = {
     "addStageOwner",
     "addTask",
     "advanceStage",
+    "approveDevotionalReview",
+    "approveGuestReview",
+    "closeDevotional",
     "createChildRecord",
     "createRecord",
     "deleteRecord",
     "deletionImpact",
+    "devotionalsOnRecordingDate",
     "getBlockedOnUser",
     "getReminders",
     "removeFeatured",
     "removeLink",
     "removeStageOwner",
     "removeTask",
+    "sendBackDevotionalToEditing",
     "sendBackStage",
+    "setDevotionalReadyForReview",
     "setOwnerRoles",
     "setPostProductionNeeded",
     "setStageDeadline",

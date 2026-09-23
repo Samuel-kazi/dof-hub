@@ -66,7 +66,7 @@ t("child IDs nest and only leaves get stages", () => {
 t("flat categories reject children", () => throwsRule(() => C.createChildRecord(hop(), "DOF-DEV-001", { title: "x" }), /cannot have children/));
 t("new top-level IDs increment per category", () => {
   const r = C.createRecord(hop(), { category: "devotional", title: "Evening Light" });
-  assert.equal(r.contentId, "DOF-DEV-002"); assert.equal(r.pipelineStage, "Idea");
+  assert.equal(r.contentId, "DOF-DEV-002"); assert.equal(r.pipelineStage, "Creation");
 });
 t("crew cannot create a top-level project", () => throwsRule(() => C.createRecord(crew2(), { category: "live", title: "x" }), /Head of Production/));
 t("live sessions have a different pipeline (no Ingest or Editorial)", () => {
@@ -100,14 +100,14 @@ t("cannot skip ahead: new stage starts unconfirmed", () => {
   throwsRule(() => C.advanceStage(crew2(), id), /Verified footage/);
 });
 t("final stage completes the item", () => {
-  const id = "DOF-DEV-001";
-  const crew1 = login("crew1@dof.demo", "demo");
-  for (let i = 0; i < 4; i++) {
-    for (const tk of C.openTasks(getRecord(id)!)) C.updateTask(crew1, id, tk.id, { done: true }); // Editorial has a checklist
-    C.setStageOutput(crew1, id, true);
-    C.advanceStage(crew1, id);
+  const id = "DOF-DOC-001"; // starts at Ingest; devotional now has its own publishing rules, tested separately
+  const crew2 = login("crew2@dof.demo", "demo");
+  for (let i = 0; i < 3; i++) {
+    for (const tk of C.openTasks(getRecord(id)!)) C.updateTask(crew2, id, tk.id, { done: true }); // Editorial has a checklist
+    C.setStageOutput(crew2, id, true);
+    C.advanceStage(crew2, id);
   }
-  C.setStageOutput(crew1, id, true);
+  C.setStageOutput(crew2, id, true);
   assert.ok(C.isComplete(getRecord(id)!));
 });
 t("optimistic concurrency rejects stale edits", () => {
@@ -180,7 +180,7 @@ t("person IDs increment per prefix and never change on promotion", () => {
   P.updatePersonCategory(hop(), p.personId, "CRW");
   assert.equal(P.getPerson("DOF-P-VOL-003")!.category, "CRW");
   const c = P.createPerson(hop(), { category: "CRW", name: "New Crew", email: "", phone: "", skills: [], equipmentFamiliarity: [] });
-  assert.equal(c.personId, "DOF-P-CRW-004");
+  assert.equal(c.personId, "DOF-P-CRW-005");
 });
 t("promotion updates the login role too", () => {
   P.updatePersonCategory(hop(), "DOF-P-VOL-001", "CRW");

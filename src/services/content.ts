@@ -93,13 +93,16 @@ export function daysInStage(r: ContentRecord): number {
 
 /** Whether the current stage has sat idle well past its typical duration, regardless of any deadline. */
 export function isStale(r: ContentRecord): boolean {
-  if (!r.pipelineStage || isComplete(r)) return false;
+  if (!r.pipelineStage || isComplete(r) || r.category === "devotional") return false;
   const typical = effortFor(r.category, r.pipelineStage, getDb().settings.effortOverrides);
   return daysInStage(r) > typical * STALE_MULTIPLIER;
 }
 
 export function riskOf(r: ContentRecord): Risk {
   if (isComplete(r)) return "done";
+  // Devotional has no deadlines or staleness of its own yet — its Guest/Review/Closed states are
+  // tracked by their own fields, not by dates, so the generic overdue and stall math never applies here.
+  if (r.category === "devotional") return "ok";
   const stageDue = currentStageDeadline(r);
   if (stageDue && daysUntil(stageDue) < 0 && !r.stageOutputs[r.pipelineStage!]) return "overdue";
   if (r.deadline && daysUntil(r.deadline) < 0) return "overdue";
@@ -137,6 +140,10 @@ export const openTasks = (r: ContentRecord): StageTask[] => tasksOf(r).filter((t
 
 export function canAdvance(r: ContentRecord): { ok: boolean; reason: string } {
   if (!usesPipeline(r) || !r.pipelineStage) return { ok: false, reason: "This record is a container. Its episodes or tracks carry the pipeline." };
+  if (r.category === "devotional" && (r.pipelineStage === "Guest" || r.pipelineStage === "Review" || r.pipelineStage === "Closed")) {
+    const action = r.pipelineStage === "Guest" ? "the theological review decision" : r.pipelineStage === "Review" ? "Approve or Send back" : "Closed is final";
+    return { ok: false, reason: r.pipelineStage === "Closed" ? action : `Use ${action}, not the general advance button, to leave ${r.pipelineStage}.` };
+  }
   const stages = categoryOf(r.category).stages;
   const idx = stages.findIndex((s) => s.name === r.pipelineStage);
   if (idx === stages.length - 1) return { ok: false, reason: "Already at the final stage." };
@@ -220,6 +227,18 @@ function blankRecord(id: string, category: CategoryKey, title: string, parentId:
     postProductionNeeded: null,
     strikePattern: null,
     strikeChecklist: null,
+    guestName: "",
+    guestContact: "",
+    reviewerName: null,
+    reviewApprovedAt: null,
+    closedReason: null,
+    cardStorage: "",
+    publishDate: null,
+    recordingDurationMin: null,
+    recordingNotes: "",
+    readyForReview: false,
+    editorNotes: "",
+    sendBackReason: null,
     archived: false,
     version: 1,
     createdAt: new Date().toISOString(),
@@ -314,7 +333,7 @@ export function createRecord(actor: Actor, input: NewRecordInput): ContentRecord
   r.showEnd = input.showEnd || null;
   r.deadline = input.deadline || null;
   r.scheduledDate = input.scheduledDate || null;
-  r.assigneePersonId = input.assigneePersonId || null;
+  r.assigneePersonId = input.assigneePersonId || (input.category === "devotional" ? DEFAULT_DEVOTIONAL_PRODUCER : null);
   r.notes = input.notes ?? "";
   if (usesPipeline(r)) {
     if (input.productionLevel) r.productionLevel = validLevel(r, input.productionLevel);
@@ -415,7 +434,7 @@ function loadForWrite(actor: Actor, id: string, expectedVersion?: number): Conte
 export function updateRecord(
   actor: Actor,
   id: string,
-  patch: Partial<Pick<ContentRecord, "title" | "scheduledDate" | "deadline" | "assigneePersonId" | "notes" | "productionLevel" | "showStart" | "showEnd">>,
+  patch: Partial<Pick<ContentRecord, "title" | "scheduledDate" | "deadline" | "assigneePersonId" | "notes" | "productionLevel" | "showStart" | "showEnd" | "guestName" | "guestContact" | "cardStorage" | "publishDate" | "recordingDurationMin" | "recordingNotes" | "editorNotes">>,
   expectedVersion?: number,
 ): ContentRecord {
   const r = loadForWrite(actor, id, expectedVersion);
@@ -480,10 +499,7 @@ export function setStageOutput(actor: Actor, id: string, present: boolean, expec
 }
 
 /** All-or-nothing: checks the gate first, then changes the stage in a single step. */
-export function advanceStage(actor: Actor, id: string, expectedVersion?: number): ContentRecord {
-  const r = loadForWrite(actor, id, expectedVersion);
-  const gate = canAdvance(r);
-  if (!gate.ok) throw new RuleError(gate.reason);
+function stepForward(actor: Actor, r: ContentRecord): void {
   const stages = categoryOf(r.category).stages;
   const idx = stages.findIndex((s) => s.name === r.pipelineStage);
   const from = r.pipelineStage!;
@@ -495,13 +511,19 @@ export function advanceStage(actor: Actor, id: string, expectedVersion?: number)
   const nextOwner = ownersOf(r, r.pipelineStage)[0];
   if (nextOwner) r.assigneePersonId = nextOwner.personId;
   r.version += 1;
-  logAudit(actor, "stage-advance", "record", id, `${from} → ${r.pipelineStage}`);
+  logAudit(actor, "stage-advance", "record", r.contentId, `${from} → ${r.pipelineStage}`);
+}
+
+export function advanceStage(actor: Actor, id: string, expectedVersion?: number): ContentRecord {
+  const r = loadForWrite(actor, id, expectedVersion);
+  const gate = canAdvance(r);
+  if (!gate.ok) throw new RuleError(gate.reason);
+  stepForward(actor, r);
   commit();
   return r;
 }
 
-export function sendBackStage(actor: Actor, id: string, expectedVersion?: number): ContentRecord {
-  const r = loadForWrite(actor, id, expectedVersion);
+function stepBack(actor: Actor, r: ContentRecord): void {
   const stages = categoryOf(r.category).stages;
   const idx = stages.findIndex((s) => s.name === r.pipelineStage);
   if (idx <= 0) throw new RuleError("Already at the first stage.");
@@ -512,9 +534,99 @@ export function sendBackStage(actor: Actor, id: string, expectedVersion?: number
   const owner = ownersOf(r, r.pipelineStage)[0];
   if (owner) r.assigneePersonId = owner.personId;
   r.version += 1;
-  logAudit(actor, "stage-back", "record", id, `${from} → ${r.pipelineStage}`);
+  logAudit(actor, "stage-back", "record", r.contentId, `${from} → ${r.pipelineStage}`);
+}
+
+export function sendBackStage(actor: Actor, id: string, expectedVersion?: number): ContentRecord {
+  const r = loadForWrite(actor, id, expectedVersion);
+  if (r.category === "devotional" && r.pipelineStage === "Review") throw new RuleError("Use Send back with a reason, not the general button, to leave Review.");
+  stepBack(actor, r);
   commit();
   return r;
+}
+
+// ── Devotional: its own linear flow, with two branch points generic advanceStage/sendBackStage refuse ──
+
+/** Default producer/director for a new Devotional, reassignable at creation or any time after. */
+const DEFAULT_DEVOTIONAL_PRODUCER = "DOF-P-CRW-004"; // Ruth Jepkorir
+
+/** Guest stage, approved: records who did the theological review and when, then moves on to Prep/Scripting. */
+export function approveGuestReview(actor: Actor, id: string, reviewerName: string, expectedVersion?: number): ContentRecord {
+  const r = loadForWrite(actor, id, expectedVersion);
+  if (r.category !== "devotional") throw new RuleError("Only a Devotional has a theological review.");
+  if (r.pipelineStage !== "Guest") throw new RuleError("This project is not at the Guest stage.");
+  if (!reviewerName.trim()) throw new RuleError("Name who did the theological review.");
+  const open = openTasks(r);
+  if (open.length) throw new RuleError(`Finish ${open.map((t) => t.label).join(", ")} before the review.`);
+  r.reviewerName = reviewerName.trim();
+  r.reviewApprovedAt = new Date().toISOString();
+  r.stageOutputs.Guest = true;
+  stepForward(actor, r);
+  commit();
+  return r;
+}
+
+/** Guest stage, the guest turned out not to work out: closes the project instead of moving it forward. */
+export function closeDevotional(actor: Actor, id: string, reason: string, expectedVersion?: number): ContentRecord {
+  const r = loadForWrite(actor, id, expectedVersion);
+  if (r.category !== "devotional") throw new RuleError("Only a Devotional can be closed this way.");
+  if (r.pipelineStage === "Closed") throw new RuleError("Already closed.");
+  if (isComplete(r)) throw new RuleError("This project is already published.");
+  if (!reason.trim()) throw new RuleError("Say why the guest did not work out.");
+  const from = r.pipelineStage;
+  r.closedReason = reason.trim();
+  r.pipelineStage = "Closed";
+  r.stageEnteredAt = todayIso();
+  r.version += 1;
+  logAudit(actor, "stage-advance", "record", id, `${from} → Closed`);
+  commit();
+  return r;
+}
+
+/** Editing stage: the one checkbox that unlocks Review. Doubles as the stage's own required output,
+ *  so leaving Editing still uses the normal advance button once this is ticked. */
+export function setDevotionalReadyForReview(actor: Actor, id: string, ready: boolean, expectedVersion?: number): ContentRecord {
+  const r = loadForWrite(actor, id, expectedVersion);
+  if (r.category !== "devotional") throw new RuleError("Only a Devotional has this checkbox.");
+  if (r.pipelineStage !== "Editing") throw new RuleError("This project is not at the Editing stage.");
+  r.readyForReview = ready;
+  r.stageOutputs.Editing = ready;
+  r.version += 1;
+  logAudit(actor, "update", "record", id, ready ? "Ready for review" : "Not ready for review");
+  commit();
+  return r;
+}
+
+/** Review stage, approved: moves straight to Published. */
+export function approveDevotionalReview(actor: Actor, id: string, expectedVersion?: number): ContentRecord {
+  const r = loadForWrite(actor, id, expectedVersion);
+  if (r.category !== "devotional") throw new RuleError("Only a Devotional is approved this way.");
+  if (r.pipelineStage !== "Review") throw new RuleError("This project is not at the Review stage.");
+  if (!r.readyForReview) throw new RuleError("Editing has not marked this ready for review.");
+  r.stageOutputs.Review = true;
+  stepForward(actor, r);
+  commit();
+  return r;
+}
+
+/** Review stage, sent back: a reason is required, and Editing's "ready for review" checkbox resets. */
+export function sendBackDevotionalToEditing(actor: Actor, id: string, reason: string, expectedVersion?: number): ContentRecord {
+  const r = loadForWrite(actor, id, expectedVersion);
+  if (r.category !== "devotional") throw new RuleError("Only a Devotional sends back this way.");
+  if (r.pipelineStage !== "Review") throw new RuleError("This project is not at the Review stage.");
+  if (!reason.trim()) throw new RuleError("Say why it is going back to Editing.");
+  r.sendBackReason = reason.trim();
+  r.readyForReview = false;
+  stepBack(actor, r);
+  commit();
+  return r;
+}
+
+/** Every Devotional sharing this recording date — a query for the crew logging a shared recording day, not a stored relationship. */
+export function devotionalsOnRecordingDate(actor: Actor, date: string): ContentRecord[] {
+  return visibleRecords(actor)
+    .filter((r) => r.category === "devotional" && r.scheduledDate === date)
+    .sort((a, b) => a.contentId.localeCompare(b.contentId));
 }
 
 // ── Stage owners ─────────────────────────────────────────────

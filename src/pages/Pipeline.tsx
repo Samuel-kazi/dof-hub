@@ -46,11 +46,13 @@ export function Pipeline({ category }: { category?: CategoryKey }) {
   useDb();
   const [view, setView] = useState<"board" | "tree">("board");
   const [adding, setAdding] = useState<CategoryKey | null>(null);
+  const [showClosed, setShowClosed] = useState(false);
   const rm = useRecordMenu();
   const cfg = category ? categoryOf(category) : null;
   const all = visibleRecords(actor);
   const shownCategories = cfg ? [cfg] : CATEGORIES;
-  const tops = all.filter((r) => r.hierarchyLevel === 0 && (!category || r.category === category));
+  const closedCount = all.filter((r) => (!category || r.category === category) && r.pipelineStage === "Closed").length;
+  const tops = all.filter((r) => r.hierarchyLevel === 0 && (!category || r.category === category) && (showClosed || r.pipelineStage !== "Closed"));
   const effective = cfg ? view : "tree";
 
   const pickCategory = (e: React.MouseEvent) => {
@@ -84,6 +86,7 @@ export function Pipeline({ category }: { category?: CategoryKey }) {
       <div className="chips" role="group" aria-label="Category">
         <button className={`chip ${cfg ? "" : "on"}`} onClick={() => go({ n: "pipeline" })}>All</button>
         {CATEGORIES.map((c) => <button key={c.key} className={`chip ${category === c.key ? "on" : ""}`} onClick={() => go({ n: "pipeline", category: c.key })}>{c.label}</button>)}
+        {closedCount > 0 && <button className={`chip ${showClosed ? "on" : ""}`} onClick={() => setShowClosed((s) => !s)}>Closed ({closedCount})</button>}
       </div>
 
       {effective === "board" && cfg && (
@@ -104,6 +107,18 @@ export function Pipeline({ category }: { category?: CategoryKey }) {
               </section>
             );
           })}
+          {showClosed && closedCount > 0 && (
+            <section className="col glass" aria-label="Closed">
+              <h3>Closed<span className="muted">{all.filter((r) => r.category === cfg.key && r.pipelineStage === "Closed").length}</span></h3>
+              {all.filter((r) => r.category === cfg.key && r.pipelineStage === "Closed").map((r) => (
+                <div key={r.contentId} className="card" tabIndex={0} onClick={() => go({ n: "record", id: r.contentId })} onKeyDown={(e) => e.key === "Enter" && go({ n: "record", id: r.contentId })} onContextMenu={(e) => rm.onContext(e, r)}>
+                  <span className="t">{displayTitle(r)}</span>
+                  <span className="cid">{r.contentId}</span>
+                  <span className="muted" style={{ fontSize: ".82rem" }}>{r.closedReason}</span>
+                </div>
+              ))}
+            </section>
+          )}
         </div>
       )}
 

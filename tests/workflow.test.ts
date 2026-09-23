@@ -155,11 +155,11 @@ t("links need a real address", () => {
   throwsRule(() => C.addLink(crew1(), "DOF-SER-001-S1-E04", { kind: "review", url: "" }), /Paste/);
 });
 t("the final link is only posted once the item reaches its publishing stage", () => {
-  const id = "DOF-DEV-001";
-  throwsRule(() => C.addLink(crew1(), id, { kind: "final", url: "https://youtu.be/x" }), /once this reaches Delivered/);
-  for (let i = 0; i < 4; i++) { for (const tk of C.openTasks(rec(id))) C.updateTask(crew1(), id, tk.id, { done: true }); C.setStageOutput(crew1(), id, true); C.advanceStage(crew1(), id); }
+  const id = "DOF-DOC-001"; // a plain 8-stage pipeline still ending in "Delivered" — devotional has its own publishing rules now
+  throwsRule(() => C.addLink(crew2(), id, { kind: "final", url: "https://youtu.be/x" }), /once this reaches Delivered/);
+  for (let i = 0; i < 3; i++) { for (const tk of C.openTasks(rec(id))) C.updateTask(crew2(), id, tk.id, { done: true }); C.setStageOutput(crew2(), id, true); C.advanceStage(crew2(), id); }
   assert.equal(rec(id).pipelineStage, "Delivered");
-  const l = C.addLink(crew1(), id, { kind: "final", url: "https://youtu.be/x" });
+  const l = C.addLink(crew2(), id, { kind: "final", url: "https://youtu.be/x" });
   assert.equal(l.stage, "Delivered");
   assert.ok(getDb().docs.some((d) => d.contentId === id && d.templateKey === "analysis"), "the publishing analysis document is attached");
 });

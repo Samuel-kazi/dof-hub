@@ -35,7 +35,7 @@ export function calendarEvents(actor: Actor, from: string, to: string): CalEvent
     // show spanning several days gets one bar instead (below), so its individual days are skipped here.
     const show = r.category === "live" && r.parentId ? getRecord(r.parentId) : null;
     const showIsWindow = !!show?.showStart && !!show.showEnd && show.showEnd > show.showStart;
-    if (r.scheduledDate && inRange(r.scheduledDate, from, to) && !showIsWindow) {
+    if (r.scheduledDate && inRange(r.scheduledDate, from, to) && !showIsWindow && r.pipelineStage !== "Closed") {
       out.push({
         id: `shoot:${r.contentId}`,
         date: r.scheduledDate,
@@ -54,7 +54,7 @@ export function calendarEvents(actor: Actor, from: string, to: string): CalEvent
     // stages still to come stay as a single mark on their deadline, since there is no start to draw from.
     // A live show with several days is one production, the same as on the Dashboard: its window bar
     // above already stands for the whole run, so its individual days do not also add their own bars here.
-    if (usesPipeline(r) && r.pipelineStage && !isComplete(r) && !showIsWindow) {
+    if (usesPipeline(r) && r.pipelineStage && !isComplete(r) && !showIsWindow && r.category !== "devotional") {
       const stages = categoryOf(r.category).stages;
       const idx = stages.findIndex((s) => s.name === r.pipelineStage);
       for (let i = idx; i < stages.length; i++) {

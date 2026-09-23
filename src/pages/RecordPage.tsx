@@ -20,7 +20,7 @@ import { useRecordMenu } from "./Pipeline";
 import { RecordExtras } from "./RecordExtras";
 import { RecordDetails } from "./RecordDetails";
 import { CastPanel } from "./CastPanel";
-import { LinksPanel, PostProductionPanel, StageChecklist, StagePlan, StrikePlanPanel } from "./StagePanel";
+import { LinksPanel, DevotionalPanel, PostProductionPanel, StageChecklist, StagePlan, StrikePlanPanel } from "./StagePanel";
 
 export function RecordPage({ id }: { id: string }) {
   const { actor, go, back, attempt, confirm, menu, toast } = useApp();
@@ -122,20 +122,26 @@ export function RecordPage({ id }: { id: string }) {
       {!del.ok && write && <p className="muted">{del.reason}</p>}
       {!write && <div className="banner"><span className="grow">You have view-only access to this project.{canComment(actor, rec) ? " You can add comments." : ""}</span></div>}
 
-      {leaf && stage && (
+      {leaf && (stage || rec.pipelineStage === "Closed") && (
         <section className="glass panel" aria-label="Pipeline">
           <h2>Pipeline</h2>
-          <div className="rail">
-            {cfg.stages.map((s, i) => (
-              <div key={s.name} className={`rail-step ${i < stageIdx ? "done" : i === stageIdx ? "now" : ""}`}>{s.name}</div>
-            ))}
-          </div>
+          {stage && (
+            <div className="rail">
+              {cfg.stages.map((s, i) => (
+                <div key={s.name} className={`rail-step ${i < stageIdx ? "done" : i === stageIdx ? "now" : ""}`}>{s.name}</div>
+              ))}
+            </div>
+          )}
           <PostProductionPanel rec={rec} />
+          <DevotionalPanel rec={rec} />
+          {stage && !(rec.category === "devotional" && (rec.pipelineStage === "Guest" || rec.pipelineStage === "Review")) && (
           <div className={`gate ${gate.ok ? "ready" : ""}`}>
-            <label className="check">
-              <input type="checkbox" checked={outputDone} disabled={!write} onChange={(e) => attempt(() => setStageOutput(actor, rec.contentId, e.target.checked, rec.version))} />
-              <span><b>{stage.requiredOutput}</b> is in place</span>
-            </label>
+            {!(rec.category === "devotional" && rec.pipelineStage === "Editing") && (
+              <label className="check">
+                <input type="checkbox" checked={outputDone} disabled={!write} onChange={(e) => attempt(() => setStageOutput(actor, rec.contentId, e.target.checked, rec.version))} />
+                <span><b>{stage.requiredOutput}</b> is in place</span>
+              </label>
+            )}
             <span className="muted grow" style={{ flex: 1 }}>{isComplete(rec) ? "This item is complete." : gate.ok ? `Ready to move to ${nextStage}.` : gate.reason}</span>
             {write && !isLast && (
               <>
@@ -144,12 +150,15 @@ export function RecordPage({ id }: { id: string }) {
               </>
             )}
           </div>
-          <div className="row" style={{ marginTop: 14, alignItems: "end" }}>
-            <Field label={`${stage.name} deadline (${currentStageDeadline(rec) ? relativeDays(currentStageDeadline(rec)!) : "not set"})`}>
-              <input type="date" value={currentStageDeadline(rec) ?? ""} disabled={!write} onChange={(e) => e.target.value && attempt(() => setStageDeadline(actor, rec.contentId, stage.name, e.target.value, rec.version))} />
-            </Field>
-            <div className="muted" style={{ paddingBottom: 10 }}>The person responsible is reminded before this date.</div>
-          </div>
+          )}
+          {stage && rec.category !== "devotional" && (
+            <div className="row" style={{ marginTop: 14, alignItems: "end" }}>
+              <Field label={`${stage.name} deadline (${currentStageDeadline(rec) ? relativeDays(currentStageDeadline(rec)!) : "not set"})`}>
+                <input type="date" value={currentStageDeadline(rec) ?? ""} disabled={!write} onChange={(e) => e.target.value && attempt(() => setStageDeadline(actor, rec.contentId, stage.name, e.target.value, rec.version))} />
+              </Field>
+              <div className="muted" style={{ paddingBottom: 10 }}>The person responsible is reminded before this date.</div>
+            </div>
+          )}
         </section>
       )}
 

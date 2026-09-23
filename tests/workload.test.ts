@@ -81,7 +81,7 @@ t("a shoot day on a call sheet takes the whole day, and stacks with editing", ()
 t("a booked shoot with no call sheet still takes the crew's day", () => {
   clean();
   const show = C.createRecord(hop(), { category: "devotional", title: "Morning" });
-  Object.assign(show, { pipelineStage: "Scripting", scheduledDate: "2030-01-09" });
+  Object.assign(show, { pipelineStage: "Prep/Scripting", scheduledDate: "2030-01-09" });
   C.addStageOwner(hop(), show.contentId, "Recording", B, ["Camera operator"]);
   assert.equal(day(B, "2030-01-09").load, 1);
   assert.equal(day(B, "2030-01-09").parts[0].item.kind, "shoot");
