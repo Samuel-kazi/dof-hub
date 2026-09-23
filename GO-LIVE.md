@@ -125,3 +125,14 @@ One thing worth knowing: both sets of changes had separately used "version 9" fo
 
 ### To set up branch protection (optional, on GitHub)
 Repo Settings → Branches → add a rule for `main` → **Require status checks to pass before merging** → select the `test` check once it has run at least once.
+
+
+## v11: Gantt-style bars on the Calendar
+
+Multi-day items now draw as horizontal bars across the days they cover, instead of a dot on every day. Single-day items — a shoot day, a published call sheet, a gear booking — stay as small dots, exactly as before.
+
+- **Production windows:** a live show running more than one day shows as one bar across its whole run, with its title readable right on the bar.
+- **Stages in progress:** whatever stage an item is in now shows as a bar from when it entered that stage to its deadline, so you can see how long something has actually been sitting there, not just when it's due. A stage that hasn't started yet still shows as a plain dot on its deadline, since there's no start to draw a bar from.
+- **Overlapping bars stack** into separate lanes automatically, so two things happening at once never collide.
+- A bar that runs into the next week shows a small `‹`/`›` instead of a rounded end, so it reads as "still going".
+- Bar label color (light or dark text) is chosen automatically per category color, so it stays readable whichever of the five category colors it is, in both light and dark mode.

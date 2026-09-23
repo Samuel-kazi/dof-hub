@@ -9,7 +9,7 @@ import type { Route } from "../ui/AppContext";
 // call sheets and equipment bookings that already exist — so there is nothing to keep in sync, and
 // changing a date on its source record is all it takes to change what the calendar shows next render.
 
-export type CalSubtype = "shoot" | "deadline" | "callsheet" | "booking";
+export type CalSubtype = "shoot" | "deadline" | "callsheet" | "booking" | "window" | "stage";
 
 export interface CalEvent {
   id: string; // stable key: kind + source id, so React can key on it and nothing is ever duplicated
@@ -31,8 +31,11 @@ export function calendarEvents(actor: Actor, from: string, to: string): CalEvent
   const out: CalEvent[] = [];
 
   for (const r of visibleRecords(actor)) {
-    // Source 1: content_registry.scheduled_recording_date — the shoot or show day itself.
-    if (r.scheduledDate && inRange(r.scheduledDate, from, to)) {
+    // Source 1: content_registry.scheduled_recording_date — the shoot or show day itself. A live
+    // show spanning several days gets one bar instead (below), so its individual days are skipped here.
+    const show = r.category === "live" && r.parentId ? getRecord(r.parentId) : null;
+    const showIsWindow = !!show?.showStart && !!show.showEnd && show.showEnd > show.showStart;
+    if (r.scheduledDate && inRange(r.scheduledDate, from, to) && !showIsWindow) {
       out.push({
         id: `shoot:${r.contentId}`,
         date: r.scheduledDate,
@@ -46,27 +49,50 @@ export function calendarEvents(actor: Actor, from: string, to: string): CalEvent
       });
     }
     // Source 2: per-stage deadlines, the same ones the 24hr reminder system reads — every stage from
-    // the current one onward that has a deadline and is not yet done.
+    // the current one onward that has a deadline and is not yet done. The current stage becomes a bar
+    // spanning from when it was entered, so it reads as a window of active work, not just a due date;
+    // stages still to come stay as a single mark on their deadline, since there is no start to draw from.
     if (usesPipeline(r) && r.pipelineStage && !isComplete(r)) {
       const stages = categoryOf(r.category).stages;
       const idx = stages.findIndex((s) => s.name === r.pipelineStage);
       for (let i = idx; i < stages.length; i++) {
         const st = stages[i];
         const due = r.stageDeadlines[st.name];
-        if (!due || r.stageOutputs[st.name] || !inRange(due, from, to)) continue;
+        if (!due || r.stageOutputs[st.name]) continue;
+        const isCurrent = i === idx;
+        const start = isCurrent && r.stageEnteredAt <= due ? r.stageEnteredAt : due;
+        if (!overlaps(start, due, from, to)) continue;
         out.push({
           id: `deadline:${r.contentId}:${st.name}`,
-          date: due,
+          date: start,
           endDate: due,
           title: `${displayTitle(r)}: ${st.name}`,
           detail: `${st.name} due. ${r.contentId}.`,
-          subtype: "deadline",
+          subtype: isCurrent && start < due ? "stage" : "deadline",
           category: r.category,
           color: categoryOf(r.category).color,
           open: { n: "record", id: r.contentId },
         });
       }
     }
+  }
+
+  // Source 1b: a live show's production window, when it runs more than one day — the bar that
+  // replaces its days' individual shoot markers above.
+  for (const r of visibleRecords(actor)) {
+    if (r.category !== "live" || r.hierarchyLevel !== 0 || !r.showStart || !r.showEnd || r.showEnd <= r.showStart) continue;
+    if (!overlaps(r.showStart, r.showEnd, from, to)) continue;
+    out.push({
+      id: `window:${r.contentId}`,
+      date: r.showStart,
+      endDate: r.showEnd,
+      title: r.title,
+      detail: `Production window. ${r.contentId}.`,
+      subtype: "window",
+      category: r.category,
+      color: categoryOf(r.category).color,
+      open: { n: "record", id: r.contentId },
+    });
   }
 
   // Source 3: Call Sheet module dates — once a sheet is published (final), it marks its shoot day.

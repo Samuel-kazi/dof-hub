@@ -296,15 +296,8 @@ textarea { min-height: 84px; resize: vertical; }
 .cat-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--cat-color, var(--ink-3)); flex: none; }
 
 /* ── Calendar ─────────────────────────────────────────────── */
-.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
-.cal-head { margin-bottom: 4px; }
-.cal-dow { text-align: center; font-size: .74rem; color: var(--ink-3); padding: 2px 0 8px; }
-.cal-cell { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 8px 3px 10px; border-radius: 10px; border: 1px solid transparent; background: var(--glass-2); cursor: pointer; min-height: 56px; color: inherit; }
-.cal-cell:hover { background: var(--hover); }
-.cal-cell.out { opacity: .35; }
-.cal-cell.today .cal-num { color: var(--accent-hi); font-weight: 700; }
-.cal-cell.sel { background: var(--accent-soft); border-color: var(--accent-hi); }
-.cal-num { font-size: .84rem; }
+.cal-dow-row { display: flex; gap: 4px; margin-bottom: 4px; }
+.cal-dow { flex: 1; text-align: center; font-size: .74rem; color: var(--ink-3); padding: 2px 0 8px; }
 .cal-marks { display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; min-height: 8px; }
 .cal-more { font-size: .66rem; color: var(--ink-3); }
 .cal-mark { display: inline-block; width: 10px; height: 7px; border-radius: 2px; background: var(--cat-color, var(--ink-3)); flex: none; }
@@ -313,6 +306,29 @@ textarea { min-height: 84px; resize: vertical; }
 .cal-mark.booking { background-color: transparent; background-image: repeating-linear-gradient(45deg, var(--cat-color, var(--ink-3)) 0 2px, transparent 2px 4px); border-radius: 2px; border: 1px solid var(--cat-color, var(--ink-3)); }
 .cal-legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: .82rem; color: var(--ink-2); margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--glass-line); }
 .cal-legend span { display: inline-flex; align-items: center; gap: 7px; }
+
+/* Gantt-style week: each day is one card (day number, then its own single-day dots at the bottom);
+   multi-day bars are a layer floating on top of that row, positioned by percentage so they read as
+   one continuous strip crossing the days they cover — not a separate section below the days. */
+.cal-week { position: relative; }
+.cal-week-days { display: flex; gap: 4px; }
+.cal-day-card { flex: 1; min-width: 0; display: flex; flex-direction: column; border-radius: 10px; border: 1px solid transparent; background: var(--glass-2); cursor: pointer; padding: 6px 4px 7px; gap: 4px; text-align: left; font: inherit; color: inherit; }
+.cal-day-card:hover { background: var(--hover); }
+.cal-day-card.out { opacity: .35; }
+.cal-day-card.today .cal-daynum { color: var(--accent-hi); font-weight: 700; }
+.cal-day-card.sel { background: var(--accent-soft); border-color: var(--accent-hi); }
+.cal-daynum { font-size: .84rem; padding: 0 2px; }
+.cal-bar-space { flex: none; }
+.cal-marks { display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; min-height: 8px; margin-top: auto; }
+.cal-bars-layer { position: absolute; left: 0; right: 0; top: 22px; pointer-events: none; }
+.cal-bar { position: absolute; height: 19px; border-radius: 4px; border: none; padding: 0 8px; margin: 0; cursor: pointer; pointer-events: auto; background: var(--cat-color, var(--ink-3)); font-size: .74rem; font-weight: 600; line-height: 19px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal-bar:hover { filter: brightness(1.08); }
+.cal-bar.cap-start { border-top-left-radius: 9px; border-bottom-left-radius: 9px; }
+.cal-bar.cap-end { border-top-right-radius: 9px; border-bottom-right-radius: 9px; }
+.cal-bar.clip-start { padding-left: 4px; }
+.cal-bar.clip-start::before { content: "\2039"; margin-right: 3px; opacity: .8; }
+.cal-bar.clip-end::after { content: "\203a"; margin-left: 3px; opacity: .8; }
+.bar-swatch { display: inline-block; width: 16px; height: 9px; border-radius: 3px; background: var(--ink-3); }
 .cal-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; border-left: 3px solid var(--cat-color, var(--glass-line)); background: var(--glass-2); cursor: pointer; }
 .cal-row:hover { background: var(--hover); }
 .card .t { font-weight: 500; }

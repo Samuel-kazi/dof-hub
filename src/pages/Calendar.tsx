@@ -2,13 +2,14 @@ import { useState } from "react";
 import { useApp } from "../ui/AppContext";
 import { useDb } from "../data/store";
 import { CATEGORIES } from "../config/categories";
-import { calendarEvents, eventsOnDay, type CalSubtype } from "../services/calendarView";
+import { calendarEvents, eventsOnDay, type CalEvent, type CalSubtype } from "../services/calendarView";
+import { CalendarWeek } from "./CalendarWeek";
 import { fmtDate, todayIso } from "../services/utils";
 import type { CategoryKey } from "../types";
 import { IconBack } from "../ui/Icons";
 import { Empty } from "../ui/parts";
 
-const SUBTYPE_LABEL: Record<CalSubtype, string> = { shoot: "Shoot / show day", deadline: "Stage deadline", callsheet: "Call sheet published", booking: "Gear booked" };
+const SUBTYPE_LABEL: Record<CalSubtype, string> = { shoot: "Shoot / show day", deadline: "Stage deadline", callsheet: "Call sheet published", booking: "Gear booked", window: "Production window", stage: "Stage in progress" };
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
@@ -74,35 +75,29 @@ export function CalendarPage() {
       </div>
 
       <section className="glass panel" aria-label="Month grid">
-        <div className="cal-grid cal-head">
+        <div className="cal-dow-row">
           {DOW.map((d) => <div key={d} className="cal-dow">{d}</div>)}
         </div>
-        <div className="cal-grid">
-          {cells.map((date) => {
-            const dayEvs = eventsOnDay(events, date);
-            const inMonth = date.slice(0, 7) === month;
-            return (
-              <button
-                key={date}
-                className={`cal-cell ${inMonth ? "" : "out"} ${date === today ? "today" : ""} ${date === selected ? "sel" : ""}`}
-                onClick={() => setSelected(date === selected ? null : date)}
-                aria-label={fmtDate(date)}
-                aria-pressed={date === selected}
-              >
-                <span className="cal-num">{Number(date.slice(8))}</span>
-                <span className="cal-marks">
-                  {dayEvs.slice(0, 4).map((e) => <i key={e.id} className={`cal-mark ${e.subtype}`} style={{ ["--cat-color" as string]: e.color }} title={e.title} />)}
-                  {dayEvs.length > 4 && <span className="cal-more">+{dayEvs.length - 4}</span>}
-                </span>
-              </button>
-            );
-          })}
+        <div className="stack" style={{ gap: 4 }}>
+          {Array.from({ length: cells.length / 7 }, (_, w) => cells.slice(w * 7, w * 7 + 7)).map((weekDates) => (
+            <CalendarWeek
+              key={weekDates[0]}
+              weekDates={weekDates}
+              events={events}
+              month={month}
+              today={today}
+              selected={selected}
+              onSelectDay={(date) => setSelected(date === selected ? null : date)}
+              onOpenEvent={(e: CalEvent) => go(e.open)}
+            />
+          ))}
         </div>
         <div className="cal-legend">
           <span><i className="cal-mark shoot" /> Shoot / show day</span>
           <span><i className="cal-mark deadline" /> Stage deadline</span>
           <span><i className="cal-mark callsheet" /> Call sheet published</span>
           <span><i className="cal-mark booking" /> Gear booked</span>
+          <span><span className="bar-swatch" /> Production window / stage in progress</span>
         </div>
       </section>
 
