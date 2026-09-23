@@ -132,4 +132,15 @@ t("a bar segment is clickable and opens its event; a day card click selects the 
   void opened; void selectedDay;
 });
 
+t("a multi-day live show gets exactly one bar — its own days never add separate stage bars too", () => {
+  const actor = login("hop@dof.demo", "demo");
+  const show = getDb().records.find((r) => r.contentId === "DOF-LIVE-002")!;
+  const evs = calendarEvents(actor, show.showStart!, show.showEnd!);
+  const windowBars = evs.filter((e) => e.id === `window:${show.contentId}`);
+  const dayBars = evs.filter((e) => e.id.startsWith(`deadline:${show.contentId}-D`));
+  assert.equal(windowBars.length, 1);
+  assert.equal(windowBars[0].title, show.title, "the bar names the show, not a particular day");
+  assert.equal(dayBars.length, 0, "no day of the show adds a second bar of its own");
+});
+
 console.log(`\n${passed} passed`);

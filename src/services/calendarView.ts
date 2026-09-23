@@ -52,7 +52,9 @@ export function calendarEvents(actor: Actor, from: string, to: string): CalEvent
     // the current one onward that has a deadline and is not yet done. The current stage becomes a bar
     // spanning from when it was entered, so it reads as a window of active work, not just a due date;
     // stages still to come stay as a single mark on their deadline, since there is no start to draw from.
-    if (usesPipeline(r) && r.pipelineStage && !isComplete(r)) {
+    // A live show with several days is one production, the same as on the Dashboard: its window bar
+    // above already stands for the whole run, so its individual days do not also add their own bars here.
+    if (usesPipeline(r) && r.pipelineStage && !isComplete(r) && !showIsWindow) {
       const stages = categoryOf(r.category).stages;
       const idx = stages.findIndex((s) => s.name === r.pipelineStage);
       for (let i = idx; i < stages.length; i++) {

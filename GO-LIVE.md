@@ -136,3 +136,8 @@ Multi-day items now draw as horizontal bars across the days they cover, instead 
 - **Overlapping bars stack** into separate lanes automatically, so two things happening at once never collide.
 - A bar that runs into the next week shows a small `‹`/`›` instead of a rounded end, so it reads as "still going".
 - Bar label color (light or dark text) is chosen automatically per category color, so it stays readable whichever of the five category colors it is, in both light and dark mode.
+
+
+## v12: fixed a live show cluttering the calendar with a bar for every day
+
+A live show with several days was showing a separate stage bar for each of its days ("Medical Missionary Movement, Day 2: Prep", "Day 3: Prep"...), stacking into a wall of near-duplicate bars. Now, same as the Dashboard, a multi-day live show shows as one bar with just the show's name — its days no longer add bars of their own. A show with only one day is unaffected.
