@@ -1,9 +1,9 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { ReportButton } from "../ui/ReportDialog";
 import type { EquipCondition, Manifest } from "../types";
 import { useApp } from "../ui/AppContext";
 import { useDb } from "../data/store";
-import { CONDITIONS } from "../config/equipment";
+import { CONDITIONS, EQUIP_CATEGORIES } from "../config/equipment";
 import { Modal } from "../ui/Modal";
 import { Attachments, PhotoList } from "../ui/Photos";
 import { Empty, Field } from "../ui/parts";
@@ -70,16 +70,29 @@ export function ManifestPage({ id }: { id: string }) {
         <h2>Items</h2>
         {m.lines.length === 0 ? <Empty>No items on this list.</Empty> : (
           <table className="table">
-            <thead><tr><th>Item</th><th>Qty</th><th>Condition out</th><th>Photos out</th>{m.status === "returned" && <><th>Came back</th><th>Photos in</th></>}{write && m.status === "assigned" && <th className="no-print"></th>}</tr></thead>
+            <thead><tr><th>Item</th><th>Make/Model</th><th>Qty</th><th>Condition out</th><th>Photos out</th><th>Accessories</th><th>Info</th>{m.status === "returned" && <><th>Came back</th><th>Photos in</th></>}{write && m.status === "assigned" && <th className="no-print"></th>}</tr></thead>
             <tbody>
-              {m.lines.map((l) => {
+              {(() => {
+                const catLabel = (key: string | undefined) => EQUIP_CATEGORIES.find((c) => c.key === key)?.label ?? "Other";
+                const sorted = [...m.lines].sort((a, b) => catLabel(getItem(a.equipmentId)?.category).localeCompare(catLabel(getItem(b.equipmentId)?.category)));
+                const colSpan = 7 + (m.status === "returned" ? 2 : 0) + (write && m.status === "assigned" ? 1 : 0);
+                let lastCat = "";
+                return sorted.map((l) => {
                 const item = getItem(l.equipmentId);
+                const cat = catLabel(item?.category);
+                const heading = cat !== lastCat;
+                lastCat = cat;
                 return (
-                  <tr key={l.equipmentId}>
+                  <React.Fragment key={l.equipmentId}>
+                  {heading && <tr className="table-group"><td colSpan={colSpan}>{cat}</td></tr>}
+                  <tr>
                     <td><div>{item?.name ?? l.equipmentId}</div><span className="cid">{l.equipmentId}</span></td>
+                    <td>{[item?.make, item?.model].filter(Boolean).join(" ") || <span className="muted">—</span>}</td>
                     <td>{l.quantity}</td>
                     <td>{l.conditionOut}</td>
                     <td><Attachments items={l.photosOut} empty="None" /></td>
+                    <td>{item?.accessories || <span className="muted">None listed</span>}</td>
+                    <td style={{ maxWidth: 220 }}>{item?.info || <span className="muted">None</span>}</td>
                     {m.status === "returned" && (
                       <>
                         <td>
@@ -91,8 +104,10 @@ export function ManifestPage({ id }: { id: string }) {
                     )}
                     {write && m.status === "assigned" && <td className="no-print"><button className="btn small ghost" onClick={() => attempt(() => removeLine(actor, m.id, l.equipmentId), "Removed")}>Remove</button></td>}
                   </tr>
+                  </React.Fragment>
                 );
-              })}
+                });
+              })()}
             </tbody>
           </table>
         )}

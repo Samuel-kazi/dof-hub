@@ -179,3 +179,10 @@ A new **General Use** project type: create one with its own ID when gear, storag
 ## v17: fixed "Add at least one serial number" when adding a single item with no serial
 
 Real bug, caught live: leaving both Serial number and Label blank on a single-item add silently dropped that row before it ever reached the server, so the form submitted nothing and showed a confusing "Add at least one serial number" error — for a field that had just been made optional. A blank row is now only dropped when there's more than one row (an unfilled extra row you added by mistake); a single blank row is always kept, since one item with no serial is exactly what "optional" is supposed to allow.
+
+
+## v18: confirmed and tested — the checkout list and its printed report already show everything asked for
+
+Checking a checkout list, on screen or printed, already shows equipment ID, item name, make/model, quantity, condition out, photos, accessories, and additional info for every line, grouped under a heading per equipment category (Camera, Audio, Cabling & Connectivity, and so on). This existed in the code already but had no test coverage and one broken test (a missing import, unrelated to the feature itself) — both fixed, and five new tests lock the behaviour in going forward, including a rendered PDF check.
+
+If your checkout lists still look plain after installing this, it is almost certainly the browser cache from before — see the earlier note about hard-refreshing or checking in a private window.

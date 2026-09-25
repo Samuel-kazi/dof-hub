@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "icons": "tauri icon brand/app-icon.png",
-    "test": "tsx tests/rules.test.ts && tsx tests/gear.test.ts && tsx tests/migrate.test.ts && tsx tests/search.test.ts && tsx tests/workflow.test.ts && tsx tests/lifecycle.test.ts && tsx tests/project.test.ts && tsx tests/workload.test.ts && tsx tests/permissions.test.ts && tsx tests/reports.test.ts && tsx tests/templates.test.ts && tsx tests/reminders.test.ts && tsx tests/server.test.ts && tsx tests/units.test.tsx && tsx tests/remoteflow.test.tsx && tsx tests/brand.test.tsx && tsx tests/live-workflow.test.tsx && tsx tests/gen-check.test.ts && tsx tests/calendar.test.tsx && tsx tests/devotional.test.tsx && tsx tests/general-use.test.ts && tsx tests/equipment-picker.test.tsx && tsx tests/render.test.tsx",
+    "test": "tsx tests/rules.test.ts && tsx tests/gear.test.ts && tsx tests/migrate.test.ts && tsx tests/search.test.ts && tsx tests/workflow.test.ts && tsx tests/lifecycle.test.ts && tsx tests/project.test.ts && tsx tests/workload.test.ts && tsx tests/permissions.test.ts && tsx tests/reports.test.ts && tsx tests/templates.test.ts && tsx tests/reminders.test.ts && tsx tests/server.test.ts && tsx tests/units.test.tsx && tsx tests/remoteflow.test.tsx && tsx tests/brand.test.tsx && tsx tests/live-workflow.test.tsx && tsx tests/gen-check.test.ts && tsx tests/calendar.test.tsx && tsx tests/devotional.test.tsx && tsx tests/general-use.test.ts && tsx tests/equipment-picker.test.tsx && tsx tests/checkout-list.test.tsx && tsx tests/render.test.tsx",
     "gen": "node scripts/gen-wrapped.mjs",
     "gen:check": "node scripts/check-gen-wrapped.mjs",
     "build:server": "node scripts/build-server.mjs",

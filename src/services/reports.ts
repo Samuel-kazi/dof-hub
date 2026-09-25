@@ -191,17 +191,46 @@ export const REPORT_KINDS: ReportKind[] = [
     ], true),
   },
   {
-    key: "manifest.list", scope: "manifest", label: "Checkout list", description: "The list as it stands, with lines for who released and received the gear.",
+    key: "manifest.list", scope: "manifest", label: "Checkout list", description: "The list as it stands, grouped by category, with make/model, accessories and notes for each item.",
     build: (_a, p) => {
       const m = getDb().manifests.find((x) => x.id === p.manifestId);
       if (!m) throw new RuleError("Checkout list not found.");
       const rec = getRecord(m.contentId);
+      const catLabel = (key: string | undefined) => EQUIP_CATEGORIES.find((c) => c.key === key)?.label ?? "Other";
+      const groups = new Map<string, typeof m.lines>();
+      for (const l of [...m.lines].sort((a, b) => catLabel(getItem(a.equipmentId)?.category).localeCompare(catLabel(getItem(b.equipmentId)?.category)))) {
+        const label = catLabel(getItem(l.equipmentId)?.category);
+        if (!groups.has(label)) groups.set(label, []);
+        groups.get(label)!.push(l);
+      }
+      const head = ["Asset code", "Item", "Make/model", "Qty", "Condition out", "Photos", "Accessories", "Info", ...(m.status === "returned" ? ["Came back"] : [])];
+      const weights = [1.6, 2.2, 1.8, 0.6, 1.4, 0.8, 1.8, 2, ...(m.status === "returned" ? [2] : [])];
       return doc(`Checkout list ${m.id}`, `${rec ? displayTitle(rec) : m.contentId}, ${manifestStatusView(m).label}`, `checkout-${m.id}`, [
         { type: "pairs", pairs: [["Content ID", m.contentId], ["Person responsible", nameOf(m.responsiblePersonId)], [m.destination === "outside" ? "Out from" : "Shoot date", fmtDate(m.date)], ...(m.expectedReturn ? [["Expected back", fmtDate(m.expectedReturn)] as [string, string]] : []), ...(m.checkedOutAt ? [["Left the studio", fmtDateTime(m.checkedOutAt)] as [string, string]] : []), ...(m.returnedAt ? [["Checked in", fmtDateTime(m.returnedAt)] as [string, string]] : [])] },
-        { type: "table", head: ["Asset code", "Item", "Qty", "Condition out", "Came back"], weights: [3, 4, 0.8, 1.6, 2.4], rows: m.lines.map((l) => [l.equipmentId, getItem(l.equipmentId)?.name ?? l.equipmentId, String(l.quantity), l.conditionOut, m.status === "returned" ? `${l.returnedGood ? `${l.returnedGood} fine` : ""}${l.damaged ? ` ${l.damaged} damaged` : ""}${l.lost ? ` ${l.lost} lost` : ""}${l.conditionIn ? `, ${l.conditionIn}` : ""}`.trim() : ""]) },
+        ...[...groups.entries()].flatMap(([label, lines]): Block[] => [
+          { type: "heading", text: label },
+          {
+            type: "table", head, weights,
+            rows: lines.map((l) => {
+              const item = getItem(l.equipmentId);
+              const row = [
+                l.equipmentId,
+                item?.name ?? l.equipmentId,
+                [item?.make, item?.model].filter(Boolean).join(" ") || "—",
+                String(l.quantity),
+                l.conditionOut,
+                l.photosOut.length ? `${l.photosOut.length} attached` : "None",
+                item?.accessories || "None listed",
+                item?.info || "",
+              ];
+              if (m.status === "returned") row.push(`${l.returnedGood ? `${l.returnedGood} fine` : ""}${l.damaged ? ` ${l.damaged} damaged` : ""}${l.lost ? ` ${l.lost} lost` : ""}${l.conditionIn ? `, ${l.conditionIn}` : ""}`.trim());
+              return row;
+            }),
+          },
+        ]),
         { type: "para", text: "Released by: ______________________________   Date: ______________" },
         { type: "para", text: "Received by: ______________________________   Date: ______________" },
-      ]);
+      ], true);
     },
   },
   // Call sheets

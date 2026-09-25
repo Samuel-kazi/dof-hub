@@ -1,7 +1,7 @@
 // Run with: npx tsx tests/reports.test.ts
 // Reports: what they hold, who may make them, and the PDF they become.
 import assert from "node:assert/strict";
-import { resetDemoData } from "../src/data/store";
+import { getDb, resetDemoData } from "../src/data/store";
 import { RuleError } from "../src/types";
 import { login } from "../src/services/auth";
 import * as P from "../src/services/permissions";
@@ -115,4 +115,17 @@ await t("the equipment list's extra columns are opt-in, and only show what was a
   const full = reportToText(buildReport(hop(), "equipment.inventory", { category: "camera", colVendor: true, colPurchased: true, colCost: true, colPackaging: true }));
   for (const col of ["Vendor", "Purchased", "Cost", "Packaging"]) assert.ok(full.includes(col), col);
   assert.ok(full.includes("Pelican 1620"), "packaging values are pulled through");
+});
+
+await t("the checkout list report is grouped by category and shows make/model, accessories and notes per item", () => {
+  const m = getDb().manifests.find((x) => x.id === "DOF-MF-001")!;
+  const text = reportToText(buildReport(hop(), "manifest.list", { manifestId: m.id }));
+  assert.ok(text.toLowerCase().includes("audio") && text.toLowerCase().includes("camera"), "category headings appear");
+  for (const col of ["Asset code", "Make/model", "Qty", "Condition out", "Photos", "Accessories", "Info"]) assert.ok(text.includes(col), col);
+  assert.ok(text.includes("Sony FX3"), "make/model values are pulled through");
+  assert.ok(text.includes("batteries") || text.includes("cage"), "accessories are pulled through");
+  const audioIdx = text.toLowerCase().indexOf("audio");
+  const cameraIdx = text.toLowerCase().indexOf("camera");
+  const cablingIdx = text.toLowerCase().indexOf("cabling");
+  assert.ok(audioIdx < cablingIdx && cablingIdx < cameraIdx, "groups are sorted alphabetically by category, not by line order");
 });

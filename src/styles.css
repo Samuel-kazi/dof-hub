@@ -251,6 +251,7 @@ textarea { min-height: 84px; resize: vertical; }
 .table td { padding: var(--sp-table-cell); border-bottom: 1px solid var(--line-soft); vertical-align: middle; }
 .table tr.clickable { cursor: pointer; }
 .table tr.clickable:hover td { background: var(--hover); }
+.table tr.table-group td { padding: 10px 12px 4px; font-size: .78rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-3); border-bottom: none; }
 .list { display: flex; flex-direction: column; }
 .list-item { display: flex; align-items: center; gap: 12px; padding: 12px 8px; border-bottom: 1px solid var(--line-soft); cursor: pointer; border-radius: 12px; }
 .list-item:last-child { border-bottom: 0; }
