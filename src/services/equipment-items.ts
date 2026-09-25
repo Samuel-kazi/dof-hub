@@ -177,9 +177,10 @@ export function createItem(actor: Actor, input: ItemInput): EquipmentItem {
   const family = (input.itemFamily ?? "").trim();
   let quantity = 1;
   if (input.trackingType === "serialized") {
-    if (!serial) throw new RuleError("Serialized items need a serial number.");
-    const dupe = getDb().equipment.find((e) => e.serialNumber && e.serialNumber.toLowerCase() === serial.toLowerCase());
-    if (dupe) throw new RuleError(`Serial number ${serial} is already registered as ${dupe.id}.`);
+    if (serial) {
+      const dupe = getDb().equipment.find((e) => e.serialNumber && e.serialNumber.toLowerCase() === serial.toLowerCase());
+      if (dupe) throw new RuleError(`Serial number ${serial} is already registered as ${dupe.id}.`);
+    }
   } else {
     if (!family) throw new RuleError("Give this batch an item family, for example XLR-10M, so batches group together.");
     quantity = input.quantity ?? 0;
@@ -193,7 +194,7 @@ export function createItem(actor: Actor, input: ItemInput): EquipmentItem {
     model: input.model.trim(),
     category: input.category,
     itemFamily: input.trackingType === "aggregate" ? family : null,
-    serialNumber: input.trackingType === "serialized" ? serial : null,
+    serialNumber: input.trackingType === "serialized" ? (serial || null) : null,
     unitLabel: input.trackingType === "serialized" ? (input.unitLabel ?? "").trim() || null : null,
     quantityTotal: quantity,
     quantityDamaged: 0,
@@ -249,13 +250,14 @@ export function createSerializedUnits(actor: Actor, input: UnitsInput): Equipmen
   const seen = new Map<string, number>(); // lowercase serial -> position, to catch repeats within this list
   const cleaned = input.units.map((u, i) => {
     const serial = u.serialNumber.trim();
-    if (!serial) throw new RuleError(`Unit ${i + 1} needs a serial number.`);
-    const key = serial.toLowerCase();
-    if (seen.has(key)) throw new RuleError(`Serial number ${serial} is entered twice, for unit ${seen.get(key)! + 1} and unit ${i + 1}.`);
-    seen.set(key, i);
-    const existing = getDb().equipment.find((e) => e.serialNumber && e.serialNumber.toLowerCase() === key);
-    if (existing) throw new RuleError(`Serial number ${serial} is already registered as ${existing.id} (${existing.name}).`);
-    return { serial, label: (u.label ?? "").trim() || null };
+    if (serial) {
+      const key = serial.toLowerCase();
+      if (seen.has(key)) throw new RuleError(`Serial number ${serial} is entered twice, for unit ${seen.get(key)! + 1} and unit ${i + 1}.`);
+      seen.set(key, i);
+      const existing = getDb().equipment.find((e) => e.serialNumber && e.serialNumber.toLowerCase() === key);
+      if (existing) throw new RuleError(`Serial number ${serial} is already registered as ${existing.id} (${existing.name}).`);
+    }
+    return { serial: serial || null, label: (u.label ?? "").trim() || null };
   });
 
   const codes = nextAssetCodes(input.category, cleaned.length);
@@ -305,10 +307,11 @@ export function updateItem(actor: Actor, id: string, patch: ItemPatch): Equipmen
   if (patch.unitCost !== undefined && (!Number.isFinite(patch.unitCost) || patch.unitCost < 0)) throw new RuleError("Cost must be zero or more.");
   if (patch.serialNumber !== undefined && item.trackingType === "serialized") {
     const s = patch.serialNumber?.trim() ?? "";
-    if (!s) throw new RuleError("Serialized items need a serial number.");
-    const dupe = getDb().equipment.find((e) => e.id !== id && e.serialNumber && e.serialNumber.toLowerCase() === s.toLowerCase());
-    if (dupe) throw new RuleError(`Serial number ${s} is already registered as ${dupe.id}.`);
-    patch.serialNumber = s;
+    if (s) {
+      const dupe = getDb().equipment.find((e) => e.id !== id && e.serialNumber && e.serialNumber.toLowerCase() === s.toLowerCase());
+      if (dupe) throw new RuleError(`Serial number ${s} is already registered as ${dupe.id}.`);
+    }
+    patch.serialNumber = s || null;
   }
   if (patch.unitLabel !== undefined) {
     if (item.trackingType !== "serialized") throw new RuleError("Only single units can have a label.");

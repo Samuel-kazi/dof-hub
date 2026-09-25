@@ -31,6 +31,7 @@ export function calendarEvents(actor: Actor, from: string, to: string): CalEvent
   const out: CalEvent[] = [];
 
   for (const r of visibleRecords(actor)) {
+    if (r.category === "general") continue; // a placeholder project, not a production — nothing here to put on a calendar
     // Source 1: content_registry.scheduled_recording_date — the shoot or show day itself. A live
     // show spanning several days gets one bar instead (below), so its individual days are skipped here.
     const show = r.category === "live" && r.parentId ? getRecord(r.parentId) : null;

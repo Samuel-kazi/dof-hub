@@ -8,7 +8,7 @@ import { buildSeed } from "../src/data/seed";
 const from = process.env.MIGRATE_FROM;
 
 if (!from) {
-  for (const v of ["1", "2", "4", "5", "7", "8", "9", "10"]) {
+  for (const v of ["1", "2", "4", "5", "7", "8", "9", "10", "11"]) {
     const r = spawnSync("npx", ["tsx", "tests/migrate.test.ts"], { env: { ...process.env, MIGRATE_FROM: v }, encoding: "utf8" });
     process.stdout.write(r.stdout);
     if (r.status !== 0) { process.stderr.write(r.stderr); process.exit(1); }
@@ -26,7 +26,7 @@ for (const r of records) delete r.stageEnteredAt;
 // A project deleted before version 4 left its drive entry behind.
 if (from === "1" || from === "2") (records.find((r) => r.contentId === "DOF-DEV-001") as { archived: boolean }).archived = true;
 
-if (from !== "5" && from !== "7" && from !== "8" && from !== "9" && from !== "10") {
+if (from !== "5" && from !== "7" && from !== "8" && from !== "9" && from !== "10" && from !== "11") {
   // Before version 5 a live show was one flat item that carried its own pipeline, and records had no show dates or hosts.
   const day = records.find((r) => r.contentId === "DOF-LIVE-001-D1")!;
   const show = records.find((r) => r.contentId === "DOF-LIVE-001")!;
@@ -39,7 +39,7 @@ if (from !== "5" && from !== "7" && from !== "8" && from !== "9" && from !== "10
   for (const c of old.callSheets as { linkedEpisodeIds: string[] }[]) c.linkedEpisodeIds = c.linkedEpisodeIds.map((x) => (x === "DOF-LIVE-001-D1" ? "DOF-LIVE-001" : x));
 }
 // Before version 6 a stage had one owner, kept as a single ID, and there were no working-day settings.
-if (from !== "7" && from !== "8" && from !== "9" && from !== "10") {
+if (from !== "7" && from !== "8" && from !== "9" && from !== "10" && from !== "11") {
   for (const r of records) {
     const owners = (r.stageAssignees ?? {}) as Record<string, { personId: string }[]>;
     r.stageAssignees = Object.fromEntries(Object.entries(owners).filter(([k]) => k !== "Project").map(([k, list]) => [k, list[0]?.personId]).filter(([, v]) => v));
@@ -49,12 +49,12 @@ old.settings = { stageReminderHours: 24, storageWarningThreshold: 85, checkoutRe
 old.schemaVersion = from === "5" ? 5 : 4;
 
 // Before version 8 a unit had no label of its own.
-if (from === "7" || from === "8" || from === "9" || from === "10") {
-  old.schemaVersion = from === "10" ? 10 : from === "9" ? 9 : from === "8" ? 8 : 7;
+if (from === "7" || from === "8" || from === "9" || from === "10" || from === "11") {
+  old.schemaVersion = from === "11" ? 11 : from === "10" ? 10 : from === "9" ? 9 : from === "8" ? 8 : 7;
   old.settings = { ...(old.settings as Rec), workDays: [1, 2, 3, 4, 5], effortOverrides: {} };
   if (from === "7") for (const e of old.equipment as Rec[]) delete e.unitLabel;
   // Version 9 and up already have the workspace accent/font and per-person photo, font size and density.
-  if (from === "9" || from === "10") (old.settings as Rec).appearance = { accent: "terracotta", fontPairing: "modern" };
+  if (from === "9" || from === "10" || from === "11") (old.settings as Rec).appearance = { accent: "terracotta", fontPairing: "modern" };
 }
 
 // Before version 9 there was no workspace accent/font, and no per-person photo, font size or density.
@@ -70,6 +70,26 @@ if (from === "8" || from === "9") {
     for (const dict of [r.stageOutputs, r.stageDeadlines] as Record<string, unknown>[]) {
       for (const [to, from2] of Object.entries(DOWN)) if (to in dict) { dict[from2] = dict[to]; delete dict[to]; }
       delete dict.Wrap;
+    }
+    for (const t of r.tasks as Rec[]) if (t.stage in DOWN) t.stage = DOWN[t.stage as string];
+    for (const [to, from2] of Object.entries(DOWN)) if (to in (r.stageAssignees as Rec)) { (r.stageAssignees as Rec)[from2] = (r.stageAssignees as Rec)[to]; delete (r.stageAssignees as Rec)[to]; }
+  }
+}
+
+// Before version 12 Devotional used the same stages as everything else (Idea, Scripting, Recording,
+// Editorial, Review, Delivered), and had none of its own Guest/Review/Closed fields — the exact gap
+// that let an unmigrated Devotional crash workload and pipeline code expecting its new stage names.
+if (from === "11") {
+  old.schemaVersion = 11;
+  const DOWN: Record<string, string> = { Creation: "Idea", "Prep/Scripting": "Scripting", Editing: "Editorial", Published: "Delivered" };
+  for (const r of old.records as Rec[]) {
+    delete r.guestName; delete r.guestContact; delete r.reviewerName; delete r.reviewApprovedAt; delete r.closedReason;
+    delete r.cardStorage; delete r.publishDate; delete r.recordingDurationMin; delete r.recordingNotes; delete r.readyForReview;
+    delete r.editorNotes; delete r.sendBackReason;
+    if (r.category !== "devotional" || !r.pipelineStage) continue;
+    if (r.pipelineStage in DOWN) r.pipelineStage = DOWN[r.pipelineStage as string];
+    for (const dict of [r.stageOutputs, r.stageDeadlines] as Record<string, unknown>[]) {
+      for (const [to, from2] of Object.entries(DOWN)) if (to in dict) { dict[from2] = dict[to]; delete dict[to]; }
     }
     for (const t of r.tasks as Rec[]) if (t.stage in DOWN) t.stage = DOWN[t.stage as string];
     for (const [to, from2] of Object.entries(DOWN)) if (to in (r.stageAssignees as Rec)) { (r.stageAssignees as Rec)[from2] = (r.stageAssignees as Rec)[to]; delete (r.stageAssignees as Rec)[to]; }
@@ -103,9 +123,10 @@ const store: Record<string, string> = { "dof-hub-db": JSON.stringify(old) };
 };
 const { getDb } = await import("../src/data/store");
 const { categoryOf } = await import("../src/config/categories");
+const W = await import("../src/services/workload");
 
 const db = getDb();
-assert.equal(db.schemaVersion, 11);
+assert.equal(db.schemaVersion, 12);
 assert.deepEqual(db.outbox, [], "the record of sent reminders exists");
 assert.ok(db.equipment.every((e) => e.unitLabel === null || typeof e.unitLabel === "string"), "every unit has a label field, even if blank");
 assert.equal(db.records[0].title, "Edited before the upgrade", "earlier edits survive");
@@ -140,9 +161,18 @@ assert.equal(liveDay.postProductionNeeded, null, "the post-production question i
 assert.equal(liveDay.spunOffFrom, null);
 assert.ok("Wrap" in liveDay.stageOutputs && liveDay.stageOutputs.Wrap === false, "the new Wrap stage exists, not yet confirmed");
 if (from === "8") { assert.equal(liveShow.strikePattern, null); assert.equal(liveShow.strikeChecklist, null); }
-assert.ok(typeof liveDay.stageEnteredAt === "string" && liveDay.stageEnteredAt.length > 0, "an old record gets a stageEnteredAt, even with nothing else to go on");
-assert.equal(liveDay.stageEnteredAt, liveDay.createdAt, "with nothing better to go on, an old record's stage is assumed entered when the record was created");
+if (from !== "11") {
+  assert.ok(typeof liveDay.stageEnteredAt === "string" && liveDay.stageEnteredAt.length > 0, "an old record gets a stageEnteredAt, even with nothing else to go on");
+  assert.equal(liveDay.stageEnteredAt, liveDay.createdAt, "with nothing better to go on, an old record's stage is assumed entered when the record was created");
+}
 if (from === "8" || from === "9") assert.equal(db.settings.appearance?.accent, "terracotta", "the workspace appearance survives the live-show migration unchanged");
+if (from === "11") {
+  const devo = db.records.find((r) => r.contentId === "DOF-DEV-001")!;
+  assert.equal(devo.pipelineStage, "Prep/Scripting", "an old Devotional stage name is remapped, not left stranded");
+  assert.equal(devo.guestName, "");
+  assert.equal(devo.readyForReview, false);
+  assert.doesNotThrow(() => W.workloadFor(devo.assigneePersonId ?? "DOF-P-CRW-001", "2026-01-01", 14), "the exact crash this migration exists to prevent");
+}
 if (from === "8") {
   const anyPerson = db.people[0];
   assert.equal(anyPerson.photoUrl, null); assert.equal(anyPerson.fontSize, "default"); assert.equal(anyPerson.density, "comfortable");
@@ -163,7 +193,7 @@ if (from === "1" || from === "2") assert.equal(db.snapshots[db.snapshots.length 
 // Version 6: stages have lists of owners with roles, and there are working-day settings.
 assert.ok(db.records.every((r) => Object.values(r.stageAssignees).every((list) => Array.isArray(list) && list.every((o) => typeof o.personId === "string" && Array.isArray(o.roles)))), "owners are lists");
 assert.deepEqual(db.settings.workDays, [1, 2, 3, 4, 5]); assert.deepEqual(db.settings.effortOverrides, {});
-if (from !== "7" && from !== "8" && from !== "9" && from !== "10") {
+if (from !== "7" && from !== "8" && from !== "9" && from !== "10" && from !== "11") {
   const e01Owners = db.records.find((r) => r.contentId === "DOF-SER-001-S1-E01")!.stageAssignees.Editorial;
   assert.equal(e01Owners[0].personId, "DOF-P-CRW-001", "the single owner is now the first owner");
   assert.ok(e01Owners[0].roles.includes("Director"), "and keeps the role they had on the project");

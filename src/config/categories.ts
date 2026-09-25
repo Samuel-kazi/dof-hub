@@ -157,6 +157,25 @@ export const CATEGORIES: CategoryConfig[] = [
     footageStage: "Recording",
     leafLevel: 2,
   },
+  {
+    key: "general",
+    label: "General Use",
+    singular: "General use",
+    code: "GEN",
+    color: "#8a8a92",
+    supportsChildren: false,
+    childLevelLabel: null,
+    grandchildLevelLabel: null,
+    childToken: null,
+    grandchildToken: null,
+    // Not a production: a placeholder project ID for storage, a call sheet, a document, or a gear
+    // checkout that has nowhere real to attach yet — equipment lent out for something that was never
+    // going to become a tracked production, for instance. One stage, nothing to advance through, and
+    // it stays out of the Pipeline board and Calendar (see Pipeline.tsx and calendarView.ts).
+    stages: [s("In use", "")],
+    footageStage: "In use",
+    leafLevel: 0,
+  },
 ];
 
 export const categoryOf = (key: CategoryKey): CategoryConfig => {

@@ -220,3 +220,35 @@ export function upgradeToV11(db: Database): Database {
   db.schemaVersion = 11;
   return db;
 }
+
+/** Version 12: Devotional got its own stage flow (Idea/Scripting/Recording/Editorial/Review/Delivered
+ *  → Creation/Guest/Prep-Scripting/Recording/Editing/Review/Published), plus its Guest/Review/Closed
+ *  fields. Any Devotional saved under the old names is remapped here rather than left stranded — a
+ *  stage name that matches nothing in the category's current list crashes any code that indexes into
+ *  it, which is exactly what slipped through the first time this shipped. */
+export function upgradeToV12(db: Database): Database {
+  const RENAME: Record<string, string> = { Idea: "Creation", Scripting: "Prep/Scripting", Editorial: "Editing", Delivered: "Published" };
+  for (const r of db.records) {
+    (r as { guestName?: string }).guestName ??= "";
+    (r as { guestContact?: string }).guestContact ??= "";
+    (r as { reviewerName?: string | null }).reviewerName ??= null;
+    (r as { reviewApprovedAt?: string | null }).reviewApprovedAt ??= null;
+    (r as { closedReason?: string | null }).closedReason ??= null;
+    (r as { cardStorage?: string }).cardStorage ??= "";
+    (r as { publishDate?: string | null }).publishDate ??= null;
+    (r as { recordingDurationMin?: number | null }).recordingDurationMin ??= null;
+    (r as { recordingNotes?: string }).recordingNotes ??= "";
+    (r as { readyForReview?: boolean }).readyForReview ??= false;
+    (r as { editorNotes?: string }).editorNotes ??= "";
+    (r as { sendBackReason?: string | null }).sendBackReason ??= null;
+    if (r.category !== "devotional" || !r.pipelineStage) continue;
+    if (r.pipelineStage in RENAME) r.pipelineStage = RENAME[r.pipelineStage];
+    for (const dict of [r.stageOutputs, r.stageDeadlines] as Record<string, unknown>[]) {
+      for (const [from, to] of Object.entries(RENAME)) if (from in dict) { dict[to] = dict[from]; delete dict[from]; }
+    }
+    for (const t of r.tasks) if (t.stage in RENAME) t.stage = RENAME[t.stage];
+    for (const [from, to] of Object.entries(RENAME)) if (from in r.stageAssignees) { r.stageAssignees[to] = r.stageAssignees[from]; delete r.stageAssignees[from]; }
+  }
+  db.schemaVersion = 12;
+  return db;
+}

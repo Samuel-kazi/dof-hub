@@ -4,7 +4,7 @@ import { useApp } from "../ui/AppContext";
 import { getDb, useDb } from "../data/store";
 import { canComment, canWrite, getRecord, visibleCallSheets, visibleRecords } from "../services/access";
 import {
-  createCallSheet, crewConflicts, deleteCallSheet, duplicateCallSheet, finalizeCallSheet, getCallSheet, getMismatches,
+  attachCallSheet, createCallSheet, crewConflicts, deleteCallSheet, duplicateCallSheet, finalizeCallSheet, getCallSheet, getMismatches,
   reopenCallSheet, resolveMismatches, updateCallSheet,
   addRunItem, daysOf, removeRunItem, runOfShowRequired, runOfShowTotals, sheetLevel, sortedRunOfShow, updateRunItem,
 } from "../services/wrapped/callsheets";
@@ -18,7 +18,7 @@ import { Empty, Field } from "../ui/parts";
 import { IconPlus } from "../ui/Icons";
 import { GearPicker } from "../ui/GearPicker";
 import { ReportButton, ReportDialog } from "../ui/ReportDialog";
-import { addGearToSheet, getItem, gearIssues, hasGearAccess, manifestForSheet, manifestStatusView, removeGearFromSheet } from "../services/wrapped/equipment";
+import { addGearToSheet, getItem, gearIssues, hasGearAccess, manifestForSheet, manifestStatusView, projectLabel, removeGearFromSheet } from "../services/wrapped/equipment";
 
 export function CallSheets() {
   const { actor, go, menu, confirm, attempt } = useApp();
@@ -26,6 +26,7 @@ export function CallSheets() {
   const [creating, setCreating] = useState(false);
   const [duplicating, setDuplicating] = useState<CallSheet | null>(null);
   const [downloading, setDownloading] = useState<CallSheet | null>(null);
+  const [attaching, setAttaching] = useState<CallSheet | null>(null);
   const sheets = visibleCallSheets(actor).sort((a, b) => a.date.localeCompare(b.date));
   const writableProjects = visibleRecords(actor).filter((r) => r.hierarchyLevel === 0 && canWrite(actor, r));
 
@@ -59,6 +60,7 @@ export function CallSheets() {
                       menu(e, [
                         { label: "Open", onClick: () => go({ n: "callsheet", id: cs.id }) },
                         { label: "Download…", onClick: () => setDownloading(cs) },
+                        { label: "Attach to a different project…", disabled: !write, onClick: () => setAttaching(cs) },
                         { label: "Duplicate for another date…", disabled: !write, onClick: () => setDuplicating(cs) },
                         { divider: true, label: "", onClick: () => {} },
                         {
@@ -92,6 +94,7 @@ export function CallSheets() {
       {creating && <NewSheetModal projects={writableProjects.map((p) => ({ id: p.contentId, title: p.title }))} onClose={() => setCreating(false)} onCreated={(cs) => { setCreating(false); go({ n: "callsheet", id: cs.id }); }} />}
       {duplicating && <DuplicateModal sheet={duplicating} onClose={() => setDuplicating(null)} onCreated={(cs) => { setDuplicating(null); go({ n: "callsheet", id: cs.id }); }} />}
       {downloading && <ReportDialog scope="callsheet" params={{ callSheetId: downloading.id }} onClose={() => setDownloading(null)} />}
+      {attaching && <AttachSheetModal sheet={attaching} onClose={() => setAttaching(null)} />}
     </div>
   );
 }
@@ -129,6 +132,25 @@ function DuplicateModal({ sheet, onClose, onCreated }: { sheet: CallSheet; onClo
       <div className="stack">
         <Field label="New shoot date"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} autoFocus /></Field>
         <p className="muted">Crew, location, format and gear carry over. Episodes are matched again for the new date, and gear already booked that day is skipped.</p>
+      </div>
+    </Modal>
+  );
+}
+
+/** Moves a call sheet, and any gear checked out under it, to a different project. */
+function AttachSheetModal({ sheet, onClose }: { sheet: CallSheet; onClose: () => void }) {
+  const { actor, attempt } = useApp();
+  const options = visibleRecords(actor).filter((r) => r.hierarchyLevel === 0 && r.contentId !== sheet.contentId && canWrite(actor, r));
+  const [id, setId] = useState(options[0]?.contentId ?? "");
+  return (
+    <Modal title="Attach to a different project" onClose={onClose} actions={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!id} onClick={() => { if (attempt(() => attachCallSheet(actor, sheet.id, id, sheet.version), "Attached")) onClose(); }}>Attach</button></>}>
+      <div className="stack">
+        <p className="muted">Currently under {projectLabel(actor, sheet.contentId)}. Any gear checked out on this sheet moves with it.</p>
+        {options.length === 0 ? <Empty>There is no other project you can write to.</Empty> : (
+          <Field label="Project">
+            <select value={id} onChange={(e) => setId(e.target.value)}>{options.map((r) => <option key={r.contentId} value={r.contentId}>{r.title}</option>)}</select>
+          </Field>
+        )}
       </div>
     </Modal>
   );

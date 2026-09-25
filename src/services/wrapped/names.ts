@@ -2,6 +2,7 @@
 export const RPC_NAMES: Record<string, string[]> = {
   "callsheets": [
     "addRunItem",
+    "attachCallSheet",
     "createCallSheet",
     "deleteCallSheet",
     "duplicateCallSheet",
@@ -51,6 +52,7 @@ export const RPC_NAMES: Record<string, string[]> = {
   "docs": [
     "archiveDoc",
     "archiveDocsFor",
+    "attachDoc",
     "attachStageDocs",
     "canEditDoc",
     "canViewDoc",
@@ -122,6 +124,7 @@ export const RPC_NAMES: Record<string, string[]> = {
     "createDrive",
     "deleteDrive",
     "hasStorageAccess",
+    "moveAllocation",
     "removeAllocation",
     "updateAllocation",
     "updateDrive"

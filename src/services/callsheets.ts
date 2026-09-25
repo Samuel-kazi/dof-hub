@@ -4,7 +4,7 @@ import { commit, getDb, nextCounter } from "../data/store";
 import { canWrite, getRecord, rootOf } from "./access";
 import { leavesUnder } from "./content";
 import { logAudit } from "./audit";
-import { copyGearBetweenSheets, gearIssues, rebookSheetGear, releaseSheetGear } from "./equipment";
+import { copyGearBetweenSheets, gearIssues, manifestForSheet, rebookSheetGear, releaseSheetGear } from "./equipment";
 import { getPerson } from "./people";
 import { pad } from "./utils";
 
@@ -144,6 +144,23 @@ export function updateCallSheet(
   Object.assign(cs, patch);
   cs.version += 1;
   logAudit(actor, "update", "callsheet", id, Object.keys(patch).join(", "));
+  commit();
+  return cs;
+}
+
+/** Moves a call sheet, and any gear checked out under it, to a different project. */
+export function attachCallSheet(actor: Actor, id: string, contentId: string, expectedVersion?: number): CallSheet {
+  const cs = loadSheet(actor, id, expectedVersion);
+  if (cs.contentId === contentId) throw new RuleError("This call sheet is already attached here.");
+  const target = getRecord(contentId);
+  if (!target) throw new RuleError("Project not found.");
+  if (!canWrite(actor, target)) throw new RuleError("You are not attached to that project.");
+  const from = cs.contentId;
+  cs.contentId = contentId;
+  cs.version += 1;
+  const gear = manifestForSheet(cs.id);
+  if (gear) gear.contentId = contentId;
+  logAudit(actor, "attach", "callsheet", id, `${from} to ${contentId}`);
   commit();
   return cs;
 }

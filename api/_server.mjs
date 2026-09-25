@@ -337,6 +337,25 @@ var CATEGORIES = [
     ],
     footageStage: "Recording",
     leafLevel: 2
+  },
+  {
+    key: "general",
+    label: "General Use",
+    singular: "General use",
+    code: "GEN",
+    color: "#8a8a92",
+    supportsChildren: false,
+    childLevelLabel: null,
+    grandchildLevelLabel: null,
+    childToken: null,
+    grandchildToken: null,
+    // Not a production: a placeholder project ID for storage, a call sheet, a document, or a gear
+    // checkout that has nowhere real to attach yet — equipment lent out for something that was never
+    // going to become a tracked production, for instance. One stage, nothing to advance through, and
+    // it stays out of the Pipeline board and Calendar (see Pipeline.tsx and calendarView.ts).
+    stages: [s("In use", "")],
+    footageStage: "In use",
+    leafLevel: 0
   }
 ];
 var categoryOf = (key2) => {
@@ -1231,10 +1250,42 @@ function upgradeToV11(db2) {
   db2.schemaVersion = 11;
   return db2;
 }
+function upgradeToV12(db2) {
+  const RENAME = { Idea: "Creation", Scripting: "Prep/Scripting", Editorial: "Editing", Delivered: "Published" };
+  for (const r of db2.records) {
+    r.guestName ??= "";
+    r.guestContact ??= "";
+    r.reviewerName ??= null;
+    r.reviewApprovedAt ??= null;
+    r.closedReason ??= null;
+    r.cardStorage ??= "";
+    r.publishDate ??= null;
+    r.recordingDurationMin ??= null;
+    r.recordingNotes ??= "";
+    r.readyForReview ??= false;
+    r.editorNotes ??= "";
+    r.sendBackReason ??= null;
+    if (r.category !== "devotional" || !r.pipelineStage) continue;
+    if (r.pipelineStage in RENAME) r.pipelineStage = RENAME[r.pipelineStage];
+    for (const dict of [r.stageOutputs, r.stageDeadlines]) {
+      for (const [from, to] of Object.entries(RENAME)) if (from in dict) {
+        dict[to] = dict[from];
+        delete dict[from];
+      }
+    }
+    for (const t2 of r.tasks) if (t2.stage in RENAME) t2.stage = RENAME[t2.stage];
+    for (const [from, to] of Object.entries(RENAME)) if (from in r.stageAssignees) {
+      r.stageAssignees[to] = r.stageAssignees[from];
+      delete r.stageAssignees[from];
+    }
+  }
+  db2.schemaVersion = 12;
+  return db2;
+}
 
 // src/data/store.ts
 var KEY = "dof-hub-db";
-var SCHEMA_VERSION = 11;
+var SCHEMA_VERSION = 12;
 function migrate(old) {
   const gear = buildGearSeed();
   const next = {
@@ -1264,25 +1315,27 @@ function upgradeDb(parsed) {
     case SCHEMA_VERSION:
       return parsed;
     case 1:
-      return upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(migrate(parsed))))))))));
+      return upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(migrate(parsed)))))))))));
     case 2:
-      return upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(parsed)))))))));
+      return upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(parsed))))))))));
     case 3:
-      return upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(parsed))))))));
+      return upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(parsed)))))))));
     case 4:
-      return upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(parsed)))))));
+      return upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(parsed))))))));
     case 5:
-      return upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(parsed))))));
+      return upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(parsed)))))));
     case 6:
-      return upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(parsed)))));
+      return upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(parsed))))));
     case 7:
-      return upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(parsed))));
+      return upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(parsed)))));
     case 8:
-      return upgradeToV11(upgradeToV10(upgradeToV9(parsed)));
+      return upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(parsed))));
     case 9:
-      return upgradeToV11(upgradeToV10(parsed));
+      return upgradeToV12(upgradeToV11(upgradeToV10(parsed)));
     case 10:
-      return upgradeToV11(parsed);
+      return upgradeToV12(upgradeToV11(parsed));
+    case 11:
+      return upgradeToV12(parsed);
     default:
       return null;
   }
@@ -1604,6 +1657,7 @@ var docs_exports = {};
 __export(docs_exports, {
   archiveDoc: () => archiveDoc,
   archiveDocsFor: () => archiveDocsFor,
+  attachDoc: () => attachDoc,
   attachStageDocs: () => attachStageDocs,
   canEditDoc: () => canEditDoc,
   canViewDoc: () => canViewDoc,
@@ -1727,6 +1781,22 @@ function createDoc(actor, input) {
   const title = (input.title ?? "").trim() || (tpl ? `${tpl.title}: ${docSubject(r)}` : "");
   if (!title) throw new RuleError("Give the document a title.");
   const d = makeDoc(actor, r.contentId, title, input.body ?? tpl?.body ?? "", tpl?.key ?? null, null);
+  commit();
+  return d;
+}
+function attachDoc(actor, id, contentId) {
+  const d = getDoc(id);
+  if (!d) throw new RuleError("Document not found.");
+  if (!canEditDoc(actor, d)) throw new RuleError("You have view-only access to this document.");
+  if (d.contentId === contentId) throw new RuleError("This document is already attached here.");
+  const target = getRecord(contentId);
+  if (!target) throw new RuleError("Project not found.");
+  if (!canWrite(actor, target)) throw new RuleError("You are not attached to that project.");
+  const from = d.contentId;
+  d.contentId = contentId;
+  d.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+  d.updatedBy = actor.personId;
+  logAudit(actor, "attach", "document", id, `${from} to ${contentId}`);
   commit();
   return d;
 }
@@ -2098,6 +2168,7 @@ async function afterPeopleChange(store2, personId) {
 var callsheets_exports = {};
 __export(callsheets_exports, {
   addRunItem: () => addRunItem,
+  attachCallSheet: () => attachCallSheet,
   callSheetForRecord: () => callSheetForRecord,
   createCallSheet: () => createCallSheet,
   crewConflicts: () => crewConflicts,
@@ -2229,6 +2300,7 @@ function cleanRoles(roles) {
 var DEFAULT_STAGE_EFFORT = {
   series: { Idea: 0.5, Scripting: 2, "Pre-production": 1.5, Ingest: 0.5, Editorial: 2, Review: 0.5, Delivered: 0.5 },
   devotional: { Creation: 0.3, Guest: 1.5, "Prep/Scripting": 1, Recording: 0.5, Editing: 1, Review: 0.3, Published: 0.2 },
+  general: { "In use": 0 },
   live: { Prep: 0.5, Build: 1.5, Rehearse: 0.5, Show: 1, Wrap: 0.5, Review: 0.5, "Post Production": 1 },
   documentary: { Idea: 1, Research: 3, "Pre-production": 2, Ingest: 1, Editorial: 5, Review: 1, Delivered: 0.5 },
   music: { Idea: 0.5, "Pre-production": 1, "Audio post-production": 2, "Video editing": 2, Review: 0.5, Publish: 0.5 }
@@ -2436,9 +2508,10 @@ function createItem(actor, input) {
   const family = (input.itemFamily ?? "").trim();
   let quantity = 1;
   if (input.trackingType === "serialized") {
-    if (!serial) throw new RuleError("Serialized items need a serial number.");
-    const dupe = getDb().equipment.find((e) => e.serialNumber && e.serialNumber.toLowerCase() === serial.toLowerCase());
-    if (dupe) throw new RuleError(`Serial number ${serial} is already registered as ${dupe.id}.`);
+    if (serial) {
+      const dupe = getDb().equipment.find((e) => e.serialNumber && e.serialNumber.toLowerCase() === serial.toLowerCase());
+      if (dupe) throw new RuleError(`Serial number ${serial} is already registered as ${dupe.id}.`);
+    }
   } else {
     if (!family) throw new RuleError("Give this batch an item family, for example XLR-10M, so batches group together.");
     quantity = input.quantity ?? 0;
@@ -2452,7 +2525,7 @@ function createItem(actor, input) {
     model: input.model.trim(),
     category: input.category,
     itemFamily: input.trackingType === "aggregate" ? family : null,
-    serialNumber: input.trackingType === "serialized" ? serial : null,
+    serialNumber: input.trackingType === "serialized" ? serial || null : null,
     unitLabel: input.trackingType === "serialized" ? (input.unitLabel ?? "").trim() || null : null,
     quantityTotal: quantity,
     quantityDamaged: 0,
@@ -2484,13 +2557,14 @@ function createSerializedUnits(actor, input) {
   const seen = /* @__PURE__ */ new Map();
   const cleaned = input.units.map((u, i) => {
     const serial = u.serialNumber.trim();
-    if (!serial) throw new RuleError(`Unit ${i + 1} needs a serial number.`);
-    const key2 = serial.toLowerCase();
-    if (seen.has(key2)) throw new RuleError(`Serial number ${serial} is entered twice, for unit ${seen.get(key2) + 1} and unit ${i + 1}.`);
-    seen.set(key2, i);
-    const existing = getDb().equipment.find((e) => e.serialNumber && e.serialNumber.toLowerCase() === key2);
-    if (existing) throw new RuleError(`Serial number ${serial} is already registered as ${existing.id} (${existing.name}).`);
-    return { serial, label: (u.label ?? "").trim() || null };
+    if (serial) {
+      const key2 = serial.toLowerCase();
+      if (seen.has(key2)) throw new RuleError(`Serial number ${serial} is entered twice, for unit ${seen.get(key2) + 1} and unit ${i + 1}.`);
+      seen.set(key2, i);
+      const existing = getDb().equipment.find((e) => e.serialNumber && e.serialNumber.toLowerCase() === key2);
+      if (existing) throw new RuleError(`Serial number ${serial} is already registered as ${existing.id} (${existing.name}).`);
+    }
+    return { serial: serial || null, label: (u.label ?? "").trim() || null };
   });
   const codes = nextAssetCodes(input.category, cleaned.length);
   const now = (/* @__PURE__ */ new Date()).toISOString();
@@ -2535,10 +2609,11 @@ function updateItem(actor, id, patch) {
   if (patch.unitCost !== void 0 && (!Number.isFinite(patch.unitCost) || patch.unitCost < 0)) throw new RuleError("Cost must be zero or more.");
   if (patch.serialNumber !== void 0 && item.trackingType === "serialized") {
     const s2 = patch.serialNumber?.trim() ?? "";
-    if (!s2) throw new RuleError("Serialized items need a serial number.");
-    const dupe = getDb().equipment.find((e) => e.id !== id && e.serialNumber && e.serialNumber.toLowerCase() === s2.toLowerCase());
-    if (dupe) throw new RuleError(`Serial number ${s2} is already registered as ${dupe.id}.`);
-    patch.serialNumber = s2;
+    if (s2) {
+      const dupe = getDb().equipment.find((e) => e.id !== id && e.serialNumber && e.serialNumber.toLowerCase() === s2.toLowerCase());
+      if (dupe) throw new RuleError(`Serial number ${s2} is already registered as ${dupe.id}.`);
+    }
+    patch.serialNumber = s2 || null;
   }
   if (patch.unitLabel !== void 0) {
     if (item.trackingType !== "serialized") throw new RuleError("Only single units can have a label.");
@@ -3361,13 +3436,13 @@ function daysInStage(r) {
   return r.pipelineStage ? dayNumber(todayIso()) - dayNumber(r.stageEnteredAt) : 0;
 }
 function isStale(r) {
-  if (!r.pipelineStage || isComplete(r) || r.category === "devotional") return false;
+  if (!r.pipelineStage || isComplete(r) || r.category === "devotional" || r.category === "general") return false;
   const typical = effortFor(r.category, r.pipelineStage, getDb().settings.effortOverrides);
   return daysInStage(r) > typical * STALE_MULTIPLIER;
 }
 function riskOf(r) {
   if (isComplete(r)) return "done";
-  if (r.category === "devotional") return "ok";
+  if (r.category === "devotional" || r.category === "general") return "ok";
   const stageDue = currentStageDeadline(r);
   if (stageDue && daysUntil(stageDue) < 0 && !r.stageOutputs[r.pipelineStage]) return "overdue";
   if (r.deadline && daysUntil(r.deadline) < 0) return "overdue";
@@ -3399,6 +3474,7 @@ function canAdvance(r) {
   }
   const stages = categoryOf(r.category).stages;
   const idx = stages.findIndex((s2) => s2.name === r.pipelineStage);
+  if (idx === -1) return { ok: false, reason: "This stage no longer exists for this category. It needs a data fix before it can move." };
   if (idx === stages.length - 1) return { ok: false, reason: "Already at the final stage." };
   const open = openTasks(r);
   if (open.length) return { ok: false, reason: `Finish ${open.map((t2) => t2.label).join(", ")} before leaving ${r.pipelineStage}.` };
@@ -4174,6 +4250,21 @@ function updateCallSheet(actor, id, patch, expectedVersion) {
   commit();
   return cs;
 }
+function attachCallSheet(actor, id, contentId, expectedVersion) {
+  const cs = loadSheet(actor, id, expectedVersion);
+  if (cs.contentId === contentId) throw new RuleError("This call sheet is already attached here.");
+  const target = getRecord(contentId);
+  if (!target) throw new RuleError("Project not found.");
+  if (!canWrite(actor, target)) throw new RuleError("You are not attached to that project.");
+  const from = cs.contentId;
+  cs.contentId = contentId;
+  cs.version += 1;
+  const gear = manifestForSheet(cs.id);
+  if (gear) gear.contentId = contentId;
+  logAudit(actor, "attach", "callsheet", id, `${from} to ${contentId}`);
+  commit();
+  return cs;
+}
 function crewConflicts(cs) {
   const out = [];
   for (const other of getDb().callSheets) {
@@ -4304,7 +4395,7 @@ function remindersFor(personId, asOf = todayIso(), days = 21) {
     if (r.date <= horizon) out.push({ ...r, overdue: r.date < asOf });
   };
   for (const r of db2.records) {
-    if (r.archived || !usesPipeline(r) || !r.pipelineStage || isComplete(r) || r.category === "devotional") continue;
+    if (r.archived || !usesPipeline(r) || !r.pipelineStage || isComplete(r) || r.category === "devotional" || r.category === "general") continue;
     const stages = categoryOf(r.category).stages;
     const idx = stages.findIndex((s2) => s2.name === r.pipelineStage);
     stages.forEach((s2, i) => {
@@ -4446,6 +4537,7 @@ __export(storage_exports, {
   getDrive: () => getDrive,
   hasStorageAccess: () => hasStorageAccess,
   isNearlyFull: () => isNearlyFull,
+  moveAllocation: () => moveAllocation,
   recordSnapshot: () => recordSnapshot,
   removeAllocation: () => removeAllocation,
   updateAllocation: () => updateAllocation,
@@ -4534,6 +4626,22 @@ function updateAllocation(actor, id, patch) {
   Object.assign(a, patch, { updatedAt: todayIso() });
   logAudit(actor, "update", "allocation", id, Object.keys(patch).join(", "));
   recordSnapshot();
+  commit();
+  return a;
+}
+function moveAllocation(actor, id, contentId) {
+  requireStorageAccess(actor);
+  const a = getDb().allocations.find((x) => x.id === id);
+  if (!a) throw new RuleError("Entry not found.");
+  if (a.contentId === contentId) throw new RuleError("This entry is already attached here.");
+  const target = getRecord(contentId);
+  if (!target) throw new RuleError("Project not found.");
+  const current = getRecord(a.contentId);
+  if (!canWrite(actor, target) || (current ? !canWrite(actor, current) : !isHop(actor))) throw new RuleError("You are not attached to both projects.");
+  const from = a.contentId;
+  a.contentId = contentId;
+  a.updatedAt = todayIso();
+  logAudit(actor, "update", "allocation", id, `moved from ${from} to ${contentId}`);
   commit();
   return a;
 }
@@ -4702,6 +4810,7 @@ function setMemberRoles(actor, contentId, personId, roles, canComment2) {
 var RPC_NAMES = {
   "callsheets": [
     "addRunItem",
+    "attachCallSheet",
     "createCallSheet",
     "deleteCallSheet",
     "duplicateCallSheet",
@@ -4751,6 +4860,7 @@ var RPC_NAMES = {
   "docs": [
     "archiveDoc",
     "archiveDocsFor",
+    "attachDoc",
     "attachStageDocs",
     "canEditDoc",
     "canViewDoc",
@@ -4822,6 +4932,7 @@ var RPC_NAMES = {
     "createDrive",
     "deleteDrive",
     "hasStorageAccess",
+    "moveAllocation",
     "removeAllocation",
     "updateAllocation",
     "updateDrive"

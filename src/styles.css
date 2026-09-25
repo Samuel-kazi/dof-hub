@@ -386,6 +386,7 @@ button.link:hover { color: var(--accent); }
 /* Gear picker */
 .picker { max-height: 46vh; overflow-y: auto; border: 1px solid var(--glass-line); border-radius: 12px; }
 .picker-row { padding: 10px 12px; border-bottom: 1px solid var(--line-soft); }
+.picker-group { padding: 10px 12px 4px; font-size: .78rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-3); }
 .picker-row:last-child { border-bottom: 0; }
 .picker-row.blocked { opacity: .72; }
 .picker-main { display: flex; align-items: center; gap: 12px; }

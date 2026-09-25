@@ -27,8 +27,9 @@ const item = (id: string) => E.getItem(id)!;
 
 // ── Items and codes ──
 t("serialized asset codes continue the category sequence", () => assert.equal(E.createItem(hop(), cameraInput()).id, "DOF-EQ-CAM-005"));
-t("serialized items need a unique serial number", () => {
-  throwsRule(() => E.createItem(hop(), cameraInput({ serialNumber: "" })), /serial/i);
+t("a serial number is optional, but a duplicate is still refused", () => {
+  const noSerial = E.createItem(hop(), cameraInput({ serialNumber: "" }));
+  assert.equal(noSerial.serialNumber, null);
   throwsRule(() => E.createItem(hop(), cameraInput({ serialNumber: "s-fx3-0412" })), /already registered/);
 });
 t("new batches get the next batch code within their family", () => {
@@ -332,10 +333,10 @@ t("a serial that already exists elsewhere in the inventory saves nothing", () =>
   assert.equal(getDb().equipment.length, before);
 });
 
-t("a blank serial number saves nothing, and names which unit needs one", () => {
-  const before = getDb().equipment.length;
-  throwsRule(() => E.createSerializedUnits(hop(), unitsInput({ units: [{ serialNumber: "FX6-001" }, { serialNumber: "  " }] })), /Unit 2 needs a serial number/);
-  assert.equal(getDb().equipment.length, before);
+t("a blank serial number is fine in a batch add; only a real duplicate is refused", () => {
+  const made = E.createSerializedUnits(hop(), unitsInput({ units: [{ serialNumber: "FX6-001" }, { serialNumber: "  " }] }));
+  assert.equal(made.length, 2);
+  assert.equal(made[1].serialNumber, null);
 });
 
 t("adding units in this way is only for equipment.use holders, same as adding one item", () => {

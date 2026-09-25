@@ -2,14 +2,14 @@ import { useSyncExternalStore } from "react";
 import type { Database } from "../types";
 import { buildSeed } from "./seed";
 import { buildGearSeed } from "./seedGear";
-import { upgradeToV10, upgradeToV11, upgradeToV3, upgradeToV4, upgradeToV5, upgradeToV6, upgradeToV7, upgradeToV8, upgradeToV9 } from "./migrate";
+import { upgradeToV10, upgradeToV11, upgradeToV12, upgradeToV3, upgradeToV4, upgradeToV5, upgradeToV6, upgradeToV7, upgradeToV8, upgradeToV9 } from "./migrate";
 
 // In-memory store with localStorage persistence.
 // This is the ONLY file that knows where data lives. When the real database
 // arrives, services keep their signatures and only this layer changes.
 
 const KEY = "dof-hub-db";
-const SCHEMA_VERSION = 11;
+const SCHEMA_VERSION = 12;
 
 /** Older saved data keeps everything it has and gains the new modules with sample data. */
 function migrate(old: Database): Database {
@@ -42,16 +42,17 @@ function migrate(old: Database): Database {
 export function upgradeDb(parsed: Database): Database | null {
   switch (parsed.schemaVersion) {
     case SCHEMA_VERSION: return parsed;
-    case 1: return upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(migrate(parsed))))))))));
-    case 2: return upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(parsed)))))))));
-    case 3: return upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(parsed))))))));
-    case 4: return upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(parsed)))))));
-    case 5: return upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(parsed))))));
-    case 6: return upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(parsed)))));
-    case 7: return upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(parsed))));
-    case 8: return upgradeToV11(upgradeToV10(upgradeToV9(parsed)));
-    case 9: return upgradeToV11(upgradeToV10(parsed));
-    case 10: return upgradeToV11(parsed);
+    case 1: return upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(migrate(parsed)))))))))));
+    case 2: return upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(parsed))))))))));
+    case 3: return upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(parsed)))))))));
+    case 4: return upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(parsed))))))));
+    case 5: return upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(parsed)))))));
+    case 6: return upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(parsed))))));
+    case 7: return upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(parsed)))));
+    case 8: return upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(parsed))));
+    case 9: return upgradeToV12(upgradeToV11(upgradeToV10(parsed)));
+    case 10: return upgradeToV12(upgradeToV11(parsed));
+    case 11: return upgradeToV12(parsed);
     default: return null;
   }
 }

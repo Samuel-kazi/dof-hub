@@ -114,6 +114,24 @@ export function updateAllocation(actor: Actor, id: string, patch: { sizeGB?: num
   return a;
 }
 
+/** Moves an entry to a different project. Its space usage does not change, only which project it belongs to. */
+export function moveAllocation(actor: Actor, id: string, contentId: string): DriveAllocation {
+  requireStorageAccess(actor);
+  const a = getDb().allocations.find((x) => x.id === id);
+  if (!a) throw new RuleError("Entry not found.");
+  if (a.contentId === contentId) throw new RuleError("This entry is already attached here.");
+  const target = getRecord(contentId);
+  if (!target) throw new RuleError("Project not found.");
+  const current = getRecord(a.contentId);
+  if (!canWrite(actor, target) || (current ? !canWrite(actor, current) : !isHop(actor))) throw new RuleError("You are not attached to both projects.");
+  const from = a.contentId;
+  a.contentId = contentId;
+  a.updatedAt = todayIso();
+  logAudit(actor, "update", "allocation", id, `moved from ${from} to ${contentId}`);
+  commit();
+  return a;
+}
+
 /** Raw footage stays on the drive until every episode it belongs to is Delivered. */
 export function removeAllocation(actor: Actor, id: string): void {
   requireStorageAccess(actor);

@@ -122,7 +122,7 @@ export function RecordPage({ id }: { id: string }) {
       {!del.ok && write && <p className="muted">{del.reason}</p>}
       {!write && <div className="banner"><span className="grow">You have view-only access to this project.{canComment(actor, rec) ? " You can add comments." : ""}</span></div>}
 
-      {leaf && (stage || rec.pipelineStage === "Closed") && (
+      {leaf && rec.category !== "general" && (stage || rec.pipelineStage === "Closed") && (
         <section className="glass panel" aria-label="Pipeline">
           <h2>Pipeline</h2>
           {stage && (

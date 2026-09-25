@@ -180,4 +180,11 @@ t("the crew list puts the most stretched first", () => {
   assert.equal(W.crewWorkload(hop(), MON)[0].person.personId, B);
 });
 
+t("a record whose stage name matches nothing in its category's current list is skipped, not a crash", () => {
+  const hop = login("hop@dof.demo", "demo");
+  const r = getDb().records.find((x) => x.contentId === "DOF-DEV-001")!;
+  r.pipelineStage = "Scripting"; // Devotional's stage before the rename; simulates data that slipped past a migration
+  assert.doesNotThrow(() => W.workloadFor(hop.personId, "2026-01-01", 14));
+});
+
 console.log(`\n${passed} passed`);

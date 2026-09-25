@@ -77,6 +77,24 @@ export function createDoc(actor: Actor, input: NewDocInput): DocRecord {
   return d;
 }
 
+/** Moves a document to a different project. */
+export function attachDoc(actor: Actor, id: string, contentId: string): DocRecord {
+  const d = getDoc(id);
+  if (!d) throw new RuleError("Document not found.");
+  if (!canEditDoc(actor, d)) throw new RuleError("You have view-only access to this document.");
+  if (d.contentId === contentId) throw new RuleError("This document is already attached here.");
+  const target = getRecord(contentId);
+  if (!target) throw new RuleError("Project not found.");
+  if (!canWrite(actor, target)) throw new RuleError("You are not attached to that project.");
+  const from = d.contentId;
+  d.contentId = contentId;
+  d.updatedAt = new Date().toISOString();
+  d.updatedBy = actor.personId;
+  logAudit(actor, "attach", "document", id, `${from} to ${contentId}`);
+  commit();
+  return d;
+}
+
 /** Attaches the documents a stage calls for, once. Returns what it created. The caller commits. */
 export function attachStageDocs(actor: Actor, r: ContentRecord, stage: string): DocRecord[] {
   const def = categoryOf(r.category).stages.find((s) => s.name === stage);

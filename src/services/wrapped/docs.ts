@@ -3,6 +3,7 @@ import * as core from "../docs";
 import { rpc, serverOnly } from "../../data/rpc";
 export const archiveDoc = rpc("docs.archiveDoc", core.archiveDoc);
 export const archiveDocsFor = rpc("docs.archiveDocsFor", core.archiveDocsFor);
+export const attachDoc = rpc("docs.attachDoc", core.attachDoc);
 export const attachStageDocs = rpc("docs.attachStageDocs", core.attachStageDocs);
 export const canEditDoc = rpc("docs.canEditDoc", core.canEditDoc);
 export const canViewDoc = rpc("docs.canViewDoc", core.canViewDoc);

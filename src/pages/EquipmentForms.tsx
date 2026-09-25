@@ -117,13 +117,13 @@ export function ItemFormModal({ item, likeItem, onClose, onSaved }: { item?: Equ
         {(editing ? item!.trackingType : tracking) === "serialized" ? (
           editing ? (
             <div className="row">
-              <Field label="Serial number"><input type="text" value={serial} onChange={(e) => setSerial(e.target.value)} /></Field>
+              <Field label="Serial number (optional)"><input type="text" value={serial} onChange={(e) => setSerial(e.target.value)} /></Field>
               <Field label="Label (optional, tells identical units apart)"><input type="text" value={unitLabel} onChange={(e) => setUnitLabel(e.target.value)} placeholder="A-cam" /></Field>
             </div>
           ) : (
             <div className="stack" style={{ gap: 8 }}>
               <div className="row" style={{ alignItems: "baseline", justifyContent: "space-between" }}>
-                <label style={{ fontWeight: 600, fontSize: ".9rem" }}>{units.length > 1 ? `Serial numbers (${units.length} units)` : "Serial number"}</label>
+                <label style={{ fontWeight: 600, fontSize: ".9rem" }}>{units.length > 1 ? `Serial numbers (${units.length} units, optional)` : "Serial number (optional)"}</label>
                 <button type="button" className="btn ghost small" onClick={() => setPaste((p) => !p)}>{paste ? "Type them one by one instead" : "Paste a list instead"}</button>
               </div>
               {paste ? (

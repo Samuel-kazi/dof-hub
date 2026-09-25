@@ -104,7 +104,7 @@ function itemsFor(personId: string, asOf: string): { items: LoadItem[]; undated:
   }
 
   for (const r of db.records) {
-    if (r.archived || !usesPipeline(r) || !r.pipelineStage || isComplete(r) || r.pipelineStage === "Closed") continue;
+    if (r.archived || !usesPipeline(r) || !r.pipelineStage || isComplete(r) || r.pipelineStage === "Closed" || r.category === "general") continue;
     const cfg = categoryOf(r.category);
     const stages = cfg.stages;
     const idx = stages.findIndex((s) => s.name === r.pipelineStage);

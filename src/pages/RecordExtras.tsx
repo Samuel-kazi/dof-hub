@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ReportButton } from "../ui/ReportDialog";
 import type { ContentRecord, DriveAllocation } from "../types";
 import { useApp } from "../ui/AppContext";
-import { useDb } from "../data/store";
+import { getDb, useDb } from "../data/store";
 import { Empty } from "../ui/parts";
 import { IconPlus } from "../ui/Icons";
 import { categoryOf } from "../config/categories";
@@ -10,10 +10,10 @@ import { attachManifest, hasGearAccess, listManifests, manifestStatusView, manif
 import { Modal } from "../ui/Modal";
 import { Field } from "../ui/parts";
 import { NewCheckoutModal } from "./EquipmentForms";
-import { allocationsForRecord, clearRecordFromDrives, getDrive, hasStorageAccess } from "../services/wrapped/storage";
+import { allocationsForRecord, clearRecordFromDrives, getDrive, hasStorageAccess, moveAllocation } from "../services/wrapped/storage";
 import { canWrite, getRecord, selfAndAncestors } from "../services/access";
 import { usesPipeline } from "../services/wrapped/content";
-import { docsForRecord } from "../services/wrapped/docs";
+import { attachDoc, docsForRecord, listDocs } from "../services/wrapped/docs";
 import { nameOf } from "../services/wrapped/people";
 import { fmtShort, fmtSize, relativeDays } from "../services/utils";
 import { AllocationModal } from "./Storage";
@@ -30,6 +30,8 @@ export function RecordExtras({ rec }: { rec: ContentRecord }) {
   const [newDoc, setNewDoc] = useState(false);
   const [newList, setNewList] = useState(false);
   const [attaching, setAttaching] = useState(false);
+  const [attachingMedia, setAttachingMedia] = useState(false);
+  const [attachingDoc, setAttachingDoc] = useState(false);
   const gear = hasGearAccess(actor);
   const storage = hasStorageAccess(actor);
   const write = canWrite(actor, rec);
@@ -88,6 +90,7 @@ export function RecordExtras({ rec }: { rec: ContentRecord }) {
                   Clear from drives
                 </button>
               )}
+              {write && <button className="btn small ghost" onClick={() => setAttachingMedia(true)}>Attach existing</button>}
               {write && <button className="btn small primary" onClick={() => setAssigning(true)}><IconPlus /> Assign to a drive</button>}
             </div>
             {needsDrive && write && (
@@ -121,6 +124,7 @@ export function RecordExtras({ rec }: { rec: ContentRecord }) {
       <section className="glass panel" aria-label="Documents">
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
           <h2 style={{ flex: 1 }}>Documents</h2>
+          {write && <button className="btn small ghost" onClick={() => setAttachingDoc(true)}>Attach existing</button>}
           {write && <button className="btn small" onClick={() => setNewDoc(true)}><IconPlus /> New document</button>}
         </div>
         {docs.length === 0 ? <Empty>No documents yet. They are attached when an item reaches a stage that needs one.</Empty> : (
@@ -140,7 +144,41 @@ export function RecordExtras({ rec }: { rec: ContentRecord }) {
       {assigning && <AllocationModal contentId={rec.contentId} onClose={() => setAssigning(false)} />}
       {editing && <AllocationModal row={editing} onClose={() => setEditing(null)} />}
       {newDoc && <NewDocModal contentId={rec.contentId} onClose={() => setNewDoc(false)} onCreated={(id) => { setNewDoc(false); go({ n: "doc", id }); }} />}
+      {attachingMedia && <AttachStorageModal rec={rec} onClose={() => setAttachingMedia(false)} />}
+      {attachingDoc && <AttachDocModal rec={rec} onClose={() => setAttachingDoc(false)} />}
     </>
+  );
+}
+
+/** Pick an existing storage entry from another project (often a General Use placeholder) and move it here. */
+function AttachStorageModal({ rec, onClose }: { rec: ContentRecord; onClose: () => void }) {
+  const { actor, attempt } = useApp();
+  const options = getDb().allocations.filter((a) => a.contentId !== rec.contentId && canWrite(actor, getRecord(a.contentId) ?? rec));
+  const [id, setId] = useState(options[0]?.id ?? "");
+  return (
+    <Modal title="Attach a storage entry" onClose={onClose} actions={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!id} onClick={() => { if (attempt(() => moveAllocation(actor, id, rec.contentId), "Attached")) onClose(); }}>Attach</button></>}>
+      {options.length === 0 ? <Empty>There is no other storage entry you can move here.</Empty> : (
+        <Field label="Storage entry">
+          <select value={id} onChange={(e) => setId(e.target.value)}>{options.map((a) => <option key={a.id} value={a.id}>{getDrive(a.driveId)?.name ?? a.driveId}, {fmtSize(a.sizeGB)}, {projectLabel(actor, a.contentId)}</option>)}</select>
+        </Field>
+      )}
+    </Modal>
+  );
+}
+
+/** Pick an existing document from another project (often a General Use placeholder) and move it here. */
+function AttachDocModal({ rec, onClose }: { rec: ContentRecord; onClose: () => void }) {
+  const { actor, attempt } = useApp();
+  const options = listDocs(actor).filter((d) => d.contentId !== rec.contentId && canWrite(actor, getRecord(d.contentId) ?? rec));
+  const [id, setId] = useState(options[0]?.id ?? "");
+  return (
+    <Modal title="Attach a document" onClose={onClose} actions={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!id} onClick={() => { if (attempt(() => attachDoc(actor, id, rec.contentId), "Attached")) onClose(); }}>Attach</button></>}>
+      {options.length === 0 ? <Empty>There is no other document you can move here.</Empty> : (
+        <Field label="Document">
+          <select value={id} onChange={(e) => setId(e.target.value)}>{options.map((d) => <option key={d.id} value={d.id}>{d.title}, {projectLabel(actor, d.contentId)}</option>)}</select>
+        </Field>
+      )}
+    </Modal>
   );
 }
 

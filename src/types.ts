@@ -6,7 +6,7 @@
 // ─────────────────────────────────────────────────────────────
 
 export type RoleCode = "HOP" | "CRW" | "VOL" | "PTR";
-export type CategoryKey = "series" | "devotional" | "live" | "documentary" | "music";
+export type CategoryKey = "series" | "devotional" | "live" | "documentary" | "music" | "general";
 
 export interface Person {
   personId: string; // DOF-P-CRW-004  (permanent, never regenerated)

@@ -32,7 +32,7 @@ export function remindersFor(personId: string, asOf: string = todayIso(), days =
   const add = (r: Omit<Reminder, "overdue">) => { if (r.date <= horizon) out.push({ ...r, overdue: r.date < asOf }); };
 
   for (const r of db.records) {
-    if (r.archived || !usesPipeline(r) || !r.pipelineStage || isComplete(r) || r.category === "devotional") continue;
+    if (r.archived || !usesPipeline(r) || !r.pipelineStage || isComplete(r) || r.category === "devotional" || r.category === "general") continue;
     const stages = categoryOf(r.category).stages;
     const idx = stages.findIndex((s) => s.name === r.pipelineStage);
     stages.forEach((s, i) => {

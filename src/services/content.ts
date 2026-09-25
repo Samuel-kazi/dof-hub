@@ -93,7 +93,7 @@ export function daysInStage(r: ContentRecord): number {
 
 /** Whether the current stage has sat idle well past its typical duration, regardless of any deadline. */
 export function isStale(r: ContentRecord): boolean {
-  if (!r.pipelineStage || isComplete(r) || r.category === "devotional") return false;
+  if (!r.pipelineStage || isComplete(r) || r.category === "devotional" || r.category === "general") return false;
   const typical = effortFor(r.category, r.pipelineStage, getDb().settings.effortOverrides);
   return daysInStage(r) > typical * STALE_MULTIPLIER;
 }
@@ -102,7 +102,7 @@ export function riskOf(r: ContentRecord): Risk {
   if (isComplete(r)) return "done";
   // Devotional has no deadlines or staleness of its own yet — its Guest/Review/Closed states are
   // tracked by their own fields, not by dates, so the generic overdue and stall math never applies here.
-  if (r.category === "devotional") return "ok";
+  if (r.category === "devotional" || r.category === "general") return "ok";
   const stageDue = currentStageDeadline(r);
   if (stageDue && daysUntil(stageDue) < 0 && !r.stageOutputs[r.pipelineStage!]) return "overdue";
   if (r.deadline && daysUntil(r.deadline) < 0) return "overdue";
@@ -146,6 +146,7 @@ export function canAdvance(r: ContentRecord): { ok: boolean; reason: string } {
   }
   const stages = categoryOf(r.category).stages;
   const idx = stages.findIndex((s) => s.name === r.pipelineStage);
+  if (idx === -1) return { ok: false, reason: "This stage no longer exists for this category. It needs a data fix before it can move." };
   if (idx === stages.length - 1) return { ok: false, reason: "Already at the final stage." };
   const open = openTasks(r);
   if (open.length) return { ok: false, reason: `Finish ${open.map((t) => t.label).join(", ")} before leaving ${r.pipelineStage}.` };

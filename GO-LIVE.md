@@ -151,3 +151,26 @@ Kanban and Calendar now show the new Devotional flow (Creation → Guest → Pre
 - **Closed** projects vanish from the Pipeline board and the Calendar by default. A **Closed (N)** filter next to the category chips brings them back into view, each showing its reason.
 - **Editing** shows the ready-for-review checkbox; **Review** shows Approve (only once that checkbox is ticked) and Send back, which requires a reason and resets the checkbox.
 - No deadlines, overdue badges, staleness, or reminders anywhere in this pipeline, as asked — checked through the Dashboard, the reminders bell, the Calendar's deadline bars, and workload scheduling, not just the obvious places.
+
+
+## v14: fixed the blank-page crash
+
+The site going blank was a real crash, not a build problem: the Devotional stage rename shipped without a data migration, so any Devotional saved under its old stage names (Idea, Scripting, Editorial, Delivered) had a stage name that matched nothing in the current pipeline. Workload's crew-schedule calculation, running on every Dashboard load, tried to read the previous stage's name off that and crashed — and with nothing catching it, React unmounted the whole page.
+
+Two fixes: the crash itself can no longer happen anywhere a stage name goes unmatched (checked and hardened every place that indexes into a stage list), and there's now a proper migration that renames any old Devotional record to its current stage names on load, rather than just working around a record stuck with the wrong name forever.
+
+If you already applied the one-line patch to `workload.ts` yourself, this update replaces it with the same fix plus the real one underneath it.
+
+
+## v15: equipment, storage, call sheets and documents no longer need a real project up front
+
+A new **General Use** project type: create one with its own ID when gear, storage, a call sheet, or a document needs somewhere to live before you know (or before it matters) which real production it belongs to — gear lent out for something that was never going to become a tracked production, for instance. It never shows up on the Calendar, in reminders, in anyone's workload, or with a risk badge, since there's no production to track.
+
+**Attach existing** buttons on a project's Storage and Documents panels, and an **Attach to a different project** action on call sheets, move something from a General Use placeholder onto the real project once you know it (or move it between two real projects). Equipment checkouts already had this. A call sheet's gear now moves with it automatically when the call sheet itself is reattached.
+
+
+## v16: equipment updates — optional serial numbers, a fuller checkout picker, grouped by category
+
+- **Serial number is no longer required** when adding equipment, one at a time or in a batch, or when editing an existing item. Leave it blank for gear that doesn't carry a serial. Duplicate-checking still runs whenever one is actually entered.
+- **Checking out equipment now shows more**: condition is shown on every serialized item, and a **Details** toggle expands to show accessories, notes, and a photo when there is one. Make, model, and the equipment ID were already shown.
+- **The picker is grouped by category** — Camera, Audio, Lighting, and so on each get their own heading, instead of one long flat list.
