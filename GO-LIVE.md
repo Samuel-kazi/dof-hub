@@ -174,3 +174,8 @@ A new **General Use** project type: create one with its own ID when gear, storag
 - **Serial number is no longer required** when adding equipment, one at a time or in a batch, or when editing an existing item. Leave it blank for gear that doesn't carry a serial. Duplicate-checking still runs whenever one is actually entered.
 - **Checking out equipment now shows more**: condition is shown on every serialized item, and a **Details** toggle expands to show accessories, notes, and a photo when there is one. Make, model, and the equipment ID were already shown.
 - **The picker is grouped by category** — Camera, Audio, Lighting, and so on each get their own heading, instead of one long flat list.
+
+
+## v17: fixed "Add at least one serial number" when adding a single item with no serial
+
+Real bug, caught live: leaving both Serial number and Label blank on a single-item add silently dropped that row before it ever reached the server, so the form submitted nothing and showed a confusing "Add at least one serial number" error — for a field that had just been made optional. A blank row is now only dropped when there's more than one row (an unfilled extra row you added by mistake); a single blank row is always kept, since one item with no serial is exactly what "optional" is supposed to allow.

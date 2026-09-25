@@ -15,6 +15,16 @@ import { IconPlus } from "../ui/Icons";
 
 const numOrNaN = (s: string) => (s.trim() === "" ? NaN : Number(s));
 
+/**
+ * Which of the typed-in unit rows actually get submitted. A blank row (no serial, no label) is
+ * dropped only when there's more than one row — almost certainly an extra row someone added and
+ * never filled in. A single blank row is kept: a serial number is optional, so one intentionally
+ * blank unit is a normal, valid thing to add, and dropping it would silently submit nothing.
+ */
+export function unitsToSubmit<T extends { serial: string; label: string }>(units: T[]): T[] {
+  return units.length > 1 ? units.filter((u) => u.serial.trim() || u.label.trim()) : units;
+}
+
 export function ItemFormModal({ item, likeItem, onClose, onSaved }: { item?: EquipmentItem; likeItem?: EquipmentItem; onClose: () => void; onSaved: (items: EquipmentItem[]) => void }) {
   const { actor, attempt } = useApp();
   const editing = !!item;
@@ -64,7 +74,8 @@ export function ItemFormModal({ item, likeItem, onClose, onSaved }: { item?: Equ
         return [updateItem(actor, item!.id, { name, make, model, vendor, packaging, accessories, info, unitCost, purchaseDate: bought || null, condition, ...(item!.trackingType === "serialized" ? { serialNumber: serial, unitLabel } : { quantityTotal: Number(quantity) }) })];
       }
       if (tracking === "serialized") {
-        const list: UnitInput[] = units.filter((u) => u.serial.trim() || u.label.trim()).map((u) => ({ serialNumber: u.serial, label: u.label || undefined }));
+        const rows = unitsToSubmit(units);
+        const list: UnitInput[] = rows.map((u) => ({ serialNumber: u.serial, label: u.label || undefined }));
         return createSerializedUnits(actor, { name, make, model, category, unitCost, purchaseDate: bought || null, vendor, condition, packaging, accessories, info, units: list });
       }
       return [createItem(actor, { trackingType: tracking, name, make, model, category, itemFamily: family, quantity: Number(quantity), unitCost, purchaseDate: bought || null, vendor, condition, packaging, accessories, info })];
