@@ -101,17 +101,17 @@ export const REPORT_KINDS: ReportKind[] = [
       const t = fleetTotals();
       return doc("Storage report: all drives", "", "storage-all-drives", [
         { type: "pairs", pairs: [["Total capacity", fmtSize(t.capacity)], ["Used", fmtSize(t.used)], ["Free", fmtSize(t.capacity - t.used)]] },
-        { type: "table", head: ["Drive", "Used", "Capacity", "Full", "Free", "Projects on it"], weights: [2, 1.2, 1.2, 0.8, 1.2, 4], rows: allDriveUsage().map((u) => [u.drive.name, fmtSize(u.usedGB), fmtSize(u.drive.capacityGB), `${u.pct.toFixed(0)}%`, fmtSize(u.freeGB), u.projects.map((p) => `${p.contentId} ${fmtSize(p.gb)}`).join(", ") || "None"]) },
+        { type: "table", head: ["Drive", "Used", "Capacity", "Full", "Free", "Projects on it"], weights: [2, 1.2, 1.2, 0.8, 1.2, 4], rows: allDriveUsage().map((u) => [u.drive.name, fmtSize(u.usedGB), fmtSize(u.drive.capacityGB), `${u.pct.toFixed(0)}%`, fmtSize(u.freeGB), u.projects.map((p) => `${p.contentId ?? p.label} ${fmtSize(p.gb)}`).join(", ") || "None"]) },
       ], true);
     },
   },
   {
     key: "storage.byProject", scope: "storage", label: "By project", description: "Every project and where its files are, with the space each one takes.",
     build: () => {
-      const rows = getDb().allocations.map((a) => ({ a, r: getRecord(a.contentId) })).sort((x, y) => x.a.contentId.localeCompare(y.a.contentId));
+      const rows = getDb().allocations.map((a) => ({ a, r: a.contentId ? getRecord(a.contentId) : undefined })).sort((x, y) => (x.a.contentId ?? x.a.label).localeCompare(y.a.contentId ?? y.a.label));
       const total = rows.reduce((n, x) => n + x.a.sizeGB, 0);
       return doc("Storage report: by project", `${rows.length} entries, ${fmtSize(total)} in total`, "storage-by-project", [
-        { type: "table", head: ["Content ID", "Project", "Drive", "What is stored", "Size"], weights: [2.4, 3, 2, 2, 1], rows: rows.map(({ a, r }) => [a.contentId, r ? displayTitle(r) : "", getDrive(a.driveId)?.name ?? a.driveId, a.kind === "raw" ? "Raw footage" : a.kind === "project" ? "Project files" : a.kind === "delivered" ? "Delivered files" : "Other", fmtSize(a.sizeGB)]) },
+        { type: "table", head: ["Content ID", "Project", "Drive", "What is stored", "Size"], weights: [2.4, 3, 2, 2, 1], rows: rows.map(({ a, r }) => [a.contentId ?? "No project yet", r ? displayTitle(r) : a.contentId ? "" : a.label, getDrive(a.driveId)?.name ?? a.driveId, a.kind === "raw" ? "Raw footage" : a.kind === "project" ? "Project files" : a.kind === "delivered" ? "Delivered files" : "Other", fmtSize(a.sizeGB)]) },
       ]);
     },
   },
@@ -122,7 +122,7 @@ export const REPORT_KINDS: ReportKind[] = [
       return doc("Storage report: drives nearly full", `Warning level ${getDb().settings.storageWarningThreshold}%`, "storage-nearly-full", full.length ? full.flatMap((u): Block[] => [
         { type: "heading", text: `${u.drive.name}, ${u.pct.toFixed(0)}% full` },
         { type: "pairs", pairs: [["Used", fmtSize(u.usedGB)], ["Free", fmtSize(u.freeGB)]] },
-        { type: "table", head: ["Content ID", "Project", "Size"], rows: u.projects.map((p) => [p.contentId, getRecord(p.contentId) ? displayTitle(getRecord(p.contentId)!) : "", fmtSize(p.gb)]) },
+        { type: "table", head: ["Content ID", "Project", "Size"], rows: u.projects.map((p) => [p.contentId ?? "No project yet", p.contentId && getRecord(p.contentId) ? displayTitle(getRecord(p.contentId)!) : p.label, fmtSize(p.gb)]) },
       ]) : [{ type: "para", text: "No drive is past the warning level." }]);
     },
   },
@@ -134,7 +134,7 @@ export const REPORT_KINDS: ReportKind[] = [
       const u = allDriveUsage().find((x) => x.drive.id === d.id)!;
       return doc(`Drive report: ${d.name}`, `${fmtSize(u.usedGB)} of ${fmtSize(d.capacityGB)} used`, `drive-${d.name}`, [
         { type: "pairs", pairs: [["Capacity", fmtSize(d.capacityGB)], ["Used", `${fmtSize(u.usedGB)} (${u.pct.toFixed(1)}%)`], ["Free", fmtSize(u.freeGB)], ...(d.notes ? [["Notes", d.notes] as [string, string]] : [])] },
-        { type: "table", head: ["Content ID", "Project", "What is stored", "Size"], weights: [2.6, 3.4, 2, 1], rows: [...getDb().allocations.filter((a) => a.driveId === d.id).sort((a, b) => b.sizeGB - a.sizeGB).map((a) => [a.contentId, getRecord(a.contentId) ? displayTitle(getRecord(a.contentId)!) : "", a.kind === "raw" ? "Raw footage" : a.kind === "project" ? "Project files" : a.kind === "delivered" ? "Delivered files" : "Other", fmtSize(a.sizeGB)]), ...(d.otherUsedGB ? [["", "Other files", "Not tied to a project", fmtSize(d.otherUsedGB)]] : [])] },
+        { type: "table", head: ["Content ID", "Project", "What is stored", "Size"], weights: [2.6, 3.4, 2, 1], rows: [...getDb().allocations.filter((a) => a.driveId === d.id).sort((a, b) => b.sizeGB - a.sizeGB).map((a) => [a.contentId ?? "No project yet", a.contentId && getRecord(a.contentId) ? displayTitle(getRecord(a.contentId)!) : a.contentId ? "" : a.label, a.kind === "raw" ? "Raw footage" : a.kind === "project" ? "Project files" : a.kind === "delivered" ? "Delivered files" : "Other", fmtSize(a.sizeGB)]), ...(d.otherUsedGB ? [["", "Other files", "Not tied to a project", fmtSize(d.otherUsedGB)]] : [])] },
       ]);
     },
   },
@@ -283,8 +283,8 @@ export const REPORT_KINDS: ReportKind[] = [
         if (lists.length) blocks.push({ type: "heading", text: "Gear checkout lists" }, { type: "bullets", items: lists.map((m) => `${m.id}, ${manifestStatusView(m).label}, ${fmtShort(m.date)}`) }, { type: "note", text: "Print each list from the Equipment module to attach it to this report." });
       }
       if (hasStorageAccess(actor)) {
-        const allocs = getDb().allocations.filter((a) => a.contentId === r.contentId || a.contentId.startsWith(`${r.contentId}-`));
-        if (allocs.length) blocks.push({ type: "heading", text: "Storage" }, { type: "table", head: ["Content ID", "Drive", "What is stored", "Size"], weights: [3, 2, 2, 1], rows: allocs.map((a) => [a.contentId, getDrive(a.driveId)?.name ?? a.driveId, a.kind, fmtSize(a.sizeGB)]) });
+        const allocs = getDb().allocations.filter((a) => a.contentId !== null && (a.contentId === r.contentId || a.contentId.startsWith(`${r.contentId}-`)));
+        if (allocs.length) blocks.push({ type: "heading", text: "Storage" }, { type: "table", head: ["Content ID", "Drive", "What is stored", "Size"], weights: [3, 2, 2, 1], rows: allocs.map((a) => [a.contentId ?? "", getDrive(a.driveId)?.name ?? a.driveId, a.kind, fmtSize(a.sizeGB)]) });
       }
       return doc(`Project report: ${displayTitle(r)}`, r.contentId, `project-${r.contentId}`, blocks);
     },

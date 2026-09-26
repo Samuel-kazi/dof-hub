@@ -7,7 +7,7 @@ import { logAudit } from "./audit";
 import { getPerson } from "./people";
 import { fmtShort, pad, todayIso } from "./utils";
 import {
-  availabilityOn, endOf, getItem, isOverdue, requireGearAccess,
+  addUnits, applyConditionBreakdown, availabilityOn, endOf, getItem, isOverdue, removeFromThenWorst, removeWorstFirst, requireGearAccess,
   type Availability,
 } from "./equipment-items";
 import { groupByFamily } from "./equipment-reports";
@@ -251,6 +251,9 @@ export function checkIn(actor: Actor, manifestId: string, returns: ReturnInput[]
           damaged = 1;
         }
       }
+    } else if (good > 0 && r.conditionIn) {
+      // Optional for a batch: only recorded if the person returning it says these units' condition changed.
+      cond = r.conditionIn;
     }
     const desc = (r.description ?? "").trim();
     if (damaged + lost > 0 && !desc) throw new RuleError(`Describe what happened to ${item.name}.`);
@@ -268,6 +271,14 @@ export function checkIn(actor: Actor, manifestId: string, returns: ReturnInput[]
     if (p.item.trackingType === "serialized") {
       if (p.cond) p.item.condition = p.cond;
     } else {
+      let bd = removeWorstFirst(p.item.conditionBreakdown ?? {}, p.damaged + p.lost);
+      if (p.good > 0 && p.cond && p.cond !== p.line.conditionOut) {
+        // These returned units' condition changed while out. We don't track exactly which units left in
+        // which condition, so take them from the condition they were checked out at first, then
+        // whatever is worst for any remainder, and add them back at their new condition.
+        bd = addUnits(removeFromThenWorst(bd, p.line.conditionOut, p.good), p.good, p.cond);
+      }
+      applyConditionBreakdown(p.item, bd);
       p.item.quantityTotal -= p.damaged + p.lost;
       p.item.quantityDamaged += p.damaged;
       p.item.quantityLost += p.lost;

@@ -217,7 +217,8 @@ export interface EquipmentItem {
   unitCost: number;
   purchaseDate: string | null;
   vendor: string;
-  condition: EquipCondition;
+  condition: EquipCondition; // serialized: this one unit's condition. aggregate: the worst condition present, kept in sync from conditionBreakdown
+  conditionBreakdown: Partial<Record<EquipCondition, number>> | null; // aggregate only: how many of the active (not damaged/lost) units are in each condition, counts sum to quantityTotal. null for serialized items
   packaging: string;
   accessories: string;
   info: string;
@@ -295,7 +296,8 @@ export interface Drive {
 export interface DriveAllocation {
   id: string;
   driveId: string;
-  contentId: string;
+  contentId: string | null; // null: recorded ahead of a real project (legacy or ongoing work started before this system), identified by its own id and label instead
+  label: string; // required and shown when contentId is null; otherwise an optional short note on top of the project title
   sizeGB: number;
   kind: "raw" | "project" | "delivered" | "other";
   note: string;

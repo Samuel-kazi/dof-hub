@@ -90,6 +90,7 @@ export const RPC_NAMES: Record<string, string[]> = {
     "removeLine",
     "requireGearAccess",
     "retireItem",
+    "setConditionBreakdown",
     "startRepair",
     "updateItem"
   ],
@@ -126,6 +127,7 @@ export const RPC_NAMES: Record<string, string[]> = {
     "hasStorageAccess",
     "moveAllocation",
     "removeAllocation",
+    "standaloneAllocations",
     "updateAllocation",
     "updateDrive"
   ],

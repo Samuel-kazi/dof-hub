@@ -157,6 +157,62 @@ t("batch check-in removes damaged and lost units from that batch and logs them",
   assert.equal(E.itemIncidents(b.id).length, 2);
   assert.equal(item("DOF-EQ-CAB-XLR10M-B01").quantityTotal, 12, "other batches are untouched");
 });
+// ── Category reassignment ──
+t("an item can be moved to a different category, keeping its original asset code", () => {
+  const before = item("DOF-EQ-CAM-002");
+  assert.equal(before.category, "camera");
+  const after = E.updateItem(hop(), "DOF-EQ-CAM-002", { category: "studio" });
+  assert.equal(after.id, "DOF-EQ-CAM-002", "the asset code never changes");
+  assert.equal(after.category, "studio");
+  assert.ok(E.itemHistory("DOF-EQ-CAM-002").some((h) => /Category Camera to Studio/.test(h.detail)));
+});
+t("volunteers and partners cannot reassign a category, same as any other edit", () => {
+  throwsRule(() => E.updateItem(vol(), "DOF-EQ-CAM-002", { category: "audio" }));
+});
+// ── Per-unit condition (batches) ──
+t("a new batch starts with every unit in the condition it was created with", () => {
+  const b = E.createItem(crew1(), { ...cameraInput(), trackingType: "aggregate", category: "cabling", name: "HDMI cable", itemFamily: "HDMI-3M", quantity: 4, serialNumber: undefined, condition: "New" });
+  assert.deepEqual(b.conditionBreakdown, { New: 4 });
+});
+t("setting a batch's condition by unit splits it, and the overall condition becomes the worst one present", () => {
+  const b = E.setConditionBreakdown(hop(), "DOF-EQ-CAB-XLR10M-B01", { Good: 10, Fair: 2 });
+  assert.equal(b.condition, "Fair", "the worst condition present is shown as the item's condition");
+  assert.deepEqual(b.conditionBreakdown, { Good: 10, Fair: 2 });
+});
+t("a condition split must add up to exactly the batch's quantity", () => {
+  throwsRule(() => E.setConditionBreakdown(hop(), "DOF-EQ-CAB-XLR10M-B01", { Good: 5 }), /add up to 5, but this batch has 12/);
+});
+t("a condition split cannot be set on a single serialized unit", () => {
+  throwsRule(() => E.setConditionBreakdown(hop(), "DOF-EQ-CAM-001", { Good: 1 }), /Only batches/);
+});
+t("setting the plain condition field on a batch resets it uniformly", () => {
+  E.setConditionBreakdown(hop(), "DOF-EQ-CAB-XLR10M-B01", { Good: 10, Fair: 2 });
+  const b = E.updateItem(hop(), "DOF-EQ-CAB-XLR10M-B01", { condition: "New" });
+  assert.deepEqual(b.conditionBreakdown, { New: 12 });
+});
+t("increasing a batch's quantity adds the new units in its current condition", () => {
+  E.setConditionBreakdown(hop(), "DOF-EQ-CAB-XLR10M-B01", { Good: 10, Fair: 2 });
+  const b = E.updateItem(hop(), "DOF-EQ-CAB-XLR10M-B01", { quantityTotal: 15 });
+  assert.deepEqual(b.conditionBreakdown, { Good: 10, Fair: 5 }, "the 3 new units join the worst condition already present");
+});
+t("reducing a batch's quantity removes units worst-condition-first", () => {
+  E.setConditionBreakdown(hop(), "DOF-EQ-CAB-XLR10M-B01", { Good: 10, Fair: 2 });
+  const b = E.updateItem(hop(), "DOF-EQ-CAB-XLR10M-B01", { quantityTotal: 11 });
+  assert.deepEqual(b.conditionBreakdown, { Good: 10, Fair: 1 });
+});
+t("returning a batch in a worse condition moves only the returned units, damage and loss come out of the worst condition first", () => {
+  E.setConditionBreakdown(crew2(), "DOF-EQ-CAB-XLR10M-B02", { Good: 6, Fair: 2 });
+  const m = E.createManifest(crew2(), { contentId: "DOF-DOC-001", date: isoDay(0), destination: "outside", status: "checked-out", lines: [{ equipmentId: "DOF-EQ-CAB-XLR10M-B02", quantity: 5 }] });
+  const before = item("DOF-EQ-CAB-XLR10M-B02");
+  assert.equal(before.condition, "Fair", "worst condition shown before the checkout");
+  E.checkIn(crew2(), m.id, [{ equipmentId: "DOF-EQ-CAB-XLR10M-B02", returnedGood: 3, damaged: 1, lost: 1, conditionIn: "Poor", description: "Two cables frayed on site" }]);
+  const after = item("DOF-EQ-CAB-XLR10M-B02");
+  assert.equal(after.quantityTotal, 6);
+  // The 2 damaged/lost units come out of Fair first (fully used up); the 3 returned units then move to
+  // Poor, taken from Fair first (already empty) and Good for the rest, so the total always stays exact.
+  assert.deepEqual(after.conditionBreakdown, { Good: 3, Poor: 3 });
+  assert.equal(after.condition, "Poor");
+});
 t("assigned gear can be released without ever leaving", () => {
   E.releaseManifest(crew2(), "DOF-MF-001");
   assert.equal(E.displayStatus(item("DOF-EQ-CAM-001")).label, "Available");
@@ -299,6 +355,47 @@ t("a record shows storage from itself, its children and its show", () => {
   const ids = S.allocationsForRecord(ep).map((a) => a.contentId);
   assert.ok(ids.includes("DOF-SER-001-S1-E01") || ids.includes("DOF-SER-001"));
   assert.ok(S.allocationsForRecord(getDb().records.find((r) => r.contentId === "DOF-SER-001")!).length >= 3);
+});
+// ── Storage entries recorded ahead of a project ──
+t("an entry with no project yet needs a label instead of a Content ID", () => {
+  throwsRule(() => S.addAllocation(hop(), { driveId: "DRV-008", contentId: null, sizeGB: 50, kind: "raw" }), /label/);
+  const a = S.addAllocation(hop(), { driveId: "DRV-008", contentId: null, label: "Youth Camp 2025 raw footage", sizeGB: 50, kind: "raw" });
+  assert.equal(a.contentId, null);
+  assert.equal(a.label, "Youth Camp 2025 raw footage");
+});
+t("it counts toward the drive and the company total exactly like a real project", () => {
+  const before = S.fleetTotals().used;
+  S.addAllocation(hop(), { driveId: "DRV-008", contentId: null, label: "Legacy archive", sizeGB: 75, kind: "other" });
+  assert.equal(S.fleetTotals().used, before + 75);
+  assert.ok(S.driveUsage(S.getDrive("DRV-008")!).projects.some((p) => p.contentId === null && p.label === "Legacy archive" && p.gb === 75));
+});
+t("anyone with storage access can edit or remove it, since there is no project to be attached to", () => {
+  const a = S.addAllocation(crew2(), { driveId: "DRV-008", contentId: null, label: "Pre-launch footage", sizeGB: 10, kind: "raw" });
+  const edited = S.updateAllocation(crew1(), a.id, { sizeGB: 20 });
+  assert.equal(edited.sizeGB, 20);
+  S.removeAllocation(crew2(), a.id);
+  assert.ok(!getDb().allocations.some((x) => x.id === a.id));
+});
+t("clearing its label is refused while it still has no project", () => {
+  const a = S.addAllocation(hop(), { driveId: "DRV-008", contentId: null, label: "Temp", sizeGB: 5, kind: "raw" });
+  throwsRule(() => S.updateAllocation(hop(), a.id, { label: "  " }), /label/);
+});
+t("standaloneAllocations lists only the entries with no project", () => {
+  S.addAllocation(hop(), { driveId: "DRV-008", contentId: null, label: "Unattached one", sizeGB: 5, kind: "raw" });
+  const list = S.standaloneAllocations(hop());
+  assert.ok(list.length > 0 && list.every((a) => a.contentId === null));
+  throwsRule(() => S.standaloneAllocations(vol()), /crew/i);
+});
+t("attaching it to a real project ties it to a Content ID for the first time, keeping its size", () => {
+  const a = S.addAllocation(hop(), { driveId: "DRV-008", contentId: null, label: "Pre-existing shoot", sizeGB: 40, kind: "raw" });
+  const attached = S.moveAllocation(hop(), a.id, "DOF-SER-001");
+  assert.equal(attached.contentId, "DOF-SER-001");
+  assert.equal(attached.sizeGB, 40);
+  assert.ok(S.allocationsForRecord(getDb().records.find((r) => r.contentId === "DOF-SER-001")!).some((x) => x.id === a.id));
+});
+t("only the Head of Production can attach an entry that had no project, same as for a General Use placeholder", () => {
+  const a = S.addAllocation(hop(), { driveId: "DRV-008", contentId: null, label: "Needs a home", sizeGB: 5, kind: "raw" });
+  throwsRule(() => S.moveAllocation(crew2(), a.id, "DOF-SER-001"), /not attached/);
 });
 
 console.log(`\n${passed} passed`);

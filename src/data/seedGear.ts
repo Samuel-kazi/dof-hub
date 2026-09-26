@@ -24,14 +24,14 @@ export function buildGearSeed(): GearParts {
   const serial = (id: string, cat: EquipCategoryKey, name: string, make: string, model: string, sn: string, cost: number, condition: EquipCondition, ageDays: number, extra: Partial<EquipmentItem> = {}) => {
     equipment.push({
       id, trackingType: "serialized", name, make, model, category: cat, itemFamily: null, serialNumber: sn, unitLabel: null, quantityTotal: 1, quantityDamaged: 0, quantityLost: 0,
-      unitCost: cost, purchaseDate: isoDay(-ageDays), vendor: "", condition, packaging: "", accessories: "", info: "", photos: [], receipts: [], baseStatus: "active", createdAt: stamp(ageDays), ...extra,
+      unitCost: cost, purchaseDate: isoDay(-ageDays), vendor: "", condition, conditionBreakdown: null, packaging: "", accessories: "", info: "", photos: [], receipts: [], baseStatus: "active", createdAt: stamp(ageDays), ...extra,
     });
     hist(id, ageDays, "created", "Added to inventory");
   };
   const batch = (id: string, cat: EquipCategoryKey, family: string, name: string, make: string, qty: number, unitCost: number, ageDays: number, vendor: string) => {
     equipment.push({
       id, trackingType: "aggregate", name, make, model: "", category: cat, itemFamily: family, serialNumber: null, unitLabel: null, quantityTotal: qty, quantityDamaged: 0, quantityLost: 0,
-      unitCost, purchaseDate: isoDay(-ageDays), vendor, condition: "Good", packaging: "", accessories: "", info: "", photos: [], receipts: [], baseStatus: "active", createdAt: stamp(ageDays),
+      unitCost, purchaseDate: isoDay(-ageDays), vendor, condition: "Good", conditionBreakdown: { Good: qty }, packaging: "", accessories: "", info: "", photos: [], receipts: [], baseStatus: "active", createdAt: stamp(ageDays),
     });
     hist(id, ageDays, "created", `New batch of ${qty}`);
   };
@@ -117,7 +117,7 @@ export function buildGearSeed(): GearParts {
     { id: "DRV-009", name: "Extreme Pro 1TB", capacityGB: 1000, otherUsedGB: 0, notes: "" },
   ];
   let a = 0;
-  const alloc = (driveId: string, contentId: string, sizeGB: number, kind: DriveAllocation["kind"], note = ""): DriveAllocation => ({ id: `ALC-${String(++a).padStart(4, "0")}`, driveId, contentId, sizeGB, kind, note, updatedAt: isoDay(-3) });
+  const alloc = (driveId: string, contentId: string, sizeGB: number, kind: DriveAllocation["kind"], note = ""): DriveAllocation => ({ id: `ALC-${String(++a).padStart(4, "0")}`, driveId, contentId, label: "", sizeGB, kind, note, updatedAt: isoDay(-3) });
   const allocations: DriveAllocation[] = [
     alloc("DRV-001", "DOF-DOC-001", 1450, "raw", "Samburu field footage"),
     alloc("DRV-001", "DOF-SER-001", 900, "raw"),

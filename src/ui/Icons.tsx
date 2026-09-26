@@ -12,6 +12,7 @@ export const IconChevron = ({ className = "" }: { className?: string }) => <span
 export const IconDown = () => svg(<path d="M6 9l6 6 6-6" />, 14);
 export const IconBell = () => svg(<><path d="M6 9a6 6 0 1 1 12 0c0 6 2 7 2 7H4s2-1 2-7" /><path d="M10 20a2 2 0 0 0 4 0" /></>);
 export const IconPlus = () => svg(<><path d="M12 5v14" /><path d="M5 12h14" /></>, 16);
+export const IconLink = () => svg(<><path d="M9 15l6-6" /><path d="M10 6l1-1a4 4 0 1 1 6 6l-2 2" /><path d="M14 18l-1 1a4 4 0 1 1-6-6l2-2" /></>);
 export const IconLogout = () => svg(<><path d="M10 5H5v14h5" /><path d="M15 8l4 4-4 4" /><path d="M19 12H9" /></>);
 export const IconHome = () => svg(<path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z" />);
 export const IconFilm = () => svg(<><rect x="4" y="5" width="16" height="14" rx="2" /><path d="M4 9h16M4 15h16M9 5v14M15 5v14" /></>);

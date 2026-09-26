@@ -14,12 +14,12 @@ export function StorageBar({ usage, legend = true }: { usage: DriveUsage; legend
   return (
     <div>
       <div className={`sbar ${cls}`} role="img" aria-label={`${usage.drive.name}: ${fmtSize(usage.usedGB)} of ${fmtSize(cap)} used`}>
-        {usage.projects.map((p, i) => <i key={p.contentId} style={{ width: `${(p.gb / cap) * 100}%`, background: colorFor(i) }} title={`${p.contentId}: ${fmtSize(p.gb)}`} />)}
+        {usage.projects.map((p, i) => <i key={p.contentId ?? `u-${i}`} style={{ width: `${(p.gb / cap) * 100}%`, background: colorFor(i) }} title={`${p.contentId ?? p.label}: ${fmtSize(p.gb)}`} />)}
         {usage.otherGB > 0 && <i style={{ width: `${(usage.otherGB / cap) * 100}%`, background: "#6f5a4d" }} title={`Other files: ${fmtSize(usage.otherGB)}`} />}
       </div>
       {legend && (
         <div className="legend">
-          {usage.projects.map((p, i) => <span key={p.contentId}><i style={{ background: colorFor(i) }} />{getRecord(p.contentId)?.title ?? p.contentId} {fmtSize(p.gb)}</span>)}
+          {usage.projects.map((p, i) => <span key={p.contentId ?? `u-${i}`}><i style={{ background: colorFor(i) }} />{(p.contentId && getRecord(p.contentId)?.title) ?? p.contentId ?? p.label} {fmtSize(p.gb)}</span>)}
           {usage.otherGB > 0 && <span><i style={{ background: "#6f5a4d" }} />Other files {fmtSize(usage.otherGB)}</span>}
         </div>
       )}

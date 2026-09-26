@@ -437,6 +437,7 @@ function buildGearSeed() {
       purchaseDate: isoDay(-ageDays),
       vendor: "",
       condition,
+      conditionBreakdown: null,
       packaging: "",
       accessories: "",
       info: "",
@@ -466,6 +467,7 @@ function buildGearSeed() {
       purchaseDate: isoDay(-ageDays),
       vendor,
       condition: "Good",
+      conditionBreakdown: { Good: qty },
       packaging: "",
       accessories: "",
       info: "",
@@ -603,7 +605,7 @@ function buildGearSeed() {
     { id: "DRV-009", name: "Extreme Pro 1TB", capacityGB: 1e3, otherUsedGB: 0, notes: "" }
   ];
   let a = 0;
-  const alloc = (driveId, contentId, sizeGB, kind, note = "") => ({ id: `ALC-${String(++a).padStart(4, "0")}`, driveId, contentId, sizeGB, kind, note, updatedAt: isoDay(-3) });
+  const alloc = (driveId, contentId, sizeGB, kind, note = "") => ({ id: `ALC-${String(++a).padStart(4, "0")}`, driveId, contentId, label: "", sizeGB, kind, note, updatedAt: isoDay(-3) });
   const allocations = [
     alloc("DRV-001", "DOF-DOC-001", 1450, "raw", "Samburu field footage"),
     alloc("DRV-001", "DOF-SER-001", 900, "raw"),
@@ -1122,7 +1124,7 @@ function upgradeToV3(db2) {
 function upgradeToV4(db2) {
   const gone = new Set(db2.records.filter((r) => r.archived).map((r) => r.contentId));
   if (gone.size) {
-    db2.allocations = db2.allocations.filter((a) => !gone.has(a.contentId));
+    db2.allocations = db2.allocations.filter((a) => a.contentId === null || !gone.has(a.contentId));
     for (const d of db2.docs) if (gone.has(d.contentId)) d.archived = true;
     for (const m of db2.manifests) {
       if (!gone.has(m.contentId) || m.status !== "assigned") continue;
@@ -1282,10 +1284,20 @@ function upgradeToV12(db2) {
   db2.schemaVersion = 12;
   return db2;
 }
+function upgradeToV13(db2) {
+  for (const item of db2.equipment) {
+    const it = item;
+    if (it.trackingType === "aggregate") it.conditionBreakdown ??= { [it.condition]: it.quantityTotal };
+    else it.conditionBreakdown ??= null;
+  }
+  for (const a of db2.allocations) a.label ??= "";
+  db2.schemaVersion = 13;
+  return db2;
+}
 
 // src/data/store.ts
 var KEY = "dof-hub-db";
-var SCHEMA_VERSION = 12;
+var SCHEMA_VERSION = 13;
 function migrate(old) {
   const gear = buildGearSeed();
   const next = {
@@ -1315,27 +1327,29 @@ function upgradeDb(parsed) {
     case SCHEMA_VERSION:
       return parsed;
     case 1:
-      return upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(migrate(parsed)))))))))));
+      return upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(migrate(parsed))))))))))));
     case 2:
-      return upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(parsed))))))))));
+      return upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(parsed)))))))))));
     case 3:
-      return upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(parsed)))))))));
+      return upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(parsed))))))))));
     case 4:
-      return upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(parsed))))))));
+      return upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(parsed)))))))));
     case 5:
-      return upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(parsed)))))));
+      return upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(parsed))))))));
     case 6:
-      return upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(parsed))))));
+      return upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(parsed)))))));
     case 7:
-      return upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(parsed)))));
+      return upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(parsed))))));
     case 8:
-      return upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(parsed))));
+      return upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(parsed)))));
     case 9:
-      return upgradeToV12(upgradeToV11(upgradeToV10(parsed)));
+      return upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(parsed))));
     case 10:
-      return upgradeToV12(upgradeToV11(parsed));
+      return upgradeToV13(upgradeToV12(upgradeToV11(parsed)));
     case 11:
-      return upgradeToV12(parsed);
+      return upgradeToV13(upgradeToV12(parsed));
+    case 12:
+      return upgradeToV13(parsed);
     default:
       return null;
   }
@@ -2319,10 +2333,13 @@ __export(equipment_exports, {
   addLine: () => addLine,
   addLinePhoto: () => addLinePhoto,
   addLines: () => addLines,
+  addUnits: () => addUnits,
   allIncidents: () => allIncidents,
   allocateFifo: () => allocateFifo,
+  applyConditionBreakdown: () => applyConditionBreakdown,
   attachManifest: () => attachManifest,
   availabilityOn: () => availabilityOn,
+  breakdownTotal: () => breakdownTotal,
   checkIn: () => checkIn,
   checkedOutFor: () => checkedOutFor,
   checkedOutManifests: () => checkedOutManifests,
@@ -2365,13 +2382,17 @@ __export(equipment_exports, {
   releaseReservedFor: () => releaseReservedFor,
   releaseSheetGear: () => releaseSheetGear,
   removeAttachment: () => removeAttachment,
+  removeFromThenWorst: () => removeFromThenWorst,
   removeGearFromSheet: () => removeGearFromSheet,
   removeLine: () => removeLine,
+  removeWorstFirst: () => removeWorstFirst,
   requireGearAccess: () => requireGearAccess,
   reservedFor: () => reservedFor,
   retireItem: () => retireItem,
+  setConditionBreakdown: () => setConditionBreakdown,
   startRepair: () => startRepair,
-  updateItem: () => updateItem
+  updateItem: () => updateItem,
+  worstCondition: () => worstCondition
 });
 
 // src/config/equipment.ts
@@ -2406,6 +2427,46 @@ function projectLabel(actor, contentId) {
 }
 var getItem = (id) => getDb().equipment.find((e) => e.id === id);
 var isActive = (m) => m.status === "assigned" || m.status === "checked-out";
+var breakdownTotal = (bd) => CONDITIONS.reduce((n, c) => n + (bd[c] ?? 0), 0);
+function worstCondition(bd) {
+  for (let i = CONDITIONS.length - 1; i >= 0; i--) if ((bd[CONDITIONS[i]] ?? 0) > 0) return CONDITIONS[i];
+  return null;
+}
+function removeWorstFirst(bd, n) {
+  const next = { ...bd };
+  let left = n;
+  for (let i = CONDITIONS.length - 1; i >= 0 && left > 0; i--) {
+    const c = CONDITIONS[i];
+    const have = next[c] ?? 0;
+    const take = Math.min(have, left);
+    if (take > 0) {
+      next[c] = have - take;
+      if (next[c] === 0) delete next[c];
+      left -= take;
+    }
+  }
+  return next;
+}
+function removeFromThenWorst(bd, first, n) {
+  const have = bd[first] ?? 0;
+  const take = Math.min(have, n);
+  let next = bd;
+  if (take > 0) {
+    next = { ...bd, [first]: have - take };
+    if (next[first] === 0) delete next[first];
+  }
+  const remaining = n - take;
+  return remaining > 0 ? removeWorstFirst(next, remaining) : next;
+}
+function addUnits(bd, n, into) {
+  if (n <= 0) return bd;
+  const target = into ?? worstCondition(bd) ?? "New";
+  return { ...bd, [target]: (bd[target] ?? 0) + n };
+}
+function applyConditionBreakdown(item, bd) {
+  item.conditionBreakdown = bd;
+  item.condition = worstCondition(bd) ?? item.condition;
+}
 var familyOf = (i) => i.itemFamily ? i.itemFamily.toUpperCase() : i.id;
 function hist(actor, equipmentId, kind, detail, extra = {}) {
   getDb().equipmentHistory.push({
@@ -2534,6 +2595,7 @@ function createItem(actor, input) {
     purchaseDate: input.purchaseDate || null,
     vendor: input.vendor.trim(),
     condition: input.condition,
+    conditionBreakdown: input.trackingType === "aggregate" ? { [input.condition]: quantity } : null,
     packaging: input.packaging.trim(),
     accessories: input.accessories.trim(),
     info: input.info.trim(),
@@ -2585,6 +2647,7 @@ function createSerializedUnits(actor, input) {
     purchaseDate: input.purchaseDate || null,
     vendor: input.vendor.trim(),
     condition: input.condition,
+    conditionBreakdown: null,
     packaging: input.packaging.trim(),
     accessories: input.accessories.trim(),
     info: input.info.trim(),
@@ -2606,6 +2669,7 @@ function updateItem(actor, id, patch) {
   const item = getItem(id);
   if (!item) throw new RuleError("Item not found.");
   if (patch.name !== void 0 && !patch.name.trim()) throw new RuleError("Name cannot be empty.");
+  if (patch.category !== void 0 && !equipCategory(patch.category)) throw new RuleError("Choose a valid category.");
   if (patch.unitCost !== void 0 && (!Number.isFinite(patch.unitCost) || patch.unitCost < 0)) throw new RuleError("Cost must be zero or more.");
   if (patch.serialNumber !== void 0 && item.trackingType === "serialized") {
     const s2 = patch.serialNumber?.trim() ?? "";
@@ -2628,9 +2692,41 @@ function updateItem(actor, id, patch) {
   const changes = [];
   if (patch.condition && patch.condition !== item.condition) changes.push(`Condition ${item.condition} to ${patch.condition}`);
   if (patch.quantityTotal !== void 0 && patch.quantityTotal !== item.quantityTotal) changes.push(`Count ${item.quantityTotal} to ${patch.quantityTotal}`);
+  if (patch.category && patch.category !== item.category) changes.push(`Category ${equipCategory(item.category).label} to ${equipCategory(patch.category).label}`);
+  const oldCondition = item.condition;
+  const oldQty = item.quantityTotal;
   Object.assign(item, patch);
+  if (item.trackingType === "aggregate") {
+    let bd = item.conditionBreakdown ?? {};
+    if (patch.condition !== void 0 && patch.condition !== oldCondition) {
+      bd = { [item.condition]: item.quantityTotal };
+    } else if (patch.quantityTotal !== void 0 && patch.quantityTotal !== oldQty) {
+      const delta = item.quantityTotal - oldQty;
+      bd = delta > 0 ? addUnits(bd, delta) : removeWorstFirst(bd, -delta);
+    }
+    applyConditionBreakdown(item, bd);
+  }
   hist(actor, id, "edited", changes.length ? changes.join(", ") : "Details updated");
   logAudit(actor, "update", "equipment", id, Object.keys(patch).join(", "));
+  commit();
+  return item;
+}
+function setConditionBreakdown(actor, id, counts) {
+  requireGearAccess(actor);
+  const item = getItem(id);
+  if (!item) throw new RuleError("Item not found.");
+  if (item.trackingType !== "aggregate") throw new RuleError("Only batches can split their condition by unit.");
+  const clean = {};
+  for (const c of CONDITIONS) {
+    const n = counts[c] ?? 0;
+    if (!Number.isInteger(n) || n < 0) throw new RuleError("Each condition's count must be zero or a whole number.");
+    if (n > 0) clean[c] = n;
+  }
+  const total = breakdownTotal(clean);
+  if (total !== item.quantityTotal) throw new RuleError(`Those counts add up to ${total}, but this batch has ${item.quantityTotal} units.`);
+  applyConditionBreakdown(item, clean);
+  hist(actor, id, "edited", `Condition split: ${CONDITIONS.filter((c) => clean[c]).map((c) => `${clean[c]} ${c}`).join(", ")}`);
+  logAudit(actor, "update", "equipment", id, "condition breakdown");
   commit();
   return item;
 }
@@ -3130,6 +3226,8 @@ function checkIn(actor, manifestId, returns) {
           damaged = 1;
         }
       }
+    } else if (good > 0 && r.conditionIn) {
+      cond = r.conditionIn;
     }
     const desc = (r.description ?? "").trim();
     if (damaged + lost > 0 && !desc) throw new RuleError(`Describe what happened to ${item.name}.`);
@@ -3146,6 +3244,11 @@ function checkIn(actor, manifestId, returns) {
     if (p.item.trackingType === "serialized") {
       if (p.cond) p.item.condition = p.cond;
     } else {
+      let bd = removeWorstFirst(p.item.conditionBreakdown ?? {}, p.damaged + p.lost);
+      if (p.good > 0 && p.cond && p.cond !== p.line.conditionOut) {
+        bd = addUnits(removeFromThenWorst(bd, p.line.conditionOut, p.good), p.good, p.cond);
+      }
+      applyConditionBreakdown(p.item, bd);
       p.item.quantityTotal -= p.damaged + p.lost;
       p.item.quantityDamaged += p.damaged;
       p.item.quantityLost += p.lost;
@@ -3362,12 +3465,13 @@ function driveUsage(drive) {
   const rows = getDb().allocations.filter((a) => a.driveId === drive.id);
   const by = /* @__PURE__ */ new Map();
   for (const a of rows) {
-    const cur = by.get(a.contentId) ?? { gb: 0, kinds: /* @__PURE__ */ new Set() };
+    const key2 = a.contentId ?? a.id;
+    const cur = by.get(key2) ?? { contentId: a.contentId, label: a.label, gb: 0, kinds: /* @__PURE__ */ new Set() };
     cur.gb += a.sizeGB;
     cur.kinds.add(a.kind);
-    by.set(a.contentId, cur);
+    by.set(key2, cur);
   }
-  const projects = [...by].map(([contentId, v]) => ({ contentId, gb: v.gb, kinds: [...v.kinds] })).sort((a, b) => b.gb - a.gb);
+  const projects = [...by.values()].map((v) => ({ contentId: v.contentId, label: v.label, gb: v.gb, kinds: [...v.kinds] })).sort((a, b) => b.gb - a.gb);
   const used = drive.otherUsedGB + projects.reduce((n, p) => n + p.gb, 0);
   return { drive, usedGB: used, freeGB: Math.max(0, drive.capacityGB - used), pct: drive.capacityGB ? used / drive.capacityGB * 100 : 0, otherGB: drive.otherUsedGB, projects };
 }
@@ -4540,6 +4644,7 @@ __export(storage_exports, {
   moveAllocation: () => moveAllocation,
   recordSnapshot: () => recordSnapshot,
   removeAllocation: () => removeAllocation,
+  standaloneAllocations: () => standaloneAllocations,
   updateAllocation: () => updateAllocation,
   updateDrive: () => updateDrive
 });
@@ -4596,17 +4701,23 @@ function requireProjectWrite(actor, contentId) {
   if (!canWrite(actor, rec2)) throw new RuleError("You are not attached to this project.");
   return rec2;
 }
+function requireLabel(label) {
+  const l = (label ?? "").trim();
+  if (!l) throw new RuleError("Give this entry a short label, for example the project or shoot it is holding footage for, since it is not tied to a project yet.");
+  return l;
+}
 function addAllocation(actor, input) {
   requireStorageAccess(actor);
   const drive = getDrive(input.driveId);
   if (!drive) throw new RuleError("Drive not found.");
-  requireProjectWrite(actor, input.contentId);
+  const label = input.contentId === null ? requireLabel(input.label) : (input.label ?? "").trim();
+  if (input.contentId !== null) requireProjectWrite(actor, input.contentId);
   if (!Number.isFinite(input.sizeGB) || input.sizeGB <= 0) throw new RuleError("Enter the size in GB.");
   const u = driveUsage(drive);
   if (input.sizeGB > u.freeGB + 1e-6) throw new RuleError(`${drive.name} has only ${fmtSize(u.freeGB)} free.`);
-  const a = { id: `ALC-${pad(nextCounter("allocation"), 4)}`, driveId: drive.id, contentId: input.contentId, sizeGB: input.sizeGB, kind: input.kind, note: input.note ?? "", updatedAt: todayIso() };
+  const a = { id: `ALC-${pad(nextCounter("allocation"), 4)}`, driveId: drive.id, contentId: input.contentId, label, sizeGB: input.sizeGB, kind: input.kind, note: input.note ?? "", updatedAt: todayIso() };
   getDb().allocations.push(a);
-  logAudit(actor, "allocate", "drive", drive.id, `${input.contentId} ${fmtSize(a.sizeGB)}`);
+  logAudit(actor, "allocate", "drive", drive.id, `${input.contentId ?? label} ${fmtSize(a.sizeGB)}`);
   recordSnapshot();
   commit();
   return a;
@@ -4615,7 +4726,8 @@ function updateAllocation(actor, id, patch) {
   requireStorageAccess(actor);
   const a = getDb().allocations.find((x) => x.id === id);
   if (!a) throw new RuleError("Entry not found.");
-  requireProjectWrite(actor, a.contentId);
+  if (a.contentId !== null) requireProjectWrite(actor, a.contentId);
+  const label = a.contentId === null ? requireLabel(patch.label ?? a.label) : patch.label ?? a.label;
   const target = getDrive(patch.driveId ?? a.driveId);
   if (!target) throw new RuleError("Drive not found.");
   const newSize = patch.sizeGB ?? a.sizeGB;
@@ -4623,7 +4735,7 @@ function updateAllocation(actor, id, patch) {
   const u = driveUsage(target);
   const alreadyThere = target.id === a.driveId ? a.sizeGB : 0;
   if (newSize - alreadyThere > u.freeGB + 1e-6) throw new RuleError(`${target.name} has only ${fmtSize(u.freeGB + alreadyThere)} free.`);
-  Object.assign(a, patch, { updatedAt: todayIso() });
+  Object.assign(a, patch, { label, updatedAt: todayIso() });
   logAudit(actor, "update", "allocation", id, Object.keys(patch).join(", "));
   recordSnapshot();
   commit();
@@ -4636,9 +4748,9 @@ function moveAllocation(actor, id, contentId) {
   if (a.contentId === contentId) throw new RuleError("This entry is already attached here.");
   const target = getRecord(contentId);
   if (!target) throw new RuleError("Project not found.");
-  const current = getRecord(a.contentId);
+  const current = a.contentId ? getRecord(a.contentId) : null;
   if (!canWrite(actor, target) || (current ? !canWrite(actor, current) : !isHop(actor))) throw new RuleError("You are not attached to both projects.");
-  const from = a.contentId;
+  const from = a.contentId ?? a.label;
   a.contentId = contentId;
   a.updatedAt = todayIso();
   logAudit(actor, "update", "allocation", id, `moved from ${from} to ${contentId}`);
@@ -4649,15 +4761,21 @@ function removeAllocation(actor, id) {
   requireStorageAccess(actor);
   const a = getDb().allocations.find((x) => x.id === id);
   if (!a) throw new RuleError("Entry not found.");
-  const rec2 = requireProjectWrite(actor, a.contentId);
-  if (a.kind === "raw") {
-    const leaves = leavesUnder(rec2);
-    if (leaves.some((l) => !isComplete(l))) throw new RuleError(`Raw footage for ${rec2.title} cannot be removed until everything under it is Delivered.`);
+  if (a.contentId !== null) {
+    const rec2 = requireProjectWrite(actor, a.contentId);
+    if (a.kind === "raw") {
+      const leaves = leavesUnder(rec2);
+      if (leaves.some((l) => !isComplete(l))) throw new RuleError(`Raw footage for ${rec2.title} cannot be removed until everything under it is Delivered.`);
+    }
   }
   getDb().allocations = getDb().allocations.filter((x) => x.id !== id);
-  logAudit(actor, "deallocate", "drive", a.driveId, `${a.contentId} ${fmtSize(a.sizeGB)}`);
+  logAudit(actor, "deallocate", "drive", a.driveId, `${a.contentId ?? a.label} ${fmtSize(a.sizeGB)}`);
   recordSnapshot();
   commit();
+}
+function standaloneAllocations(actor) {
+  requireStorageAccess(actor);
+  return getDb().allocations.filter((a) => a.contentId === null);
 }
 function clearRecordFromDrives(actor, contentId) {
   requireStorageAccess(actor);
@@ -4677,7 +4795,7 @@ function descendantIds2(r) {
 }
 function allocationsForRecord(record2) {
   const ids = /* @__PURE__ */ new Set([...descendantIds2(record2), ...selfAndAncestors(record2).map((r) => r.contentId)]);
-  return getDb().allocations.filter((a) => ids.has(a.contentId));
+  return getDb().allocations.filter((a) => a.contentId !== null && ids.has(a.contentId));
 }
 function forecast(horizonDays = 90) {
   const t2 = fleetTotals();
@@ -4711,7 +4829,7 @@ function driveReportText(driveId) {
     `Capacity ${fmtSize(d.capacityGB)}, used ${fmtSize(u.usedGB)} (${u.pct.toFixed(1)}%), free ${fmtSize(u.freeGB)}`,
     "",
     "Projects on this drive:",
-    ...u.projects.length ? u.projects.map((p) => `  ${p.contentId}  ${getRecord(p.contentId)?.title ?? ""}  ${fmtSize(p.gb)}  (${p.kinds.join(", ")})`) : ["  None recorded"],
+    ...u.projects.length ? u.projects.map((p) => `  ${p.contentId ?? "No project yet"}  ${p.contentId ? getRecord(p.contentId)?.title ?? "" : p.label}  ${fmtSize(p.gb)}  (${p.kinds.join(", ")})`) : ["  None recorded"],
     ...u.otherGB ? [`  Other files  ${fmtSize(u.otherGB)}`] : []
   ];
   return lines.join("\n");
@@ -4724,7 +4842,7 @@ function fleetReportText() {
     `Date: ${fmtDate(todayIso())}`,
     `Total capacity ${fmtSize(t2.capacity)}, used ${fmtSize(t2.used)}, free ${fmtSize(t2.capacity - t2.used)}`,
     "",
-    ...rows.map((u) => `${u.drive.name}: ${fmtSize(u.usedGB)} of ${fmtSize(u.drive.capacityGB)} (${u.pct.toFixed(0)}%)${u.projects.length ? `. Projects: ${u.projects.map((p) => `${p.contentId} ${fmtSize(p.gb)}`).join(", ")}` : ""}`)
+    ...rows.map((u) => `${u.drive.name}: ${fmtSize(u.usedGB)} of ${fmtSize(u.drive.capacityGB)} (${u.pct.toFixed(0)}%)${u.projects.length ? `. Projects: ${u.projects.map((p) => `${p.contentId ?? p.label} ${fmtSize(p.gb)}`).join(", ")}` : ""}`)
   ].join("\n");
 }
 
@@ -4898,6 +5016,7 @@ var RPC_NAMES = {
     "removeLine",
     "requireGearAccess",
     "retireItem",
+    "setConditionBreakdown",
     "startRepair",
     "updateItem"
   ],
@@ -4934,6 +5053,7 @@ var RPC_NAMES = {
     "hasStorageAccess",
     "moveAllocation",
     "removeAllocation",
+    "standaloneAllocations",
     "updateAllocation",
     "updateDrive"
   ],

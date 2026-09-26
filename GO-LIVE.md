@@ -18,7 +18,7 @@ Then, in the project folder:
     npm test
     npm run build
 
-`npm test` should end with "249 renders ok". Then upload:
+`npm test` should end with "253 renders ok". Then upload:
 
     git add .
     git commit -m "Real sign-in, passwords and server"
@@ -186,3 +186,14 @@ Real bug, caught live: leaving both Serial number and Label blank on a single-it
 Checking a checkout list, on screen or printed, already shows equipment ID, item name, make/model, quantity, condition out, photos, accessories, and additional info for every line, grouped under a heading per equipment category (Camera, Audio, Cabling & Connectivity, and so on). This existed in the code already but had no test coverage and one broken test (a missing import, unrelated to the feature itself) — both fixed, and five new tests lock the behaviour in going forward, including a rendered PDF check.
 
 If your checkout lists still look plain after installing this, it is almost certainly the browser cache from before — see the earlier note about hard-refreshing or checking in a private window.
+
+
+## v19: move equipment between categories, split condition by unit, share a link, and record storage ahead of a project
+
+**1. Move an item to a different category.** Editing an item (single unit or batch) now lets you change its category, for example moving something from Camera into Studio & Set. Its asset code never changes, so its checkout history stays intact — only the category it is grouped and filtered under changes.
+
+**2. A real "Copy link" button.** Every screen has a real, working address now, shown in the little link icon in the top bar. Click it to copy a link straight to whatever you're looking at — a project, a checkout list, an equipment item, a drive, anything. Send it to someone and, if they have access, opening it takes them straight there after they sign in. Before this update the app never changed its address at all, so there was nothing a right-click or "copy link" could actually capture — that's now fixed.
+
+**3. Split a batch's condition by unit.** A batch of equipment (cables, and anything else added as "batch of identical items") can now have some units in one condition and others in another — for example 10 Good cables and 2 Fair ones — instead of one condition standing in for the whole batch. Open the item and use **Split condition by unit…** to set the counts directly, or just check equipment back in with a different condition than it went out in and the split updates on its own. The equipment list and reports still show one condition per item, now automatically the worst one present, so a batch with anything faulty in it is easy to spot at a glance.
+
+**4. Record storage ahead of a project.** On the Storage and media module, assigning space to a drive now offers **No project yet** as well as **Tie to a project**. Use it for footage or files that exist before the production is set up in this system yet — it gets its own entry and its own id, counts toward the drive and the company-wide totals immediately, and needs only a short label (for example "Youth Camp 2025 raw footage") instead of a Content ID. Once the project is ready to be worked on, open the drive page and use **Attach to a project** to tie it to a real Content ID for the first time — its process can then continue from Recording. This is separate from General Use (v15): a General Use project is a real, if placeholder, project; this has no project at all until you attach one.

@@ -69,7 +69,7 @@ export function deleteDrive(actor: Actor, id: string): void {
 
 // ── Allocations (what project occupies which drive) ──────────
 
-export interface AllocationInput { driveId: string; contentId: string; sizeGB: number; kind: DriveAllocation["kind"]; note?: string }
+export interface AllocationInput { driveId: string; contentId: string | null; sizeGB: number; kind: DriveAllocation["kind"]; note?: string; label?: string }
 
 function requireProjectWrite(actor: Actor, contentId: string): ContentRecord {
   const rec = getRecord(contentId);
@@ -78,28 +78,37 @@ function requireProjectWrite(actor: Actor, contentId: string): ContentRecord {
   return rec;
 }
 
+/** For an entry with no project yet, a label is the only thing that identifies it, so it cannot be blank. */
+function requireLabel(label: string | undefined): string {
+  const l = (label ?? "").trim();
+  if (!l) throw new RuleError("Give this entry a short label, for example the project or shoot it is holding footage for, since it is not tied to a project yet.");
+  return l;
+}
+
 export function addAllocation(actor: Actor, input: AllocationInput): DriveAllocation {
   requireStorageAccess(actor);
   const drive = getDrive(input.driveId);
   if (!drive) throw new RuleError("Drive not found.");
-  requireProjectWrite(actor, input.contentId);
+  const label = input.contentId === null ? requireLabel(input.label) : (input.label ?? "").trim();
+  if (input.contentId !== null) requireProjectWrite(actor, input.contentId);
   if (!Number.isFinite(input.sizeGB) || input.sizeGB <= 0) throw new RuleError("Enter the size in GB.");
   const u = driveUsage(drive);
   if (input.sizeGB > u.freeGB + 1e-6) throw new RuleError(`${drive.name} has only ${fmtSize(u.freeGB)} free.`);
-  const a: DriveAllocation = { id: `ALC-${pad(nextCounter("allocation"), 4)}`, driveId: drive.id, contentId: input.contentId, sizeGB: input.sizeGB, kind: input.kind, note: input.note ?? "", updatedAt: todayIso() };
+  const a: DriveAllocation = { id: `ALC-${pad(nextCounter("allocation"), 4)}`, driveId: drive.id, contentId: input.contentId, label, sizeGB: input.sizeGB, kind: input.kind, note: input.note ?? "", updatedAt: todayIso() };
   getDb().allocations.push(a);
-  logAudit(actor, "allocate", "drive", drive.id, `${input.contentId} ${fmtSize(a.sizeGB)}`);
+  logAudit(actor, "allocate", "drive", drive.id, `${input.contentId ?? label} ${fmtSize(a.sizeGB)}`);
   recordSnapshot();
   commit();
   return a;
 }
 
-/** Edits the size, type or note, or moves the entry to another drive. Space is checked on the drive it ends up on. */
-export function updateAllocation(actor: Actor, id: string, patch: { sizeGB?: number; kind?: DriveAllocation["kind"]; note?: string; driveId?: string }): DriveAllocation {
+/** Edits the size, type, label or note, or moves the entry to another drive. Space is checked on the drive it ends up on. */
+export function updateAllocation(actor: Actor, id: string, patch: { sizeGB?: number; kind?: DriveAllocation["kind"]; note?: string; label?: string; driveId?: string }): DriveAllocation {
   requireStorageAccess(actor);
   const a = getDb().allocations.find((x) => x.id === id);
   if (!a) throw new RuleError("Entry not found.");
-  requireProjectWrite(actor, a.contentId);
+  if (a.contentId !== null) requireProjectWrite(actor, a.contentId);
+  const label = a.contentId === null ? requireLabel(patch.label ?? a.label) : (patch.label ?? a.label);
   const target = getDrive(patch.driveId ?? a.driveId);
   if (!target) throw new RuleError("Drive not found.");
   const newSize = patch.sizeGB ?? a.sizeGB;
@@ -107,14 +116,18 @@ export function updateAllocation(actor: Actor, id: string, patch: { sizeGB?: num
   const u = driveUsage(target);
   const alreadyThere = target.id === a.driveId ? a.sizeGB : 0;
   if (newSize - alreadyThere > u.freeGB + 1e-6) throw new RuleError(`${target.name} has only ${fmtSize(u.freeGB + alreadyThere)} free.`);
-  Object.assign(a, patch, { updatedAt: todayIso() });
+  Object.assign(a, patch, { label, updatedAt: todayIso() });
   logAudit(actor, "update", "allocation", id, Object.keys(patch).join(", "));
   recordSnapshot();
   commit();
   return a;
 }
 
-/** Moves an entry to a different project. Its space usage does not change, only which project it belongs to. */
+/**
+ * Attaches an entry to a project: moves it there if it already belonged to another one, or, if it had
+ * no project yet, ties it to a real Content ID for the first time so its pipeline (from Recording on)
+ * can start. Its space usage never changes, only which project it belongs to.
+ */
 export function moveAllocation(actor: Actor, id: string, contentId: string): DriveAllocation {
   requireStorageAccess(actor);
   const a = getDb().allocations.find((x) => x.id === id);
@@ -122,9 +135,9 @@ export function moveAllocation(actor: Actor, id: string, contentId: string): Dri
   if (a.contentId === contentId) throw new RuleError("This entry is already attached here.");
   const target = getRecord(contentId);
   if (!target) throw new RuleError("Project not found.");
-  const current = getRecord(a.contentId);
+  const current = a.contentId ? getRecord(a.contentId) : null;
   if (!canWrite(actor, target) || (current ? !canWrite(actor, current) : !isHop(actor))) throw new RuleError("You are not attached to both projects.");
-  const from = a.contentId;
+  const from = a.contentId ?? a.label;
   a.contentId = contentId;
   a.updatedAt = todayIso();
   logAudit(actor, "update", "allocation", id, `moved from ${from} to ${contentId}`);
@@ -132,20 +145,28 @@ export function moveAllocation(actor: Actor, id: string, contentId: string): Dri
   return a;
 }
 
-/** Raw footage stays on the drive until every episode it belongs to is Delivered. */
+/** Raw footage stays on the drive until every episode it belongs to is Delivered. Entries with no project yet can always be removed. */
 export function removeAllocation(actor: Actor, id: string): void {
   requireStorageAccess(actor);
   const a = getDb().allocations.find((x) => x.id === id);
   if (!a) throw new RuleError("Entry not found.");
-  const rec = requireProjectWrite(actor, a.contentId);
-  if (a.kind === "raw") {
-    const leaves = leavesUnder(rec);
-    if (leaves.some((l) => !isComplete(l))) throw new RuleError(`Raw footage for ${rec.title} cannot be removed until everything under it is Delivered.`);
+  if (a.contentId !== null) {
+    const rec = requireProjectWrite(actor, a.contentId);
+    if (a.kind === "raw") {
+      const leaves = leavesUnder(rec);
+      if (leaves.some((l) => !isComplete(l))) throw new RuleError(`Raw footage for ${rec.title} cannot be removed until everything under it is Delivered.`);
+    }
   }
   getDb().allocations = getDb().allocations.filter((x) => x.id !== id);
-  logAudit(actor, "deallocate", "drive", a.driveId, `${a.contentId} ${fmtSize(a.sizeGB)}`);
+  logAudit(actor, "deallocate", "drive", a.driveId, `${a.contentId ?? a.label} ${fmtSize(a.sizeGB)}`);
   recordSnapshot();
   commit();
+}
+
+/** Entries recorded ahead of a real project: their own id and label identify them, no Content ID yet. */
+export function standaloneAllocations(actor: Actor): DriveAllocation[] {
+  requireStorageAccess(actor);
+  return getDb().allocations.filter((a) => a.contentId === null);
 }
 
 /** Clears a record from every drive it is on, for example once it is done. Raw footage waits for Delivered. */
@@ -170,7 +191,7 @@ function descendantIds(r: ContentRecord): string[] {
 /** Allocations that belong to this record, to anything under it, or to the show it sits inside. */
 export function allocationsForRecord(record: ContentRecord): DriveAllocation[] {
   const ids = new Set([...descendantIds(record), ...selfAndAncestors(record).map((r) => r.contentId)]);
-  return getDb().allocations.filter((a) => ids.has(a.contentId));
+  return getDb().allocations.filter((a) => a.contentId !== null && ids.has(a.contentId));
 }
 
 // ── Forecast ─────────────────────────────────────────────────
@@ -219,7 +240,7 @@ export function driveReportText(driveId: string): string {
     `Capacity ${fmtSize(d.capacityGB)}, used ${fmtSize(u.usedGB)} (${u.pct.toFixed(1)}%), free ${fmtSize(u.freeGB)}`,
     "",
     "Projects on this drive:",
-    ...(u.projects.length ? u.projects.map((p) => `  ${p.contentId}  ${getRecord(p.contentId)?.title ?? ""}  ${fmtSize(p.gb)}  (${p.kinds.join(", ")})`) : ["  None recorded"]),
+    ...(u.projects.length ? u.projects.map((p) => `  ${p.contentId ?? "No project yet"}  ${p.contentId ? getRecord(p.contentId)?.title ?? "" : p.label}  ${fmtSize(p.gb)}  (${p.kinds.join(", ")})`) : ["  None recorded"]),
     ...(u.otherGB ? [`  Other files  ${fmtSize(u.otherGB)}`] : []),
   ];
   return lines.join("\n");
@@ -233,6 +254,6 @@ export function fleetReportText(): string {
     `Date: ${fmtDate(todayIso())}`,
     `Total capacity ${fmtSize(t.capacity)}, used ${fmtSize(t.used)}, free ${fmtSize(t.capacity - t.used)}`,
     "",
-    ...rows.map((u) => `${u.drive.name}: ${fmtSize(u.usedGB)} of ${fmtSize(u.drive.capacityGB)} (${u.pct.toFixed(0)}%)${u.projects.length ? `. Projects: ${u.projects.map((p) => `${p.contentId} ${fmtSize(p.gb)}`).join(", ")}` : ""}`),
+    ...rows.map((u) => `${u.drive.name}: ${fmtSize(u.usedGB)} of ${fmtSize(u.drive.capacityGB)} (${u.pct.toFixed(0)}%)${u.projects.length ? `. Projects: ${u.projects.map((p) => `${p.contentId ?? p.label} ${fmtSize(p.gb)}`).join(", ")}` : ""}`),
   ].join("\n");
 }

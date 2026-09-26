@@ -103,7 +103,7 @@ export function RecordExtras({ rec }: { rec: ContentRecord }) {
               <>
                 <div className="list">
                   {allocs.map((a) => {
-                    const target = getRecord(a.contentId);
+                    const target = a.contentId ? getRecord(a.contentId) : undefined;
                     const mayEdit = !!target && canWrite(actor, target);
                     return (
                       <div key={a.id} className="list-item" title={mayEdit ? "Click to edit" : ""} onClick={() => (mayEdit ? setEditing(a) : go({ n: "drive", id: a.driveId }))}>
@@ -153,13 +153,13 @@ export function RecordExtras({ rec }: { rec: ContentRecord }) {
 /** Pick an existing storage entry from another project (often a General Use placeholder) and move it here. */
 function AttachStorageModal({ rec, onClose }: { rec: ContentRecord; onClose: () => void }) {
   const { actor, attempt } = useApp();
-  const options = getDb().allocations.filter((a) => a.contentId !== rec.contentId && canWrite(actor, getRecord(a.contentId) ?? rec));
+  const options = getDb().allocations.filter((a) => a.contentId !== rec.contentId && canWrite(actor, (a.contentId ? getRecord(a.contentId) : undefined) ?? rec));
   const [id, setId] = useState(options[0]?.id ?? "");
   return (
     <Modal title="Attach a storage entry" onClose={onClose} actions={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!id} onClick={() => { if (attempt(() => moveAllocation(actor, id, rec.contentId), "Attached")) onClose(); }}>Attach</button></>}>
       {options.length === 0 ? <Empty>There is no other storage entry you can move here.</Empty> : (
         <Field label="Storage entry">
-          <select value={id} onChange={(e) => setId(e.target.value)}>{options.map((a) => <option key={a.id} value={a.id}>{getDrive(a.driveId)?.name ?? a.driveId}, {fmtSize(a.sizeGB)}, {projectLabel(actor, a.contentId)}</option>)}</select>
+          <select value={id} onChange={(e) => setId(e.target.value)}>{options.map((a) => <option key={a.id} value={a.id}>{getDrive(a.driveId)?.name ?? a.driveId}, {fmtSize(a.sizeGB)}, {a.contentId ? projectLabel(actor, a.contentId) : `${a.label} (no project yet)`}</option>)}</select>
         </Field>
       )}
     </Modal>

@@ -10,7 +10,7 @@ import { IconPlus } from "../ui/Icons";
 import { ForecastChart, ForecastNote, StorageBar } from "../ui/StorageViz";
 import { canWrite, getRecord, isHop } from "../services/access";
 import {
-  addAllocation, allDriveUsage, createDrive, deleteDrive, driveReportText, driveUsage, fleetReportText, fleetTotals, forecast, getDrive, isNearlyFull, hasStorageAccess, removeAllocation, updateAllocation, updateDrive,
+  addAllocation, allDriveUsage, createDrive, deleteDrive, driveReportText, driveUsage, fleetReportText, fleetTotals, forecast, getDrive, isNearlyFull, hasStorageAccess, moveAllocation, removeAllocation, updateAllocation, updateDrive,
 } from "../services/wrapped/storage";
 import { fmtDate, fmtSize, todayIso } from "../services/utils";
 
@@ -117,6 +117,7 @@ export function DrivePage({ id }: { id: string }) {
   const [adding, setAdding] = useState(false);
   const [editingDrive, setEditingDrive] = useState(false);
   const [editRow, setEditRow] = useState<DriveAllocation | null>(null);
+  const [attachRow, setAttachRow] = useState<DriveAllocation | null>(null);
   const drive = getDrive(id);
   if (!hasStorageAccess(actor)) return <div className="page"><Empty>Storage is for crew and the Head of Production.</Empty></div>;
   if (!drive) return <div className="page"><Empty>This drive does not exist.</Empty></div>;
@@ -150,15 +151,16 @@ export function DrivePage({ id }: { id: string }) {
             <thead><tr><th>Project</th><th>Type</th><th>Size</th><th>Note</th><th>Updated</th></tr></thead>
             <tbody>
               {rows.map((a) => {
-                const rec = getRecord(a.contentId);
-                const write = rec ? canWrite(actor, rec) : false;
+                const rec = a.contentId ? getRecord(a.contentId) : undefined;
+                const write = a.contentId === null ? hasStorageAccess(actor) : rec ? canWrite(actor, rec) : false;
                 return (
-                  <tr key={a.id} className="clickable" onClick={() => rec && go({ n: "record", id: a.contentId })}
+                  <tr key={a.id} className="clickable" onClick={() => (rec ? go({ n: "record", id: a.contentId! }) : write && setEditRow(a))}
                     onContextMenu={(e) => menu(e, [
                       { label: "Edit…", disabled: !write, onClick: () => setEditRow(a) },
-                      { label: "Remove from this drive", danger: true, disabled: !write, onClick: async () => { if (await confirm({ title: "Remove from this drive?", body: `${rec?.title ?? a.contentId} (${fmtSize(a.sizeGB)}) will no longer be counted here. Raw footage stays until everything under it is Delivered.`, confirmLabel: "Remove", danger: true })) attempt(() => removeAllocation(actor, a.id), "Removed"); } },
+                      ...(a.contentId === null ? [{ label: "Attach to a project…", disabled: !write, onClick: () => setAttachRow(a) }] : []),
+                      { label: "Remove from this drive", danger: true, disabled: !write, onClick: async () => { if (await confirm({ title: "Remove from this drive?", body: `${rec?.title ?? a.label} (${fmtSize(a.sizeGB)}) will no longer be counted here. Raw footage stays until everything under it is Delivered.`, confirmLabel: "Remove", danger: true })) attempt(() => removeAllocation(actor, a.id), "Removed"); } },
                     ])}>
-                    <td><div>{rec?.title ?? a.contentId}</div><span className="cid">{a.contentId}</span></td>
+                    <td><div>{rec?.title ?? a.label}</div><span className="cid">{a.contentId ?? "No project yet"}</span></td>
                     <td>{KIND_LABEL[a.kind]}</td>
                     <td>{fmtSize(a.sizeGB)}</td>
                     <td className="muted">{a.note}</td>
@@ -174,6 +176,7 @@ export function DrivePage({ id }: { id: string }) {
       </section>
       {adding && <AllocationModal driveId={id} onClose={() => setAdding(false)} />}
       {editRow && <AllocationModal driveId={id} row={editRow} onClose={() => setEditRow(null)} />}
+      {attachRow && <AttachToProjectModal row={attachRow} onClose={() => setAttachRow(null)} />}
       {editingDrive && <DriveFormModal drive={drive} onClose={() => setEditingDrive(false)} onSaved={() => setEditingDrive(false)} />}
     </div>
   );
@@ -188,15 +191,19 @@ export function AllocationModal({ driveId, contentId, row, onClose }: { driveId?
   const projects = getDb().records.filter((r) => !r.archived && canWrite(actor, r)).sort((a, b) => a.contentId.localeCompare(b.contentId));
   const drives = allDriveUsage();
   const [drive, setDrive] = useState(row?.driveId ?? driveId ?? drives[0]?.drive.id ?? "");
+  const [noProject, setNoProject] = useState(!!row && row.contentId === null);
   const [project, setProject] = useState(row?.contentId ?? contentId ?? projects[0]?.contentId ?? "");
+  const [label, setLabel] = useState(row?.label ?? "");
   const [size, setSize] = useState(row ? String(row.sizeGB) : "");
   const [kind, setKind] = useState<DriveAllocation["kind"]>(row?.kind ?? "raw");
   const [note, setNote] = useState(row?.note ?? "");
   const showDrive = !driveId || !!row;
-  const showProject = !contentId && !row;
+  const showProjectChoice = !contentId && !row;
   const selected = drives.find((d) => d.drive.id === drive);
   const save = () => {
-    const ok = attempt(() => (row ? updateAllocation(actor, row.id, { sizeGB: Number(size), kind, note, driveId: drive }) : addAllocation(actor, { driveId: drive, contentId: project, sizeGB: Number(size), kind, note })), "Saved");
+    const ok = attempt(() => (row
+      ? updateAllocation(actor, row.id, { sizeGB: Number(size), kind, note, label: row.contentId === null ? label : undefined, driveId: drive })
+      : addAllocation(actor, noProject ? { driveId: drive, contentId: null, label, sizeGB: Number(size), kind, note } : { driveId: drive, contentId: project, sizeGB: Number(size), kind, note })), "Saved");
     if (ok) onClose();
   };
   const remove = async () => {
@@ -208,7 +215,17 @@ export function AllocationModal({ driveId, contentId, row, onClose }: { driveId?
   return (
     <Modal title={row ? "Edit storage entry" : "Assign to a drive"} onClose={onClose} actions={<>{row && <button className="btn danger" style={{ marginRight: "auto" }} onClick={remove}>Remove</button>}<button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save}>Save</button></>}>
       <div className="stack">
-        {showProject && <Field label="Project or episode"><select value={project} onChange={(e) => setProject(e.target.value)}>{projects.map((p) => <option key={p.contentId} value={p.contentId}>{p.title}, {p.contentId}</option>)}</select></Field>}
+        {showProjectChoice && (
+          <div className="seg" role="group" aria-label="Ties to a project">
+            <button type="button" className={!noProject ? "on" : ""} onClick={() => setNoProject(false)}>Tie to a project</button>
+            <button type="button" className={noProject ? "on" : ""} onClick={() => setNoProject(true)}>No project yet</button>
+          </div>
+        )}
+        {showProjectChoice && !noProject && <Field label="Project or episode"><select value={project} onChange={(e) => setProject(e.target.value)}>{projects.map((p) => <option key={p.contentId} value={p.contentId}>{p.title}, {p.contentId}</option>)}</select></Field>}
+        {((showProjectChoice && noProject) || (row && row.contentId === null)) && (
+          <Field label="Label (identifies this entry, since it has no project yet)"><input type="text" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="For example: Youth Camp 2025 raw footage" autoFocus /></Field>
+        )}
+        {showProjectChoice && noProject && <p className="muted">Record this now to track the space it uses. Once the project is ready to work on, attach it from the drive page and its process can start from Recording.</p>}
         {showDrive && (
           <Field label="Drive">
             <select value={drive} onChange={(e) => setDrive(e.target.value)}>
@@ -222,6 +239,26 @@ export function AllocationModal({ driveId, contentId, row, onClose }: { driveId?
         <Field label="Note"><input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="For example: camera A cards, day 1" /></Field>
         {kind === "raw" && <p className="muted">Raw footage cannot be removed from a drive until the episodes it belongs to are Delivered. You can update the size at any time.</p>}
       </div>
+    </Modal>
+  );
+}
+
+/** Ties a standalone entry (recorded ahead of a project) to a real project for the first time. */
+function AttachToProjectModal({ row, onClose }: { row: DriveAllocation; onClose: () => void }) {
+  const { actor, attempt } = useApp();
+  const projects = getDb().records.filter((r) => !r.archived && canWrite(actor, r)).sort((a, b) => a.contentId.localeCompare(b.contentId));
+  const [project, setProject] = useState(projects[0]?.contentId ?? "");
+  const save = () => {
+    if (attempt(() => moveAllocation(actor, row.id, project), "Attached")) onClose();
+  };
+  return (
+    <Modal title="Attach to a project" onClose={onClose} actions={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!project} onClick={save}>Attach</button></>}>
+      {projects.length === 0 ? <Empty>There is no project you can attach this to.</Empty> : (
+        <div className="stack">
+          <p className="muted">{row.label} ({fmtSize(row.sizeGB)}) will be tied to the project you choose. Its pipeline can then continue from Recording.</p>
+          <Field label="Project or episode"><select value={project} onChange={(e) => setProject(e.target.value)}>{projects.map((p) => <option key={p.contentId} value={p.contentId}>{p.title}, {p.contentId}</option>)}</select></Field>
+        </div>
+      )}
     </Modal>
   );
 }

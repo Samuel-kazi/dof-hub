@@ -28,7 +28,8 @@ export const removeGearFromSheet = rpc("equipment.removeGearFromSheet", core.rem
 export const removeLine = rpc("equipment.removeLine", core.removeLine);
 export const requireGearAccess = rpc("equipment.requireGearAccess", core.requireGearAccess);
 export const retireItem = rpc("equipment.retireItem", core.retireItem);
+export const setConditionBreakdown = rpc("equipment.setConditionBreakdown", core.setConditionBreakdown);
 export const startRepair = rpc("equipment.startRepair", core.startRepair);
 export const updateItem = rpc("equipment.updateItem", core.updateItem);
-export { addDays, allIncidents, allocateFifo, availabilityOn, checkedOutFor, checkedOutManifests, displayStatus, endOf, familyOf, gearIssues, getItem, getManifest, goneOutDefaults, groupByFamily, groupSerializedByModel, inventoryReport, isOverdue, itemHistory, itemIncidents, manifestForSheet, manifestStatusView, manifestSummary, manifestsForContent, modelKeyOf, overdueManifests, pickerRows, qtyAssigned, qtyFree, qtyOut, reservedFor } from "../equipment";
-export type { Availability, Family, ItemInput, ItemPatch, LineRequest, ManifestInput, PhotoInput, PickerRow, ReportGroup, ReportRow, ReturnInput, SheetRef, StatusView, UnitInput, UnitsInput } from "../equipment";
+export { addDays, addUnits, allIncidents, allocateFifo, applyConditionBreakdown, availabilityOn, breakdownTotal, checkedOutFor, checkedOutManifests, displayStatus, endOf, familyOf, gearIssues, getItem, getManifest, goneOutDefaults, groupByFamily, groupSerializedByModel, inventoryReport, isOverdue, itemHistory, itemIncidents, manifestForSheet, manifestStatusView, manifestSummary, manifestsForContent, modelKeyOf, overdueManifests, pickerRows, qtyAssigned, qtyFree, qtyOut, removeFromThenWorst, removeWorstFirst, reservedFor, worstCondition } from "../equipment";
+export type { Availability, ConditionBreakdown, Family, ItemInput, ItemPatch, LineRequest, ManifestInput, PhotoInput, PickerRow, ReportGroup, ReportRow, ReturnInput, SheetRef, StatusView, UnitInput, UnitsInput } from "../equipment";

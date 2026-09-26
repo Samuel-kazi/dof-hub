@@ -8,6 +8,7 @@ export const deleteDrive = rpc("storage.deleteDrive", core.deleteDrive);
 export const hasStorageAccess = rpc("storage.hasStorageAccess", core.hasStorageAccess);
 export const moveAllocation = rpc("storage.moveAllocation", core.moveAllocation);
 export const removeAllocation = rpc("storage.removeAllocation", core.removeAllocation);
+export const standaloneAllocations = rpc("storage.standaloneAllocations", core.standaloneAllocations);
 export const updateAllocation = rpc("storage.updateAllocation", core.updateAllocation);
 export const updateDrive = rpc("storage.updateDrive", core.updateDrive);
 export { allDriveUsage, allocationsForRecord, driveReportText, driveUsage, fleetReportText, fleetTotals, forecast, getDrive, isNearlyFull, recordSnapshot } from "../storage";

@@ -1,9 +1,12 @@
+import { useState } from "react";
 import { useApp } from "../ui/AppContext";
 import { useDb } from "../data/store";
-import { equipCategory } from "../config/equipment";
+import { CONDITIONS, equipCategory } from "../config/equipment";
 import { Attachments, PhotoAdd } from "../ui/Photos";
-import { Empty } from "../ui/parts";
-import { addAttachment, availabilityOn, hasGearAccess, displayStatus, getItem, itemHistory, itemIncidents, manifestStatusView, modelKeyOf, projectLabel, qtyAssigned, qtyOut, removeAttachment, getManifest } from "../services/wrapped/equipment";
+import { Empty, Field } from "../ui/parts";
+import { Modal } from "../ui/Modal";
+import { addAttachment, availabilityOn, hasGearAccess, displayStatus, getItem, itemHistory, itemIncidents, manifestStatusView, modelKeyOf, projectLabel, qtyAssigned, qtyOut, removeAttachment, getManifest, setConditionBreakdown } from "../services/wrapped/equipment";
+import type { EquipCondition, EquipmentItem } from "../types";
 import { getDb } from "../data/store";
 import { nameOf } from "../services/wrapped/people";
 import { fmtDate, fmtShort } from "../services/utils";
@@ -13,6 +16,7 @@ export function EquipmentItemPage({ id }: { id: string }) {
   const { actor, go, back, attempt, menu } = useApp();
   useDb();
   const actions = useItemActions(back);
+  const [splitting, setSplitting] = useState(false);
   const item = getItem(id);
   if (!hasGearAccess(actor)) return <div className="page"><Empty>Equipment is for crew and the Head of Production.</Empty></div>;
   if (!item) return <div className="page"><Empty>This item does not exist.</Empty></div>;
@@ -73,6 +77,16 @@ export function EquipmentItemPage({ id }: { id: string }) {
               <dt>Removed as lost</dt><dd>{item.quantityLost}</dd>
             </dl>
             <p className="muted" style={{ marginTop: 10, fontSize: ".84rem" }}>Damaged and lost units are taken off the count and logged against this batch.</p>
+            <h2 style={{ marginTop: 16 }}>Condition, unit by unit</h2>
+            <div className="row" style={{ flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
+              {CONDITIONS.map((c) => {
+                const n = item.conditionBreakdown?.[c] ?? 0;
+                if (!n) return null;
+                return <span key={c} className="badge">{n} {c}</span>;
+              })}
+            </div>
+            <p className="muted" style={{ fontSize: ".84rem" }}>{Object.keys(item.conditionBreakdown ?? {}).length > 1 ? "Not every unit in this batch is in the same condition." : "Every unit in this batch is currently in the same condition."}</p>
+            <button className="btn small ghost" style={{ marginTop: 8 }} onClick={() => setSplitting(true)}>Split condition by unit…</button>
           </section>
         ) : (
           <section className="glass panel">
@@ -167,7 +181,37 @@ export function EquipmentItemPage({ id }: { id: string }) {
         )}
       </section>
       {actions.modals}
+      {splitting && <ConditionSplitModal item={item} onClose={() => setSplitting(false)} />}
     </div>
+  );
+}
+
+/** Lets crew say exactly how many units of a batch are in each condition, for example 8 Good, 2 Fair. */
+function ConditionSplitModal({ item, onClose }: { item: EquipmentItem; onClose: () => void }) {
+  const { actor, attempt } = useApp();
+  const [counts, setCounts] = useState<Record<EquipCondition, string>>(() => {
+    const out = {} as Record<EquipCondition, string>;
+    for (const c of CONDITIONS) out[c] = String(item.conditionBreakdown?.[c] ?? 0);
+    return out;
+  });
+  const total = CONDITIONS.reduce((n, c) => n + (Number(counts[c]) || 0), 0);
+  const save = () => {
+    const breakdown: Partial<Record<EquipCondition, number>> = {};
+    for (const c of CONDITIONS) breakdown[c] = Number(counts[c]) || 0;
+    if (attempt(() => setConditionBreakdown(actor, item.id, breakdown), "Saved")) onClose();
+  };
+  return (
+    <Modal title={`Split condition, ${item.name}`} onClose={onClose} actions={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={total !== item.quantityTotal} onClick={save}>Save</button></>}>
+      <div className="stack">
+        <p className="muted">How many of the {item.quantityTotal} units in this batch are in each condition. For example, if 2 of 12 cables have gone faulty, put 10 under Good and 2 under Fair.</p>
+        <div className="row" style={{ flexWrap: "wrap" }}>
+          {CONDITIONS.map((c) => (
+            <Field key={c} label={c}><input type="text" inputMode="numeric" value={counts[c]} onChange={(e) => setCounts((s) => ({ ...s, [c]: e.target.value.replace(/[^0-9]/g, "") }))} style={{ width: 80 }} /></Field>
+          ))}
+        </div>
+        <p className="muted" style={total !== item.quantityTotal ? { color: "var(--bad)" } : undefined}>{total} of {item.quantityTotal} accounted for{total !== item.quantityTotal ? ", these must add up exactly" : ""}.</p>
+      </div>
+    </Modal>
   );
 }
 

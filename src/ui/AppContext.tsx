@@ -55,6 +55,10 @@ interface Ctx {
   notifications: AppNote[];
   clearNotifications: () => void;
   printReport: (report: ReportDoc) => void;
+  /** A shareable URL to a screen (the current one by default). Anyone who opens it and has access lands there directly. */
+  shareLink: (r?: Route) => string;
+  /** Copies a shareable link to the clipboard and confirms with a toast. */
+  copyLink: (r?: Route) => Promise<void>;
 }
 
 export interface AppNote { id: number; title: string; body: string; at: string }
@@ -62,6 +66,7 @@ export interface AppNote { id: number; title: string; body: string; at: string }
 import type { ReportDoc } from "../services/reports";
 import { syncEvents } from "../data/remote";
 import { ReportView } from "./ReportView";
+import { encodeRoute, routeFromLocation, urlForRoute } from "./routeLink";
 
 const AppCtx = createContext<Ctx | null>(null);
 export const useApp = (): Ctx => {
@@ -71,7 +76,8 @@ export const useApp = (): Ctx => {
 };
 
 export function AppProvider({ actor, onLogout, children }: { actor: Actor; onLogout: () => void; children: ReactNode }) {
-  const [stack, setStack] = useState<Route[]>([{ n: "dashboard" }]);
+  // A link shared before signing in lands here once, right after login, instead of on the dashboard.
+  const [stack, setStack] = useState<Route[]>(() => { const r = routeFromLocation(); return [r ?? { n: "dashboard" }]; });
   const [toasts, setToasts] = useState<{ id: number; msg: string; kind: string }[]>([]);
   const [menuState, setMenuState] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
   const [confirmState, setConfirmState] = useState<(ConfirmOpts & { resolve: (v: boolean) => void }) | null>(null);
@@ -141,9 +147,30 @@ export function AppProvider({ actor, onLogout, children }: { actor: Actor; onLog
   }, [menuState]);
 
   const me = getPerson(actor.personId)!;
+  const route = stack[stack.length - 1];
+  // Keeps the address bar (and Copy Link) always pointed at the screen actually showing, without
+  // touching browser history: back and forward inside the app stay purely the in-app stack above.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const hash = `#${encodeRoute(route)}`;
+    if (window.location.hash !== hash) window.history.replaceState(null, "", hash);
+  }, [route]);
+  const shareLink = useCallback((r?: Route) => urlForRoute(r ?? route), [route]);
+  const copyLink = useCallback(
+    async (r?: Route) => {
+      const url = shareLink(r);
+      try {
+        await navigator.clipboard.writeText(url);
+        toast("Link copied. Anyone with access can open it to jump straight here.", "success");
+      } catch {
+        toast(url, "info");
+      }
+    },
+    [shareLink, toast],
+  );
   const value = useMemo<Ctx>(
-    () => ({ actor, me, route: stack[stack.length - 1], go, back, canBack: stack.length > 1, toast, attempt, confirm, menu, logout: onLogout, notify, notifications: notes, clearNotifications: () => setNotes([]), printReport }),
-    [actor, me, stack, go, back, toast, attempt, confirm, menu, onLogout, notify, notes, printReport],
+    () => ({ actor, me, route, go, back, canBack: stack.length > 1, toast, attempt, confirm, menu, logout: onLogout, notify, notifications: notes, clearNotifications: () => setNotes([]), printReport, shareLink, copyLink }),
+    [actor, me, route, stack, go, back, toast, attempt, confirm, menu, onLogout, notify, notes, printReport, shareLink, copyLink],
   );
 
   return (

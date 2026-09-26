@@ -6,7 +6,7 @@ import { CATEGORIES } from "../config/categories";
 import { MODULE_LABELS, ROLES, type ModuleKey } from "../config/roles";
 import { getReminders } from "../services/wrapped/content";
 import { relativeDays } from "../services/utils";
-import { IconBack, IconBell, IconCalendar, IconCam, IconChevron, IconDoc, IconDrive, IconFilm, IconGear, IconHome, IconLogout, IconMenu, IconMoon, IconSheet, IconSun, IconUsers } from "./Icons";
+import { IconBack, IconBell, IconCalendar, IconCam, IconChevron, IconDoc, IconDrive, IconFilm, IconGear, IconHome, IconLink, IconLogout, IconMenu, IconMoon, IconSheet, IconSun, IconUsers } from "./Icons";
 import { Logo } from "./Logo";
 import { useTheme } from "./theme";
 import { useApplyAppearance } from "./appearance";
@@ -75,7 +75,7 @@ function routeFor(m: ModuleKey): Route {
 }
 
 export function Shell() {
-  const { actor, me, route, go, back, canBack, menu, toast, logout, notifications, clearNotifications } = useApp();
+  const { actor, me, route, go, back, canBack, menu, toast, logout, notifications, clearNotifications, copyLink } = useApp();
   const db = useDb();
   const dockKey = `dof-dock-${actor.personId}`;
   const [wide, setWide] = useState(() => {
@@ -176,6 +176,7 @@ export function Shell() {
           <button className="icon-btn" onClick={back} disabled={!canBack} aria-label="Go back" title="Back"><IconBack /></button>
           <button className="icon-btn" onClick={toggle} aria-label={wide ? "Collapse menu" : "Expand menu"} title={wide ? "Collapse menu" : "Expand menu"}><IconMenu /></button>
           <div className="spacer" />
+          <button className="icon-btn no-print" onClick={() => void copyLink()} aria-label="Copy a link to this screen" title="Copy a link to this screen"><IconLink /></button>
           <div className="theme-toggle" role="group" aria-label="Colour mode">
             <button aria-pressed={theme === "light"} aria-label="Light mode" title="Light mode" onClick={() => setPref("light")}><IconSun /></button>
             <button aria-pressed={theme === "dark"} aria-label="Night mode" title="Night mode" onClick={() => setPref("dark")}><IconMoon /></button>

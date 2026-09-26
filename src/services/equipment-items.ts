@@ -1,7 +1,7 @@
 import type { Actor, Attachment, EquipCategoryKey, EquipCondition, EquipmentHistory, EquipmentItem, Manifest, TrackingType } from "../types";
 import { RuleError } from "../types";
 import { commit, getDb, nextCounter } from "../data/store";
-import { equipCategory } from "../config/equipment";
+import { CONDITIONS, equipCategory } from "../config/equipment";
 import { canView, getRecord } from "./access";
 import { logAudit } from "./audit";
 import { can, requireCan } from "./permissions";
@@ -27,6 +27,66 @@ export function projectLabel(actor: Actor, contentId: string): string {
 
 export const getItem = (id: string): EquipmentItem | undefined => getDb().equipment.find((e) => e.id === id);
 const isActive = (m: Manifest) => m.status === "assigned" || m.status === "checked-out";
+
+// ── Condition breakdown (aggregate/batch items only) ────────────
+// A batch has no unit identity, so "which one is faulty" is tracked as counts per condition
+// (for example 8 Good, 2 Fair) rather than by a specific physical unit.
+
+export type ConditionBreakdown = Partial<Record<EquipCondition, number>>;
+
+export const breakdownTotal = (bd: ConditionBreakdown): number => CONDITIONS.reduce((n, c) => n + (bd[c] ?? 0), 0);
+
+/** The worst condition with at least one unit in it, or null for an empty breakdown. */
+export function worstCondition(bd: ConditionBreakdown): EquipCondition | null {
+  for (let i = CONDITIONS.length - 1; i >= 0; i--) if ((bd[CONDITIONS[i]] ?? 0) > 0) return CONDITIONS[i];
+  return null;
+}
+
+/** Removes `n` units from a breakdown, taking from the worst condition present first. Used when units are damaged, lost, or a batch's quantity is reduced. */
+export function removeWorstFirst(bd: ConditionBreakdown, n: number): ConditionBreakdown {
+  const next = { ...bd };
+  let left = n;
+  for (let i = CONDITIONS.length - 1; i >= 0 && left > 0; i--) {
+    const c = CONDITIONS[i];
+    const have = next[c] ?? 0;
+    const take = Math.min(have, left);
+    if (take > 0) {
+      next[c] = have - take;
+      if (next[c] === 0) delete next[c];
+      left -= take;
+    }
+  }
+  return next;
+}
+
+/**
+ * Removes `n` units, preferring the given condition first (typically the condition they were checked
+ * out at), then whatever is worst for any remainder. Always removes exactly `n` when the breakdown
+ * holds at least that many, keeping the total exact rather than approximate.
+ */
+export function removeFromThenWorst(bd: ConditionBreakdown, first: EquipCondition, n: number): ConditionBreakdown {
+  const have = bd[first] ?? 0;
+  const take = Math.min(have, n);
+  let next = bd;
+  if (take > 0) {
+    next = { ...bd, [first]: have - take };
+    if (next[first] === 0) delete next[first];
+  }
+  const remaining = n - take;
+  return remaining > 0 ? removeWorstFirst(next, remaining) : next;
+}
+
+/** Adds `n` units to a breakdown, in the given condition (defaulting to the best condition present, or New for an empty breakdown). */
+export function addUnits(bd: ConditionBreakdown, n: number, into?: EquipCondition): ConditionBreakdown {
+  if (n <= 0) return bd;
+  const target = into ?? worstCondition(bd) ?? "New";
+  return { ...bd, [target]: (bd[target] ?? 0) + n };
+}
+
+export function applyConditionBreakdown(item: EquipmentItem, bd: ConditionBreakdown): void {
+  item.conditionBreakdown = bd;
+  item.condition = worstCondition(bd) ?? item.condition;
+}
 export const familyOf = (i: EquipmentItem): string => (i.itemFamily ? i.itemFamily.toUpperCase() : i.id);
 
 function hist(actor: Actor, equipmentId: string, kind: EquipmentHistory["kind"], detail: string, extra: { contentId?: string; manifestId?: string } = {}): void {
@@ -203,6 +263,7 @@ export function createItem(actor: Actor, input: ItemInput): EquipmentItem {
     purchaseDate: input.purchaseDate || null,
     vendor: input.vendor.trim(),
     condition: input.condition,
+    conditionBreakdown: input.trackingType === "aggregate" ? { [input.condition]: quantity } : null,
     packaging: input.packaging.trim(),
     accessories: input.accessories.trim(),
     info: input.info.trim(),
@@ -279,6 +340,7 @@ export function createSerializedUnits(actor: Actor, input: UnitsInput): Equipmen
     purchaseDate: input.purchaseDate || null,
     vendor: input.vendor.trim(),
     condition: input.condition,
+    conditionBreakdown: null,
     packaging: input.packaging.trim(),
     accessories: input.accessories.trim(),
     info: input.info.trim(),
@@ -297,13 +359,14 @@ export function createSerializedUnits(actor: Actor, input: UnitsInput): Equipmen
   return items;
 }
 
-export type ItemPatch = Partial<Pick<EquipmentItem, "name" | "make" | "model" | "vendor" | "packaging" | "accessories" | "info" | "unitCost" | "purchaseDate" | "serialNumber" | "unitLabel" | "condition" | "quantityTotal">>;
+export type ItemPatch = Partial<Pick<EquipmentItem, "name" | "make" | "model" | "vendor" | "packaging" | "accessories" | "info" | "unitCost" | "purchaseDate" | "serialNumber" | "unitLabel" | "condition" | "quantityTotal" | "category">>;
 
 export function updateItem(actor: Actor, id: string, patch: ItemPatch): EquipmentItem {
   requireGearAccess(actor);
   const item = getItem(id);
   if (!item) throw new RuleError("Item not found.");
   if (patch.name !== undefined && !patch.name.trim()) throw new RuleError("Name cannot be empty.");
+  if (patch.category !== undefined && !equipCategory(patch.category)) throw new RuleError("Choose a valid category.");
   if (patch.unitCost !== undefined && (!Number.isFinite(patch.unitCost) || patch.unitCost < 0)) throw new RuleError("Cost must be zero or more.");
   if (patch.serialNumber !== undefined && item.trackingType === "serialized") {
     const s = patch.serialNumber?.trim() ?? "";
@@ -326,9 +389,49 @@ export function updateItem(actor: Actor, id: string, patch: ItemPatch): Equipmen
   const changes: string[] = [];
   if (patch.condition && patch.condition !== item.condition) changes.push(`Condition ${item.condition} to ${patch.condition}`);
   if (patch.quantityTotal !== undefined && patch.quantityTotal !== item.quantityTotal) changes.push(`Count ${item.quantityTotal} to ${patch.quantityTotal}`);
+  if (patch.category && patch.category !== item.category) changes.push(`Category ${equipCategory(item.category).label} to ${equipCategory(patch.category).label}`);
+  const oldCondition = item.condition;
+  const oldQty = item.quantityTotal;
   Object.assign(item, patch);
+  if (item.trackingType === "aggregate") {
+    let bd: ConditionBreakdown = item.conditionBreakdown ?? {};
+    if (patch.condition !== undefined && patch.condition !== oldCondition) {
+      // Setting the condition on a batch resets it uniformly across every active unit.
+      // Use "Split condition by unit…" on the item page to give individual units their own condition again.
+      bd = { [item.condition]: item.quantityTotal };
+    } else if (patch.quantityTotal !== undefined && patch.quantityTotal !== oldQty) {
+      const delta = item.quantityTotal - oldQty;
+      bd = delta > 0 ? addUnits(bd, delta) : removeWorstFirst(bd, -delta);
+    }
+    applyConditionBreakdown(item, bd);
+  }
   hist(actor, id, "edited", changes.length ? changes.join(", ") : "Details updated");
   logAudit(actor, "update", "equipment", id, Object.keys(patch).join(", "));
+  commit();
+  return item;
+}
+
+/**
+ * Sets exactly how many active units of a batch are in each condition (for example 8 Good, 2 Fair).
+ * The counts must add up to the batch's current quantity. The item's single `condition` field is
+ * then kept as the worst condition present, so existing lists, badges and reports still make sense.
+ */
+export function setConditionBreakdown(actor: Actor, id: string, counts: ConditionBreakdown): EquipmentItem {
+  requireGearAccess(actor);
+  const item = getItem(id);
+  if (!item) throw new RuleError("Item not found.");
+  if (item.trackingType !== "aggregate") throw new RuleError("Only batches can split their condition by unit.");
+  const clean: ConditionBreakdown = {};
+  for (const c of CONDITIONS) {
+    const n = counts[c] ?? 0;
+    if (!Number.isInteger(n) || n < 0) throw new RuleError("Each condition's count must be zero or a whole number.");
+    if (n > 0) clean[c] = n;
+  }
+  const total = breakdownTotal(clean);
+  if (total !== item.quantityTotal) throw new RuleError(`Those counts add up to ${total}, but this batch has ${item.quantityTotal} units.`);
+  applyConditionBreakdown(item, clean);
+  hist(actor, id, "edited", `Condition split: ${CONDITIONS.filter((c) => clean[c]).map((c) => `${clean[c]} ${c}`).join(", ")}`);
+  logAudit(actor, "update", "equipment", id, "condition breakdown");
   commit();
   return item;
 }

@@ -13,19 +13,23 @@ export interface DriveUsage {
   freeGB: number;
   pct: number;
   otherGB: number;
-  projects: { contentId: string; gb: number; kinds: string[] }[];
+  // contentId is null for an entry recorded ahead of a real project; label then identifies it instead.
+  projects: { contentId: string | null; label: string; gb: number; kinds: string[] }[];
 }
 
 export function driveUsage(drive: Drive): DriveUsage {
   const rows = getDb().allocations.filter((a) => a.driveId === drive.id);
-  const by = new Map<string, { gb: number; kinds: Set<string> }>();
+  // Real projects group by Content ID (several entries can belong to one project); an entry with no
+  // project yet has no such grouping key, so it stands alone under its own allocation id.
+  const by = new Map<string, { contentId: string | null; label: string; gb: number; kinds: Set<string> }>();
   for (const a of rows) {
-    const cur = by.get(a.contentId) ?? { gb: 0, kinds: new Set<string>() };
+    const key = a.contentId ?? a.id;
+    const cur = by.get(key) ?? { contentId: a.contentId, label: a.label, gb: 0, kinds: new Set<string>() };
     cur.gb += a.sizeGB;
     cur.kinds.add(a.kind);
-    by.set(a.contentId, cur);
+    by.set(key, cur);
   }
-  const projects = [...by].map(([contentId, v]) => ({ contentId, gb: v.gb, kinds: [...v.kinds] })).sort((a, b) => b.gb - a.gb);
+  const projects = [...by.values()].map((v) => ({ contentId: v.contentId, label: v.label, gb: v.gb, kinds: [...v.kinds] })).sort((a, b) => b.gb - a.gb);
   const used = drive.otherUsedGB + projects.reduce((n, p) => n + p.gb, 0);
   return { drive, usedGB: used, freeGB: Math.max(0, drive.capacityGB - used), pct: drive.capacityGB ? (used / drive.capacityGB) * 100 : 0, otherGB: drive.otherUsedGB, projects };
 }

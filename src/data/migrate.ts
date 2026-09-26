@@ -1,4 +1,4 @@
-import type { ContentRecord, Database, DocRecord, DocRevision } from "../types";
+import type { ContentRecord, Database, DocRecord, DocRevision, DriveAllocation, EquipCondition, EquipmentItem } from "../types";
 import { MUSIC_STAGE_MAP, categoryOf } from "../config/categories";
 import { templateOf } from "../config/docTemplates";
 
@@ -70,7 +70,7 @@ export function upgradeToV3(db: Database): Database {
 export function upgradeToV4(db: Database): Database {
   const gone = new Set(db.records.filter((r) => r.archived).map((r) => r.contentId));
   if (gone.size) {
-    db.allocations = db.allocations.filter((a) => !gone.has(a.contentId));
+    db.allocations = db.allocations.filter((a) => a.contentId === null || !gone.has(a.contentId));
     for (const d of db.docs) if (gone.has(d.contentId)) d.archived = true;
     for (const m of db.manifests) {
       if (!gone.has(m.contentId) || m.status !== "assigned") continue;
@@ -250,5 +250,25 @@ export function upgradeToV12(db: Database): Database {
     for (const [from, to] of Object.entries(RENAME)) if (from in r.stageAssignees) { r.stageAssignees[to] = r.stageAssignees[from]; delete r.stageAssignees[from]; }
   }
   db.schemaVersion = 12;
+  return db;
+}
+
+/**
+ * Version 13:
+ *  - A batch of equipment (aggregate tracking) can have some units in one condition and some in
+ *    another, for example 8 Good cables and 2 Fair, instead of one condition for the whole batch.
+ *    Older batches get every active unit filed under the condition they already had.
+ *  - A drive allocation can be recorded with no Content ID yet (work that started before this
+ *    system, or before the project itself exists here), identified by its own id and a label
+ *    instead. Older allocations, which always had a real Content ID, get an empty label.
+ */
+export function upgradeToV13(db: Database): Database {
+  for (const item of db.equipment) {
+    const it = item as EquipmentItem & { conditionBreakdown?: Partial<Record<EquipCondition, number>> | null };
+    if (it.trackingType === "aggregate") it.conditionBreakdown ??= { [it.condition]: it.quantityTotal };
+    else it.conditionBreakdown ??= null;
+  }
+  for (const a of db.allocations) (a as DriveAllocation & { label?: string }).label ??= "";
+  db.schemaVersion = 13;
   return db;
 }

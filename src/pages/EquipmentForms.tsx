@@ -71,7 +71,7 @@ export function ItemFormModal({ item, likeItem, onClose, onSaved }: { item?: Equ
     const saved = attempt(() => {
       const unitCost = numOrNaN(cost === "" ? "0" : cost);
       if (editing) {
-        return [updateItem(actor, item!.id, { name, make, model, vendor, packaging, accessories, info, unitCost, purchaseDate: bought || null, condition, ...(item!.trackingType === "serialized" ? { serialNumber: serial, unitLabel } : { quantityTotal: Number(quantity) }) })];
+        return [updateItem(actor, item!.id, { name, make, model, category, vendor, packaging, accessories, info, unitCost, purchaseDate: bought || null, condition, ...(item!.trackingType === "serialized" ? { serialNumber: serial, unitLabel } : { quantityTotal: Number(quantity) }) })];
       }
       if (tracking === "serialized") {
         const rows = unitsToSubmit(units);
@@ -102,7 +102,11 @@ export function ItemFormModal({ item, likeItem, onClose, onSaved }: { item?: Equ
   return (
     <Modal title={editing ? `Edit ${item!.name}` : addingMore ? `Add another ${likeItem!.make} ${likeItem!.model}`.trim() : "Add equipment"} onClose={onClose} actions={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save}>{editing ? "Save changes" : "Add"}</button></>}>
       <div className="stack">
-        {!editing && (
+        {editing ? (
+          <Field label="Category">
+            <select value={category} onChange={(e) => setCategory(e.target.value as EquipCategoryKey)}>{EQUIP_CATEGORIES.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}</select>
+          </Field>
+        ) : (
           <>
             {!addingMore && (
               <>
@@ -175,6 +179,7 @@ export function ItemFormModal({ item, likeItem, onClose, onSaved }: { item?: Equ
         <Field label="Accessories included"><input type="text" value={accessories} onChange={(e) => setAccessories(e.target.value)} placeholder="Batteries, charger, cage" /></Field>
         <Field label="Additional information"><textarea value={info} onChange={(e) => setInfo(e.target.value)} /></Field>
         {!editing && <p className="muted">The asset code is generated when you save and never changes.</p>}
+        {editing && category !== item!.category && <p className="muted">The asset code, {item!.id}, keeps its original prefix even after moving categories.</p>}
       </div>
     </Modal>
   );
