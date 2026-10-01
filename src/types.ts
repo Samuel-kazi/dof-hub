@@ -26,6 +26,7 @@ export interface Person {
   photoUrl?: string | null; // profile photo, a data: URL. Falls back to colour-initials when not set.
   fontSize?: FontSize; // per-user: Small/Default/Large/XL
   density?: Density; // per-user: Comfortable/Compact
+  contactHidden?: boolean; // only in what one person is shown: their email, phone and equipment are private to them, so those fields are left empty
 }
 
 export type FontSize = "small" | "default" | "large" | "xl";

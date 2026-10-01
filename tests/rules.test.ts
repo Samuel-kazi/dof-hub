@@ -52,8 +52,9 @@ t("partner can comment only where flagged, cannot edit", () => {
 t("volunteer cannot comment", () => throwsRule(() => C.addComment(vol(), "DOF-SER-001", "hi"), /not comment/));
 t("volunteer contact details are redacted for crew and volunteers", () => {
   const v = P.getPerson("DOF-P-VOL-001")!;
-  assert.equal(redactPerson(crew2(), v).email, "Hidden");
-  assert.notEqual(redactPerson(hop(), v).email, "Hidden");
+  assert.deepEqual([redactPerson(crew2(), v).email, redactPerson(crew2(), v).contactHidden], ["", true]);
+  assert.equal(redactPerson(hop(), v).contactHidden, undefined);
+  assert.equal(redactPerson(hop(), v).email, v.email);
 });
 
 // Hierarchy

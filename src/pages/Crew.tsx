@@ -210,13 +210,13 @@ export function PersonPage({ id }: { id: string }) {
         <section className="glass panel">
           <h2>Profile</h2>
           <dl className="kv">
-            <dt>Email</dt><dd>{p.email || <span className="muted">None</span>}</dd>
-            <dt>Phone</dt><dd>{p.phone || <span className="muted">None</span>}</dd>
+            <dt>Email</dt><dd>{p.contactHidden ? <span className="muted">Hidden</span> : p.email || <span className="muted">None</span>}</dd>
+            <dt>Phone</dt><dd>{p.contactHidden ? <span className="muted">Hidden</span> : p.phone || <span className="muted">None</span>}</dd>
             <dt>Skills</dt><dd>{p.skills.join(", ") || <span className="muted">None listed</span>}</dd>
             {p.category === "CRW" && (<><dt>Equipment they know</dt><dd>{p.equipmentFamiliarity.join(", ") || <span className="muted">None listed</span>}</dd></>)}
             <dt>Joined</dt><dd>{fmtShort(p.createdAt)}</dd>
           </dl>
-          {p.email === "Hidden" && actor.personId !== p.personId && <p className="muted" style={{ marginTop: 10, fontSize: ".84rem" }}>Contact details are private to the Head of Production.</p>}
+          {p.contactHidden && actor.personId !== p.personId && <p className="muted" style={{ marginTop: 10, fontSize: ".84rem" }}>Contact details are private to the Head of Production.</p>}
         </section>
         {showLogin && isRemote() && <RemoteLoginPanel person={p} />}
         {showLogin && !isRemote() && <section className="glass panel">
@@ -306,15 +306,19 @@ function EditPersonModal({ person, onClose }: { person: Person; onClose: () => v
   const [familiar, setFamiliar] = useState(person.equipmentFamiliarity.join(", "));
   const split = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
   return (
-    <Modal title={`Edit ${person.name}`} onClose={onClose} actions={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={() => { if (attempt(() => updatePerson(actor, person.personId, { name, email, phone, skills: split(skills), equipmentFamiliarity: split(familiar) }), "Saved")) onClose(); }}>Save changes</button></>}>
+    <Modal title={`Edit ${person.name}`} onClose={onClose} actions={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={() => { if (attempt(() => updatePerson(actor, person.personId, person.contactHidden ? { name, skills: split(skills) } : { name, email, phone, skills: split(skills), equipmentFamiliarity: split(familiar) }), "Saved")) onClose(); }}>Save changes</button></>}>
       <div className="stack">
         <Field label="Full name"><input type="text" value={name} onChange={(e) => setName(e.target.value)} /></Field>
-        <div className="row">
-          <Field label="Email"><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
-          <Field label="Phone"><input type="text" value={phone} onChange={(e) => setPhone(e.target.value)} /></Field>
-        </div>
+        {person.contactHidden ? (
+          <p className="muted" style={{ fontSize: ".84rem" }}>Their email, phone and equipment are private to the Head of Production, so they cannot be changed here.</p>
+        ) : (
+          <div className="row">
+            <Field label="Email"><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
+            <Field label="Phone"><input type="text" value={phone} onChange={(e) => setPhone(e.target.value)} /></Field>
+          </div>
+        )}
         <Field label="Skills"><input type="text" value={skills} onChange={(e) => setSkills(e.target.value)} /></Field>
-        {person.category === "CRW" && <Field label="Equipment they know"><input type="text" value={familiar} onChange={(e) => setFamiliar(e.target.value)} /></Field>}
+        {person.category === "CRW" && !person.contactHidden && <Field label="Equipment they know"><input type="text" value={familiar} onChange={(e) => setFamiliar(e.target.value)} /></Field>}
       </div>
     </Modal>
   );

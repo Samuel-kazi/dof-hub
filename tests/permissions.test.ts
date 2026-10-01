@@ -102,9 +102,9 @@ t("login status can be given to a person or a role", () => {
 });
 t("volunteer contact details stay private until they are granted", () => {
   const v = getPerson("DOF-P-VOL-001")!;
-  assert.equal(redactPerson(crew2(), v).email, "Hidden");
+  assert.equal(redactPerson(crew2(), v).contactHidden, true);
   P.setRoleGrant(hop(), "CRW", "people.contacts", true);
-  assert.notEqual(redactPerson(crew2(), v).email, "Hidden");
+  assert.equal(redactPerson(crew2(), v).contactHidden, undefined);
 });
 t("taking away equipment access closes the module and the services", () => {
   assert.ok(P.modulesFor(crew2()).includes("equipment"));

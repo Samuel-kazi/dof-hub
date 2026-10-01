@@ -5,7 +5,7 @@ import { claimId } from "../data/ids";
 import { ROLES } from "../config/roles";
 import { cleanRoles } from "../config/projectRoles";
 import { requireCan, requireNotBeyond } from "./permissions";
-import { getRecord, isHop } from "./access";
+import { getRecord, isHop, redactPerson } from "./access";
 import { logAudit } from "./audit";
 import { pad, pickKeys, STORED_FILE, todayIso } from "./utils";
 
@@ -107,6 +107,8 @@ export function updatePerson(actor: Actor, personId: string, input: Partial<Pick
   const p = getPerson(personId);
   if (!p) throw new RuleError("Person not found.");
   if (p.category === "HOP" && !isHop(actor)) throw new RuleError("Only the Head of Production can change the Head of Production's details.");
+  // Details the actor is not allowed to see are not theirs to change either.
+  if (redactPerson(actor, p).contactHidden) { delete patch.email; delete patch.phone; delete patch.equipmentFamiliarity; }
   if (patch.name !== undefined && !patch.name.trim()) throw new RuleError("Enter a name.");
   Object.assign(p, patch);
   logAudit(actor, "update", "person", personId, Object.keys(patch).join(", "));

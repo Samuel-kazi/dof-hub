@@ -141,7 +141,7 @@ function Send() {
             {withDue.map(({ person, due }) => {
               const sent = alreadySent(person.personId, due);
               const last = lastSent(person.personId);
-              const hidden = person.email === "Hidden";
+              const hidden = !!person.contactHidden;
               return (
                 <div key={person.personId}>
                   <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 6 }}>

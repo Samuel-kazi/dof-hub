@@ -195,7 +195,7 @@ await t("crew see every project but not who has a login, and volunteers see only
   assert.ok(cs.people.filter((p: any) => p.personId !== "DOF-P-CRW-002").every((p: any) => p.hasLogin === false && p.username === undefined));
   assert.equal(cs.people.find((p: any) => p.personId === "DOF-P-CRW-002").username, "brian", "their own is shown to them");
   assert.deepEqual(cs.audit, []);
-  assert.ok(cs.people.some((p: any) => p.personId === "DOF-P-VOL-001" && p.email === "Hidden"));
+  assert.ok(cs.people.some((p: any) => p.personId === "DOF-P-VOL-001" && p.contactHidden === true && p.email === "" && p.phone === ""));
   const vs = (await vol.get("/api/state")).json.db;
   assert.ok(!vs.records.some((r: any) => r.contentId === "DOF-LIVE-001-D1")); assert.ok(vs.records.some((r: any) => r.contentId.startsWith("DOF-SER-001")));
   assert.deepEqual([vs.equipment, vs.manifests, vs.drives, vs.allocations], [[], [], [], []]);

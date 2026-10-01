@@ -166,6 +166,20 @@ await t("C2: 'Change system settings' cannot grant permissions", async () => {
   assert.equal(grant.status, 400);
 });
 
+await t("M5: someone who cannot see a person's contact details cannot overwrite them either", async () => {
+  const hop = await setupHop();
+  await hop.act("permissions.setPersonGrant", "DOF-P-CRW-002", "people.manage", true);
+  const brian = await loginFor(hop, "DOF-P-CRW-002", "brian");
+  const before = (await db(hop)).people.find((p: Json) => p.personId === "DOF-P-VOL-001");
+  const seen = (await db(brian)).people.find((p: Json) => p.personId === "DOF-P-VOL-001");
+  assert.deepEqual([seen.email, seen.phone, seen.contactHidden], ["", "", true], "nothing that looks like data is sent in its place");
+  // What the edit form used to send: the whole profile as shown, including the placeholders.
+  const r = await brian.act("people.updatePerson", "DOF-P-VOL-001", { name: "Joseph K.", email: "Hidden", phone: "Hidden", skills: [], equipmentFamiliarity: [] });
+  assert.equal(r.status, 200, JSON.stringify(r.json));
+  const after = (await db(hop)).people.find((p: Json) => p.personId === "DOF-P-VOL-001");
+  assert.deepEqual([after.name, after.email, after.phone], ["Joseph K.", before.email, before.phone]);
+});
+
 // ── C3: the sign-in lockout ──
 
 const guess = (c: Client, username = "kev") => c.post("/api/login", { username, password: `wrong guess ${Math.random()}` });
