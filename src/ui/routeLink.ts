@@ -35,6 +35,8 @@ export function encodeRoute(r: Route): string {
       return r.category ? `/pipeline/${seg(r.category)}` : "/pipeline";
     case "record":
       return `/record/${seg(r.id)}`;
+    case "session":
+      return `/session/${seg(r.id)}`;
     case "callsheets":
       return "/callsheets";
     case "callsheet":
@@ -84,6 +86,8 @@ export function decodeRoute(path: string): Route {
       return { n: "pipeline", ...(arg && CATEGORY_KEYS.has(arg) ? { category: arg as CategoryKey } : {}) };
     case "record":
       return arg ? { n: "record", id: arg } : { n: "dashboard" };
+    case "session":
+      return arg ? { n: "session", id: arg } : { n: "pipeline" };
     case "callsheets":
       return { n: "callsheets" };
     case "callsheet":

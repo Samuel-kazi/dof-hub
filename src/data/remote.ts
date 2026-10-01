@@ -1,4 +1,4 @@
-import type { Actor, Database, DocRevision, RoleCode } from "../types";
+import type { Actor, Database, DocRevision, RoleCode, ShareLink } from "../types";
 import { RuleError } from "../types";
 import { commit, getDb, setDb, setPersist } from "./store";
 import { setRpcSink, type Call } from "./rpc";
@@ -184,6 +184,21 @@ export async function loadDocHistory(docId: string): Promise<void> {
   const db = getDb();
   db.docRevisions = [...db.docRevisions.filter((x) => x.docId !== docId), ...r.revisions];
   commit(); // shows them; outside an action, so nothing is sent to the server
+}
+
+/**
+ * Makes a share link. Only the server makes share tokens, so this is a request of its own rather than a change
+ * replayed from the screen. Earlier changes are sent first, and the new link shows as soon as it is made.
+ */
+export async function createShareLinkRemote(
+  episodeId: string,
+  note: string,
+  replaces: string | null,
+): Promise<{ url: string; link: ShareLink }> {
+  await whenSynced();
+  const r = await api.post<{ url: string; link: ShareLink }>("/api/share-links", { episodeId, note, replaces });
+  await refresh(true);
+  return r;
 }
 
 export async function hydrate(): Promise<void> {

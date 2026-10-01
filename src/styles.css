@@ -2431,3 +2431,140 @@ button.link:hover {
   line-height: 1.6;
   resize: vertical;
 }
+
+/* ── The five-stage workflow's screens (src/pages/workflow/) ── */
+.wf-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.wf-head > h2 {
+  flex: 1;
+  margin: 0;
+}
+.wf-chips {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.wf-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.wf-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+.wf-group {
+  margin: 10px 0 2px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+}
+.wf-note {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.wf-auto {
+  font-size: 0.84rem;
+}
+.wf-missing,
+.wf-warnings {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+.wf-missing li {
+  color: var(--ink-2);
+}
+.wf-warnings li {
+  color: var(--warn);
+}
+.wf-error {
+  color: var(--bad);
+}
+.wf-card {
+  border: 1px solid var(--glass-line);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.wf-x {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0 0 0 6px;
+  font-size: 1rem;
+  line-height: 1;
+}
+/* Wide tables scroll inside their panel, so the page never scrolls sideways on a phone. */
+.wf-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.wf-table td {
+  vertical-align: top;
+}
+.wf-table input,
+.wf-table select,
+.wf-table textarea {
+  min-width: 90px;
+  width: 100%;
+}
+.wf-table textarea {
+  min-width: 200px;
+  min-height: 2.6em;
+}
+.wf-section > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+.wf-section > summary::-webkit-details-marker {
+  display: none;
+}
+.wf-section > summary h2 {
+  flex: 1;
+  margin: 0;
+}
+.wf-section[open] > summary {
+  margin-bottom: 12px;
+}
+
+/* Phones: the top bar keeps its buttons in reach without pushing the page sideways. The person's name is
+   still on the avatar's chip on wider screens and in Settings. */
+@media (max-width: 600px) {
+  .topbar {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 10px 12px 4px;
+  }
+  .topbar .icon-btn {
+    width: 38px;
+    height: 38px;
+  }
+  .user-chip {
+    padding: 3px;
+  }
+  .user-chip > div {
+    display: none;
+  }
+}
+/* A project's stage tabs scroll on a narrow screen rather than being cut off. */
+.wf-tabs {
+  max-width: 100%;
+  overflow-x: auto;
+}

@@ -49,6 +49,31 @@ as before.
 - The earlier pipeline's actions refuse workflow records. A live recording split into a workflow season becomes its
   next episode. A new Devotional no longer gets a producer hard-coded into the app.
 
+**Phase 3: the screens**
+- Adding a series, devotion or documentary now starts it in the workflow: a series asks its kind (podcast,
+  testimonial, sermon) and starts with Season 1; a documentary asks whether DOF makes it or it was pitched. A
+  workflow series adds later seasons the same way. Live Shows and Music add as before.
+- A project's page shows where it stands (worked out from its sessions and episodes) and has four tabs:
+  - Development: the form drawn section by section from `src/config/devForms.ts`, each with what is still missing;
+    the planned episodes; the six criteria; the pitch and outline review checkpoints with their reviewers; the
+    review window and the decision (Decline and Advice only ask for a reason and a confirmation); the show producer;
+    the handoff checklist; and the gate with its Done button.
+  - Pre-production: the roles, each chosen from the crew list (hosts and guests may also be outside it), the
+    project's checklist, a DOF-made documentary's second greenlight, and the sessions.
+  - Sessions, and Episodes: the episode tracker, with each episode's stage, reviews, review link and share link.
+- A session's page: the recording day (date, venue, episodes, guests, crew and contacts), the call sheet made from
+  the Call Sheet module and its gear, the rehearsal checklist, the run sheet, the session log (episode, guest,
+  status, notes for post production), the wrap checklist, the daily log, and Start recording, Close session and
+  send to post production, and Reopen, each behind its gate and a confirmation.
+- An episode's page: production notes, the editor, review and final file links (web links only, refused on screen
+  as you type), the rough cut and final reviews (sending back asks for a reason), the post checklist, the release
+  plan, distribution, publishing, learning notes against the brief's success measures, and share links: made,
+  copied, revoked and made again on the hosted site; the hosted file's own link copied in the desktop app.
+- Shared pieces: one Crew dropdown, a checklist with notes, a gate panel listing what is missing, and links that
+  open in the person's own browser with no access back to the app (the desktop app uses Tauri's opener plugin).
+- A call sheet made for a session lists the session's episodes and guests.
+- On a phone, the top bar no longer pushes every page sideways.
+
 ## v20: security and reliability fixes from the October 2026 code review
 
 Everything here is behind the scenes: screens look and work as before, with a few clearer messages.

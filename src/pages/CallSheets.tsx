@@ -341,6 +341,9 @@ export function CallSheetPage({ id }: { id: string }) {
     (p) => p.status === "active" && projectMemberIds.has(p.personId) && (p.category === "CRW" || p.category === "VOL"),
   );
   const comments = getComments(cs.contentId, cs.id);
+  // A sheet made for a recording session lists the episodes planned for it (the five-stage workflow).
+  const session = db.recordingSessions.find((s) => s.callSheetId === cs.id);
+  const sessionRows = session ? db.sessionLogEntries.filter((e) => e.sessionId === session.id) : [];
 
   const save = () => {
     if (!draft) return;
@@ -434,6 +437,38 @@ export function CallSheetPage({ id }: { id: string }) {
             {[...new Set(clashes.map((c) => `${nameOf(c.personId)} is also on ${c.otherSheet.title}`))].join("; ")}
           </div>
         </div>
+      )}
+
+      {session && (
+        <section className="glass panel" aria-label="Recording session">
+          <div className="wf-head">
+            <h2>Recording session {session.id}</h2>
+            <button className="btn small" onClick={() => go({ n: "session", id: session.id })}>
+              Open the session
+            </button>
+          </div>
+          {session.scheduledDate !== cs.date && (
+            <div className="banner warn">
+              The session is on {session.scheduledDate ? fmtDate(session.scheduledDate) : "no date yet"}, but this sheet is for{" "}
+              {fmtDate(cs.date)}.
+            </div>
+          )}
+          {sessionRows.length === 0 ? (
+            <p className="muted">No episodes are planned for the session yet.</p>
+          ) : (
+            <ul>
+              {sessionRows.map((r) => {
+                const planned = db.plannedEpisodes.find((p) => p.id === r.plannedEpisodeId);
+                return (
+                  <li key={r.id}>
+                    <span className="cid">{planned?.id ?? "Item"}</span> {planned?.workingTitle ?? r.itemLabel}
+                    {r.guest ? `, with ${r.guest}` : ""}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
       )}
 
       <section className="glass panel">

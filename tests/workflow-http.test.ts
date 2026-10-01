@@ -41,7 +41,7 @@ const t = async (name: string, fn: () => Promise<void>) => {
   }
 };
 
-type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+type Json = Record<string, any>;
 class Client {
   cookie = "";
   async call(

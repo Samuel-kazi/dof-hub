@@ -7,6 +7,9 @@ import { useApp } from "../ui/AppContext";
 import { Modal } from "../ui/Modal";
 import { Field } from "../ui/parts";
 import { createChildRecord, createRecord, childKindFor, updateRecord } from "../services/wrapped/content";
+import { createWorkflowProject } from "../services/wrapped/workflow";
+import { FORM_TYPES, SERIES_TYPES, isWorkflowCategory } from "../config/workflow";
+import type { FormType, SeriesType } from "../types";
 
 // Assigning someone also attaches them to the project (see ensureMember in the content service).
 function assigneeOptions() {
@@ -35,16 +38,38 @@ export function NewRecordModal({
   const [level, setLevel] = useState<ProductionLevel | null>(null);
   const [showStart, setShowStart] = useState("");
   const [showEnd, setShowEnd] = useState("");
+  const [seriesType, setSeriesType] = useState<SeriesType | "">("");
+  const [docKind, setDocKind] = useState<FormType | "">("");
 
+  // Series, devotions and documentaries start in Development, in the five-stage workflow (src/config/workflow.ts).
+  const workflowSeason = !!parent?.seriesType;
+  const workflow = workflowSeason || (!parent && isWorkflowCategory(cat));
   const cfg = categoryOf(cat);
   const kind = parent ? childKindFor(parent) : null;
   const willUsePipeline = parent ? parent.hierarchyLevel + 1 === cfg.leafLevel : cfg.leafLevel === 0;
-  const hasShowDates = !parent && (cat === "series" || cat === "live");
+  const hasShowDates = !parent && cat === "live";
   const liveShow = !parent && cat === "live";
   const heading = parent ? `Add ${kind?.toLowerCase()} to ${parent.title}` : `New ${cfg.singular.toLowerCase()}`;
   const options = assigneeOptions();
 
+  const saveWorkflow = () => {
+    const project = attempt(
+      () =>
+        createWorkflowProject(actor, {
+          category: cat as "series" | "devotional" | "documentary",
+          title,
+          seriesType: seriesType || null,
+          seriesId: workflowSeason ? parent!.contentId : null,
+          formType: cat === "documentary" ? docKind || null : null,
+          deadline: deadline || null,
+        }),
+      "Created. It starts in Development.",
+    );
+    if (project) onCreated(project);
+  };
+
   const save = () => {
+    if (workflow) return saveWorkflow();
     const input = {
       title,
       scheduledDate: scheduled || null,
@@ -89,16 +114,54 @@ export function NewRecordModal({
             </select>
           </Field>
         )}
-        <Field label="Title">
+        <Field label={workflowSeason ? "Season title (optional)" : cat === "series" && workflow ? "Series title" : "Title"}>
           <input
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             autoFocus
-            placeholder={parent ? `${kind} title` : "Project title"}
+            placeholder={workflowSeason ? "Season 2" : parent ? `${kind} title` : "Project title"}
           />
         </Field>
-        {!parent && cfg.supportsChildren && !liveShow && (
+        {workflow && (
+          <>
+            {cat === "series" && !workflowSeason && (
+              <Field label="Kind of series">
+                <select value={seriesType} onChange={(e) => setSeriesType(e.target.value as SeriesType | "")}>
+                  <option value="">Choose…</option>
+                  {SERIES_TYPES.map((t) => (
+                    <option key={t.key} value={t.key}>
+                      {t.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
+            {cat === "documentary" && (
+              <Field label="Who is making it">
+                <select value={docKind} onChange={(e) => setDocKind(e.target.value as FormType | "")}>
+                  <option value="">Choose…</option>
+                  {FORM_TYPES.filter((f) => f.category === "documentary").map((f) => (
+                    <option key={f.key} value={f.key}>
+                      {f.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
+            <Field label="Publish date">
+              <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
+            </Field>
+            <p className="muted">
+              {cat === "series"
+                ? "Each season is its own project. It starts in Development with its form, planned episodes and greenlight; episodes are made when recording sessions close."
+                : cat === "devotional"
+                  ? "One guest's five-day sharing: five episodes, Day 1 to Day 5, recorded in one session. It starts in Development."
+                  : "One film, unless it is planned in several parts. It starts in Development."}
+            </p>
+          </>
+        )}
+        {!workflow && !parent && cfg.supportsChildren && !liveShow && (
           <p className="muted">
             {cfg.label} projects hold {cfg.childLevelLabel?.toLowerCase()}s and {cfg.grandchildLevelLabel?.toLowerCase()}s. The{" "}
             {cfg.grandchildLevelLabel?.toLowerCase()}s move through the pipeline.
@@ -120,17 +183,19 @@ export function NewRecordModal({
             single day. Leave the dates empty to add days later.
           </p>
         )}
-        <div className="row">
-          {willUsePipeline && (
-            <Field label={shootDateLabel(cat)}>
-              <input type="date" value={scheduled} onChange={(e) => setScheduled(e.target.value)} />
+        {!workflow && (
+          <div className="row">
+            {willUsePipeline && (
+              <Field label={shootDateLabel(cat)}>
+                <input type="date" value={scheduled} onChange={(e) => setScheduled(e.target.value)} />
+              </Field>
+            )}
+            <Field label="Publish date">
+              <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
             </Field>
-          )}
-          <Field label="Publish date">
-            <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
-          </Field>
-        </div>
-        {willUsePipeline && (
+          </div>
+        )}
+        {!workflow && willUsePipeline && (
           <Field label="Responsible person">
             <select value={assignee} onChange={(e) => setAssignee(e.target.value)}>
               <option value="">Unassigned</option>
@@ -143,9 +208,11 @@ export function NewRecordModal({
           </Field>
         )}
         {cat === "live" && (liveShow || willUsePipeline) && <LevelField value={level} onChange={setLevel} />}
-        <Field label="Notes">
-          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
-        </Field>
+        {!workflow && (
+          <Field label="Notes">
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
+          </Field>
+        )}
       </div>
     </Modal>
   );

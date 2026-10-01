@@ -38,6 +38,9 @@ import { RecordExtras } from "./RecordExtras";
 import { RecordDetails } from "./RecordDetails";
 import { CastPanel } from "./CastPanel";
 import { LinksPanel, DevotionalPanel, PostProductionPanel, StageChecklist, StagePlan, StrikePlanPanel } from "./StagePanel";
+import { WorkflowProjectPage } from "./workflow/ProjectPage";
+import { EpisodePage } from "./workflow/EpisodePage";
+import { projectSummary, type Episode, type Project } from "../services/wrapped/workflow";
 
 export function RecordPage({ id }: { id: string }) {
   const { actor, go, back, attempt, confirm, toast } = useApp();
@@ -54,6 +57,13 @@ export function RecordPage({ id }: { id: string }) {
         <Empty>This record does not exist or is not part of a project you are attached to.</Empty>
       </div>
     );
+
+  // The five-stage workflow's projects and episodes have pages of their own.
+  if (rec.workflow) return <WorkflowProjectPage project={rec as Project} />;
+  if (rec.episode && rec.parentId) {
+    const project = getRecord(rec.parentId);
+    if (project?.workflow) return <EpisodePage ep={rec as Episode} project={project as Project} />;
+  }
 
   const cfg = categoryOf(rec.category);
   const write = canWrite(actor, rec);
@@ -290,7 +300,9 @@ export function RecordPage({ id }: { id: string }) {
                     {c.category === "live" && c.productionLevel && (
                       <span className="badge accent">{productionLabel(c.productionLevel)}</span>
                     )}
-                    {r ? (
+                    {c.workflow ? (
+                      <span className="badge accent">{projectSummary(c as Project).stage}</span>
+                    ) : r ? (
                       <span className="badge">
                         {r.complete} of {r.total} complete
                       </span>

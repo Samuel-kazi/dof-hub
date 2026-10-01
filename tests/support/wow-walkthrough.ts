@@ -13,7 +13,7 @@ import { DEV_FORMS, type FieldDef } from "../../src/config/devForms";
 import { CHECKLISTS, CRITERIA } from "../../src/config/workflow";
 import { addDaysIso, todayIso } from "../../src/services/utils";
 
-export type Call = (name: string, ...args: unknown[]) => Promise<any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+export type Call = (name: string, ...args: unknown[]) => Promise<any>;
 export type Read = () => Promise<Database>;
 
 export const PRODUCER = "DOF-P-CRW-004";
