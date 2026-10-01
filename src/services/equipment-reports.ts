@@ -72,6 +72,12 @@ export function groupSerializedByModel(items: EquipmentItem[]): Family[] {
 
 // ── History and incidents ───────────────────────────────────
 
-export const itemHistory = (id: string): EquipmentHistory[] => getDb().equipmentHistory.filter((h) => h.equipmentId === id).sort((a, b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id));
+/** Newest first. Entries made in the same moment keep the order they were added in, newest first. */
+export const itemHistory = (id: string): EquipmentHistory[] =>
+  getDb()
+    .equipmentHistory.map((h, n) => ({ h, n }))
+    .filter(({ h }) => h.equipmentId === id)
+    .sort((a, b) => b.h.at.localeCompare(a.h.at) || b.n - a.n)
+    .map(({ h }) => h);
 export const itemIncidents = (id: string): Incident[] => getDb().incidents.filter((i) => i.equipmentId === id).sort((a, b) => b.at.localeCompare(a.at));
 export const allIncidents = (): Incident[] => [...getDb().incidents].sort((a, b) => b.at.localeCompare(a.at));
