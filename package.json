@@ -12,6 +12,7 @@
     "icons": "tauri icon brand/app-icon.png",
     "test": "node scripts/run-tests.mjs",
     "gen": "node scripts/gen-wrapped.mjs",
+    "db:upgrade": "tsx scripts/db-upgrade.ts",
     "gen:check": "node scripts/check-gen-wrapped.mjs",
     "build:server": "node scripts/build-server.mjs",
     "dev:server": "node scripts/dev-server.mjs",

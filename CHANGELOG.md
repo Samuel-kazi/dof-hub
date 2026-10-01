@@ -2,6 +2,31 @@
 
 What changed in each version, newest first. How to deploy is in GO-LIVE.md.
 
+## Unreleased: the five-stage workflow for series, devotions and documentaries
+
+Being built in phases. Nothing on screen changes yet: Live Shows and Music, and every existing project, work exactly
+as before.
+
+**Phase 1: the data** (data version 15)
+- New lists for the workflow: development forms, planned episodes, project roles, workflow checklists, recording
+  sessions, session logs, theological review checkpoints and share links. Every record gains three empty fields:
+  series type, project workflow and episode. All of it starts empty. Existing projects are not moved into the
+  workflow; that is a later, separate step with a dry run.
+- The workflow's stages, form types, roles and checklists are set in one place, `src/config/workflow.ts`.
+- Sessions, planned episodes and episodes are numbered from the project's Content ID: `DOF-SER-001-S1-R01`,
+  `-P01`, `-E01`. Codes never change on rename.
+- The data keeps its own rules. Uniqueness (one episode per number per project, one person per role, one log row
+  per episode per session, one use of each share token, and others) is enforced by MongoDB itself with unique
+  indexes, and by the in-memory store the same way. Every save also checks that nothing points at something that
+  does not exist. A change that breaks a rule is refused whole.
+- Changes are all or nothing in the browser and desktop app too: if one fails part way, nothing of it remains.
+- Dates are Nairobi dates wherever the code runs. Before, stage deadlines made between midnight and 03:00 landed a
+  day early, and the server (on UTC) thought it was still yesterday until 03:00.
+- Upgrading saved data keeps a copy first: `hub_items_before_v15` and `hub_meta_before_v15` in MongoDB, and
+  `dof-hub-db-before-v15` in the desktop app and demo. `npm run db:upgrade` shows what the upgrade will do without
+  writing anything; add `-- --apply` to do it.
+- Sample data for the workflow, including the "Whispers of Why" season used by the tests: `src/data/seedWorkflow.ts`.
+
 ## v20: security and reliability fixes from the October 2026 code review
 
 Everything here is behind the scenes: screens look and work as before, with a few clearer messages.

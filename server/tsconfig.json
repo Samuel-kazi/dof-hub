@@ -13,5 +13,5 @@
     "isolatedModules": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["./**/*.ts", "../src/**/*.ts", "../src/**/*.tsx"]
+  "include": ["./**/*.ts", "../src/**/*.ts", "../src/**/*.tsx", "../scripts/db-upgrade.ts"]
 }

@@ -1,6 +1,7 @@
 import type { CategoryKey, ContentRecord, Database } from "../types";
 import { ConflictError } from "../types";
 import { categoryOf } from "../config/categories";
+import { EPISODE_TOKEN, PLANNED_TOKEN, SESSION_TOKEN } from "../config/workflow";
 
 // How new IDs are made, so that the browser and the server always agree on them.
 //
@@ -123,4 +124,35 @@ export function syncRecordCounters(db: Database): void {
     const parent = r.parentId ? byId.get(r.parentId) : undefined;
     if (parent) raise(childCounter(parent.contentId), childNumber(r.contentId, parent));
   }
+}
+
+// ── The five-stage workflow ──────────────────────────────────
+// A project keeps its Content ID. Its recording sessions, planned episodes and episodes add a suffix with a
+// number of at least two digits: DOF-SER-001-S1-R01, DOF-SER-001-S1-P01, DOF-SER-001-S1-E01. Codes never change,
+// whatever the project or episode is renamed to.
+
+const two = (n: number): string => String(n).padStart(2, "0");
+export const sessionCode = (projectId: string, n: number): string => `${projectId}-${SESSION_TOKEN}${two(n)}`;
+export const plannedEpisodeId = (projectId: string, n: number): string => `${projectId}-${PLANNED_TOKEN}${two(n)}`;
+export const episodeCode = (projectId: string, n: number): string => `${projectId}-${EPISODE_TOKEN}${two(n)}`;
+
+export const sessionCounter = (projectId: string): string => `session:${projectId}`;
+export const plannedCounter = (projectId: string): string => `planned:${projectId}`;
+/** Episodes count under the same counter as the project's other children, so they continue after any made before the workflow. */
+export const episodeCounter = (projectId: string): string => childCounter(projectId);
+
+/** The number at the end of a code made by the functions above, or NaN. */
+export const codeNumber = (code: string, projectId: string, token: string): number => {
+  const prefix = `${projectId}-${token}`;
+  return code.startsWith(prefix) && /^\d+$/.test(code.slice(prefix.length)) ? parseInt(code.slice(prefix.length), 10) : NaN;
+};
+
+/** Raises the workflow's counters to at least the highest number already used, so no code is ever given twice. */
+export function syncWorkflowCounters(db: Database): void {
+  const raise = (key: string, n: number) => {
+    if (!Number.isNaN(n) && n > (db.counters[key] ?? 0)) db.counters[key] = n;
+  };
+  for (const s of db.recordingSessions ?? []) raise(sessionCounter(s.contentId), s.sessionNumber);
+  for (const p of db.plannedEpisodes ?? []) raise(plannedCounter(p.contentId), p.episodeNumber);
+  for (const r of db.records) if (r.episode && r.parentId) raise(episodeCounter(r.parentId), r.episode.episodeNumber);
 }

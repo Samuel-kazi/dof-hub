@@ -37,6 +37,180 @@ var HttpError = class extends Error {
 // server/mongo.ts
 import { MongoClient } from "mongodb";
 
+// src/types.ts
+var RuleError = class extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "RuleError";
+  }
+};
+var ConflictError = class extends RuleError {
+  constructor(message = "Someone else changed this record while you were editing. Reload it and try again.") {
+    super(message);
+    this.name = "ConflictError";
+  }
+};
+
+// src/data/constraints.ts
+var WORKFLOW_PARTS = [
+  "developmentForms",
+  "plannedEpisodes",
+  "projectRoles",
+  "workflowChecklistItems",
+  "recordingSessions",
+  "sessionLogEntries",
+  "reviewCheckpoints",
+  "shareLinks"
+];
+var UNIQUE_RULES = [
+  { name: "development_form", part: "developmentForms", fields: ["contentId"], message: "This project already has a development form." },
+  {
+    name: "planned_episode_number",
+    part: "plannedEpisodes",
+    fields: ["contentId", "episodeNumber"],
+    message: "That episode number is already planned for this project."
+  },
+  {
+    name: "project_role",
+    part: "projectRoles",
+    fields: ["contentId", "roleKey"],
+    when: { field: "exclusive", is: true },
+    message: "Someone already has that role on this project."
+  },
+  {
+    name: "checklist_item",
+    part: "workflowChecklistItems",
+    fields: ["ownerId", "stage", "itemKey"],
+    message: "That checklist item already exists."
+  },
+  {
+    name: "session_number",
+    part: "recordingSessions",
+    fields: ["contentId", "sessionNumber"],
+    message: "That session number is already used in this project."
+  },
+  {
+    name: "session_log_episode",
+    part: "sessionLogEntries",
+    fields: ["sessionId", "plannedEpisodeId"],
+    when: { field: "plannedEpisodeId", is: "string" },
+    message: "That episode already has a row in this session's log."
+  },
+  {
+    name: "episode_number",
+    part: "records",
+    fields: ["parentId", "episode.episodeNumber"],
+    when: { field: "episode", is: "object" },
+    message: "That episode number is already used in this project."
+  },
+  {
+    name: "review_checkpoint",
+    part: "reviewCheckpoints",
+    fields: ["contentId", "episodeId", "checkpoint"],
+    message: "That review checkpoint already exists."
+  },
+  {
+    name: "share_token",
+    part: "shareLinks",
+    fields: ["token"],
+    when: { field: "token", is: "string" },
+    message: "That share link already exists. Make a new one."
+  }
+];
+function valueAt(el, path) {
+  let cur = el;
+  for (const key2 of path.split(".")) {
+    if (!cur || typeof cur !== "object") return void 0;
+    cur = cur[key2];
+  }
+  return cur;
+}
+var applies = (rule, el) => {
+  if (!rule.when) return true;
+  const v = valueAt(el, rule.when.field);
+  if (rule.when.is === true) return v === true;
+  if (rule.when.is === "object") return !!v && typeof v === "object" && !Array.isArray(v);
+  return typeof v === rule.when.is;
+};
+function uniqueViolations(part, elements) {
+  const out = [];
+  for (const rule of UNIQUE_RULES) {
+    if (rule.part !== part) continue;
+    const seen = /* @__PURE__ */ new Set();
+    for (const el of elements) {
+      if (!applies(rule, el)) continue;
+      const key2 = JSON.stringify(rule.fields.map((f) => valueAt(el, f) ?? null));
+      if (seen.has(key2)) {
+        out.push(rule.message);
+        break;
+      }
+      seen.add(key2);
+    }
+  }
+  return out;
+}
+function integrityProblems(db2) {
+  const out = [];
+  const parts = db2;
+  for (const part of [...WORKFLOW_PARTS, "records"]) out.push(...uniqueViolations(part, parts[part] ?? []));
+  const records = new Set(db2.records.map((r) => r.contentId));
+  const people = new Set(db2.people.map((p) => p.personId));
+  const sessions = new Map((db2.recordingSessions ?? []).map((s2) => [s2.id, s2]));
+  const planned = new Map((db2.plannedEpisodes ?? []).map((p) => [p.id, p]));
+  const sheets = new Set(db2.callSheets.map((c) => c.id));
+  const missing = (what, id2, from) => out.push(`${from} refers to ${what} ${id2}, which does not exist.`);
+  const project = (id2, from) => {
+    if (!records.has(id2)) missing("project", id2, from);
+  };
+  const person2 = (id2, from) => {
+    if (id2 !== null && id2 !== "system" && !people.has(id2)) missing("person", id2, from);
+  };
+  for (const f of db2.developmentForms ?? []) project(f.contentId, `Development form ${f.id}`);
+  for (const p of db2.plannedEpisodes ?? []) project(p.contentId, `Planned episode ${p.id}`);
+  for (const r of db2.projectRoles ?? []) {
+    project(r.contentId, `Role ${r.id}`);
+    person2(r.crewId, `Role ${r.id}`);
+    if (r.exclusive !== (r.roleKey !== "host_guest")) out.push(`Role ${r.id}: only hosts and guests may be held by several people.`);
+  }
+  for (const c of db2.workflowChecklistItems ?? []) {
+    const exists = c.ownerType === "session" ? sessions.has(c.ownerId) : records.has(c.ownerId);
+    if (!exists) missing(c.ownerType, c.ownerId, `Checklist item ${c.id}`);
+  }
+  for (const s2 of db2.recordingSessions ?? []) {
+    project(s2.contentId, `Session ${s2.id}`);
+    if (s2.callSheetId !== null && !sheets.has(s2.callSheetId)) missing("call sheet", s2.callSheetId, `Session ${s2.id}`);
+  }
+  for (const e of db2.sessionLogEntries ?? []) {
+    const s2 = sessions.get(e.sessionId);
+    if (!s2) missing("session", e.sessionId, `Log row ${e.id}`);
+    if (e.plannedEpisodeId !== null) {
+      const p = planned.get(e.plannedEpisodeId);
+      if (!p) missing("planned episode", e.plannedEpisodeId, `Log row ${e.id}`);
+      else if (s2 && p.contentId !== s2.contentId) out.push(`Log row ${e.id} is for an episode of a different project.`);
+    }
+  }
+  for (const r of db2.records) {
+    if (r.workflow) person2(r.workflow.showProducerId, `Project ${r.contentId}`);
+    if (!r.episode) continue;
+    const from = `Episode ${r.contentId}`;
+    if (r.episode.sourceSessionId !== null && !sessions.has(r.episode.sourceSessionId)) missing("session", r.episode.sourceSessionId, from);
+    if (r.episode.plannedEpisodeId !== null && !planned.has(r.episode.plannedEpisodeId))
+      missing("planned episode", r.episode.plannedEpisodeId, from);
+    person2(r.episode.editorId, from);
+  }
+  for (const c of db2.reviewCheckpoints ?? []) {
+    project(c.contentId, `Checkpoint ${c.id}`);
+    if (c.episodeId !== null && !records.has(c.episodeId)) missing("episode", c.episodeId, `Checkpoint ${c.id}`);
+    for (const id2 of c.reviewerIds) person2(id2, `Checkpoint ${c.id}`);
+  }
+  for (const l of db2.shareLinks ?? []) if (!records.has(l.episodeId)) missing("episode", l.episodeId, `Share link ${l.id}`);
+  return out;
+}
+function assertIntegrity(db2) {
+  const problems = integrityProblems(db2);
+  if (problems.length) throw new RuleError(problems[0]);
+}
+
 // server/layout.ts
 import { createHash } from "node:crypto";
 var KEYS = [
@@ -56,6 +230,15 @@ var KEYS = [
   "docs",
   "docRevisions",
   "outbox",
+  // The five-stage workflow (src/config/workflow.ts)
+  "developmentForms",
+  "plannedEpisodes",
+  "projectRoles",
+  "workflowChecklistItems",
+  "recordingSessions",
+  "sessionLogEntries",
+  "reviewCheckpoints",
+  "shareLinks",
   "settings",
   "counters"
 ];
@@ -215,6 +398,22 @@ var MongoAttempts = class {
     await this.col.deleteOne({ _id: key2 });
   }
 };
+function uniqueIndexFor(rule) {
+  const filter = { k: rule.part };
+  if (rule.when) filter[`d.${rule.when.field}`] = rule.when.is === true ? { $eq: true } : { $type: rule.when.is };
+  return {
+    keys: Object.fromEntries(rule.fields.map((f) => [`d.${f}`, 1])),
+    options: { name: `unique_${rule.name}`, unique: true, partialFilterExpression: filter }
+  };
+}
+function duplicateError(e) {
+  const err = e;
+  const text2 = String(err?.message ?? "");
+  if (err?.code !== 11e3 && err?.writeErrors?.[0]?.code !== 11e3 && !text2.includes("E11000")) return null;
+  const index = /index: (unique_\w+)/.exec(text2)?.[1];
+  const rule = UNIQUE_RULES.find((r) => `unique_${r.name}` === index);
+  return new RuleError(rule?.message ?? "That would make a duplicate. Reload and try again.");
+}
 var META = "meta";
 var LOCK = "upgrading";
 var LOCK_STALE_MS = 5 * 60 * 1e3;
@@ -277,10 +476,36 @@ var MongoState = class {
         for (let i = 0; i < ops.length; i += BATCH) await this.col.bulkWrite(ops.slice(i, i + BATCH), { session, ordered: true });
         revision = Number(m.revision);
       });
+    } catch (e) {
+      throw duplicateError(e) ?? e;
     } finally {
       await session.endSession();
     }
     return revision;
+  }
+  async count(key2) {
+    return this.col.countDocuments({ k: key2 });
+  }
+  /**
+   * Copies `hub_items` and `hub_meta` into `hub_items_<label>` and `hub_meta_<label>`. Documents already in the
+   * copy are kept as they are, so if several servers upgrade at once, the copy made before anything changed wins.
+   */
+  async backup(label) {
+    const copy = async (from, into) => {
+      try {
+        await from.aggregate([{ $merge: { into, on: "_id", whenMatched: "keepExisting", whenNotMatched: "insert" } }]).toArray();
+      } catch {
+        const docs = await from.find({}).toArray();
+        const ops = docs.map(({ _id, ...rest }) => ({
+          updateOne: { filter: { _id }, update: { $setOnInsert: rest }, upsert: true }
+        }));
+        for (let i = 0; i < ops.length; i += BATCH)
+          await this.db.collection(into).bulkWrite(ops.slice(i, i + BATCH), { ordered: false });
+      }
+    };
+    await copy(this.col, `hub_items_${label}`);
+    await copy(this.meta, `hub_meta_${label}`);
+    return `hub_items_${label} and hub_meta_${label}`;
   }
   async init(items, schemaVersion) {
     if (await this.head()) return false;
@@ -371,6 +596,18 @@ async function storeOn(client, dbName) {
     db2.collection("users").createIndex({ personId: 1 }).catch(() => void 0),
     db2.collection("hub_items").createIndex({ k: 1, o: 1 }).catch(() => void 0)
   ]);
+  const indexProblems = [];
+  await Promise.all(
+    UNIQUE_RULES.map(async (rule) => {
+      const { keys, options } = uniqueIndexFor(rule);
+      try {
+        await db2.collection("hub_items").createIndex(keys, options);
+      } catch (e) {
+        indexProblems.push(`${options.name}: ${e instanceof Error ? e.message : String(e)}`);
+        console.error(`Could not make the unique index ${options.name}`, e);
+      }
+    })
+  );
   return {
     /** Checks that saves can be made all-or-nothing, which the app relies on. */
     diagnose: async () => {
@@ -380,7 +617,7 @@ async function storeOn(client, dbName) {
           await db2.collection("diagnostics").insertOne({ _id: "probe", at: /* @__PURE__ */ new Date() }, { session: s2 });
           await db2.collection("diagnostics").deleteOne({ _id: "probe" }, { session: s2 });
         });
-        return { transactions: true };
+        return { transactions: true, uniqueIndexes: indexProblems.length ? indexProblems : true };
       } catch (e) {
         console.error("Transaction check failed", e);
         return { transactions: false, hint: e instanceof Error ? e.name : "unknown" };
@@ -414,20 +651,6 @@ ${dbName}`;
   return store2;
 }
 
-// src/types.ts
-var RuleError = class extends Error {
-  constructor(message) {
-    super(message);
-    this.name = "RuleError";
-  }
-};
-var ConflictError = class extends RuleError {
-  constructor(message = "Someone else changed this record while you were editing. Reload it and try again.") {
-    super(message);
-    this.name = "ConflictError";
-  }
-};
-
 // src/config/categories.ts
 var s = (name, requiredOutput, extra = {}) => ({
   name,
@@ -458,7 +681,14 @@ var CATEGORIES = [
       s("Delivered", "Final delivery file", { docs: ["analysis"] })
     ],
     footageStage: "Recording",
-    leafLevel: 2
+    leafLevel: 2,
+    workflow: {
+      projectLevel: 1,
+      projectLabel: "Season",
+      episodeLevel: 2,
+      episodeLabel: "Episode",
+      formTypes: ["podcast", "testimonial", "sermon"]
+    }
   },
   {
     key: "devotional",
@@ -481,7 +711,9 @@ var CATEGORIES = [
       s("Published", "Final delivery file", { docs: ["analysis"] })
     ],
     footageStage: "Recording",
-    leafLevel: 0
+    leafLevel: 0,
+    // One guest's five-day sharing: one project, five episodes (Day 1 to Day 5) recorded in one session.
+    workflow: { projectLevel: 0, projectLabel: "Devotion", episodeLevel: 1, episodeLabel: "Day", formTypes: ["devotion"] }
   },
   {
     key: "live",
@@ -505,7 +737,8 @@ var CATEGORIES = [
       s("Post Production", "Archive and clips exported", { docs: ["analysis"] })
     ],
     footageStage: "Show",
-    leafLevel: 1
+    leafLevel: 1,
+    workflow: null
   },
   {
     key: "documentary",
@@ -529,7 +762,15 @@ var CATEGORIES = [
       s("Delivered", "Final delivery file", { docs: ["analysis"] })
     ],
     footageStage: "Shooting",
-    leafLevel: 0
+    leafLevel: 0,
+    // One deliverable, the film, unless it is planned as several parts.
+    workflow: {
+      projectLevel: 0,
+      projectLabel: "Documentary",
+      episodeLevel: 1,
+      episodeLabel: "Part",
+      formTypes: ["documentary_dof", "documentary_pitched"]
+    }
   },
   {
     key: "music",
@@ -553,7 +794,8 @@ var CATEGORIES = [
       s("Publish", "Published, with final link", { docs: ["analysis"] })
     ],
     footageStage: "Recording",
-    leafLevel: 2
+    leafLevel: 2,
+    workflow: null
   },
   {
     key: "general",
@@ -572,7 +814,8 @@ var CATEGORIES = [
     // it stays out of the Pipeline board and Calendar (see Pipeline.tsx and calendarView.ts).
     stages: [s("In use", "")],
     footageStage: "In use",
-    leafLevel: 0
+    leafLevel: 0,
+    workflow: null
   }
 ];
 var categoryOf = (key2) => {
@@ -592,6 +835,155 @@ var MUSIC_STAGE_MAP = {
   Mixing: "Audio post-production",
   Mastering: "Audio post-production",
   Delivered: "Publish"
+};
+
+// src/config/workflow.ts
+var WORKFLOW_STAGES = [
+  {
+    name: "Development",
+    level: "project",
+    ledBy: "Proposer and DOF team",
+    gate: "Greenlight, with team message review"
+  },
+  {
+    name: "Pre-production",
+    level: "project",
+    ledBy: "Show producer",
+    gate: "Rehearsal passed, call sheet issued"
+  },
+  {
+    name: "Production",
+    level: "session",
+    ledBy: "Show producer",
+    gate: "Wrap checklist complete and session log filled"
+  },
+  {
+    name: "Post production",
+    level: "episode",
+    ledBy: "Editor",
+    gate: "Rough cut and final cut approved"
+  },
+  {
+    name: "Marketing and distribution",
+    level: "episode",
+    ledBy: "Post and distribution lead",
+    gate: "Release plan approved, episode published and logged"
+  }
+];
+var WORKFLOW_STAGE_NAMES = WORKFLOW_STAGES.map((s2) => s2.name);
+var OUTCOMES = ["Greenlight", "Revise and resubmit", "Hold", "Decline"];
+var FORM_TYPES = [
+  { key: "podcast", label: "Series: Podcast", category: "series", greenlights: 1, outcomes: OUTCOMES },
+  { key: "testimonial", label: "Series: Testimonial", category: "series", greenlights: 1, outcomes: OUTCOMES },
+  { key: "sermon", label: "Series: Sermon", category: "series", greenlights: 1, outcomes: OUTCOMES },
+  { key: "documentary_dof", label: "Documentary: DOF-made", category: "documentary", greenlights: 2, outcomes: OUTCOMES },
+  {
+    key: "documentary_pitched",
+    label: "Documentary: Pitched by others",
+    category: "documentary",
+    greenlights: 1,
+    outcomes: [...OUTCOMES, "Advice only"]
+  },
+  { key: "devotion", label: "Devotion", category: "devotional", greenlights: 1, outcomes: OUTCOMES }
+];
+var item = (key2, label, extra = {}) => ({
+  key: key2,
+  label,
+  required: true,
+  ...extra
+});
+var CHECKLISTS = {
+  /** Development, Handoff: ends when a producer is named and the project exists. */
+  handoff: {
+    owner: "project",
+    stage: "Development",
+    items: [
+      item("outline_locked", "Outline locked"),
+      item("owner_resources", "Owner and resource commitment confirmed"),
+      item("producer_named", "Show producer named", { auto: true }),
+      item("project_created", "Project created with its Content ID", { auto: true })
+    ]
+  },
+  /** Pre-production, for the whole project. */
+  preProject: {
+    owner: "project",
+    stage: "Pre-production",
+    items: [
+      item("roles_assigned", "Production roles assigned by the producer", { auto: true }),
+      item("outline_locked", "Outline locked"),
+      item("visual_plan", "Storyboarding and concept art: visual plan and episode rundown (framing, colours, graphics style, segments)"),
+      item("shot_list", "Shot list: which camera covers host, guest and wide, lenses, inserts, graphics, B-roll"),
+      item("set_design", "Set design: seating, backdrop, lighting, sound treatment, props, wardrobe")
+    ]
+  },
+  /** Pre-production, for each recording session. */
+  preSession: {
+    owner: "session",
+    stage: "Pre-production",
+    items: [
+      item("gear_selected", "Gear selected from the Equipment picker, with no unresolved conflict", { auto: true }),
+      item(
+        "technical_rehearsal",
+        "Technical rehearsal: audio levels, camera sync, colour match, storage and batteries, short mock recording"
+      ),
+      item("call_sheet_issued", "Call sheet issued", { auto: true })
+    ]
+  },
+  /** Production: the wrap checklist. Every item is required. */
+  wrap: {
+    owner: "session",
+    stage: "Production",
+    items: [
+      item("media_offloaded", "All cards and drives offloaded and backed up to a second location", { group: "Media" }),
+      item("files_checked", "Files checked: a few seconds played back from each camera and audio track", { group: "Media" }),
+      item("cards_labeled", "Cards labeled and stored in the project's folder", { group: "Media" }),
+      item("nothing_wiped", "Nothing formatted or wiped until the backup is confirmed", { group: "Media" }),
+      item("gear_counted", "All equipment counted against the call sheet", { group: "Gear" }),
+      item("batteries_faults", "Batteries on charge; damage or faults noted", { group: "Gear" }),
+      item("gear_returned", "Gear returned to storage", { group: "Gear" }),
+      item("set_struck", "Set struck and the space returned to how it was", { group: "Set" }),
+      item("props_returned", "Props and wardrobe returned", { group: "Set" }),
+      item("daily_log", "Daily log written: what was recorded, pickup timestamps, technical problems, who attended", { group: "Records" }),
+      item("continuity_notes", "Continuity notes handed to the editor", { group: "Records" }),
+      item("episode_status", "Episode status updated in the Hub", { group: "Records", auto: true }),
+      item("guests_thanked", "Guests thanked; follow-up noted (release forms, photos, next steps)", { group: "People" }),
+      item("crew_wrap_note", "Crew wrap-up note: what worked, what to change", { group: "People" })
+    ]
+  },
+  /** Post production, for each episode. The gates are the editor's "ready" and the two review checkpoints. */
+  post: {
+    owner: "episode",
+    stage: "Post production",
+    items: [
+      item("offload_check", "Offload check", { required: false }),
+      item("edit", "Edit", { required: false }),
+      item("audio_cleanup", "Audio clean-up", { required: false }),
+      item("rough_cut", "Rough cut", { required: false }),
+      item("final_cut", "Final cut", { required: false }),
+      item("story_lock", "Story lock", { required: false, group: "Finer steps (optional)" }),
+      item("picture_lock", "Picture lock", { required: false, group: "Finer steps (optional)" }),
+      item("color", "Color grade", { required: false, group: "Finer steps (optional)" }),
+      item("sound_mix", "Sound mix", { required: false, group: "Finer steps (optional)" }),
+      item("graphics", "Graphics", { required: false, group: "Finer steps (optional)" })
+    ]
+  },
+  /** Marketing and distribution, for each episode. The release plan items are required; publishing is tracked. */
+  release: {
+    owner: "episode",
+    stage: "Marketing and distribution",
+    items: [
+      item("episode_titles", "Episode titles", { group: "Release plan" }),
+      item("cover_art", "Cover art", { group: "Release plan" }),
+      item("short_clips", "Short clips", { group: "Release plan" }),
+      item("captions", "Captions", { group: "Release plan" }),
+      item("release_calendar", "Release calendar", { group: "Release plan" }),
+      item("upload", "Upload", { required: false, group: "Publishing" }),
+      item("schedule", "Schedule", { required: false, group: "Publishing" }),
+      item("publish", "Publish", { required: false, group: "Publishing" }),
+      item("log_links", "Log the links", { required: false, group: "Publishing" }),
+      item("early_numbers", "Review early listener numbers", { required: false, group: "Publishing" })
+    ]
+  }
 };
 
 // src/data/ids.ts
@@ -671,10 +1063,18 @@ function syncRecordCounters(db2) {
 import { useSyncExternalStore } from "react";
 
 // src/services/utils.ts
-var todayIso = () => {
-  const d = /* @__PURE__ */ new Date();
-  const p = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+var TIME_ZONE = "Africa/Nairobi";
+var NAIROBI_OFFSET = "+03:00";
+var nairobiDay = new Intl.DateTimeFormat("en-GB", { timeZone: TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" });
+var dateInNairobi = (at) => {
+  const parts = nairobiDay.formatToParts(at);
+  const part = (type) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+};
+var todayIso = () => dateInNairobi(/* @__PURE__ */ new Date());
+var addDaysIso = (iso, days) => {
+  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
 };
 var dayNumber = (iso) => {
   const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
@@ -682,8 +1082,7 @@ var dayNumber = (iso) => {
 };
 var daysUntil = (iso) => dayNumber(iso) - dayNumber(todayIso());
 var hoursUntilEndOfDay = (iso) => {
-  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
-  const end = new Date(y, m - 1, d, 23, 59, 59).getTime();
+  const end = Date.parse(`${iso.slice(0, 10)}T23:59:59${NAIROBI_OFFSET}`);
   return (end - Date.now()) / 36e5;
 };
 var fmtDate = (iso) => {
@@ -1206,12 +1605,7 @@ function fillTemplate(key2, answers) {
 }
 
 // src/data/seed.ts
-var isoDay = (offset = 0) => {
-  const d = /* @__PURE__ */ new Date();
-  d.setHours(12, 0, 0, 0);
-  d.setDate(d.getDate() + offset);
-  return d.toISOString().slice(0, 10);
-};
+var isoDay = (offset = 0) => addDaysIso(todayIso(), offset);
 var person = (personId, category2, name, skills, hasLogin) => ({
   personId,
   category: category2,
@@ -1280,7 +1674,10 @@ var rec = (i) => ({
   archived: false,
   version: 1,
   createdAt: isoDay(-30),
-  notes: i.notes ?? ""
+  notes: i.notes ?? "",
+  seriesType: null,
+  workflow: null,
+  episode: null
 });
 var loginEmail = (p) => {
   const n = parseInt(p.personId.slice(-3), 10);
@@ -1794,6 +2191,14 @@ function buildSeed() {
     docs,
     docRevisions,
     outbox: [],
+    developmentForms: [],
+    plannedEpisodes: [],
+    projectRoles: [],
+    workflowChecklistItems: [],
+    recordingSessions: [],
+    sessionLogEntries: [],
+    reviewCheckpoints: [],
+    shareLinks: [],
     ...gear,
     settings: {
       stageReminderHours: 24,
@@ -1824,7 +2229,7 @@ function remapMusic(r) {
   const newCurrent = MUSIC_STAGE_MAP[oldCurrent] ?? "Idea";
   const idx = stages.indexOf(newCurrent);
   const oldOutput = !!r.stageOutputs[oldCurrent];
-  const oldDue = r.stageDeadlines[oldCurrent] ?? r.deadline ?? (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+  const oldDue = r.stageDeadlines[oldCurrent] ?? r.deadline ?? todayIso();
   r.pipelineStage = newCurrent;
   r.stageOutputs = Object.fromEntries(stages.map((s2, i) => [s2, i < idx ? true : i === idx ? oldOutput : false]));
   r.stageDeadlines = Object.fromEntries(stages.map((s2, i) => [s2, i === idx ? oldDue : isoPlus(oldDue, (i - idx) * 4)]));
@@ -1921,7 +2326,7 @@ function upgradeToV4(db2) {
     for (const m of db2.manifests) if (m.callSheetId && droppedSheets.has(m.callSheetId)) m.callSheetId = null;
     const used = db2.drives.reduce((n, d) => n + d.otherUsedGB, 0) + db2.allocations.reduce((n, a) => n + a.sizeGB, 0);
     const capacity = db2.drives.reduce((n, d) => n + d.capacityGB, 0);
-    const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+    const today = todayIso();
     const snap = db2.snapshots.find((s2) => s2.date === today);
     if (snap) Object.assign(snap, { usedGB: used, capacityGB: capacity });
     else db2.snapshots.push({ date: today, usedGB: used, capacityGB: capacity });
@@ -2001,7 +2406,7 @@ function upgradeToV7(db2) {
   return db2;
 }
 function upgradeToV8(db2) {
-  for (const item of db2.equipment) item.unitLabel ??= null;
+  for (const item2 of db2.equipment) item2.unitLabel ??= null;
   db2.schemaVersion = 8;
   return db2;
 }
@@ -2083,8 +2488,8 @@ function upgradeToV12(db2) {
   return db2;
 }
 function upgradeToV13(db2) {
-  for (const item of db2.equipment) {
-    const it = item;
+  for (const item2 of db2.equipment) {
+    const it = item2;
     if (it.trackingType === "aggregate") it.conditionBreakdown ??= { [it.condition]: it.quantityTotal };
     else it.conditionBreakdown ??= null;
   }
@@ -2098,10 +2503,21 @@ function upgradeToV14(db2) {
   db2.schemaVersion = 14;
   return db2;
 }
+function upgradeToV15(db2) {
+  const parts = db2;
+  for (const k of WORKFLOW_PARTS) parts[k] ??= [];
+  for (const r of db2.records) {
+    r.seriesType ??= null;
+    r.workflow ??= null;
+    r.episode ??= null;
+  }
+  db2.schemaVersion = 15;
+  return db2;
+}
 
 // src/data/store.ts
 var KEY = "dof-hub-db";
-var SCHEMA_VERSION = 14;
+var SCHEMA_VERSION = 15;
 function migrate(old) {
   const gear = buildGearSeed();
   const next = {
@@ -2126,69 +2542,48 @@ function migrate(old) {
   next.manifests = next.manifests.filter((m) => next.records.some((r) => r.contentId === m.contentId));
   return next;
 }
+var UPGRADES = {
+  2: upgradeToV3,
+  3: upgradeToV4,
+  4: upgradeToV5,
+  5: upgradeToV6,
+  6: upgradeToV7,
+  7: upgradeToV8,
+  8: upgradeToV9,
+  9: upgradeToV10,
+  10: upgradeToV11,
+  11: upgradeToV12,
+  12: upgradeToV13,
+  13: upgradeToV14,
+  14: upgradeToV15
+};
 function upgradeDb(parsed) {
-  switch (parsed.schemaVersion) {
-    case SCHEMA_VERSION:
-      return parsed;
-    case 1:
-      return upgradeToV14(
-        upgradeToV13(
-          upgradeToV12(
-            upgradeToV11(
-              upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(migrate(parsed)))))))))
-            )
-          )
-        )
-      );
-    case 2:
-      return upgradeToV14(
-        upgradeToV13(
-          upgradeToV12(
-            upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(parsed)))))))))
-          )
-        )
-      );
-    case 3:
-      return upgradeToV14(
-        upgradeToV13(
-          upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(parsed)))))))))
-        )
-      );
-    case 4:
-      return upgradeToV14(
-        upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(parsed)))))))))
-      );
-    case 5:
-      return upgradeToV14(
-        upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(parsed))))))))
-      );
-    case 6:
-      return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(parsed))))))));
-    case 7:
-      return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(parsed)))))));
-    case 8:
-      return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(parsed))))));
-    case 9:
-      return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(parsed)))));
-    case 10:
-      return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(parsed))));
-    case 11:
-      return upgradeToV14(upgradeToV13(upgradeToV12(parsed)));
-    case 12:
-      return upgradeToV14(upgradeToV13(parsed));
-    case 13:
-      return upgradeToV14(parsed);
-    default:
-      return null;
+  let db2 = parsed.schemaVersion === 1 ? migrate(parsed) : parsed;
+  if (typeof db2.schemaVersion !== "number" || db2.schemaVersion < 2 || db2.schemaVersion > SCHEMA_VERSION) return null;
+  while (db2.schemaVersion < SCHEMA_VERSION) {
+    const from = db2.schemaVersion;
+    db2 = UPGRADES[from](db2);
+    if (db2.schemaVersion <= from) throw new Error(`The upgrade from version ${from} did not set the version it brings the data to.`);
   }
+  return db2;
 }
 var CURRENT_SCHEMA = SCHEMA_VERSION;
+function keepCopy(raw, label) {
+  try {
+    localStorage.setItem(`${KEY}-${label}`, raw);
+  } catch {
+    console.warn(`No room to keep a copy of the saved data (${label}).`);
+  }
+}
 function load() {
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) {
-      const up = upgradeDb(JSON.parse(raw));
+      const parsed = JSON.parse(raw);
+      if (parsed.schemaVersion !== SCHEMA_VERSION) keepCopy(raw, `before-v${SCHEMA_VERSION}`);
+      const up = upgradeDb(parsed);
       if (up) return up;
+      keepCopy(raw, "unreadable");
     }
   } catch {
   }
@@ -2205,19 +2600,30 @@ var setPersist = (on) => {
 };
 function setDb(next) {
   db = next;
+  if (rollback) committed = JSON.stringify(next);
   tick++;
   listeners.forEach((l) => l());
 }
+var rollback = false;
+var committed = null;
+var depth = 0;
+var dirty = false;
 function commit() {
+  if (depth > 0) dirty = true;
+  else save();
+}
+function save() {
   tick++;
-  if (persist) {
+  const json = persist || rollback ? JSON.stringify(db) : null;
+  if (persist && json !== null) {
     try {
-      localStorage.setItem(KEY, JSON.stringify(db));
+      localStorage.setItem(KEY, json);
       saveFailed = false;
     } catch {
       saveFailed = true;
     }
   }
+  if (rollback) committed = json;
   listeners.forEach((l) => l());
 }
 function nextCounter(name) {
@@ -2928,6 +3334,14 @@ function newDatabase(hop, withSamples) {
     docs: [],
     docRevisions: [],
     outbox: [],
+    developmentForms: [],
+    plannedEpisodes: [],
+    projectRoles: [],
+    workflowChecklistItems: [],
+    recordingSessions: [],
+    sessionLogEntries: [],
+    reviewCheckpoints: [],
+    shareLinks: [],
     counters: {},
     settings: { ...seed.settings, permissions: { roles: {}, people: {} } }
   };
@@ -2959,19 +3373,62 @@ async function current(store2) {
     if (!head) return null;
     const hit = kept.get(store2);
     if (hit && hit.head.revision === head.revision) return hit;
-    const base = build(head, await store2.state.items(loadedKeys()));
     if (head.schemaVersion === CURRENT_SCHEMA) {
+      const base = build(head, await store2.state.items(loadedKeys()));
       kept.set(store2, base);
       return base;
     }
-    const up = upgradeDb(structuredClone(base.db));
-    if (!up) throw new Error("The saved data is from a version this app does not know.");
-    const change = diff(base, up);
-    change.expect = Object.fromEntries(versionedKeys().map((k) => [k, base.head.versions[k] ?? 0]));
-    await store2.state.commit(change);
+    const report = await upgradeStore(store2, true);
+    if (report?.applied) console.info(describeUpgrade(report));
     kept.delete(store2);
   }
   throw new Error("The data could not be brought up to date. Try again.");
+}
+async function countsOf(store2) {
+  return Object.fromEntries(await Promise.all(KEYS.map(async (k) => [k, await store2.state.count(k)])));
+}
+async function upgradeStore(store2, apply) {
+  const head = await store2.state.head();
+  if (!head) return null;
+  const before = await countsOf(store2);
+  const report = {
+    from: head.schemaVersion,
+    to: CURRENT_SCHEMA,
+    applied: false,
+    backup: null,
+    parts: KEYS.map((k) => ({ part: k, before: before[k], after: before[k], written: 0, removed: 0 }))
+  };
+  if (head.schemaVersion === CURRENT_SCHEMA) return report;
+  const base = build(head, await store2.state.items(loadedKeys()));
+  const up = upgradeDb(structuredClone(base.db));
+  if (!up) throw new Error(`The saved data is from version ${head.schemaVersion}, which this app does not know.`);
+  const change = diff(base, up);
+  change.expect = Object.fromEntries(versionedKeys().map((k) => [k, base.head.versions[k] ?? 0]));
+  for (const p of report.parts) {
+    const puts = change.put.filter((it) => it.k === p.part);
+    p.written = puts.length;
+    p.removed = change.remove.filter((r) => r.k === p.part).length;
+    p.after = p.before + puts.filter((it) => !base.json.has(`${it.k}/${it.i}`)).length - p.removed;
+  }
+  if (!apply) return report;
+  report.backup = await store2.state.backup(`before_v${CURRENT_SCHEMA}`);
+  if (await store2.state.commit(change) === null) return report;
+  report.applied = true;
+  const after = await countsOf(store2);
+  for (const p of report.parts) p.after = after[p.part];
+  return report;
+}
+function describeUpgrade(r) {
+  const head = r.from === r.to ? `The data is already at version ${r.to}. Nothing to do.` : `${r.applied ? "Upgraded" : "Would upgrade"} the data from version ${r.from} to ${r.to}.`;
+  const rows = r.parts.map(
+    (p) => `  ${p.part.padEnd(24)} ${String(p.before).padStart(6)} \u2192 ${String(p.after).padEnd(6)} ${p.written ? `${p.written} written` : ""}${p.removed ? `, ${p.removed} removed` : ""}`
+  );
+  return [
+    head,
+    ...r.backup ? [`A copy of the data before the upgrade is in ${r.backup}.`] : [],
+    "  part                     before \u2192 after",
+    ...rows
+  ].join("\n");
 }
 async function loadDb(store2, _keys) {
   const base = await current(store2);
@@ -3049,6 +3506,7 @@ async function mutateState(store2, fn) {
     if (!base) throw new Error("The app has not been set up yet.");
     const db2 = structuredClone(base.db);
     const result = withDb(db2, () => fn(db2));
+    assertIntegrity(db2);
     const change = diff(base, db2);
     if (!change.put.length && !change.remove.length) return { result, changed: [] };
     const revision = await store2.state.commit(change);
@@ -3085,6 +3543,8 @@ async function snapshotFor(store2, actor) {
     const hop = actor.role === "HOP";
     const docs = db2.docs.filter((d) => canViewDoc(actor, d));
     const docIds = new Set(docs.map((d) => d.id));
+    const sessions = db2.recordingSessions.filter((x) => ids2.has(x.contentId));
+    const sessionIds = new Set(sessions.map((x) => x.id));
     const settings = { ...db2.settings };
     if (!hop)
       settings.permissions = {
@@ -3109,6 +3569,17 @@ async function snapshotFor(store2, actor) {
       snapshots: can(actor, "storage.use") ? db2.snapshots : [],
       docs,
       docRevisions: revisionsSent(db2.docRevisions, docIds),
+      // The workflow's data goes with the projects it belongs to.
+      developmentForms: db2.developmentForms.filter((f) => ids2.has(f.contentId)),
+      plannedEpisodes: db2.plannedEpisodes.filter((p) => ids2.has(p.contentId)),
+      projectRoles: db2.projectRoles.filter((r) => ids2.has(r.contentId)),
+      workflowChecklistItems: db2.workflowChecklistItems.filter(
+        (c) => c.ownerType === "session" ? sessionIds.has(c.ownerId) : ids2.has(c.ownerId)
+      ),
+      recordingSessions: sessions,
+      sessionLogEntries: db2.sessionLogEntries.filter((e) => sessionIds.has(e.sessionId)),
+      reviewCheckpoints: db2.reviewCheckpoints.filter((c) => ids2.has(c.contentId) && (c.episodeId === null || ids2.has(c.episodeId))),
+      shareLinks: db2.shareLinks.filter((l) => ids2.has(l.episodeId)),
       outbox: can(actor, "reminders.sendOthers") ? db2.outbox : db2.outbox.filter((o) => o.personId === actor.personId),
       settings,
       counters: db2.counters
@@ -3755,16 +4226,16 @@ function addUnits(bd, n, into) {
   const target = into ?? worstCondition(bd) ?? "New";
   return { ...bd, [target]: (bd[target] ?? 0) + n };
 }
-function applyConditionBreakdown(item, bd) {
-  item.conditionBreakdown = bd;
-  item.condition = worstCondition(bd) ?? item.condition;
+function applyConditionBreakdown(item2, bd) {
+  item2.conditionBreakdown = bd;
+  item2.condition = worstCondition(bd) ?? item2.condition;
 }
 var familyOf = (i) => i.itemFamily ? i.itemFamily.toUpperCase() : i.id;
-function qtyIn(item, status2) {
+function qtyIn(item2, status2) {
   let n = 0;
   for (const m of getDb().manifests) {
     if (m.status !== status2) continue;
-    for (const l of m.lines) if (l.equipmentId === item.id) n += l.quantity;
+    for (const l of m.lines) if (l.equipmentId === item2.id) n += l.quantity;
   }
   return n;
 }
@@ -3782,15 +4253,15 @@ function endOf(m) {
   }
   return planned;
 }
-function availabilityOn(item, from, to, excludeManifestId) {
-  if (item.baseStatus === "in-repair") return { state: "repair", availableQty: 0, conflicts: [], reason: "In repair" };
-  if (item.baseStatus === "retired") return { state: "retired", availableQty: 0, conflicts: [], reason: "Retired" };
-  if (item.baseStatus === "lost") return { state: "lost", availableQty: 0, conflicts: [], reason: "Lost" };
+function availabilityOn(item2, from, to, excludeManifestId) {
+  if (item2.baseStatus === "in-repair") return { state: "repair", availableQty: 0, conflicts: [], reason: "In repair" };
+  if (item2.baseStatus === "retired") return { state: "retired", availableQty: 0, conflicts: [], reason: "Retired" };
+  if (item2.baseStatus === "lost") return { state: "lost", availableQty: 0, conflicts: [], reason: "Lost" };
   const conflicts = getDb().manifests.filter(
-    (m) => isActive(m) && m.id !== excludeManifestId && m.lines.some((l) => l.equipmentId === item.id) && m.date <= to && from <= endOf(m)
+    (m) => isActive(m) && m.id !== excludeManifestId && m.lines.some((l) => l.equipmentId === item2.id) && m.date <= to && from <= endOf(m)
   );
-  const booked = conflicts.reduce((n, m) => n + m.lines.filter((l) => l.equipmentId === item.id).reduce((a, l) => a + l.quantity, 0), 0);
-  const availableQty = Math.max(0, item.quantityTotal - booked);
+  const booked = conflicts.reduce((n, m) => n + m.lines.filter((l) => l.equipmentId === item2.id).reduce((a, l) => a + l.quantity, 0), 0);
+  const availableQty = Math.max(0, item2.quantityTotal - booked);
   if (availableQty === 0) {
     const c = conflicts[0];
     return {
@@ -3802,21 +4273,21 @@ function availabilityOn(item, from, to, excludeManifestId) {
   }
   return { state: booked > 0 ? "partial" : "ok", availableQty, conflicts, reason: booked > 0 ? `${booked} booked elsewhere` : "" };
 }
-function displayStatus(item) {
-  if (item.baseStatus === "lost") return { label: "Lost", tone: "bad", detail: "" };
-  if (item.baseStatus === "retired") return { label: "Retired", tone: "", detail: "" };
-  if (item.baseStatus === "in-repair") return { label: "In repair", tone: "warn", detail: "" };
-  const out = qtyOut(item);
-  const asg = qtyAssigned(item);
-  const overdue = getDb().manifests.some((m) => isOverdue(m) && m.lines.some((l) => l.equipmentId === item.id));
-  if (item.trackingType === "serialized") {
+function displayStatus(item2) {
+  if (item2.baseStatus === "lost") return { label: "Lost", tone: "bad", detail: "" };
+  if (item2.baseStatus === "retired") return { label: "Retired", tone: "", detail: "" };
+  if (item2.baseStatus === "in-repair") return { label: "In repair", tone: "warn", detail: "" };
+  const out = qtyOut(item2);
+  const asg = qtyAssigned(item2);
+  const overdue = getDb().manifests.some((m) => isOverdue(m) && m.lines.some((l) => l.equipmentId === item2.id));
+  if (item2.trackingType === "serialized") {
     if (out)
       return overdue ? { label: "Overdue", tone: "bad", detail: "Not returned" } : { label: "Checked out", tone: "accent", detail: "" };
     if (asg) return { label: "Assigned", tone: "accent", detail: "In studio, reserved" };
     return { label: "Available", tone: "ok", detail: "" };
   }
-  const free = qtyFree(item);
-  const detail = `${free} of ${item.quantityTotal} free`;
+  const free = qtyFree(item2);
+  const detail = `${free} of ${item2.quantityTotal} free`;
   if (overdue) return { label: "Overdue", tone: "bad", detail };
   if (free > 0) return { label: "Available", tone: "ok", detail };
   return { label: out ? "All out" : "All assigned", tone: "accent", detail };
@@ -3855,7 +4326,7 @@ function createItem(actor, input) {
     quantity = input.quantity ?? 0;
     if (!Number.isInteger(quantity) || quantity < 1) throw new RuleError("Quantity must be a whole number of at least 1.");
   }
-  const item = {
+  const item2 = {
     id: input.trackingType === "serialized" ? nextAssetCode(input.category) : nextBatchCode(input.category, family),
     trackingType: input.trackingType,
     name: input.name.trim(),
@@ -3881,11 +4352,11 @@ function createItem(actor, input) {
     baseStatus: "active",
     createdAt: (/* @__PURE__ */ new Date()).toISOString()
   };
-  getDb().equipment.push(item);
-  hist(actor, item.id, "created", input.trackingType === "aggregate" ? `New batch of ${quantity}` : "Added to inventory");
-  logAudit(actor, "create", "equipment", item.id, item.name);
+  getDb().equipment.push(item2);
+  hist(actor, item2.id, "created", input.trackingType === "aggregate" ? `New batch of ${quantity}` : "Added to inventory");
+  logAudit(actor, "create", "equipment", item2.id, item2.name);
   commit();
-  return item;
+  return item2;
 }
 function createSerializedUnits(actor, input) {
   requireGearAccess(actor);
@@ -3966,13 +4437,13 @@ function updateItem(actor, id2, input) {
   requireGearAccess(actor);
   const patch = pickKeys(input, ITEM_EDITABLE);
   if (patch.condition !== void 0 && !CONDITIONS.includes(patch.condition)) throw new RuleError("Choose New, Good, Fair or Poor.");
-  const item = getItem(id2);
-  if (!item) throw new RuleError("Item not found.");
+  const item2 = getItem(id2);
+  if (!item2) throw new RuleError("Item not found.");
   if (patch.name !== void 0 && !patch.name.trim()) throw new RuleError("Name cannot be empty.");
   if (patch.category !== void 0 && !equipCategory(patch.category)) throw new RuleError("Choose a valid category.");
   if (patch.unitCost !== void 0 && (!Number.isFinite(patch.unitCost) || patch.unitCost < 0))
     throw new RuleError("Cost must be zero or more.");
-  if (patch.serialNumber !== void 0 && item.trackingType === "serialized") {
+  if (patch.serialNumber !== void 0 && item2.trackingType === "serialized") {
     const s2 = patch.serialNumber?.trim() ?? "";
     if (s2) {
       const dupe = getDb().equipment.find((e) => e.id !== id2 && e.serialNumber && e.serialNumber.toLowerCase() === s2.toLowerCase());
@@ -3981,45 +4452,45 @@ function updateItem(actor, id2, input) {
     patch.serialNumber = s2 || null;
   }
   if (patch.unitLabel !== void 0) {
-    if (item.trackingType !== "serialized") throw new RuleError("Only single units can have a label.");
+    if (item2.trackingType !== "serialized") throw new RuleError("Only single units can have a label.");
     patch.unitLabel = patch.unitLabel?.trim() || null;
   }
   if (patch.quantityTotal !== void 0) {
-    if (item.trackingType !== "aggregate") throw new RuleError("Only batches have a quantity.");
+    if (item2.trackingType !== "aggregate") throw new RuleError("Only batches have a quantity.");
     if (!Number.isInteger(patch.quantityTotal) || patch.quantityTotal < 1)
       throw new RuleError("Quantity must be a whole number of at least 1.");
-    const committed = qtyOut(item) + qtyAssigned(item);
-    if (patch.quantityTotal < committed) throw new RuleError(`${committed} are checked out or assigned. The count cannot go below that.`);
+    const committed2 = qtyOut(item2) + qtyAssigned(item2);
+    if (patch.quantityTotal < committed2) throw new RuleError(`${committed2} are checked out or assigned. The count cannot go below that.`);
   }
   const changes = [];
-  if (patch.condition && patch.condition !== item.condition) changes.push(`Condition ${item.condition} to ${patch.condition}`);
-  if (patch.quantityTotal !== void 0 && patch.quantityTotal !== item.quantityTotal)
-    changes.push(`Count ${item.quantityTotal} to ${patch.quantityTotal}`);
-  if (patch.category && patch.category !== item.category)
-    changes.push(`Category ${equipCategory(item.category).label} to ${equipCategory(patch.category).label}`);
-  const oldCondition = item.condition;
-  const oldQty = item.quantityTotal;
-  Object.assign(item, patch);
-  if (item.trackingType === "aggregate") {
-    let bd = item.conditionBreakdown ?? {};
+  if (patch.condition && patch.condition !== item2.condition) changes.push(`Condition ${item2.condition} to ${patch.condition}`);
+  if (patch.quantityTotal !== void 0 && patch.quantityTotal !== item2.quantityTotal)
+    changes.push(`Count ${item2.quantityTotal} to ${patch.quantityTotal}`);
+  if (patch.category && patch.category !== item2.category)
+    changes.push(`Category ${equipCategory(item2.category).label} to ${equipCategory(patch.category).label}`);
+  const oldCondition = item2.condition;
+  const oldQty = item2.quantityTotal;
+  Object.assign(item2, patch);
+  if (item2.trackingType === "aggregate") {
+    let bd = item2.conditionBreakdown ?? {};
     if (patch.condition !== void 0 && patch.condition !== oldCondition) {
-      bd = { [item.condition]: item.quantityTotal };
+      bd = { [item2.condition]: item2.quantityTotal };
     } else if (patch.quantityTotal !== void 0 && patch.quantityTotal !== oldQty) {
-      const delta = item.quantityTotal - oldQty;
+      const delta = item2.quantityTotal - oldQty;
       bd = delta > 0 ? addUnits(bd, delta) : removeWorstFirst(bd, -delta);
     }
-    applyConditionBreakdown(item, bd);
+    applyConditionBreakdown(item2, bd);
   }
   hist(actor, id2, "edited", changes.length ? changes.join(", ") : "Details updated");
   logAudit(actor, "update", "equipment", id2, Object.keys(patch).join(", "));
   commit();
-  return item;
+  return item2;
 }
 function setConditionBreakdown(actor, id2, counts) {
   requireGearAccess(actor);
-  const item = getItem(id2);
-  if (!item) throw new RuleError("Item not found.");
-  if (item.trackingType !== "aggregate") throw new RuleError("Only batches can split their condition by unit.");
+  const item2 = getItem(id2);
+  if (!item2) throw new RuleError("Item not found.");
+  if (item2.trackingType !== "aggregate") throw new RuleError("Only batches can split their condition by unit.");
   const clean = {};
   for (const c of CONDITIONS) {
     const n = counts[c] ?? 0;
@@ -4027,8 +4498,8 @@ function setConditionBreakdown(actor, id2, counts) {
     if (n > 0) clean[c] = n;
   }
   const total = breakdownTotal(clean);
-  if (total !== item.quantityTotal) throw new RuleError(`Those counts add up to ${total}, but this batch has ${item.quantityTotal} units.`);
-  applyConditionBreakdown(item, clean);
+  if (total !== item2.quantityTotal) throw new RuleError(`Those counts add up to ${total}, but this batch has ${item2.quantityTotal} units.`);
+  applyConditionBreakdown(item2, clean);
   hist(
     actor,
     id2,
@@ -4037,79 +4508,79 @@ function setConditionBreakdown(actor, id2, counts) {
   );
   logAudit(actor, "update", "equipment", id2, "condition breakdown");
   commit();
-  return item;
+  return item2;
 }
 function addAttachment(actor, id2, kind, input) {
   requireGearAccess(actor);
-  const item = getItem(id2);
-  if (!item) throw new RuleError("Item not found.");
+  const item2 = getItem(id2);
+  if (!item2) throw new RuleError("Item not found.");
   const att = makeAttachment(actor, input);
-  (kind === "photo" ? item.photos : item.receipts).push(att);
+  (kind === "photo" ? item2.photos : item2.receipts).push(att);
   hist(actor, id2, "photo", kind === "photo" ? "Reference photo added" : "Receipt attached");
   commit();
   return att;
 }
 function removeAttachment(actor, id2, attachmentId) {
   requireGearAccess(actor);
-  const item = getItem(id2);
-  if (!item) throw new RuleError("Item not found.");
-  item.photos = item.photos.filter((a) => a.id !== attachmentId);
-  item.receipts = item.receipts.filter((a) => a.id !== attachmentId);
+  const item2 = getItem(id2);
+  if (!item2) throw new RuleError("Item not found.");
+  item2.photos = item2.photos.filter((a) => a.id !== attachmentId);
+  item2.receipts = item2.receipts.filter((a) => a.id !== attachmentId);
   commit();
 }
 function startRepair(actor, id2, note) {
   requireGearAccess(actor);
-  const item = getItem(id2);
-  if (!item) throw new RuleError("Item not found.");
-  if (item.trackingType === "aggregate") throw new RuleError("Batches are not repaired. Record damaged units when they are checked in.");
-  if (item.baseStatus !== "active") throw new RuleError("Only items in service can be sent to repair.");
-  if (qtyOut(item) > 0) throw new RuleError("This item is checked out. Check it in first.");
-  item.baseStatus = "in-repair";
+  const item2 = getItem(id2);
+  if (!item2) throw new RuleError("Item not found.");
+  if (item2.trackingType === "aggregate") throw new RuleError("Batches are not repaired. Record damaged units when they are checked in.");
+  if (item2.baseStatus !== "active") throw new RuleError("Only items in service can be sent to repair.");
+  if (qtyOut(item2) > 0) throw new RuleError("This item is checked out. Check it in first.");
+  item2.baseStatus = "in-repair";
   hist(actor, id2, "repair-start", note.trim() || "Sent for repair");
   logAudit(actor, "repair-start", "equipment", id2, note);
   commit();
 }
 function finishRepair(actor, id2, condition2, note) {
   requireGearAccess(actor);
-  const item = getItem(id2);
-  if (!item) throw new RuleError("Item not found.");
-  if (item.baseStatus !== "in-repair") throw new RuleError("This item is not in repair.");
-  item.baseStatus = "active";
-  item.condition = condition2;
+  const item2 = getItem(id2);
+  if (!item2) throw new RuleError("Item not found.");
+  if (item2.baseStatus !== "in-repair") throw new RuleError("This item is not in repair.");
+  item2.baseStatus = "active";
+  item2.condition = condition2;
   hist(actor, id2, "repair-end", `${note.trim() || "Back from repair"}. Condition: ${condition2}`);
   logAudit(actor, "repair-end", "equipment", id2, condition2);
   commit();
 }
 function retireItem(actor, id2, kind, note) {
   requireHop(actor, "retire equipment");
-  const item = getItem(id2);
-  if (!item) throw new RuleError("Item not found.");
-  if (item.baseStatus === "retired" || item.baseStatus === "lost") throw new RuleError("This item is already out of service.");
+  const item2 = getItem(id2);
+  if (!item2) throw new RuleError("Item not found.");
+  if (item2.baseStatus === "retired" || item2.baseStatus === "lost") throw new RuleError("This item is already out of service.");
   if (getDb().manifests.some((m) => isActive(m) && m.lines.some((l) => l.equipmentId === id2)))
     throw new RuleError("This item is on an active checkout list. Check it in or release it first.");
-  item.baseStatus = kind;
+  item2.baseStatus = kind;
   hist(actor, id2, kind, note.trim() || (kind === "lost" ? "Marked lost" : "Retired from inventory"));
   logAudit(actor, kind, "equipment", id2, note);
   commit();
 }
 function reinstateItem(actor, id2) {
   requireHop(actor, "reinstate equipment");
-  const item = getItem(id2);
-  if (!item || item.baseStatus !== "retired" && item.baseStatus !== "lost") throw new RuleError("This item is not retired or lost.");
-  item.baseStatus = "active";
+  const item2 = getItem(id2);
+  if (!item2 || item2.baseStatus !== "retired" && item2.baseStatus !== "lost") throw new RuleError("This item is not retired or lost.");
+  item2.baseStatus = "active";
   hist(actor, id2, "edited", "Back in service");
   logAudit(actor, "reinstate", "equipment", id2);
   commit();
 }
 function deleteItem(actor, id2) {
   requireHop(actor, "delete equipment");
-  const item = getItem(id2);
-  if (!item) throw new RuleError("Item not found.");
+  const item2 = getItem(id2);
+  if (!item2) throw new RuleError("Item not found.");
   const used = getDb().manifests.some((m) => m.lines.some((l) => l.equipmentId === id2)) || getDb().incidents.some((i) => i.equipmentId === id2);
   if (used) throw new RuleError("This item has checkout history. Retire it instead so the history is kept.");
   getDb().equipment = getDb().equipment.filter((e) => e.id !== id2);
   getDb().equipmentHistory = getDb().equipmentHistory.filter((h) => h.equipmentId !== id2);
-  logAudit(actor, "delete", "equipment", id2, item.name);
+  logAudit(actor, "delete", "equipment", id2, item2.name);
   commit();
 }
 
@@ -4391,21 +4862,21 @@ function addDays(iso, n) {
   const p = (x) => String(x).padStart(2, "0");
   return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`;
 }
-function checkLine(item, qty, from, to, excludeManifestId) {
-  if (!item) throw new RuleError("That item no longer exists.");
+function checkLine(item2, qty, from, to, excludeManifestId) {
+  if (!item2) throw new RuleError("That item no longer exists.");
   if (!Number.isInteger(qty) || qty < 1) throw new RuleError("Quantity must be at least 1.");
-  if (item.trackingType === "serialized" && qty !== 1) throw new RuleError(`${item.name} is a single unit.`);
-  if (item.baseStatus !== "active") {
-    const word = item.baseStatus === "in-repair" ? "in repair" : item.baseStatus;
-    throw new RuleError(`${item.name} (${item.id}) is ${word} and cannot be assigned.`);
+  if (item2.trackingType === "serialized" && qty !== 1) throw new RuleError(`${item2.name} is a single unit.`);
+  if (item2.baseStatus !== "active") {
+    const word = item2.baseStatus === "in-repair" ? "in repair" : item2.baseStatus;
+    throw new RuleError(`${item2.name} (${item2.id}) is ${word} and cannot be assigned.`);
   }
-  const a = availabilityOn(item, from, to, excludeManifestId);
+  const a = availabilityOn(item2, from, to, excludeManifestId);
   if (a.availableQty < qty) {
     throw new RuleError(
-      item.trackingType === "aggregate" && a.availableQty > 0 ? `Only ${a.availableQty} of ${item.name} (${item.id}) are free for those dates. ${a.reason}.` : `${item.name} (${item.id}) is not free for those dates. ${a.reason}.`
+      item2.trackingType === "aggregate" && a.availableQty > 0 ? `Only ${a.availableQty} of ${item2.name} (${item2.id}) are free for those dates. ${a.reason}.` : `${item2.name} (${item2.id}) is not free for those dates. ${a.reason}.`
     );
   }
-  return item;
+  return item2;
 }
 function loadManifest(actor, id2) {
   requireGearAccess(actor);
@@ -4415,11 +4886,11 @@ function loadManifest(actor, id2) {
   if (rec2 ? !canWrite(actor, rec2) : !isHop(actor)) throw new RuleError("You are not attached to this project.");
   return m;
 }
-function newLine(item, quantity) {
+function newLine(item2, quantity) {
   return {
-    equipmentId: item.id,
+    equipmentId: item2.id,
     quantity,
-    conditionOut: item.condition,
+    conditionOut: item2.condition,
     photosOut: [],
     conditionIn: null,
     photosIn: [],
@@ -4484,9 +4955,9 @@ function addLine(actor, manifestId, equipmentId, quantity) {
   const m = loadManifest(actor, manifestId);
   if (m.status !== "assigned") throw new RuleError("Items can only be added before the gear goes out.");
   const existing = m.lines.find((l) => l.equipmentId === equipmentId);
-  const item = checkLine(getItem(equipmentId), (existing?.quantity ?? 0) + quantity, m.date, m.expectedReturn ?? m.date, m.id);
+  const item2 = checkLine(getItem(equipmentId), (existing?.quantity ?? 0) + quantity, m.date, m.expectedReturn ?? m.date, m.id);
   if (existing) existing.quantity += quantity;
-  else m.lines.push(newLine(item, quantity));
+  else m.lines.push(newLine(item2, quantity));
   hist(actor, equipmentId, "assigned", `${quantity > 1 ? `${quantity} units, ` : ""}${m.contentId}, ${fmtShort(m.date)}`, {
     contentId: m.contentId,
     manifestId: m.id
@@ -4551,20 +5022,20 @@ function checkIn(actor, manifestId, returns) {
   const m = loadManifest(actor, manifestId);
   if (m.status !== "checked-out") throw new RuleError("This gear is not checked out.");
   const plans = m.lines.map((line2) => {
-    const item = getItem(line2.equipmentId);
-    if (!item) throw new RuleError("An item on this list no longer exists.");
+    const item2 = getItem(line2.equipmentId);
+    if (!item2) throw new RuleError("An item on this list no longer exists.");
     const r = returns.find((x) => x.equipmentId === line2.equipmentId);
-    if (!r) throw new RuleError(`Record the return for ${item.name}.`);
-    if (![r.returnedGood, r.damaged, r.lost].every(nonNeg)) throw new RuleError(`Counts for ${item.name} must be whole numbers.`);
+    if (!r) throw new RuleError(`Record the return for ${item2.name}.`);
+    if (![r.returnedGood, r.damaged, r.lost].every(nonNeg)) throw new RuleError(`Counts for ${item2.name} must be whole numbers.`);
     if (r.returnedGood + r.damaged + r.lost !== line2.quantity)
-      throw new RuleError(`${item.name}: returned, damaged and lost must add up to ${line2.quantity}.`);
+      throw new RuleError(`${item2.name}: returned, damaged and lost must add up to ${line2.quantity}.`);
     let good = r.returnedGood;
     let damaged = r.damaged;
     const lost = r.lost;
     let cond = null;
-    if (item.trackingType === "serialized") {
+    if (item2.trackingType === "serialized") {
       if (good + damaged > 0) {
-        if (!r.conditionIn) throw new RuleError(`Choose the condition ${item.name} came back in.`);
+        if (!r.conditionIn) throw new RuleError(`Choose the condition ${item2.name} came back in.`);
         cond = r.conditionIn;
         if (good === 1 && conditionRank(cond) > conditionRank(line2.conditionOut)) {
           good = 0;
@@ -4575,17 +5046,17 @@ function checkIn(actor, manifestId, returns) {
       cond = r.conditionIn;
     }
     const desc = (r.description ?? "").trim();
-    if (damaged + lost > 0 && !desc) throw new RuleError(`Describe what happened to ${item.name}.`);
-    if (damaged + lost > item.quantityTotal) throw new RuleError(`${item.name}: more units damaged or lost than the batch holds.`);
+    if (damaged + lost > 0 && !desc) throw new RuleError(`Describe what happened to ${item2.name}.`);
+    if (damaged + lost > item2.quantityTotal) throw new RuleError(`${item2.name}: more units damaged or lost than the batch holds.`);
     return {
       line: line2,
-      item,
+      item: item2,
       good,
       damaged,
       lost,
       cond,
       desc,
-      repair: !!r.sendToRepair && item.trackingType === "serialized" && damaged === 1,
+      repair: !!r.sendToRepair && item2.trackingType === "serialized" && damaged === 1,
       photos: (r.photos ?? []).map((p) => makeAttachment(actor, p))
     };
   });
@@ -4747,9 +5218,9 @@ function pickerRows(from, to, excludeManifestId) {
     });
   }
   for (const f of groupByFamily(all)) {
-    const batches = f.items.map((item) => {
-      const a = availabilityOn(item, from, to, excludeManifestId);
-      return { item, availableQty: a.availableQty, state: a.state, reason: a.reason };
+    const batches = f.items.map((item2) => {
+      const a = availabilityOn(item2, from, to, excludeManifestId);
+      return { item: item2, availableQty: a.availableQty, state: a.state, reason: a.reason };
     });
     const available = batches.reduce((n, b) => n + b.availableQty, 0);
     const total = f.items.filter((b) => b.baseStatus === "active").reduce((n, b) => n + b.quantityTotal, 0);
@@ -4826,12 +5297,12 @@ function copyGearBetweenSheets(actor, srcSheetId, dst) {
   const ok = [];
   const skipped = [];
   for (const l of src.lines) {
-    const item = getItem(l.equipmentId);
+    const item2 = getItem(l.equipmentId);
     try {
-      checkLine(item, l.quantity, dst.date, dst.date);
+      checkLine(item2, l.quantity, dst.date, dst.date);
       ok.push({ equipmentId: l.equipmentId, quantity: l.quantity });
     } catch (e) {
-      skipped.push(e instanceof RuleError ? e.message : `${item?.name ?? l.equipmentId} could not be copied.`);
+      skipped.push(e instanceof RuleError ? e.message : `${item2?.name ?? l.equipmentId} could not be copied.`);
     }
   }
   if (ok.length) addGearToSheet(actor, dst, ok);
@@ -4851,10 +5322,10 @@ function gearIssues(sheetId) {
   if (!m || m.status !== "assigned") return [];
   const out = [];
   for (const l of m.lines) {
-    const item = getItem(l.equipmentId);
-    if (!item) continue;
+    const item2 = getItem(l.equipmentId);
+    if (!item2) continue;
     try {
-      checkLine(item, l.quantity, m.date, m.expectedReturn ?? m.date, m.id);
+      checkLine(item2, l.quantity, m.date, m.expectedReturn ?? m.date, m.id);
     } catch (e) {
       if (e instanceof RuleError) out.push(e.message);
     }
@@ -5075,7 +5546,10 @@ function blankRecord(id2, category2, title, parentId, level2) {
     archived: false,
     version: 1,
     createdAt: (/* @__PURE__ */ new Date()).toISOString(),
-    notes: ""
+    notes: "",
+    seriesType: null,
+    workflow: null,
+    episode: null
   };
 }
 function initPipeline(actor, r, stepDays = 4, startStage) {
@@ -5083,14 +5557,8 @@ function initPipeline(actor, r, stepDays = 4, startStage) {
   r.pipelineStage = startStage ?? stages[0].name;
   r.stageEnteredAt = todayIso();
   r.stageOutputs = Object.fromEntries(stages.map((s2) => [s2.name, false]));
-  const base = /* @__PURE__ */ new Date();
-  r.stageDeadlines = Object.fromEntries(
-    stages.map((s2, i) => {
-      const d = new Date(base);
-      d.setDate(d.getDate() + (i + 1) * stepDays);
-      return [s2.name, d.toISOString().slice(0, 10)];
-    })
-  );
+  const today = todayIso();
+  r.stageDeadlines = Object.fromEntries(stages.map((s2, i) => [s2.name, addDaysIso(today, (i + 1) * stepDays)]));
   ensureStageTasks(r, r.pipelineStage);
   attachStageDocs(actor, r, r.pipelineStage);
 }
@@ -5987,7 +6455,7 @@ function editableSheet(actor, id2) {
 function addRunItem(actor, sheetId, input) {
   const cs = editableSheet(actor, sheetId);
   checkRunItem(input);
-  const item = {
+  const item2 = {
     id: localId("RS", (x) => cs.runOfShow.some((i) => i.id === x)),
     time: input.time,
     title: input.title.trim(),
@@ -5995,29 +6463,29 @@ function addRunItem(actor, sheetId, input) {
     ownerPersonId: input.ownerPersonId || null,
     notes: (input.notes ?? "").trim()
   };
-  cs.runOfShow.push(item);
+  cs.runOfShow.push(item2);
   cs.version += 1;
-  logAudit(actor, "run-add", "callsheet", sheetId, `${item.time} ${item.title}`);
+  logAudit(actor, "run-add", "callsheet", sheetId, `${item2.time} ${item2.title}`);
   commit();
-  return item;
+  return item2;
 }
 function updateRunItem(actor, sheetId, itemId, patch) {
   const cs = editableSheet(actor, sheetId);
-  const item = cs.runOfShow.find((x) => x.id === itemId);
-  if (!item) throw new RuleError("That segment no longer exists.");
+  const item2 = cs.runOfShow.find((x) => x.id === itemId);
+  if (!item2) throw new RuleError("That segment no longer exists.");
   const next = {
-    time: patch.time ?? item.time,
-    title: patch.title ?? item.title,
-    durationMin: patch.durationMin ?? item.durationMin,
-    ownerPersonId: patch.ownerPersonId === void 0 ? item.ownerPersonId : patch.ownerPersonId,
-    notes: patch.notes ?? item.notes
+    time: patch.time ?? item2.time,
+    title: patch.title ?? item2.title,
+    durationMin: patch.durationMin ?? item2.durationMin,
+    ownerPersonId: patch.ownerPersonId === void 0 ? item2.ownerPersonId : patch.ownerPersonId,
+    notes: patch.notes ?? item2.notes
   };
   checkRunItem(next);
-  Object.assign(item, { ...next, title: next.title.trim(), notes: next.notes.trim() });
+  Object.assign(item2, { ...next, title: next.title.trim(), notes: next.notes.trim() });
   cs.version += 1;
-  logAudit(actor, "run-update", "callsheet", sheetId, item.title);
+  logAudit(actor, "run-update", "callsheet", sheetId, item2.title);
   commit();
-  return item;
+  return item2;
 }
 function removeRunItem(actor, sheetId, itemId) {
   const cs = editableSheet(actor, sheetId);
@@ -7193,17 +7661,17 @@ var REGISTRY = (() => {
 
 // server/actions.ts
 var FORBIDDEN_KEYS = /* @__PURE__ */ new Set(["__proto__", "constructor", "prototype"]);
-function checkShape(value, depth = 0) {
-  if (depth > 12) throw new HttpError(400, "That request is too deeply nested.");
+function checkShape(value, depth2 = 0) {
+  if (depth2 > 12) throw new HttpError(400, "That request is too deeply nested.");
   if (Array.isArray(value)) {
     if (value.length > 5e3) throw new HttpError(400, "That request has too many items.");
-    value.forEach((v) => checkShape(v, depth + 1));
+    value.forEach((v) => checkShape(v, depth2 + 1));
     return;
   }
   if (value && typeof value === "object") {
     for (const [k, v] of Object.entries(value)) {
       if (FORBIDDEN_KEYS.has(k)) throw new HttpError(400, "That request is not allowed.");
-      checkShape(v, depth + 1);
+      checkShape(v, depth2 + 1);
     }
   }
 }
@@ -7248,7 +7716,7 @@ var TOKEN_URL = "https://oauth2.googleapis.com/token";
 var REVOKE_URL = "https://oauth2.googleapis.com/revoke";
 var CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
 var GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.send";
-var TIME_ZONE = "Africa/Nairobi";
+var TIME_ZONE2 = "Africa/Nairobi";
 var cfg = () => ({ id: process.env.GOOGLE_CLIENT_ID ?? "", secret: process.env.GOOGLE_CLIENT_SECRET ?? "" });
 var googleAvailable = () => !!(cfg().id && cfg().secret && process.env.TOKEN_ENCRYPTION_KEY);
 var redirectUri = (origin) => `${origin}/api/google-callback`;
@@ -7369,10 +7837,10 @@ async function addToCalendar(store2, who) {
   }));
   const out = { added: 0, already: 0, failed: 0 };
   for (const r of rems) {
-    const start = r.time ? { dateTime: `${r.date}T${r.time}:00`, timeZone: TIME_ZONE } : { date: r.date };
+    const start = r.time ? { dateTime: `${r.date}T${r.time}:00`, timeZone: TIME_ZONE2 } : { date: r.date };
     const end = r.time ? {
       dateTime: `${r.date}T${String(Math.min(23, Number(r.time.slice(0, 2)) + 8)).padStart(2, "0")}:${r.time.slice(3)}:00`,
-      timeZone: TIME_ZONE
+      timeZone: TIME_ZONE2
     } : { date: addDay(r.date) };
     const res = await web()("https://www.googleapis.com/calendar/v3/calendars/primary/events", {
       method: "POST",
@@ -7732,8 +8200,17 @@ var MemState = class {
   async commit(c) {
     if (!this.head_) return null;
     for (const [k, v] of Object.entries(c.expect)) if ((this.head_.versions[k] ?? 0) !== v) return null;
-    for (const r of c.remove) this.items_.delete(`${r.k}/${r.i}`);
-    for (const it of c.put) this.items_.set(`${it.k}/${it.i}`, structuredClone(it));
+    const next = new Map(this.items_);
+    for (const r of c.remove) next.delete(`${r.k}/${r.i}`);
+    for (const it of c.put) next.set(`${it.k}/${it.i}`, structuredClone(it));
+    for (const part of new Set(c.put.map((it) => it.k).filter((k) => UNIQUE_RULES.some((r) => r.part === k)))) {
+      const broken = uniqueViolations(
+        part,
+        [...next.values()].filter((it) => it.k === part).map((it) => it.d)
+      );
+      if (broken.length) throw new RuleError(broken[0]);
+    }
+    this.items_ = next;
     for (const k of Object.keys(c.expect)) this.head_.versions[k] = (this.head_.versions[k] ?? 0) + 1;
     this.head_.revision++;
     this.head_.schemaVersion = c.schemaVersion;
@@ -7744,6 +8221,16 @@ var MemState = class {
     for (const it of items) this.items_.set(`${it.k}/${it.i}`, structuredClone(it));
     this.head_ = { revision: 1, schemaVersion, versions: Object.fromEntries(versionedKeys().map((k) => [k, 1])) };
     return true;
+  }
+  async count(key2) {
+    return [...this.items_.values()].filter((it) => it.k === key2).length;
+  }
+  /** Copies kept by backup(), for tests to look at. */
+  backups = /* @__PURE__ */ new Map();
+  async backup(label) {
+    if (!this.backups.has(label))
+      this.backups.set(label, { items: [...this.items_.values()].map((it) => structuredClone(it)), head: structuredClone(this.head_) });
+    return `memory backup ${label}`;
   }
 };
 var MemAttempts = class {

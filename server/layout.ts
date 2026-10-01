@@ -26,6 +26,15 @@ export const KEYS = [
   "docs",
   "docRevisions",
   "outbox",
+  // The five-stage workflow (src/config/workflow.ts)
+  "developmentForms",
+  "plannedEpisodes",
+  "projectRoles",
+  "workflowChecklistItems",
+  "recordingSessions",
+  "sessionLogEntries",
+  "reviewCheckpoints",
+  "shareLinks",
   "settings",
   "counters",
 ] as const;

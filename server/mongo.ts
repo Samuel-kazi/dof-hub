@@ -1,4 +1,6 @@
 import { MongoClient, type AnyBulkWriteOperation, type Collection, type Db, type Document } from "mongodb";
+import { RuleError } from "../src/types";
+import { UNIQUE_RULES, type UniqueRule } from "../src/data/constraints";
 import { HttpError } from "./errors";
 import { layout1ToItems, versionedKeys } from "./layout";
 import type {
@@ -110,6 +112,27 @@ class MongoAttempts implements AttemptStore {
   }
 }
 
+/** The unique index that keeps one uniqueness rule (src/data/constraints.ts) in `hub_items`. */
+export function uniqueIndexFor(rule: UniqueRule): { keys: Document; options: Document } {
+  const filter: Document = { k: rule.part };
+  if (rule.when) filter[`d.${rule.when.field}`] = rule.when.is === true ? { $eq: true } : { $type: rule.when.is };
+  return {
+    keys: Object.fromEntries(rule.fields.map((f) => [`d.${f}`, 1])),
+    options: { name: `unique_${rule.name}`, unique: true, partialFilterExpression: filter },
+  };
+}
+
+/** A save refused by a unique index, as the message for the rule it would have broken. */
+function duplicateError(e: unknown): RuleError | null {
+  // A bulk write reports it on its first failed write as well as, depending on the driver, on the error itself.
+  const err = e as { code?: number; message?: string; writeErrors?: { code?: number }[] };
+  const text = String(err?.message ?? "");
+  if (err?.code !== 11000 && err?.writeErrors?.[0]?.code !== 11000 && !text.includes("E11000")) return null;
+  const index = /index: (unique_\w+)/.exec(text)?.[1];
+  const rule = UNIQUE_RULES.find((r) => `unique_${r.name}` === index);
+  return new RuleError(rule?.message ?? "That would make a duplicate. Reload and try again.");
+}
+
 const META = "meta";
 const LOCK = "upgrading";
 const LOCK_STALE_MS = 5 * 60 * 1000;
@@ -190,10 +213,39 @@ class MongoState implements StateStore {
         for (let i = 0; i < ops.length; i += BATCH) await this.col.bulkWrite(ops.slice(i, i + BATCH), { session, ordered: true });
         revision = Number(m.revision);
       });
+    } catch (e) {
+      throw duplicateError(e) ?? e; // the transaction was abandoned, so nothing was written
     } finally {
       await session.endSession();
     }
     return revision;
+  }
+
+  async count(key: string): Promise<number> {
+    return this.col.countDocuments({ k: key } as never);
+  }
+
+  /**
+   * Copies `hub_items` and `hub_meta` into `hub_items_<label>` and `hub_meta_<label>`. Documents already in the
+   * copy are kept as they are, so if several servers upgrade at once, the copy made before anything changed wins.
+   */
+  async backup(label: string): Promise<string> {
+    const copy = async (from: Collection<Document>, into: string) => {
+      try {
+        await from.aggregate([{ $merge: { into, on: "_id", whenMatched: "keepExisting", whenNotMatched: "insert" } }]).toArray();
+      } catch {
+        // Some hosted tiers refuse $merge. Copy document by document instead, with the same rule.
+        const docs = await from.find({}).toArray();
+        const ops = docs.map(({ _id, ...rest }) => ({
+          updateOne: { filter: { _id } as never, update: { $setOnInsert: rest }, upsert: true },
+        }));
+        for (let i = 0; i < ops.length; i += BATCH)
+          await this.db.collection<Document>(into).bulkWrite(ops.slice(i, i + BATCH), { ordered: false });
+      }
+    };
+    await copy(this.col, `hub_items_${label}`);
+    await copy(this.meta, `hub_meta_${label}`);
+    return `hub_items_${label} and hub_meta_${label}`;
   }
 
   async init(items: Item[], schemaVersion: number): Promise<boolean> {
@@ -300,6 +352,20 @@ export async function storeOn(client: MongoClient, dbName: string): Promise<Stor
       .createIndex({ k: 1, o: 1 })
       .catch(() => undefined),
   ]);
+  // The uniqueness rules, kept by the database itself. One that cannot be made (because duplicates are already
+  // there) is reported loudly and on /api/health, never ignored.
+  const indexProblems: string[] = [];
+  await Promise.all(
+    UNIQUE_RULES.map(async (rule) => {
+      const { keys, options } = uniqueIndexFor(rule);
+      try {
+        await db.collection("hub_items").createIndex(keys, options);
+      } catch (e) {
+        indexProblems.push(`${options.name}: ${e instanceof Error ? e.message : String(e)}`);
+        console.error(`Could not make the unique index ${options.name}`, e);
+      }
+    }),
+  );
   return {
     /** Checks that saves can be made all-or-nothing, which the app relies on. */
     diagnose: async () => {
@@ -309,7 +375,7 @@ export async function storeOn(client: MongoClient, dbName: string): Promise<Stor
           await db.collection("diagnostics").insertOne({ _id: "probe", at: new Date() } as never, { session: s });
           await db.collection("diagnostics").deleteOne({ _id: "probe" } as never, { session: s });
         });
-        return { transactions: true };
+        return { transactions: true, uniqueIndexes: indexProblems.length ? indexProblems : true };
       } catch (e) {
         console.error("Transaction check failed", e);
         return { transactions: false, hint: e instanceof Error ? e.name : "unknown" };

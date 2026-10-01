@@ -102,6 +102,31 @@ automatically.
   which is as it was before the update, so anything saved after the update would be missing there.
 - **Later.** Once you are happy, after a few weeks, the `state` collection can be deleted in Atlas.
 
+### Data version 15 (the workflow's data, phase 1)
+
+The first time a version with data version 15 starts, it adds the new workflow lists and three empty fields on
+every record. Nothing that exists is changed in any other way, moved or removed.
+
+- **A copy is kept first,** in the collections `hub_items_before_v15` and `hub_meta_before_v15`.
+- **To see what it will do, first:**
+
+      MONGODB_URI="mongodb+srv://..." npm run db:upgrade
+
+  This is a dry run. It prints, for each part of the data, how many elements it has before and after, and writes
+  nothing. `npm run db:upgrade -- --apply` does the upgrade (with the copy) from your computer instead of waiting
+  for the server to do it.
+- **To go back.** Older versions of the app cannot read version 15 data. Put the copy back first, then promote the
+  previous deployment in Vercel. Anything saved after the update is lost. In `mongosh "<MONGODB_URI>"`:
+
+      use dof
+      db.hub_items.renameCollection("hub_items_after_v15")
+      db.hub_meta.renameCollection("hub_meta_after_v15")
+      db.hub_items_before_v15.renameCollection("hub_items")
+      db.hub_meta_before_v15.renameCollection("hub_meta")
+
+- **Check** `https://YOUR-SITE.vercel.app/api/health` after deploying: `uniqueIndexes` should be `true`. Anything
+  else names a rule MongoDB could not enforce.
+
 ## What this does not do yet
 
 - The **desktop app** is the local demo. The hosted site is the real one.

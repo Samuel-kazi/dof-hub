@@ -13,6 +13,7 @@ run before anything is deployed. Please do not copy files over the project from 
    npm run lint          # ESLint: errors fail CI, warnings do not
    npm run format        # Prettier rewrites the files; CI only checks them (format:check)
    npm test              # every test file, with the clock fixed so results do not depend on the day
+   npm run db:upgrade    # with MONGODB_URI set: what upgrading a real database would change (a dry run)
    ```
 
    If you changed anything under `server/` or `src/services/`, `npm run build` regenerates `api/_server.mjs`, the

@@ -1,7 +1,7 @@
 import type { DriveUsage, Forecast } from "../services/wrapped/storage";
 import { isNearlyFull } from "../services/wrapped/storage";
 import { getRecord } from "../services/access";
-import { dayNumber, fmtDate, fmtShort, fmtSize } from "../services/utils";
+import { dayNumber, fmtDate, fmtShort, fmtSize, todayIso } from "../services/utils";
 
 const PALETTE = ["#e8703a", "#f3b943", "#7fbf95", "#8f9fdc", "#d58fb8", "#6fb4cf", "#b89468"];
 export const colorFor = (i: number): string => PALETTE[i % PALETTE.length];
@@ -105,7 +105,7 @@ export function ForecastNote({ data }: { data: Forecast }) {
     <p className="sub">
       About {fmtSize(gbPerWeek)} added per week.{" "}
       {data.fillDate
-        ? data.fillDate <= new Date().toISOString().slice(0, 10)
+        ? data.fillDate <= todayIso()
           ? "The drives are already past the full mark."
           : `At this rate the drives reach the full mark around ${fmtDate(data.fillDate)}.`
         : ""}

@@ -1,6 +1,7 @@
 import type { Actor, AuditEntry, Database, DocRevision, Person } from "../src/types";
 import { CURRENT_SCHEMA, getDb, setDb, setPersist, upgradeDb } from "../src/data/store";
 import { buildSeed } from "../src/data/seed";
+import { assertIntegrity } from "../src/data/constraints";
 import { canViewDoc } from "../src/services/docs";
 import { can } from "../src/services/permissions";
 import { redactPerson, visibleCallSheets, visibleRecords } from "../src/services/access";
@@ -66,6 +67,14 @@ export function newDatabase(hop: { name: string; username: string }, withSamples
     docs: [],
     docRevisions: [],
     outbox: [],
+    developmentForms: [],
+    plannedEpisodes: [],
+    projectRoles: [],
+    workflowChecklistItems: [],
+    recordingSessions: [],
+    sessionLogEntries: [],
+    reviewCheckpoints: [],
+    shareLinks: [],
     counters: {},
     settings: { ...seed.settings, permissions: { roles: {}, people: {} } },
   };
@@ -117,21 +126,90 @@ async function current(store: Store): Promise<Base | null> {
     if (!head) return null;
     const hit = kept.get(store);
     if (hit && hit.head.revision === head.revision) return hit;
-    const base = build(head, await store.state.items(loadedKeys()));
     if (head.schemaVersion === CURRENT_SCHEMA) {
+      const base = build(head, await store.state.items(loadedKeys()));
       kept.set(store, base);
       return base;
     }
-    // Saved by an older version of the app: upgrade it once, for everyone. Expecting every part's version
-    // means only one server can do it; any other starts again and finds it done.
-    const up = upgradeDb(structuredClone(base.db));
-    if (!up) throw new Error("The saved data is from a version this app does not know.");
-    const change = diff(base, up);
-    change.expect = Object.fromEntries(versionedKeys().map((k) => [k, base.head.versions[k] ?? 0]));
-    await store.state.commit(change);
+    // Saved by an older version of the app: upgrade it once, for everyone, after keeping a copy. Expecting every
+    // part's version means only one server can do it; any other starts again and finds it done.
+    const report = await upgradeStore(store, true);
+    if (report?.applied) console.info(describeUpgrade(report));
     kept.delete(store);
   }
   throw new Error("The data could not be brought up to date. Try again.");
+}
+
+// ── Upgrading saved data ─────────────────────────────────────
+
+export interface UpgradeReport {
+  from: number;
+  to: number;
+  applied: boolean;
+  backup: string | null;
+  parts: { part: string; before: number; after: number; written: number; removed: number }[];
+}
+
+async function countsOf(store: Store): Promise<Record<string, number>> {
+  return Object.fromEntries(await Promise.all(KEYS.map(async (k) => [k, await store.state.count(k)] as const)));
+}
+
+/**
+ * Brings data saved by an older version of the app up to this one. Without `apply` it is a dry run: it works out
+ * what would change, part by part, and writes nothing. With `apply` it first keeps a copy of all the data
+ * (StateStore.backup), then saves the upgrade as one all-or-nothing change, which only goes through if nobody
+ * saved anything after it read the data (it then returns with `applied` false; run it again). Data that is
+ * already up to date is left alone, so running it twice is safe. Used by the server the first time it reads
+ * older data, and by `npm run db:upgrade`.
+ */
+export async function upgradeStore(store: Store, apply: boolean): Promise<UpgradeReport | null> {
+  const head = await store.state.head();
+  if (!head) return null;
+  const before = await countsOf(store);
+  const report: UpgradeReport = {
+    from: head.schemaVersion,
+    to: CURRENT_SCHEMA,
+    applied: false,
+    backup: null,
+    parts: KEYS.map((k) => ({ part: k, before: before[k], after: before[k], written: 0, removed: 0 })),
+  };
+  if (head.schemaVersion === CURRENT_SCHEMA) return report;
+  const base = build(head, await store.state.items(loadedKeys()));
+  const up = upgradeDb(structuredClone(base.db));
+  if (!up) throw new Error(`The saved data is from version ${head.schemaVersion}, which this app does not know.`);
+  const change = diff(base, up);
+  change.expect = Object.fromEntries(versionedKeys().map((k) => [k, base.head.versions[k] ?? 0]));
+  for (const p of report.parts) {
+    const puts = change.put.filter((it) => it.k === p.part);
+    p.written = puts.length;
+    p.removed = change.remove.filter((r) => r.k === p.part).length;
+    p.after = p.before + puts.filter((it) => !base.json.has(`${it.k}/${it.i}`)).length - p.removed;
+  }
+  if (!apply) return report;
+  report.backup = await store.state.backup(`before_v${CURRENT_SCHEMA}`);
+  if ((await store.state.commit(change)) === null) return report; // someone else saved first: try again
+  report.applied = true;
+  const after = await countsOf(store);
+  for (const p of report.parts) p.after = after[p.part];
+  return report;
+}
+
+/** An upgrade report as lines of text, for the server's log and the command line. */
+export function describeUpgrade(r: UpgradeReport): string {
+  const head =
+    r.from === r.to
+      ? `The data is already at version ${r.to}. Nothing to do.`
+      : `${r.applied ? "Upgraded" : "Would upgrade"} the data from version ${r.from} to ${r.to}.`;
+  const rows = r.parts.map(
+    (p) =>
+      `  ${p.part.padEnd(24)} ${String(p.before).padStart(6)} → ${String(p.after).padEnd(6)} ${p.written ? `${p.written} written` : ""}${p.removed ? `, ${p.removed} removed` : ""}`,
+  );
+  return [
+    head,
+    ...(r.backup ? [`A copy of the data before the upgrade is in ${r.backup}.`] : []),
+    "  part                     before → after",
+    ...rows,
+  ].join("\n");
 }
 
 /** Loads the data. What is returned is shared with other requests: read it, never change it. */
@@ -224,6 +302,7 @@ export async function mutateState<T>(store: Store, fn: (db: Database) => T): Pro
     if (!base) throw new Error("The app has not been set up yet.");
     const db = structuredClone(base.db);
     const result = withDb(db, () => fn(db));
+    assertIntegrity(db); // the data's own rules (src/data/constraints.ts): a change that breaks one is refused whole
     const change = diff(base, db);
     if (!change.put.length && !change.remove.length) return { result, changed: [] };
     const revision = await store.state.commit(change);
@@ -270,6 +349,8 @@ export async function snapshotFor(store: Store, actor: Actor): Promise<{ revisio
     const hop = actor.role === "HOP";
     const docs = db.docs.filter((d) => canViewDoc(actor, d));
     const docIds = new Set(docs.map((d) => d.id));
+    const sessions = db.recordingSessions.filter((x) => ids.has(x.contentId));
+    const sessionIds = new Set(sessions.map((x) => x.id));
     const settings = { ...db.settings };
     if (!hop)
       settings.permissions = {
@@ -296,6 +377,17 @@ export async function snapshotFor(store: Store, actor: Actor): Promise<{ revisio
       snapshots: can(actor, "storage.use") ? db.snapshots : [],
       docs,
       docRevisions: revisionsSent(db.docRevisions, docIds),
+      // The workflow's data goes with the projects it belongs to.
+      developmentForms: db.developmentForms.filter((f) => ids.has(f.contentId)),
+      plannedEpisodes: db.plannedEpisodes.filter((p) => ids.has(p.contentId)),
+      projectRoles: db.projectRoles.filter((r) => ids.has(r.contentId)),
+      workflowChecklistItems: db.workflowChecklistItems.filter((c) =>
+        c.ownerType === "session" ? sessionIds.has(c.ownerId) : ids.has(c.ownerId),
+      ),
+      recordingSessions: sessions,
+      sessionLogEntries: db.sessionLogEntries.filter((e) => sessionIds.has(e.sessionId)),
+      reviewCheckpoints: db.reviewCheckpoints.filter((c) => ids.has(c.contentId) && (c.episodeId === null || ids.has(c.episodeId))),
+      shareLinks: db.shareLinks.filter((l) => ids.has(l.episodeId)),
       outbox: can(actor, "reminders.sendOthers") ? db.outbox : db.outbox.filter((o) => o.personId === actor.personId),
       settings,
       counters: db.counters,

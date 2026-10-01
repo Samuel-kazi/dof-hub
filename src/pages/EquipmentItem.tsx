@@ -25,7 +25,7 @@ import {
 import type { EquipCondition, EquipmentItem } from "../types";
 import { getDb } from "../data/store";
 import { nameOf } from "../services/wrapped/people";
-import { fmtDate, fmtShort } from "../services/utils";
+import { fmtDate, fmtShort, todayIso } from "../services/utils";
 import { useItemActions } from "./EquipmentForms";
 
 export function EquipmentItemPage({ id }: { id: string }) {
@@ -152,7 +152,7 @@ export function EquipmentItemPage({ id }: { id: string }) {
               <dd>{asg}</dd>
               <dt>Free now</dt>
               <dd>
-                <b>{availabilityOn(item, new Date().toISOString().slice(0, 10), new Date().toISOString().slice(0, 10)).availableQty}</b>
+                <b>{availabilityOn(item, todayIso(), todayIso()).availableQty}</b>
               </dd>
               <dt>Removed as damaged</dt>
               <dd>{item.quantityDamaged}</dd>

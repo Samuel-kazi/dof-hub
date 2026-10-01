@@ -133,6 +133,213 @@ export interface ContentRecord {
   version: number; // optimistic concurrency
   createdAt: string;
   notes: string;
+  // ── The five-stage workflow: series, devotions and documentaries (src/config/workflow.ts) ──
+  // All three are null on Live Shows, Music and General Use, and on records made before the workflow
+  // existed, which keep their earlier pipeline until they are moved across.
+  seriesType: SeriesType | null; // on a series itself (level 0): podcast, testimonial or sermon
+  workflow: ProjectWorkflow | null; // on a project: a season of a series, a devotion, a documentary
+  episode: EpisodeInfo | null; // on an episode, made when a recording session closes
+}
+
+// ── The five-stage workflow ──────────────────────────────────
+// Development and Pre-production happen on the project, Production on each recording session, and
+// Post production and Marketing and distribution on each episode. See src/config/workflow.ts.
+
+export type SeriesType = "podcast" | "testimonial" | "sermon";
+export type FormType = "podcast" | "testimonial" | "sermon" | "documentary_dof" | "documentary_pitched" | "devotion";
+export type WorkflowStage = "Development" | "Pre-production" | "Production" | "Post production" | "Marketing and distribution";
+export type ProjectStatus = "Development" | "Active" | "Completed" | "Closed" | "Advice only"; // Hold is a greenlight outcome, on the development form
+export type GreenlightOutcome = "Greenlight" | "Revise and resubmit" | "Hold" | "Decline" | "Advice only";
+export type CriterionKey = "missionFit" | "messageSoundness" | "audienceNeed" | "feasibility" | "resourceCost" | "teamStrength";
+export type SermonFormat = "in_person" | "recorded";
+
+/** Workflow fields on a project record. The project's own stage is Development or Pre-production; later stages live on sessions and episodes. */
+export interface ProjectWorkflow {
+  formType: FormType;
+  status: ProjectStatus;
+  stage: "Development" | "Pre-production";
+  showProducerId: string | null; // assigned at Development by someone who may assign other people's work
+  producerAssignedById: string | null;
+  producerAssignedAt: string | null; // timestamp
+  sermonFormat: SermonFormat | null; // sermon series only
+  migrated: boolean; // moved across from the earlier pipeline: gates it passed there count as met
+}
+
+export type PostStage = "Not started" | "Editing" | "Rough cut review" | "Final review" | "Approved";
+export type MdStage = "Release plan" | "Scheduled" | "Published";
+export type DistributionStatus = "Planned" | "Scheduled" | "Published";
+
+/** One platform an episode goes out on. */
+export interface DistributionEntry {
+  id: string;
+  platform: string; // YouTube, Facebook, a podcast host
+  status: DistributionStatus;
+  link: string; // http or https only
+  date: string | null; // YYYY-MM-DD, Africa/Nairobi
+}
+
+/** Workflow fields on an episode record. Its Content ID is the episode code, {projectId}-E{nn}. */
+export interface EpisodeInfo {
+  episodeNumber: number;
+  plannedEpisodeId: string | null;
+  sourceSessionId: string | null; // null for episodes that existed before session logging
+  productionNotes: string; // copied from the session log row
+  stage: "Post production" | "Marketing and distribution";
+  postStage: PostStage;
+  roughCutStatus: "Pending" | "Done";
+  finalReviewStatus: "Pending" | "Done";
+  editorId: string | null;
+  readyForReview: boolean; // the editor marks it ready before Rough cut review
+  reviewLink: string; // http or https only
+  finalFileLink: string; // http or https only
+  sendBackReason: string | null; // why the latest review sent it back to Editing
+  mdStage: MdStage;
+  distribution: DistributionEntry[];
+  learningNotes: string; // against the brief's success measures
+}
+
+/** Every greenlight decision, kept in order, including a project moved to Hold when its review window passed. */
+export interface GreenlightDecision {
+  stage: 1 | 2;
+  outcome: GreenlightOutcome;
+  notes: string;
+  date: string; // YYYY-MM-DD
+  byPersonId: string; // "system" for the automatic move to Hold
+  at: string; // timestamp
+}
+
+/** One development form per project. Its sections are checked against the form type's schema when saved. */
+export interface DevelopmentForm {
+  id: string; // the project's Content ID: one form per project
+  contentId: string;
+  formType: FormType;
+  sections: Record<string, Record<string, unknown>>;
+  greenlightStage: 1 | 2 | null; // a DOF-made documentary has two greenlights; every other form has one (null)
+  criteria: Record<CriterionKey, { met: boolean | null; note: string }>;
+  outcome: GreenlightOutcome | null; // the latest decision at the current greenlight stage
+  reviewNotes: string;
+  decisionDate: string | null; // YYYY-MM-DD
+  reviewWindowDate: string | null; // YYYY-MM-DD: no decision by then moves the project to Hold
+  decisions: GreenlightDecision[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** An episode as planned at Development. A real episode is made from it when a session that recorded it closes. */
+export interface PlannedEpisode {
+  id: string; // {projectId}-P{nn}
+  contentId: string; // the project
+  episodeNumber: number;
+  workingTitle: string;
+  question: string;
+  guest: string;
+  notes: string;
+  details: Record<string, string>; // per form type, for example a devotion day's scripture, key thought and application
+  createdAt: string;
+  updatedAt: string;
+  archivedAt: string | null;
+  archivedReason: string | null;
+}
+
+export type RoleKey = "director" | "dop" | "audio_engineer" | "camera_operator" | "continuity" | "editor" | "host_guest";
+
+/** A person's role on one project. The show producer is held on the project itself (ProjectWorkflow). */
+export interface ProjectRole {
+  id: string; // {projectId}|{roleKey}; hosts and guests add a random part, as a project has several
+  contentId: string;
+  roleKey: RoleKey;
+  exclusive: boolean; // one person per role, for every role but hosts and guests
+  crewId: string | null; // someone on the crew list
+  guestName: string; // hosts and guests only: someone who is not on the crew list
+  assignedById: string;
+  assignedAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ChecklistOwner = "project" | "session" | "episode";
+
+/** One item of a workflow checklist, with a note. */
+export interface WorkflowChecklistItem {
+  id: string; // {ownerId}|{stage}|{itemKey}
+  ownerType: ChecklistOwner;
+  ownerId: string;
+  stage: WorkflowStage;
+  itemKey: string;
+  label: string;
+  required: boolean;
+  done: boolean;
+  note: string;
+  doneAt: string | null;
+  doneById: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type SessionStatus = "Planned" | "Open" | "Closed";
+
+/** One recording session. Pre-production while Planned, Production while Open; closing it makes the episodes. */
+export interface RecordingSession {
+  id: string; // the session code, {projectId}-R{nn}
+  contentId: string;
+  sessionNumber: number;
+  scheduledDate: string | null; // YYYY-MM-DD, Africa/Nairobi
+  venue: string;
+  status: SessionStatus;
+  closedAt: string | null;
+  callSheetId: string | null;
+  runSheet: RunItem[];
+  dailyLog: string;
+  createdAt: string;
+  updatedAt: string;
+  archivedAt: string | null;
+  archivedReason: string | null;
+}
+
+export type LogStatus = "Recorded" | "Pickup needed" | "Not recorded";
+
+/** One row of a session's recording log. Pickups, timestamps and problems go in the notes. */
+export interface SessionLogEntry {
+  id: string; // {sessionId}|{plannedEpisodeId}, or {sessionId}|I-{random} for a documentary's free-form item
+  sessionId: string;
+  plannedEpisodeId: string | null;
+  itemLabel: string; // documentary: an interview set, a scene, a location
+  logDate: string; // YYYY-MM-DD, the session's date unless changed
+  guest: string;
+  status: LogStatus | null; // every row needs one before the session can close
+  notesForPost: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CheckpointKey = "pitch" | "outline_script" | "rough_cut" | "final";
+export type CheckpointStatus = "Pending" | "Approved" | "Changes requested";
+
+/** A theological review checkpoint: pitch and outline on the project, rough cut and final on each episode. */
+export interface ReviewCheckpoint {
+  id: string; // {projectId or episodeId}|{checkpoint}
+  contentId: string; // the project
+  episodeId: string | null;
+  checkpoint: CheckpointKey;
+  reviewerIds: string[];
+  status: CheckpointStatus;
+  note: string; // required when changes are requested
+  decidedAt: string | null;
+  decidedById: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A link to one episode's hosted file. On the hosted site it is /share/{token}; in the desktop app it is the file's own link. */
+export interface ShareLink {
+  id: string;
+  episodeId: string;
+  token: string | null; // 128 random bits, made by the server only. Null when the desktop app copied the file's link instead.
+  targetUrl: string;
+  createdById: string;
+  createdAt: string;
+  revokedAt: string | null;
+  sharedWithNote: string;
 }
 
 /** One line of a live show's run of show. */
@@ -400,6 +607,15 @@ export interface Database {
   docs: DocRecord[];
   docRevisions: DocRevision[];
   outbox: OutboxEntry[];
+  // The five-stage workflow (see the interfaces above)
+  developmentForms: DevelopmentForm[];
+  plannedEpisodes: PlannedEpisode[];
+  projectRoles: ProjectRole[];
+  workflowChecklistItems: WorkflowChecklistItem[];
+  recordingSessions: RecordingSession[];
+  sessionLogEntries: SessionLogEntry[];
+  reviewCheckpoints: ReviewCheckpoint[];
+  shareLinks: ShareLink[];
   settings: Settings;
   counters: Record<string, number>; // ID sequences, keyed by prefix
 }

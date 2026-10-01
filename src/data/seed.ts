@@ -14,16 +14,12 @@ import { categoryOf } from "../config/categories";
 import { buildGearSeed } from "./seedGear";
 import { syncRecordCounters } from "./ids";
 import { fillTemplate, templateOf } from "../config/docTemplates";
+import { addDaysIso, todayIso } from "../services/utils";
 
 // Demo data. Dates are relative to "today" at the moment the demo data is created,
 // so the dashboard always has something upcoming, due, and overdue to show.
 
-export const isoDay = (offset = 0): string => {
-  const d = new Date();
-  d.setHours(12, 0, 0, 0);
-  d.setDate(d.getDate() + offset);
-  return d.toISOString().slice(0, 10);
-};
+export const isoDay = (offset = 0): string => addDaysIso(todayIso(), offset);
 
 const person = (personId: string, category: RoleCode, name: string, skills: string[], hasLogin: boolean): Person => ({
   personId,
@@ -58,7 +54,7 @@ const outputsBefore = (cat: CategoryKey, current: string) => {
   return out;
 };
 
-interface LeafInput {
+export interface LeafInput {
   contentId: string;
   title: string;
   category: CategoryKey;
@@ -88,7 +84,8 @@ interface LeafInput {
   sendBackReason?: string;
 }
 
-const rec = (i: LeafInput): ContentRecord => ({
+/** A sample record. Exported for the workflow fixture (seedWorkflow.ts). */
+export const rec = (i: LeafInput): ContentRecord => ({
   contentId: i.contentId,
   title: i.title,
   category: i.category,
@@ -129,6 +126,9 @@ const rec = (i: LeafInput): ContentRecord => ({
   version: 1,
   createdAt: isoDay(-30),
   notes: i.notes ?? "",
+  seriesType: null,
+  workflow: null,
+  episode: null,
 });
 
 const loginEmail = (p: Person): string => {
@@ -664,6 +664,14 @@ export function buildSeed(): Database {
     docs,
     docRevisions,
     outbox: [],
+    developmentForms: [],
+    plannedEpisodes: [],
+    projectRoles: [],
+    workflowChecklistItems: [],
+    recordingSessions: [],
+    sessionLogEntries: [],
+    reviewCheckpoints: [],
+    shareLinks: [],
     ...gear,
     settings: {
       stageReminderHours: 24,

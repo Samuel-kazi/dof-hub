@@ -2,6 +2,8 @@ import type { ContentRecord, Database, DocRecord, DocRevision, DriveAllocation, 
 import { MUSIC_STAGE_MAP, categoryOf } from "../config/categories";
 import { templateOf } from "../config/docTemplates";
 import { syncRecordCounters } from "./ids";
+import { WORKFLOW_PARTS } from "./constraints";
+import { todayIso } from "../services/utils";
 
 // Upgrades saved data from version 2 to 3. It only touches plain data, so it can run while the
 // store is loading. It is safe to run twice: anything already present is left alone.
@@ -22,7 +24,7 @@ function remapMusic(r: ContentRecord): void {
   const newCurrent = MUSIC_STAGE_MAP[oldCurrent] ?? "Idea";
   const idx = stages.indexOf(newCurrent);
   const oldOutput = !!r.stageOutputs[oldCurrent];
-  const oldDue = r.stageDeadlines[oldCurrent] ?? r.deadline ?? new Date().toISOString().slice(0, 10);
+  const oldDue = r.stageDeadlines[oldCurrent] ?? r.deadline ?? todayIso();
   r.pipelineStage = newCurrent;
   r.stageOutputs = Object.fromEntries(stages.map((s, i) => [s, i < idx ? true : i === idx ? oldOutput : false]));
   r.stageDeadlines = Object.fromEntries(stages.map((s, i) => [s, i === idx ? oldDue : isoPlus(oldDue, (i - idx) * 4)]));
@@ -130,7 +132,7 @@ export function upgradeToV4(db: Database): Database {
     // Today's storage figure follows, so the forecast does not count files that were cleared.
     const used = db.drives.reduce((n, d) => n + d.otherUsedGB, 0) + db.allocations.reduce((n, a) => n + a.sizeGB, 0);
     const capacity = db.drives.reduce((n, d) => n + d.capacityGB, 0);
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayIso();
     const snap = db.snapshots.find((s) => s.date === today);
     if (snap) Object.assign(snap, { usedGB: used, capacityGB: capacity });
     else db.snapshots.push({ date: today, usedGB: used, capacityGB: capacity });
@@ -361,5 +363,23 @@ export function upgradeToV14(db: Database): Database {
   db.counters ??= {};
   syncRecordCounters(db);
   db.schemaVersion = 14;
+  return db;
+}
+
+/**
+ * Version 15: the five-stage workflow for series, devotions and documentaries gets its own lists, all empty,
+ * and every record gains three workflow fields, all empty. Nothing that exists is changed, moved or removed:
+ * projects made before this keep their earlier pipeline until they are moved across, which is a separate step
+ * with a dry run of its own.
+ */
+export function upgradeToV15(db: Database): Database {
+  const parts = db as unknown as Record<string, unknown[] | undefined>;
+  for (const k of WORKFLOW_PARTS) parts[k] ??= [];
+  for (const r of db.records) {
+    r.seriesType ??= null;
+    r.workflow ??= null;
+    r.episode ??= null;
+  }
+  db.schemaVersion = 15;
   return db;
 }

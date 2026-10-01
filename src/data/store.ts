@@ -2,12 +2,14 @@ import { useSyncExternalStore } from "react";
 import type { Database } from "../types";
 import { buildSeed } from "./seed";
 import { buildGearSeed } from "./seedGear";
+import { assertIntegrity } from "./constraints";
 import {
   upgradeToV10,
   upgradeToV11,
   upgradeToV12,
   upgradeToV13,
   upgradeToV14,
+  upgradeToV15,
   upgradeToV3,
   upgradeToV4,
   upgradeToV5,
@@ -22,7 +24,7 @@ import {
 // arrives, services keep their signatures and only this layer changes.
 
 const KEY = "dof-hub-db";
-const SCHEMA_VERSION = 14;
+const SCHEMA_VERSION = 15;
 
 /** Older saved data keeps everything it has and gains the new modules with sample data. */
 function migrate(old: Database): Database {
@@ -51,72 +53,59 @@ function migrate(old: Database): Database {
   return next;
 }
 
+/** Each upgrade step, by the version it starts from. Each one sets the version it brings the data to. */
+const UPGRADES: Record<number, (db: Database) => Database> = {
+  2: upgradeToV3,
+  3: upgradeToV4,
+  4: upgradeToV5,
+  5: upgradeToV6,
+  6: upgradeToV7,
+  7: upgradeToV8,
+  8: upgradeToV9,
+  9: upgradeToV10,
+  10: upgradeToV11,
+  11: upgradeToV12,
+  12: upgradeToV13,
+  13: upgradeToV14,
+  14: upgradeToV15,
+};
+
 /** Brings saved data of any older version up to the current one. Returns null if it is not recognisable. */
 export function upgradeDb(parsed: Database): Database | null {
-  switch (parsed.schemaVersion) {
-    case SCHEMA_VERSION:
-      return parsed;
-    case 1:
-      return upgradeToV14(
-        upgradeToV13(
-          upgradeToV12(
-            upgradeToV11(
-              upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(migrate(parsed))))))))),
-            ),
-          ),
-        ),
-      );
-    case 2:
-      return upgradeToV14(
-        upgradeToV13(
-          upgradeToV12(
-            upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(parsed))))))))),
-          ),
-        ),
-      );
-    case 3:
-      return upgradeToV14(
-        upgradeToV13(
-          upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(parsed))))))))),
-        ),
-      );
-    case 4:
-      return upgradeToV14(
-        upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(parsed))))))))),
-      );
-    case 5:
-      return upgradeToV14(
-        upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(parsed)))))))),
-      );
-    case 6:
-      return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(parsed))))))));
-    case 7:
-      return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(parsed)))))));
-    case 8:
-      return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(parsed))))));
-    case 9:
-      return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(parsed)))));
-    case 10:
-      return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(parsed))));
-    case 11:
-      return upgradeToV14(upgradeToV13(upgradeToV12(parsed)));
-    case 12:
-      return upgradeToV14(upgradeToV13(parsed));
-    case 13:
-      return upgradeToV14(parsed);
-    default:
-      return null;
+  let db = parsed.schemaVersion === 1 ? migrate(parsed) : parsed;
+  if (typeof db.schemaVersion !== "number" || db.schemaVersion < 2 || db.schemaVersion > SCHEMA_VERSION) return null;
+  while (db.schemaVersion < SCHEMA_VERSION) {
+    const from = db.schemaVersion;
+    db = UPGRADES[from](db);
+    if (db.schemaVersion <= from) throw new Error(`The upgrade from version ${from} did not set the version it brings the data to.`);
   }
+  return db;
 }
 
 export const CURRENT_SCHEMA = SCHEMA_VERSION;
+
+/**
+ * Before saved data is upgraded, or set aside because it cannot be read, a copy is kept next to it, so the
+ * desktop app and the demo never lose what was saved. If there is no room for the copy, the upgrade still
+ * goes ahead: it only adds, and the original stays where it is until the next save.
+ */
+function keepCopy(raw: string, label: string): void {
+  try {
+    localStorage.setItem(`${KEY}-${label}`, raw);
+  } catch {
+    console.warn(`No room to keep a copy of the saved data (${label}).`);
+  }
+}
 
 function load(): Database {
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) {
-      const up = upgradeDb(JSON.parse(raw) as Database);
+      const parsed = JSON.parse(raw) as Database;
+      if (parsed.schemaVersion !== SCHEMA_VERSION) keepCopy(raw, `before-v${SCHEMA_VERSION}`);
+      const up = upgradeDb(parsed);
       if (up) return up;
+      keepCopy(raw, "unreadable");
     }
   } catch {
     /* fall through to seed data */
@@ -146,20 +135,77 @@ export const getTick = (): number => tick;
 /** Replaces everything, for example with what the server sent. */
 export function setDb(next: Database): void {
   db = next;
+  if (rollback) committed = JSON.stringify(next);
   tick++;
   listeners.forEach((l) => l());
 }
 
-export function commit(): void {
+// ── Changes are all or nothing ───────────────────────────────
+// Every change a person makes runs inside transaction() (see src/data/rpc.ts). Saves inside it wait until it
+// ends, and if anything in it fails, the data goes back to how it was before it started, with nothing saved.
+// On the server, the same is true of every change by construction: it is made on a copy that is only saved if
+// the whole change succeeds (server/state.ts).
+
+let rollback = false;
+let committed: string | null = null; // the data as last saved or received, to go back to
+let depth = 0;
+let dirty = false;
+
+/** Turns on going back after a failed change. The browser does; the server has its own way. */
+export function enableRollback(): void {
+  rollback = true;
+  committed = JSON.stringify(db);
+}
+
+function restore(): void {
+  if (!rollback || committed === null) return;
+  if (JSON.stringify(db) === committed) return; // nothing was changed, so nothing to undo or redraw
+  db = JSON.parse(committed) as Database;
   tick++;
-  if (persist) {
+  listeners.forEach((l) => l());
+}
+
+export function transaction<T>(fn: () => T): T {
+  if (depth > 0) return fn();
+  depth = 1;
+  let out: T;
+  try {
+    out = fn();
+    // Kept on this device, this is the whole of the data, so the data's own rules are checked before it is
+    // saved. Signed in to the server, the server checks them against everything, including what this person
+    // is not sent.
+    if (dirty && persist) assertIntegrity(db);
+  } catch (e) {
+    depth = 0;
+    dirty = false;
+    restore();
+    throw e;
+  }
+  depth = 0;
+  if (dirty) {
+    dirty = false;
+    save();
+  }
+  return out;
+}
+
+export function commit(): void {
+  if (depth > 0) dirty = true;
+  else save();
+}
+
+function save(): void {
+  tick++;
+  const json = persist || rollback ? JSON.stringify(db) : null;
+  if (persist && json !== null) {
     try {
-      localStorage.setItem(KEY, JSON.stringify(db));
+      localStorage.setItem(KEY, json);
       saveFailed = false;
     } catch {
       saveFailed = true; // keep working in memory, but tell the user
     }
   }
+  if (rollback) committed = json;
   listeners.forEach((l) => l());
 }
 

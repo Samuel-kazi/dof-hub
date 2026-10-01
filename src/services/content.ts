@@ -13,7 +13,7 @@ import { fmtSize } from "./utils";
 import { canComment, canJoin, canView, canWrite, getRecord, isHop, selfAndAncestors, visibleRecords } from "./access";
 import { getPerson } from "./people";
 import { logAudit } from "./audit";
-import { dayNumber, daysUntil, hoursUntilEndOfDay, pad, pickKeys, todayIso } from "./utils";
+import { addDaysIso, dayNumber, daysUntil, hoursUntilEndOfDay, pad, pickKeys, todayIso } from "./utils";
 
 // ── Hierarchy helpers ────────────────────────────────────────
 
@@ -270,6 +270,9 @@ function blankRecord(id: string, category: CategoryKey, title: string, parentId:
     version: 1,
     createdAt: new Date().toISOString(),
     notes: "",
+    seriesType: null,
+    workflow: null,
+    episode: null,
   };
 }
 
@@ -278,14 +281,8 @@ function initPipeline(actor: Actor, r: ContentRecord, stepDays = 4, startStage?:
   r.pipelineStage = startStage ?? stages[0].name;
   r.stageEnteredAt = todayIso();
   r.stageOutputs = Object.fromEntries(stages.map((s) => [s.name, false]));
-  const base = new Date();
-  r.stageDeadlines = Object.fromEntries(
-    stages.map((s, i) => {
-      const d = new Date(base);
-      d.setDate(d.getDate() + (i + 1) * stepDays);
-      return [s.name, d.toISOString().slice(0, 10)];
-    }),
-  );
+  const today = todayIso();
+  r.stageDeadlines = Object.fromEntries(stages.map((s, i) => [s.name, addDaysIso(today, (i + 1) * stepDays)]));
   ensureStageTasks(r, r.pipelineStage);
   attachStageDocs(actor, r, r.pipelineStage);
 }

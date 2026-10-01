@@ -10,13 +10,15 @@ export interface Legacy {
   schemaVersion: number;
 }
 export type MakeStore = (legacy?: Legacy) => Promise<Store>;
+/** What a store's backup holds, for checking: each part's elements, and the schema version. */
+export type BackedUp = (s: Store, label: string) => Promise<{ records: unknown[]; schemaVersion: number | null }>;
 type Test = (name: string, fn: () => Promise<void>) => Promise<void>;
 
 const item = (k: string, i: string, o: number, d: unknown): Item => ({ k, i, o, d });
 const versions = () => Object.fromEntries(versionedKeys().map((k) => [k, 1]));
 const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 
-export async function storageContract(t: Test, make: MakeStore): Promise<void> {
+export async function storageContract(t: Test, make: MakeStore, backedUp: BackedUp): Promise<void> {
   await t("a new store has no data until it is set up, and is set up once", async () => {
     const s = await make();
     assert.equal(await s.state.head(), null);
@@ -160,6 +162,67 @@ export async function storageContract(t: Test, make: MakeStore): Promise<void> {
     assert.equal((await s.attempts.get("u:kev"))?.lockedUntil, now + 1000);
     await s.attempts.clear("u:kev");
     assert.equal(await s.attempts.get("u:kev"), null);
+  });
+
+  // ── The workflow's uniqueness rules, kept by the store itself (src/data/constraints.ts) ──
+
+  const planned = (id: string, contentId: string, episodeNumber: number) =>
+    item("plannedEpisodes", id, episodeNumber, { id, contentId, episodeNumber });
+  const save = (s: Store, ...put: Item[]) => s.state.commit({ put, remove: [], expect: {}, schemaVersion: 15 });
+
+  await t("a duplicate that breaks a uniqueness rule is refused by the store, and nothing in that save is written", async () => {
+    const s = await make();
+    await s.state.init([planned("P-A", "PRJ-1", 1)], 15);
+    const before = await s.state.head();
+    await assert.rejects(
+      save(s, item("records", "X", 0, { contentId: "X" }), planned("P-B", "PRJ-1", 1)),
+      /already planned/,
+      "the same episode number twice in one project",
+    );
+    assert.equal((await s.state.head())?.revision, before?.revision, "the revision did not move");
+    assert.deepEqual(
+      (await s.state.items(["records", "plannedEpisodes"])).map((x) => x.i),
+      ["P-A"],
+      "the other element in the same save was not written either",
+    );
+    assert.equal(await save(s, planned("P-C", "PRJ-2", 1)), before!.revision + 1, "the same number in another project is fine");
+  });
+
+  await t("uniqueness rules that apply only to some elements", async () => {
+    const s = await make();
+    await s.state.init([], 15);
+    const role = (id: string, roleKey: string) =>
+      item("projectRoles", id, 0, { id, contentId: "PRJ-1", roleKey, exclusive: roleKey !== "host_guest" });
+    await save(s, role("PRJ-1|director", "director"), role("PRJ-1|host_guest|a", "host_guest"), role("PRJ-1|host_guest|b", "host_guest"));
+    await assert.rejects(save(s, role("PRJ-1|director|again", "director")), /already has that role/, "one director per project");
+    const link = (id: string, token: string | null) => item("shareLinks", id, 0, { id, episodeId: "E", token });
+    await save(s, link("L1", "tok-1"), link("L2", null), link("L3", null));
+    await assert.rejects(save(s, link("L4", "tok-1")), /share link already exists/, "a share token is never used twice");
+    const row = (id: string, plannedEpisodeId: string | null) =>
+      item("sessionLogEntries", id, 0, { id, sessionId: "R01", plannedEpisodeId });
+    await save(s, row("r1", "P01"), row("r2", null), row("r3", null));
+    await assert.rejects(save(s, row("r4", "P01")), /already has a row/, "one log row per planned episode per session");
+    const ep = (id: string, n: number | null) =>
+      item("records", id, 0, { contentId: id, parentId: "PRJ-1", episode: n === null ? null : { episodeNumber: n } });
+    await save(s, ep("PRJ-1-E01", 1), ep("OLD-1", null), ep("OLD-2", null));
+    await assert.rejects(save(s, ep("PRJ-1-E09", 1)), /episode number is already used/, "one episode per number per project");
+  });
+
+  await t("a part's elements can be counted without reading them", async () => {
+    const s = await make();
+    await s.state.init([planned("P1", "A", 1), planned("P2", "A", 2), item("records", "R", 0, {})], 15);
+    assert.equal(await s.state.count("plannedEpisodes"), 2);
+    assert.equal(await s.state.count("shareLinks"), 0);
+  });
+
+  await t("a backup keeps the data as it was, and a second backup under the same name keeps the first", async () => {
+    const s = await make();
+    await s.state.init([item("records", "A", 0, { v: 1 })], 14);
+    const where = await s.state.backup("before_test");
+    assert.ok(where.includes("before_test"));
+    await s.state.commit({ put: [item("records", "A", 0, { v: 2 })], remove: [], expect: { records: 1 }, schemaVersion: 15 });
+    await s.state.backup("before_test");
+    assert.deepEqual(await backedUp(s, "before_test"), { records: [{ v: 1 }], schemaVersion: 14 });
   });
 
   await t("data saved in the earlier layout is moved across, photos and all, and keeps its revision", async () => {

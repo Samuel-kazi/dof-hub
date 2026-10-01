@@ -63,7 +63,15 @@ async function make(legacy?: { data: Record<string, unknown>; revision: number; 
 }
 
 try {
-  await storageContract(t, make);
+  await storageContract(t, make, async (s, label) => {
+    const name = used.at(-1)!;
+    const items = await client.db(name).collection(`hub_items_${label}`).find({ k: "records" }).sort({ o: 1 }).toArray();
+    const meta = await client
+      .db(name)
+      .collection(`hub_meta_${label}`)
+      .findOne({ _id: "meta" } as never);
+    return { records: items.map((d) => d.d), schemaVersion: meta ? Number(meta.schemaVersion) : null };
+  });
 
   await t("mongo: the earlier layout is left exactly as it was, as a backup", async () => {
     const s = await make({ data: { records: [{ contentId: "DOF-SER-001", title: "A" }] }, revision: 5, schemaVersion: 13 });

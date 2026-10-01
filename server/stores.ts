@@ -1,3 +1,5 @@
+import { RuleError } from "../src/types";
+import { UNIQUE_RULES, uniqueViolations } from "../src/data/constraints";
 import { layout1ToItems, versionedKeys } from "./layout";
 
 // Where the server keeps things. The same interface is implemented twice: in memory, for tests and
@@ -105,10 +107,21 @@ export interface StateStore {
   items(keys: string[]): Promise<Item[]>;
   /** The newest elements of one part, newest first. */
   newest(key: string, limit: number): Promise<Item[]>;
-  /** Writes all of it or none of it. Returns the new revision, or null if someone else changed a part in `expect` first. */
+  /**
+   * Writes all of it or none of it. Returns the new revision, or null if someone else changed a part in `expect`
+   * first. Throws a RuleError, writing nothing, if it would break a uniqueness rule (src/data/constraints.ts).
+   */
   commit(c: Commit): Promise<number | null>;
   /** The first time only. False if the data already exists. */
   init(items: Item[], schemaVersion: number): Promise<boolean>;
+  /** How many elements one part has. */
+  count(key: string): Promise<number>;
+  /**
+   * Keeps a copy of all the data under `label`, before an upgrade changes it. A copy already kept under that
+   * label is never replaced, so the first copy, made before anything changed, is the one that stays. Returns
+   * where the copy is.
+   */
+  backup(label: string): Promise<string>;
 }
 
 /** A photo, kept apart from the data so the data stays small. Served at /api/file?id=… to signed-in people. */
@@ -183,8 +196,18 @@ class MemState implements StateStore {
   async commit(c: Commit) {
     if (!this.head_) return null;
     for (const [k, v] of Object.entries(c.expect)) if ((this.head_.versions[k] ?? 0) !== v) return null;
-    for (const r of c.remove) this.items_.delete(`${r.k}/${r.i}`);
-    for (const it of c.put) this.items_.set(`${it.k}/${it.i}`, structuredClone(it));
+    const next = new Map(this.items_);
+    for (const r of c.remove) next.delete(`${r.k}/${r.i}`);
+    for (const it of c.put) next.set(`${it.k}/${it.i}`, structuredClone(it));
+    // The same uniqueness rules MongoDB keeps with its unique indexes, checked before anything is kept.
+    for (const part of new Set(c.put.map((it) => it.k).filter((k) => UNIQUE_RULES.some((r) => r.part === k)))) {
+      const broken = uniqueViolations(
+        part,
+        [...next.values()].filter((it) => it.k === part).map((it) => it.d),
+      );
+      if (broken.length) throw new RuleError(broken[0]);
+    }
+    this.items_ = next;
     for (const k of Object.keys(c.expect)) this.head_.versions[k] = (this.head_.versions[k] ?? 0) + 1;
     this.head_.revision++;
     this.head_.schemaVersion = c.schemaVersion;
@@ -195,6 +218,16 @@ class MemState implements StateStore {
     for (const it of items) this.items_.set(`${it.k}/${it.i}`, structuredClone(it));
     this.head_ = { revision: 1, schemaVersion, versions: Object.fromEntries(versionedKeys().map((k) => [k, 1])) };
     return true;
+  }
+  async count(key: string) {
+    return [...this.items_.values()].filter((it) => it.k === key).length;
+  }
+  /** Copies kept by backup(), for tests to look at. */
+  readonly backups = new Map<string, { items: Item[]; head: Head | null }>();
+  async backup(label: string) {
+    if (!this.backups.has(label))
+      this.backups.set(label, { items: [...this.items_.values()].map((it) => structuredClone(it)), head: structuredClone(this.head_) });
+    return `memory backup ${label}`;
   }
 }
 

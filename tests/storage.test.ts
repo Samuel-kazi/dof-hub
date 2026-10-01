@@ -28,7 +28,19 @@ const t = async (name: string, fn: () => Promise<void>) => {
   }
 };
 
-await storageContract(t, async (legacy) => memoryStore(legacy));
+await storageContract(
+  t,
+  async (legacy) => memoryStore(legacy),
+  async (s, label) => {
+    const copy = (
+      s.state as unknown as { backups: Map<string, { items: { k: string; d: unknown }[]; head: { schemaVersion: number } | null }> }
+    ).backups.get(label);
+    return {
+      records: (copy?.items ?? []).filter((it) => it.k === "records").map((it) => it.d),
+      schemaVersion: copy?.head?.schemaVersion ?? null,
+    };
+  },
+);
 
 // ── The server, end to end ──
 
@@ -268,7 +280,7 @@ await t("H2: data saved by the earlier layout is upgraded on first use, and work
   const state = await hop.get("/api/state");
   assert.equal(state.status, 200, JSON.stringify(state.json).slice(0, 300));
   assert.ok(!JSON.stringify(state.json).includes("data:image"));
-  assert.equal(state.json.db.schemaVersion, 14, "brought up to the current version");
+  assert.equal(state.json.db.schemaVersion, 15, "brought up to the current version");
   assert.ok(state.json.db.counters["record:SER"] >= 1, "project counters were set from the data");
   const photo = state.json.db.people.find((p: Json) => p.personId === "DOF-P-HOP-001").photoUrl;
   assert.equal((await hop.raw("GET", photo)).status, 200);
