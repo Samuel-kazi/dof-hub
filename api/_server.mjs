@@ -77,6 +77,41 @@ var MongoCol = class {
     await this.col.deleteOne({ _id: id2 });
   }
 };
+var MongoAttempts = class {
+  constructor(col) {
+    this.col = col;
+  }
+  col;
+  out(d) {
+    return d ? { _id: String(d._id), count: Number(d.count ?? 0), first: Number(d.first ?? 0), lockedUntil: Number(d.lockedUntil ?? 0) } : null;
+  }
+  async get(key2) {
+    return this.out(await this.col.findOne({ _id: key2 }));
+  }
+  async charge(key2, now, windowMs) {
+    const fresh = { $or: [{ $eq: [{ $ifNull: ["$first", null] }, null] }, { $gt: [{ $subtract: [now, "$first"] }, windowMs] }] };
+    const d = await this.col.findOneAndUpdate(
+      { _id: key2 },
+      [{ $set: {
+        count: { $cond: [fresh, 1, { $add: [{ $ifNull: ["$count", 0] }, 1] }] },
+        first: { $cond: [fresh, now, "$first"] },
+        lockedUntil: { $ifNull: ["$lockedUntil", 0] },
+        _exp: { $max: [{ $ifNull: ["$_exp", /* @__PURE__ */ new Date(0)] }, new Date(now + windowMs)] }
+      } }],
+      { upsert: true, returnDocument: "after" }
+    );
+    return this.out(d) ?? { _id: key2, count: 1, first: now, lockedUntil: 0 };
+  }
+  async refund(key2) {
+    await this.col.updateOne({ _id: key2, count: { $gt: 0 } }, { $inc: { count: -1 } });
+  }
+  async lock(key2, until) {
+    await this.col.updateOne({ _id: key2 }, { $set: { lockedUntil: until, _exp: new Date(until) }, $setOnInsert: { count: 0, first: Date.now() } }, { upsert: true });
+  }
+  async clear(key2) {
+    await this.col.deleteOne({ _id: key2 });
+  }
+};
 var MongoState = class {
   constructor(client, db2) {
     this.client = client;
@@ -186,7 +221,7 @@ function mongoStore(uri, dbName) {
       state: new MongoState(client, db2),
       users: new MongoCol(db2.collection("users")),
       sessions: new MongoCol(db2.collection("sessions"), (d) => d.expiresAt),
-      attempts: new MongoCol(db2.collection("attempts"), (d) => Math.max(d.lockedUntil, d.first + 15 * 60 * 1e3)),
+      attempts: new MongoAttempts(db2.collection("attempts")),
       google: new MongoCol(db2.collection("google")),
       oauth: new MongoCol(db2.collection("oauth"), (d) => d.expiresAt)
     };
@@ -2017,26 +2052,40 @@ function snapshotFor(db2, actor) {
 // server/accounts.ts
 var IDLE_MS = 12 * 60 * 60 * 1e3;
 var MAX_MS = 7 * 24 * 60 * 60 * 1e3;
-var LOCK_AFTER = 5;
-var LOCK_IP_AFTER = 30;
 var LOCK_MS = 15 * 60 * 1e3;
 var WINDOW_MS = 15 * 60 * 1e3;
 var MAX_SESSIONS = 10;
+var LIMIT_USER_AT_ADDRESS = 5;
+var LIMIT_ADDRESS = 30;
+var LIMIT_USER = 100;
+var LIMIT_SETUP = 5;
+var LIMIT_PASSWORD_CHANGE = 5;
 var publicUser = (a) => ({ personId: a.person.personId, role: a.actor.role, name: a.person.name, username: a.user._id, mustChange: a.user.mustChange });
-async function assertNotLocked(store2, keys) {
-  for (const k of keys) {
-    const a = await store2.attempts.get(k);
-    if (a && a.lockedUntil > Date.now()) throw new HttpError(429, `Too many attempts. Try again in ${Math.ceil((a.lockedUntil - Date.now()) / 6e4)} minutes.`, "locked");
+var Locked = class extends HttpError {
+  /** The limit this attempt pushed over, when it was this attempt that locked it (not one already locked). */
+  constructor(ms, newlyLocked) {
+    super(429, `Too many attempts. Try again in ${Math.max(1, Math.ceil(ms / 6e4))} minutes.`, "locked");
+    this.newlyLocked = newlyLocked;
+  }
+  newlyLocked;
+};
+async function chargeAttempt(store2, limits) {
+  const now = Date.now();
+  for (const l of limits) {
+    const a = await store2.attempts.get(l.key);
+    if (a && a.lockedUntil > now) throw new Locked(a.lockedUntil - now, null);
+  }
+  for (const l of limits) {
+    const a = await store2.attempts.charge(l.key, now, WINDOW_MS);
+    if (a.count > l.max) {
+      await store2.attempts.lock(l.key, now + LOCK_MS);
+      throw new Locked(LOCK_MS, a.count === l.max + 1 ? l.key : null);
+    }
   }
 }
-async function recordFailure(store2, key2, limit) {
-  const now = Date.now();
-  const a = await store2.attempts.get(key2);
-  const fresh = !a || now - a.first > WINDOW_MS;
-  const count2 = fresh ? 1 : a.count + 1;
-  const lockedUntil = count2 >= limit ? now + LOCK_MS : 0;
-  await store2.attempts.put({ _id: key2, count: count2, first: fresh ? now : a.first, lockedUntil });
-  return lockedUntil > 0;
+async function attemptSucceeded(store2, reset, refund) {
+  await store2.attempts.clear(reset);
+  for (const key2 of refund) await store2.attempts.refund(key2);
 }
 async function record(store2, personId, action, detail) {
   await mutateState(store2, (db2) => logAudit({ personId, role: "HOP" }, action, "account", personId, detail));
@@ -2078,12 +2127,10 @@ async function needsSetup(store2) {
 async function setup(store2, input, ip, agent) {
   const expected = process.env.SETUP_TOKEN;
   if (!expected) throw new HttpError(503, "Setup is not switched on. Add a SETUP_TOKEN in Vercel first.");
-  await assertNotLocked(store2, [`setup:${ip}`]);
   if (!await needsSetup(store2)) throw new HttpError(409, "This app has already been set up.");
-  if (!safeEqual(String(input.token ?? ""), expected)) {
-    await recordFailure(store2, `setup:${ip}`, 5);
-    throw new HttpError(403, "The setup code is not right.");
-  }
+  await chargeAttempt(store2, [{ key: `setup:${ip}`, max: LIMIT_SETUP }]);
+  if (!safeEqual(String(input.token ?? ""), expected)) throw new HttpError(403, "The setup code is not right.");
+  await store2.attempts.refund(`setup:${ip}`);
   const name = String(input.name ?? "").trim();
   const username = normalizeUsername(String(input.username ?? ""));
   if (!name) throw new HttpError(400, "Enter your name.");
@@ -2104,19 +2151,22 @@ async function login(store2, input, ip, agent) {
   const username = normalizeUsername(String(input.username ?? ""));
   const password = String(input.password ?? "");
   if (!username || !password || password.length > 128) throw new HttpError(400, "Enter your username and password.");
-  await assertNotLocked(store2, [`u:${username}`, `ip:${ip}`]);
+  const here = `ui:${username}|${ip}`;
+  const limits = [{ key: here, max: LIMIT_USER_AT_ADDRESS }, { key: `ip:${ip}`, max: LIMIT_ADDRESS }, { key: `u:${username}`, max: LIMIT_USER }];
+  try {
+    await chargeAttempt(store2, limits);
+  } catch (e) {
+    const user2 = e instanceof Locked && e.newlyLocked && e.newlyLocked !== `ip:${ip}` ? await store2.users.get(username) : null;
+    if (user2) await record(store2, user2.personId, "login-locked", `Too many wrong passwords for ${username}${e instanceof Locked && e.newlyLocked === here ? ` from ${ip || "an unknown address"}` : " from many addresses"}`);
+    throw e;
+  }
   const user = await store2.users.get(username);
   const ok = await verifyPassword(password, user?.passwordHash ?? await dummyHash());
-  if (!user || !ok) {
-    const lockedUser = await recordFailure(store2, `u:${username}`, LOCK_AFTER);
-    await recordFailure(store2, `ip:${ip}`, LOCK_IP_AFTER);
-    if (lockedUser && user) await record(store2, user.personId, "login-locked", `Too many wrong passwords for ${username}`);
-    throw new HttpError(401, "Wrong username or password.");
-  }
+  if (!user || !ok) throw new HttpError(401, "Wrong username or password.");
   const loaded = await loadDb(store2, ["people"]);
   const person2 = loaded?.db.people.find((p) => p.personId === user.personId);
   if (user.disabled || !person2 || person2.status !== "active") throw new HttpError(403, "This login has been switched off. Ask the Head of Production.");
-  await store2.attempts.remove(`u:${username}`);
+  await attemptSucceeded(store2, here, [`ip:${ip}`, `u:${username}`]);
   await store2.users.put({ ...user, lastLoginAt: (/* @__PURE__ */ new Date()).toISOString() });
   const token = await startSession(store2, username, ip, agent);
   await record(store2, person2.personId, "login", `Signed in from ${ip || "an unknown address"}`);
@@ -2124,10 +2174,10 @@ async function login(store2, input, ip, agent) {
   return { token, user: publicUser(a) };
 }
 async function changePassword(store2, who, current, next) {
-  if (!await verifyPassword(String(current ?? ""), who.user.passwordHash)) {
-    const locked = await recordFailure(store2, `u:${who.user._id}`, LOCK_AFTER);
-    throw new HttpError(locked ? 429 : 403, "Your current password is not right.");
-  }
+  const key2 = `pw:${who.user._id}`;
+  await chargeAttempt(store2, [{ key: key2, max: LIMIT_PASSWORD_CHANGE }]);
+  if (!await verifyPassword(String(current ?? ""), who.user.passwordHash)) throw new HttpError(403, "Your current password is not right.");
+  await store2.attempts.clear(key2);
   const bad = checkPassword(String(next ?? ""), { username: who.user._id, name: who.person.name });
   if (bad) throw new HttpError(400, bad);
   if (next === current) throw new HttpError(400, "Choose a password you have not used just now.");
@@ -5824,8 +5874,33 @@ var MemState = class {
     return true;
   }
 };
+var MemAttempts = class {
+  m = /* @__PURE__ */ new Map();
+  async get(key2) {
+    const d = this.m.get(key2);
+    return d ? { ...d } : null;
+  }
+  async charge(key2, now, windowMs) {
+    const a = this.m.get(key2);
+    const fresh = !a || now - a.first > windowMs;
+    const next = { _id: key2, count: fresh ? 1 : a.count + 1, first: fresh ? now : a.first, lockedUntil: a?.lockedUntil ?? 0 };
+    this.m.set(key2, next);
+    return { ...next };
+  }
+  async refund(key2) {
+    const a = this.m.get(key2);
+    if (a && a.count > 0) a.count--;
+  }
+  async lock(key2, until) {
+    const a = this.m.get(key2);
+    this.m.set(key2, { _id: key2, count: a?.count ?? 0, first: a?.first ?? Date.now(), lockedUntil: until });
+  }
+  async clear(key2) {
+    this.m.delete(key2);
+  }
+};
 function memoryStore() {
-  return { state: new MemState(), users: new MemCol(), sessions: new MemCol(), attempts: new MemCol(), google: new MemCol(), oauth: new MemCol() };
+  return { state: new MemState(), users: new MemCol(), sessions: new MemCol(), attempts: new MemAttempts(), google: new MemCol(), oauth: new MemCol() };
 }
 
 // server/index.ts

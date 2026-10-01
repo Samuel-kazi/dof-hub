@@ -24,6 +24,20 @@ export interface SessionDoc {
 
 export interface AttemptDoc { _id: string; count: number; first: number; lockedUntil: number }
 
+/**
+ * Counts of sign-in attempts. Every change is a single atomic step in the database, so attempts sent at the
+ * same moment are all counted: a count read first and written back later would let them slip past the limit.
+ */
+export interface AttemptStore {
+  get(key: string): Promise<AttemptDoc | null>;
+  /** Adds one to the count and returns the result. A count whose window has passed starts again from one. */
+  charge(key: string, now: number, windowMs: number): Promise<AttemptDoc>;
+  /** Takes one back off the count, for an attempt that turned out to be the right password. */
+  refund(key: string): Promise<void>;
+  lock(key: string, until: number): Promise<void>;
+  clear(key: string): Promise<void>;
+}
+
 export interface GoogleDoc {
   _id: string; // username
   email: string;
@@ -57,7 +71,7 @@ export interface Store {
   state: StateStore;
   users: Col<UserDoc>;
   sessions: Col<SessionDoc>;
-  attempts: Col<AttemptDoc>;
+  attempts: AttemptStore;
   google: Col<GoogleDoc>;
   oauth: Col<OAuthDoc>;
 }
@@ -101,6 +115,22 @@ class MemState implements StateStore {
   }
 }
 
+/** Atomic because nothing here awaits between reading a count and writing it back. */
+class MemAttempts implements AttemptStore {
+  private m = new Map<string, AttemptDoc>();
+  async get(key: string) { const d = this.m.get(key); return d ? { ...d } : null; }
+  async charge(key: string, now: number, windowMs: number) {
+    const a = this.m.get(key);
+    const fresh = !a || now - a.first > windowMs;
+    const next: AttemptDoc = { _id: key, count: fresh ? 1 : a.count + 1, first: fresh ? now : a.first, lockedUntil: a?.lockedUntil ?? 0 };
+    this.m.set(key, next);
+    return { ...next };
+  }
+  async refund(key: string) { const a = this.m.get(key); if (a && a.count > 0) a.count--; }
+  async lock(key: string, until: number) { const a = this.m.get(key); this.m.set(key, { _id: key, count: a?.count ?? 0, first: a?.first ?? Date.now(), lockedUntil: until }); }
+  async clear(key: string) { this.m.delete(key); }
+}
+
 export function memoryStore(): Store {
-  return { state: new MemState(), users: new MemCol(), sessions: new MemCol(), attempts: new MemCol(), google: new MemCol(), oauth: new MemCol() };
+  return { state: new MemState(), users: new MemCol(), sessions: new MemCol(), attempts: new MemAttempts(), google: new MemCol(), oauth: new MemCol() };
 }

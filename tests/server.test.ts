@@ -118,8 +118,7 @@ await t("wrong username and wrong password look the same, and five wrong tries l
   assert.equal(locked.json.code === "locked" || locked.status === 401, true);
   const still = await c.post("/api/login", { username: "kev", password: PW }); // even the right one waits
   assert.equal(still.status, 429); assert.match(still.json.error, /Try again in/);
-  const doc = await store.attempts.get("u:kev"); await store.attempts.put({ ...doc!, lockedUntil: Date.now() - 1 });
-  await store.attempts.put({ ...(await store.attempts.get("ip:127.0.0.1"))!, lockedUntil: Date.now() - 1, count: 0 });
+  for (const k of ["ui:kev|127.0.0.1", "u:kev", "ip:127.0.0.1"]) await store.attempts.clear(k); // the lock lasts 15 minutes; skip ahead
   assert.equal((await c.post("/api/login", { username: "kev", password: PW })).status, 200);
 });
 await t("the cookie is HttpOnly and SameSite, and the token is never stored", async () => {

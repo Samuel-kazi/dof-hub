@@ -9,15 +9,25 @@ import { initDatabase, loadDb, mutateState, newDatabase, withDb } from "./state"
 import type { SessionDoc, Store, UserDoc } from "./stores";
 
 // Who is signed in, and how someone gets to be. Passwords are hashed, sessions are random tokens that
-// are stored only as hashes, and repeated wrong guesses lock the account for a while.
+// are stored only as hashes, and repeated wrong guesses are locked out for a while.
 
 export const IDLE_MS = 12 * 60 * 60 * 1000; // signed out after 12 hours of nothing
 export const MAX_MS = 7 * 24 * 60 * 60 * 1000; // and after 7 days regardless
-const LOCK_AFTER = 5;
-const LOCK_IP_AFTER = 30;
 const LOCK_MS = 15 * 60 * 1000;
 const WINDOW_MS = 15 * 60 * 1000;
 const MAX_SESSIONS = 10;
+
+// Wrong passwords are limited three ways, each over 15 minutes:
+// - one username from one address: 5. This is the lock people normally meet, and it only blocks that
+//   address, so a stranger guessing at the Head of Production's username cannot lock them out.
+// - one address, whatever the username: 30, so one address cannot work through many usernames.
+// - one username, from every address together: 100, so many addresses cannot share the guessing.
+//   Reaching it takes at least 20 addresses, each stopped by its own limit first.
+const LIMIT_USER_AT_ADDRESS = 5;
+const LIMIT_ADDRESS = 30;
+const LIMIT_USER = 100;
+const LIMIT_SETUP = 5;
+const LIMIT_PASSWORD_CHANGE = 5;
 
 export interface Authed { user: UserDoc; session: SessionDoc; person: Person; actor: Actor }
 
@@ -26,21 +36,39 @@ export const publicUser = (a: Authed): PublicUser => ({ personId: a.person.perso
 
 // ── Wrong guesses ────────────────────────────────────────────
 
-async function assertNotLocked(store: Store, keys: string[]): Promise<void> {
-  for (const k of keys) {
-    const a = await store.attempts.get(k);
-    if (a && a.lockedUntil > Date.now()) throw new HttpError(429, `Too many attempts. Try again in ${Math.ceil((a.lockedUntil - Date.now()) / 60000)} minutes.`, "locked");
+interface Limit { key: string; max: number }
+
+class Locked extends HttpError {
+  /** The limit this attempt pushed over, when it was this attempt that locked it (not one already locked). */
+  constructor(ms: number, public newlyLocked: string | null) {
+    super(429, `Too many attempts. Try again in ${Math.max(1, Math.ceil(ms / 60000))} minutes.`, "locked");
   }
 }
 
-async function recordFailure(store: Store, key: string, limit: number): Promise<boolean> {
+/**
+ * Counts this attempt against each limit before the password is checked, and refuses it once a limit is
+ * passed. Counting first, in one atomic step per limit, means attempts sent at the same moment are all
+ * counted: at most `max` of them are ever checked against the password.
+ */
+async function chargeAttempt(store: Store, limits: Limit[]): Promise<void> {
   const now = Date.now();
-  const a = await store.attempts.get(key);
-  const fresh = !a || now - a.first > WINDOW_MS;
-  const count = fresh ? 1 : a.count + 1;
-  const lockedUntil = count >= limit ? now + LOCK_MS : 0;
-  await store.attempts.put({ _id: key, count, first: fresh ? now : a.first, lockedUntil });
-  return lockedUntil > 0;
+  for (const l of limits) {
+    const a = await store.attempts.get(l.key);
+    if (a && a.lockedUntil > now) throw new Locked(a.lockedUntil - now, null);
+  }
+  for (const l of limits) {
+    const a = await store.attempts.charge(l.key, now, WINDOW_MS);
+    if (a.count > l.max) {
+      await store.attempts.lock(l.key, now + LOCK_MS);
+      throw new Locked(LOCK_MS, a.count === l.max + 1 ? l.key : null);
+    }
+  }
+}
+
+/** The password was right: the attempt does not count against the shared limits, and this one starts again. */
+async function attemptSucceeded(store: Store, reset: string, refund: string[]): Promise<void> {
+  await store.attempts.clear(reset);
+  for (const key of refund) await store.attempts.refund(key);
 }
 
 // ── Recording what happened ──────────────────────────────────
@@ -94,12 +122,10 @@ export async function needsSetup(store: Store): Promise<boolean> {
 export async function setup(store: Store, input: { token: string; name: string; username: string; password: string; samples: boolean }, ip: string, agent: string): Promise<{ token: string; user: PublicUser }> {
   const expected = process.env.SETUP_TOKEN;
   if (!expected) throw new HttpError(503, "Setup is not switched on. Add a SETUP_TOKEN in Vercel first.");
-  await assertNotLocked(store, [`setup:${ip}`]);
   if (!(await needsSetup(store))) throw new HttpError(409, "This app has already been set up.");
-  if (!safeEqual(String(input.token ?? ""), expected)) {
-    await recordFailure(store, `setup:${ip}`, 5);
-    throw new HttpError(403, "The setup code is not right.");
-  }
+  await chargeAttempt(store, [{ key: `setup:${ip}`, max: LIMIT_SETUP }]);
+  if (!safeEqual(String(input.token ?? ""), expected)) throw new HttpError(403, "The setup code is not right.");
+  await store.attempts.refund(`setup:${ip}`); // only wrong codes count
   const name = String(input.name ?? "").trim();
   const username = normalizeUsername(String(input.username ?? ""));
   if (!name) throw new HttpError(400, "Enter your name.");
@@ -122,19 +148,22 @@ export async function login(store: Store, input: { username: string; password: s
   const username = normalizeUsername(String(input.username ?? ""));
   const password = String(input.password ?? "");
   if (!username || !password || password.length > 128) throw new HttpError(400, "Enter your username and password.");
-  await assertNotLocked(store, [`u:${username}`, `ip:${ip}`]);
+  const here = `ui:${username}|${ip}`;
+  const limits = [{ key: here, max: LIMIT_USER_AT_ADDRESS }, { key: `ip:${ip}`, max: LIMIT_ADDRESS }, { key: `u:${username}`, max: LIMIT_USER }];
+  try {
+    await chargeAttempt(store, limits);
+  } catch (e) {
+    const user = e instanceof Locked && e.newlyLocked && e.newlyLocked !== `ip:${ip}` ? await store.users.get(username) : null;
+    if (user) await record(store, user.personId, "login-locked", `Too many wrong passwords for ${username}${e instanceof Locked && e.newlyLocked === here ? ` from ${ip || "an unknown address"}` : " from many addresses"}`);
+    throw e;
+  }
   const user = await store.users.get(username);
   const ok = await verifyPassword(password, user?.passwordHash ?? (await dummyHash())); // takes the same time whether or not the username exists
-  if (!user || !ok) {
-    const lockedUser = await recordFailure(store, `u:${username}`, LOCK_AFTER);
-    await recordFailure(store, `ip:${ip}`, LOCK_IP_AFTER);
-    if (lockedUser && user) await record(store, user.personId, "login-locked", `Too many wrong passwords for ${username}`);
-    throw new HttpError(401, "Wrong username or password.");
-  }
+  if (!user || !ok) throw new HttpError(401, "Wrong username or password.");
   const loaded = await loadDb(store, ["people"]);
   const person = loaded?.db.people.find((p) => p.personId === user.personId);
   if (user.disabled || !person || person.status !== "active") throw new HttpError(403, "This login has been switched off. Ask the Head of Production.");
-  await store.attempts.remove(`u:${username}`);
+  await attemptSucceeded(store, here, [`ip:${ip}`, `u:${username}`]);
   await store.users.put({ ...user, lastLoginAt: new Date().toISOString() });
   const token = await startSession(store, username, ip, agent);
   await record(store, person.personId, "login", `Signed in from ${ip || "an unknown address"}`);
@@ -145,10 +174,10 @@ export async function login(store: Store, input: { username: string; password: s
 // ── Passwords ────────────────────────────────────────────────
 
 export async function changePassword(store: Store, who: Authed, current: string, next: string): Promise<void> {
-  if (!(await verifyPassword(String(current ?? ""), who.user.passwordHash))) {
-    const locked = await recordFailure(store, `u:${who.user._id}`, LOCK_AFTER);
-    throw new HttpError(locked ? 429 : 403, "Your current password is not right.");
-  }
+  const key = `pw:${who.user._id}`;
+  await chargeAttempt(store, [{ key, max: LIMIT_PASSWORD_CHANGE }]);
+  if (!(await verifyPassword(String(current ?? ""), who.user.passwordHash))) throw new HttpError(403, "Your current password is not right.");
+  await store.attempts.clear(key);
   const bad = checkPassword(String(next ?? ""), { username: who.user._id, name: who.person.name });
   if (bad) throw new HttpError(400, bad);
   if (next === current) throw new HttpError(400, "Choose a password you have not used just now.");

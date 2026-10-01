@@ -1,5 +1,5 @@
 import { MongoClient, type Collection, type Db, type Document } from "mongodb";
-import type { AttemptDoc, Col, GoogleDoc, Loaded, OAuthDoc, SessionDoc, StateStore, Store, UserDoc } from "./stores";
+import type { AttemptDoc, AttemptStore, Col, GoogleDoc, Loaded, OAuthDoc, SessionDoc, StateStore, Store, UserDoc } from "./stores";
 
 // The MongoDB version of the stores. Each part of the app's data is one document in `state`, with a
 // version number. A save only goes through if nobody else saved that part in the meantime, and all the
@@ -24,6 +24,37 @@ class MongoCol<T extends Doc> implements Col<T> {
   }
   async put(doc: T) { await this.col.replaceOne({ _id: doc._id } as never, this.inn(doc), { upsert: true }); }
   async remove(id: string) { await this.col.deleteOne({ _id: id } as never); }
+}
+
+/**
+ * Sign-in attempt counts. Each change is one update in the database, so two attempts arriving together are
+ * both counted. The window reset is part of the same update: if the window has passed, the count starts at one.
+ */
+class MongoAttempts implements AttemptStore {
+  constructor(private col: Collection<Document>) {}
+  private out(d: Document | null): AttemptDoc | null {
+    return d ? { _id: String(d._id), count: Number(d.count ?? 0), first: Number(d.first ?? 0), lockedUntil: Number(d.lockedUntil ?? 0) } : null;
+  }
+  async get(key: string) { return this.out(await this.col.findOne({ _id: key } as never)); }
+  async charge(key: string, now: number, windowMs: number) {
+    const fresh = { $or: [{ $eq: [{ $ifNull: ["$first", null] }, null] }, { $gt: [{ $subtract: [now, "$first"] }, windowMs] }] };
+    const d = await this.col.findOneAndUpdate(
+      { _id: key } as never,
+      [{ $set: {
+        count: { $cond: [fresh, 1, { $add: [{ $ifNull: ["$count", 0] }, 1] }] },
+        first: { $cond: [fresh, now, "$first"] },
+        lockedUntil: { $ifNull: ["$lockedUntil", 0] },
+        _exp: { $max: [{ $ifNull: ["$_exp", new Date(0)] }, new Date(now + windowMs)] },
+      } }],
+      { upsert: true, returnDocument: "after" },
+    );
+    return this.out(d) ?? { _id: key, count: 1, first: now, lockedUntil: 0 };
+  }
+  async refund(key: string) { await this.col.updateOne({ _id: key, count: { $gt: 0 } } as never, { $inc: { count: -1 } }); }
+  async lock(key: string, until: number) {
+    await this.col.updateOne({ _id: key } as never, { $set: { lockedUntil: until, _exp: new Date(until) }, $setOnInsert: { count: 0, first: Date.now() } }, { upsert: true });
+  }
+  async clear(key: string) { await this.col.deleteOne({ _id: key } as never); }
 }
 
 class MongoState implements StateStore {
@@ -108,7 +139,7 @@ export function mongoStore(uri: string, dbName: string): Promise<Store> {
       state: new MongoState(client, db),
       users: new MongoCol<UserDoc>(db.collection("users")),
       sessions: new MongoCol<SessionDoc>(db.collection("sessions"), (d) => d.expiresAt),
-      attempts: new MongoCol<AttemptDoc>(db.collection("attempts"), (d) => Math.max(d.lockedUntil, d.first + 15 * 60 * 1000)),
+      attempts: new MongoAttempts(db.collection("attempts")),
       google: new MongoCol<GoogleDoc>(db.collection("google")),
       oauth: new MongoCol<OAuthDoc>(db.collection("oauth"), (d) => d.expiresAt),
     };

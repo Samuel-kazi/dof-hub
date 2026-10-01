@@ -32,8 +32,10 @@ const t = async (name: string, fn: () => Promise<void>) => {
 type Json = Record<string, any>;
 class Client {
   cookie = "";
+  /** The address the server sees, as Vercel reports it. */
+  constructor(public address = "127.0.0.1") {}
   async call(method: string, path: string, body?: unknown): Promise<{ status: number; json: Json }> {
-    const res = await fetch(base + path, { method, headers: { ...(method === "POST" ? { "Content-Type": "application/json" } : {}), ...(this.cookie ? { Cookie: this.cookie } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
+    const res = await fetch(base + path, { method, headers: { "x-forwarded-for": this.address, ...(method === "POST" ? { "Content-Type": "application/json" } : {}), ...(this.cookie ? { Cookie: this.cookie } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
     const set = res.headers.getSetCookie().find((c) => c.startsWith("dof_session="));
     if (set) this.cookie = set.split(";")[0];
     const text = await res.text();
@@ -162,6 +164,54 @@ await t("C2: 'Change system settings' cannot grant permissions", async () => {
   assert.equal(seen.audit.length, 0, "still cannot read the activity log");
   const grant = await brian.act("permissions.setPersonGrant", "DOF-P-CRW-002", "backend.audit", true);
   assert.equal(grant.status, 400);
+});
+
+// ── C3: the sign-in lockout ──
+
+const guess = (c: Client, username = "kev") => c.post("/api/login", { username, password: `wrong guess ${Math.random()}` });
+
+await t("C3: wrong passwords sent all at once are all counted, so at most five are ever checked", async () => {
+  await setupHop();
+  const results = await Promise.all(Array.from({ length: 40 }, () => guess(new Client("10.0.0.7"))));
+  const checked = results.filter((r) => r.status === 401).length;
+  const refused = results.filter((r) => r.status === 429).length;
+  assert.equal(checked + refused, 40);
+  assert.ok(checked <= 5, `${checked} guesses were checked against the password`);
+  assert.equal((await new Client("10.0.0.7").post("/api/login", { username: "kev", password: PW })).status, 429, "even the right password waits");
+});
+
+await t("C3: a stranger guessing at the Head of Production's username does not lock them out", async () => {
+  await setupHop();
+  for (let i = 0; i < 12; i++) await guess(new Client("203.0.113.9"));
+  assert.equal((await guess(new Client("203.0.113.9"))).status, 429, "the guessing address is locked");
+  assert.equal((await new Client("198.51.100.4").post("/api/login", { username: "kev", password: PW })).status, 200, "the real person, from their own address, still gets in");
+});
+
+await t("C3: right passwords do not use up the limit for an office that shares one address", async () => {
+  await setupHop();
+  for (let i = 0; i < 40; i++) assert.equal((await new Client("192.0.2.1").post("/api/login", { username: "kev", password: PW })).status, 200, `sign-in ${i + 1}`);
+});
+
+await t("C3: guessing spread over many addresses is stopped at 100 for that username", async () => {
+  await setupHop();
+  for (let a = 0; a < 25; a++) for (let i = 0; i < 4; i++) await guess(new Client(`10.1.${a}.1`));
+  assert.equal((await guess(new Client("10.2.0.1"))).status, 429);
+});
+
+await t("C3: a lock is written to the activity log once, not on every refused attempt", async () => {
+  const hop = await setupHop();
+  for (let i = 0; i < 9; i++) await guess(new Client("203.0.113.50"));
+  const locks = (await db(hop)).audit.filter((e: Json) => e.action === "login-locked");
+  assert.equal(locks.length, 1, JSON.stringify(locks));
+});
+
+await t("C3: setup codes and password changes are limited the same way", async () => {
+  const results = await Promise.all(Array.from({ length: 20 }, () => new Client("10.9.9.9").post("/api/setup", { token: `nope ${Math.random()}`, name: "X", username: "xx1", password: PW })));
+  assert.ok(results.filter((r) => r.status === 403).length <= 5);
+  const hop = await setupHop();
+  const changes = await Promise.all(Array.from({ length: 20 }, () => hop.post("/api/account/password", { current: `wrong ${Math.random()}`, next: "another fresh password" })));
+  assert.ok(changes.filter((r) => r.status === 403).length <= 5);
+  assert.ok(changes.some((r) => r.status === 429));
 });
 
 server?.close();
