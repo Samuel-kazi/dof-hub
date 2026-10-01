@@ -37,20 +37,43 @@ export const api = {
   post: <T = Record<string, never>>(path: string, body: unknown = {}) => call<T>("POST", path, body),
 };
 
-/** Asks the server who is signed in. Returns null when there is no server, which means the local demo. */
-export async function probe(): Promise<SessionInfo | null> {
+/**
+ * Whether this build may run as the local demo when no server answers. Only `npm run dev` and the desktop
+ * build (`npm run build:desktop`, which builds in Vite's "desktop" mode) may. A build for the real site never
+ * does: a timeout page or a dropped connection must not turn the live site into the demo, with demo sign-ins
+ * and data kept only in one browser.
+ */
+export function demoAllowed(): boolean {
+  const env = (import.meta as unknown as { env?: { DEV?: boolean; MODE?: string } }).env;
+  return !!env && (env.DEV === true || env.MODE === "desktop");
+}
+
+const noServer = (allowDemo: boolean, why: string): SessionInfo | null =>
+  allowDemo ? null : { needsSetup: false, user: null, google: { available: false }, unavailable: why };
+
+/**
+ * Asks the server who is signed in. Returns null when there is no server and this build may run as the
+ * local demo. Otherwise every failure is reported, so the app shows "The site cannot reach its data".
+ */
+export async function probe(allowDemo = demoAllowed()): Promise<SessionInfo | null> {
+  let res: Response;
   try {
-    const res = await fetch("/api/session", { credentials: "same-origin" });
-    const json = (await res.json()) as { remote?: boolean; ok?: boolean; error?: string } & SessionInfo;
-    if (json?.remote !== true) return null; // no server behind this page: the local demo
-    remote = true;
-    // There is a server, but it could not do its job (for example, it cannot reach the database).
-    // Never fall back to the demo here: that would show data that is not the real data.
-    if (json.ok === false) return { needsSetup: false, user: null, google: { available: false }, unavailable: json.error ?? "The server is not answering properly. Try again in a minute." };
-    return json;
+    res = await fetch("/api/session", { credentials: "same-origin" });
   } catch {
-    return null;
+    return noServer(allowDemo, "The server could not be reached. Check your connection, then try again.");
   }
+  let json: ({ remote?: boolean; ok?: boolean; error?: string } & SessionInfo) | null;
+  try {
+    json = await res.json();
+  } catch {
+    json = null;
+  }
+  if (json?.remote !== true) return noServer(allowDemo, `The server did not answer properly (status ${res.status}). Wait a minute, then try again.`);
+  remote = true;
+  // There is a server, but it could not do its job (for example, it cannot reach the database).
+  // Never fall back to the demo here: that would show data that is not the real data.
+  if (json.ok === false) return { needsSetup: false, user: null, google: { available: false }, unavailable: json.error ?? "The server is not answering properly. Try again in a minute." };
+  return json;
 }
 
 // ── Keeping the screen and the server in step ────────────────

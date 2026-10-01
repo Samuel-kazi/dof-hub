@@ -468,10 +468,14 @@ await t("the app shows a database problem instead of quietly turning into the lo
     globalThis.fetch = answer(503, { ok: false, remote: true, error: "The server could not reach MongoDB.", code: "db" });
     const down = await probe();
     assert.ok(down && down.unavailable && /MongoDB/.test(down.unavailable) && down.user === null);
-    globalThis.fetch = answer(200, "<!doctype html><html></html>"); // a plain website or the desktop app: no server, so the demo is right
-    assert.equal(await probe(), null);
-    globalThis.fetch = (async () => { throw new TypeError("offline"); }) as typeof fetch;
-    assert.equal(await probe(), null);
+    // No server behind the page: a plain web page, a platform timeout page, or no connection at all.
+    for (const noServer of [answer(200, "<!doctype html><html></html>"), answer(504, "An error occurred with your deployment. FUNCTION_INVOCATION_TIMEOUT"), (async () => { throw new TypeError("offline"); }) as typeof fetch]) {
+      globalThis.fetch = noServer;
+      assert.equal(await probe(true), null, "npm run dev and the desktop app run as the demo");
+      const live = await probe(false);
+      assert.ok(live && live.unavailable && live.user === null, "a build for the real site says it cannot reach the server, and never becomes the demo");
+      assert.deepEqual(await probe(), live, "outside Vite, nothing allows the demo");
+    }
   } finally { globalThis.fetch = real; }
 });
 
