@@ -530,10 +530,11 @@ function freshDevotional(actor: ReturnType<typeof login> = login("hop@dof.demo",
   return C.createRecord(actor, { category: "devotional", title: "Test devotional" });
 }
 
-t("a new Devotional starts at Creation, defaults to Ruth Jepkorir, and stays a flat project", () => {
+t("a new Devotional starts at Creation with no producer named in the code, and stays a flat project", () => {
+  // The producer used to be hard-coded (DOF-P-CRW-004). Producers are now named by whoever assigns work.
   const d = freshDevotional();
   assert.equal(d.pipelineStage, "Creation");
-  assert.equal(d.assigneePersonId, "DOF-P-CRW-004");
+  assert.equal(d.assigneePersonId, null);
   assert.equal(C.childKindFor(d), null, "a Devotional never splits into episodes, even in a batch");
 });
 

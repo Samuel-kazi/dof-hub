@@ -3,6 +3,7 @@ import { CATEGORIES } from "../src/config/categories";
 import { ACCENTS, FONT_PAIRINGS } from "../src/config/appearance";
 import { CONDITIONS, EQUIP_CATEGORIES } from "../src/config/equipment";
 import { ALL_CAPABILITIES } from "../src/config/permissions";
+import { CRITERIA, FORM_TYPES, PROJECT_ROLE_DEFS, SERIES_TYPES } from "../src/config/workflow";
 
 // Every change the browser may ask the server to make, and the exact shape of what it may send.
 //
@@ -91,6 +92,41 @@ const recordFields = {
   showStart: date.nullable(),
   showEnd: date.nullable(),
 };
+
+// The five-stage workflow. Development form sections are checked again, field by field and strictly, against
+// src/config/devForms.ts by the service, since their shape depends on the form type and section.
+const seriesType = enumOf(SERIES_TYPES.map((t) => t.key));
+const formType = enumOf(FORM_TYPES.map((t) => t.key));
+const outcome = z.enum(["Greenlight", "Revise and resubmit", "Hold", "Decline", "Advice only"]);
+const criterion = enumOf(CRITERIA.map((c) => c.key));
+const roleKey = enumOf(PROJECT_ROLE_DEFS.map((r) => r.key));
+const logStatus = z.enum(["Recorded", "Pickup needed", "Not recorded"]);
+/** IDs that join several parts, such as DOF-SER-001-S1-R01|DOF-SER-001-S1-P07. */
+const compound = z.string().min(1).max(260);
+const sectionValues = z.record(z.string().max(60), z.union([z.string().max(20_000), amount(1e12), z.null(), z.array(short(100)).max(20)]));
+const plannedDetails = z.record(z.string().max(60), z.string().max(20_000));
+const plannedFields = {
+  workingTitle: short(),
+  question: text(2000),
+  guest: short(),
+  notes: text(5000),
+  details: plannedDetails,
+};
+const runSheetItem = z.object({
+  time,
+  title: short(),
+  durationMin: count(600),
+  ownerPersonId: ref.nullable().optional(),
+  notes: text(2000).optional(),
+});
+const logFields = { itemLabel: short(), guest: short(), status: logStatus.nullable(), notesForPost: text() };
+const webLink = z.string().max(2048);
+const distribution = z.object({
+  platform: short(100),
+  status: z.enum(["Planned", "Scheduled", "Published"]),
+  link: webLink.optional(),
+  date: date.nullable().optional(),
+});
 
 export const ACTIONS: Record<string, ActionSpec> = {
   // Call sheets
@@ -457,6 +493,67 @@ export const ACTIONS: Record<string, ActionSpec> = {
   "storage.moveAllocation": args([id, id]),
   "storage.removeAllocation": args([id]),
   "storage.clearRecordFromDrives": args([id]),
+
+  // The five-stage workflow: projects and Development
+  "workflow.createWorkflowProject": args([
+    z.object({
+      category: z.enum(["series", "devotional", "documentary"]),
+      title: short(),
+      seriesType: seriesType.nullable().optional(),
+      seriesId: ref.nullable().optional(),
+      formType: formType.nullable().optional(),
+      deadline: date.nullable().optional(),
+    }),
+  ]),
+  "workflow.assignProducer": args([id, ref.nullable()]),
+  "workflow.closeProject": args([id, text(2000)]),
+  "workflow.setWorkflowDeadline": args([id, short(60), date.nullable()]),
+  "workflow.advanceProject": args([id]),
+  "workflow.saveFormSection": args([id, short(60), sectionValues]),
+  "workflow.setCriterion": args([id, criterion, z.object({ met: z.boolean().nullable(), note: text(2000) })]),
+  "workflow.setReviewWindow": args([id, date.nullable()]),
+  "workflow.decideGreenlight": args([id, z.object({ outcome, notes: text(5000), date: date.nullable().optional() })]),
+  "workflow.addPlannedEpisode": args([id, z.object(plannedFields).partial().required({ workingTitle: true })]),
+  "workflow.updatePlannedEpisode": args([id, z.object(plannedFields).partial()]),
+  "workflow.archivePlannedEpisode": args([id, text(2000)]),
+  "workflow.setCheckpointReviewers": args([compound, ids(10)]),
+  "workflow.decideCheckpoint": args([compound, z.object({ status: z.enum(["Approved", "Changes requested"]), note: text(5000) })]),
+  // Pre-production
+  "workflow.assignRole": args([id, roleKey, z.object({ crewId: ref.nullable().optional(), guestName: short(120).nullable().optional() })]),
+  "workflow.removeRole": args([compound]),
+  "workflow.setChecklistItem": args([compound, z.object({ done: z.boolean().optional(), note: text(2000).optional() })]),
+  "workflow.createSession": args([id], [z.object({ scheduledDate: date.nullable().optional(), venue: short().optional() })]),
+  "workflow.updateSession": args([id, z.object({ scheduledDate: date.nullable(), venue: short(), dailyLog: text() }).partial()]),
+  "workflow.archiveSession": args([id, text(2000)]),
+  "workflow.resetRunSheet": args([id], [count(240)]),
+  "workflow.addRunSheetItem": args([id, runSheetItem]),
+  "workflow.updateRunSheetItem": args([id, id, runSheetItem.partial()]),
+  "workflow.removeRunSheetItem": args([id, id]),
+  "workflow.createSessionCallSheet": args([id]),
+  // Production
+  "workflow.addLogRow": args([id, z.object({ plannedEpisodeId: ref.nullable(), logDate: date.nullable(), ...logFields }).partial()]),
+  "workflow.updateLogRow": args([compound, z.object({ logDate: date, ...logFields }).partial()]),
+  "workflow.removeLogRow": args([compound]),
+  "workflow.openSession": args([id]),
+  "workflow.closeSession": args([id]),
+  "workflow.reopenSession": args([id]),
+  "workflow.sendToPostProduction": args([id]),
+  // Post production, and Marketing and distribution
+  "workflow.setEpisodeEditor": args([id, ref.nullable()]),
+  "workflow.setEpisodeLinks": args([id, z.object({ reviewLink: webLink, finalFileLink: webLink }).partial()]),
+  "workflow.startEditing": args([id]),
+  "workflow.setReadyForReview": args([id, z.boolean()]),
+  "workflow.sendForReview": args([id]),
+  "workflow.moveToMarketing": args([id]),
+  "workflow.approveReleasePlan": args([id]),
+  "workflow.publishEpisode": args([id]),
+  "workflow.addDistribution": args([id, distribution]),
+  "workflow.updateDistribution": args([id, id, distribution]),
+  "workflow.removeDistribution": args([id, id]),
+  "workflow.setLearningNotes": args([id, text()]),
+  // Share links. A link with a token is made by POST /api/share-links, never by an action.
+  "workflow.copyShareLink": args([id], [short(500)]),
+  "workflow.revokeShareLink": args([id]),
 };
 
 /**
@@ -464,6 +561,7 @@ export const ACTIONS: Record<string, ActionSpec> = {
  * (the browser answers those itself from what it was sent), or are steps other actions take internally.
  */
 export const NOT_ACTIONS: Record<string, string> = {
+  "workflow.canShare": "read only",
   "content.deletionImpact": "read only",
   "content.devotionalsOnRecordingDate": "read only",
   "content.getReminders": "read only",

@@ -8,6 +8,7 @@ import * as reminders from "../src/services/reminders";
 import * as settings from "../src/services/settings";
 import * as storage from "../src/services/storage";
 import * as team from "../src/services/team";
+import * as workflow from "../src/services/workflow";
 import { RPC_NAMES } from "../src/services/wrapped/names";
 import { ACTIONS, type ActionSpec } from "./schemas";
 
@@ -22,6 +23,7 @@ const modules: Record<string, Record<string, unknown>> = {
   settings,
   storage,
   team,
+  workflow,
 };
 
 export interface Action {

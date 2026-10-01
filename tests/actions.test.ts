@@ -12,6 +12,7 @@ process.env.DOF_SCRYPT_N = "1024";
 const { createHandler, memoryStore } = await import("../server/index");
 const { ACTIONS, NOT_ACTIONS } = await import("../server/schemas");
 const { RPC_NAMES } = await import("../src/services/wrapped/names");
+const { walkWhispersOfWhy } = await import("./support/wow-walkthrough");
 
 let passed = 0;
 let server: Server | undefined;
@@ -398,6 +399,54 @@ await t("every action accepts the arguments its screen sends", async () => {
   await call("storage.clearRecordFromDrives", ep);
   await call("storage.deleteDrive", drive);
 
+  // The five-stage workflow: the brief's walkthrough (every step must succeed), then the actions it does not use.
+  const must = async (name: string, ...args: unknown[]) => {
+    const j = await call(name, ...args);
+    assert.equal(j.ok, true, `${name} was refused: ${j.error}`);
+    return j.result;
+  };
+  const wow = await walkWhispersOfWhy(must, state as never);
+  const e01 = `${wow.project}-E01`;
+  await must("workflow.setWorkflowDeadline", wow.project, "Pre-production", "2026-12-01");
+  await must("workflow.setWorkflowDeadline", `${wow.project}-E02`, "Post production", "2026-12-05");
+  await must("workflow.updatePlannedEpisode", `${wow.project}-P30`, {
+    workingTitle: "Why begin again?",
+    question: "",
+    guest: "",
+    notes: "",
+    details: { targetMinutes: "60" },
+  });
+  await must("workflow.archivePlannedEpisode", `${wow.project}-P30`, "Moved to season 2");
+  await call("workflow.removeRole", `${wow.project}|dop`);
+  const s3 = (await must("workflow.createSession", wow.project, { scheduledDate: "2026-12-10", venue: "Studio B" })).id;
+  await must("workflow.updateSession", s3, { venue: "Studio C" });
+  const item = (
+    await must("workflow.addRunSheetItem", s3, { time: "16:50", title: "Team photo", durationMin: 10, ownerPersonId: null, notes: "" })
+  ).id;
+  await must("workflow.updateRunSheetItem", s3, item, { durationMin: 15 });
+  await must("workflow.removeRunSheetItem", s3, item);
+  await must("workflow.addLogRow", s3, { plannedEpisodeId: `${wow.project}-P10`, guest: "", notesForPost: "" });
+  await must("workflow.removeLogRow", `${s3}|${wow.project}-P10`);
+  await must("workflow.archiveSession", s3, "Studio unavailable");
+  await must("workflow.reopenSession", wow.session2);
+  await must("workflow.setEpisodeEditor", `${wow.project}-E02`, "DOF-P-CRW-001");
+  const dist = await must("workflow.addDistribution", e01, { platform: "Facebook", status: "Planned" });
+  await must("workflow.updateDistribution", e01, dist.id, {
+    platform: "Facebook",
+    status: "Published",
+    link: "https://facebook.com/x",
+    date: null,
+  });
+  await must("workflow.removeDistribution", e01, dist.id);
+  await must("workflow.setLearningNotes", e01, "Listeners asked for a follow-up.");
+  const wfShare = await must("workflow.copyShareLink", e01, "Sent to the guest");
+  await must("workflow.revokeShareLink", wfShare.id);
+  const wfDoc = (
+    await must("workflow.createWorkflowProject", { category: "documentary", title: "Pitched film", formType: "documentary_pitched" })
+  ).contentId;
+  await call("workflow.sendToPostProduction", wfDoc); // refused (nothing recorded yet), but its arguments are accepted
+  await must("workflow.closeProject", wfDoc, "Withdrawn by the proposer");
+
   const missed = Object.keys(ACTIONS).filter((n) => !covered.has(n));
   assert.deepEqual(missed, [], `Add a call for: ${missed.join(", ")}`);
 });
@@ -462,6 +511,12 @@ await t("wrong types are refused before any rule runs", async () => {
     ["settings.updateSettings", { stageReminderHours: "24" }],
     ["content.advanceStage"],
     ["content.advanceStage", "DOF-SER-001-S1-E01", 1, "extra"],
+    ["workflow.decideGreenlight", "DOF-SER-001-S1", { outcome: "Approved", notes: "" }],
+    ["workflow.assignRole", "DOF-SER-001-S1", "producer", { crewId: "DOF-P-CRW-001" }],
+    ["workflow.updateLogRow", "X|Y", { status: "Done" }],
+    ["workflow.saveFormSection", "DOF-SER-001-S1", "brief", { logline: { $ne: "" } }],
+    ["workflow.createWorkflowProject", { category: "live", title: "Not a workflow category" }],
+    ["workflow.setEpisodeLinks", "DOF-SER-001-S1-E01", { reviewLink: 42 }],
   ];
   for (const [name, ...args] of bad) {
     const r = await hop.act(name, ...args);

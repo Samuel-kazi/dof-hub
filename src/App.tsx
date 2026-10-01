@@ -4,6 +4,7 @@ import { AppProvider } from "./ui/AppContext";
 import { Shell } from "./ui/Shell";
 import { Login, MustChange, RemoteLogin, Setup, Unavailable } from "./pages/Login";
 import { actorOf, hydrate, probe, signOut, startSync, syncEvents, type SessionInfo, type SessionUser } from "./data/remote";
+import { startLocalDailyChecks } from "./data/localChecks";
 
 type Boot = { kind: "loading" } | { kind: "local" } | { kind: "remote"; info: SessionInfo };
 
@@ -34,6 +35,9 @@ export default function App() {
       if (info.user && !info.unavailable) await enter(info.user);
     });
   }, []);
+
+  // Signed in to a server, the server runs the daily checks. On its own, the app runs them.
+  useEffect(() => (boot.kind === "local" ? startLocalDailyChecks() : undefined), [boot.kind]);
 
   if (boot.kind === "loading")
     return (

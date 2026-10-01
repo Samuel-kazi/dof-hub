@@ -225,6 +225,8 @@ export function deleteCallSheet(actor: Actor, id: string): void {
   const cs = loadSheet(actor, id);
   releaseSheetGear(actor, id); // refuses if the gear is out
   getDb().callSheets = getDb().callSheets.filter((c) => c.id !== id);
+  // A recording session that used this sheet needs a new one before it can be recorded.
+  for (const s of getDb().recordingSessions) if (s.callSheetId === id) s.callSheetId = null;
   logAudit(actor, "delete", "callsheet", cs.id, cs.title);
   commit();
 }

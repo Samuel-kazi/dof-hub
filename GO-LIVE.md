@@ -30,6 +30,13 @@ Project, Settings, Environment Variables. You already have `MONGODB_URI` and `MO
 | `SETUP_TOKEN` | A long secret you make up. Used once. Make one with `openssl rand -base64 24` |
 | `TOKEN_ENCRYPTION_KEY` | Exactly this: `openssl rand -base64 32`. Only needed for Google. Never change it later, or linked Google accounts must be linked again |
 
+Optional, for the five-stage workflow:
+
+| Name | Value |
+|---|---|
+| `CRON_SECRET` | A long secret you make up (`openssl rand -base64 24`). Vercel uses it to run the daily check at 00:05 Nairobi time, which moves projects whose review window passed with no decision to Hold. Without it, the check still runs the first time anyone opens the site each day |
+| `PUBLIC_BASE_URL` | Your site's address, for example `https://hub.dawnoffaith.tv`, if share links should use it rather than the address each person opened the site on |
+
 Save them for Production, Preview and Development, then **Redeploy** (Deployments, the three dots, Redeploy).
 
 ## 3. Check the database

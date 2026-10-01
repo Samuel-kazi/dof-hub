@@ -21,6 +21,7 @@ import * as google from "./google";
 import { assertSameSite, clearCookie, COOKIE, readRequest, redirect, send, sendFile, sendLarge, sessionCookie, type Req } from "./http";
 import { docHistory, headOf, snapshotFor } from "./state";
 import type { Store } from "./stores";
+import { createShareLink, dailyChecks, followShareLink } from "./workflow";
 
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
 
@@ -38,6 +39,10 @@ async function dispatch(store: Store, req: Req, res: ServerResponse): Promise<vo
     if (who.user.mustChange && !allowMustChange) throw new HttpError(403, "Choose your own password first.", "must-change");
     return who;
   };
+
+  // A share link, /share/<token> (vercel.json sends it here as /api/share/<token>). Open to anyone with the link.
+  const share = /^GET \/share\/([^/]+)$/.exec(route);
+  if (share) return followShareLink(store, share[1], res);
 
   switch (route) {
     case "GET /health": {
@@ -78,6 +83,7 @@ async function dispatch(store: Store, req: Req, res: ServerResponse): Promise<vo
     }
     case "GET /state": {
       const who = await signedIn();
+      await dailyChecks(store);
       // "Has anything changed?" is answered from one small document, without loading the data.
       const head = await headOf(store);
       if (!head) throw new HttpError(503, "The app has not been set up yet.");
@@ -100,8 +106,25 @@ async function dispatch(store: Store, req: Req, res: ServerResponse): Promise<vo
     }
     case "POST /action": {
       const who = await signedIn();
+      await dailyChecks(store);
       const result = await runAction(store, who, req.body.name, req.body.args, req.body.ids);
       return ok({ result: result ?? null });
+    }
+    case "POST /share-links": {
+      const who = await signedIn();
+      return ok(
+        await createShareLink(store, who, req.origin, {
+          episodeId: str(req.body.episodeId),
+          note: str(req.body.note).slice(0, 500),
+          replaces: str(req.body.replaces) || null,
+        }),
+      );
+    }
+    case "GET /cron/daily": {
+      // Vercel's daily cron sends "Authorization: Bearer <CRON_SECRET>". Without the secret set, only app use runs the check.
+      const secret = process.env.CRON_SECRET;
+      if (!secret || req.headers.authorization !== `Bearer ${secret}`) throw new HttpError(401, "Not allowed.");
+      return ok({ movedToHold: await dailyChecks(store, true) });
     }
     case "POST /account/password": {
       const who = await signedIn(true);

@@ -27,6 +27,28 @@ as before.
   writing anything; add `-- --apply` to do it.
 - Sample data for the workflow, including the "Whispers of Why" season used by the tests: `src/data/seedWorkflow.ts`.
 
+**Phase 2: the services and rules**
+- Every step of the workflow as a service (`src/services/workflow/`): creating a project, its development form
+  (checked field by field against `src/config/devForms.ts`), the greenlight, naming the producer, roles, checklists,
+  review checkpoints, recording sessions with their run sheet, call sheet and log, closing a session, reopening it,
+  a documentary's Send to post production, and each episode through Post production and Marketing and distribution.
+- One gate decides whether anything moves on: `evaluateGate(stage, level, id)` returns what is missing; every Done
+  action calls it. Dates after the publish date are warnings only.
+- Closing a session makes an episode for every row Recorded or Pickup needed, numbered on from the project's last
+  episode, with the row's notes; Not recorded rows make nothing. It is all or nothing, and closing twice never makes
+  an episode twice. A session can be reopened only while its episodes are untouched.
+- A review window that passes with no decision moves the project to Hold, logged as the system: on the server the
+  first time anyone opens the site each day and from a daily cron, in the desktop app when it opens and hourly.
+- Share links: on the hosted site, `/share/<token>` leads to one episode's hosted file and nothing else. The token
+  is 128 random bits made by the server. Links can be revoked and made again. The desktop app copies the file's own
+  hosted link instead.
+- Links people paste are web links only: http and https. `javascript:`, `file:`, `data:` and the rest are refused.
+- Who decides what, without new company roles: greenlight decisions, the Head of Production or anyone given
+  "Create projects"; naming the producer, anyone given "Assign other people's work"; roles, the producer too;
+  review checkpoints, the reviewers named on them.
+- The earlier pipeline's actions refuse workflow records. A live recording split into a workflow season becomes its
+  next episode. A new Devotional no longer gets a producer hard-coded into the app.
+
 ## v20: security and reliability fixes from the October 2026 code review
 
 Everything here is behind the scenes: screens look and work as before, with a few clearer messages.

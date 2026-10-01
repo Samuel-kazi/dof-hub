@@ -10,9 +10,22 @@ const root = resolve(import.meta.dirname, "..");
 const outFlagIdx = process.argv.indexOf("--out");
 const outDir =
   outFlagIdx !== -1 && process.argv[outFlagIdx + 1] ? resolve(process.argv[outFlagIdx + 1]) : resolve(root, "src/services/wrapped");
-const MODULES = ["callsheets", "content", "docs", "equipment", "people", "permissions", "reminders", "settings", "storage", "team"];
-// Anything that touches passwords or logins is done by the server's account endpoints, never replayed.
-const SERVER_ONLY = new Set(["people.createLoginForPerson", "settings.changePassword"]);
+const MODULES = [
+  "callsheets",
+  "content",
+  "docs",
+  "equipment",
+  "people",
+  "permissions",
+  "reminders",
+  "settings",
+  "storage",
+  "team",
+  "workflow",
+];
+// Anything that touches passwords or logins is done by the server's account endpoints, never replayed. A share
+// link's token is made by the server alone (POST /api/share-links), so no browser can choose one.
+const SERVER_ONLY = new Set(["people.createLoginForPerson", "settings.changePassword", "workflow.recordShareLink"]);
 
 const files = MODULES.map((m) => resolve(root, `src/services/${m}.ts`));
 const options = {

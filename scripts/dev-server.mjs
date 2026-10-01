@@ -35,7 +35,7 @@ const port = Number(process.env.PORT ?? 4173);
 createServer(async (req, res) => {
   const path = decodeURIComponent((req.url ?? "/").split("?")[0]);
   for (const [k, v] of Object.entries(headers)) res.setHeader(k, v);
-  if (path.startsWith("/api/")) return handler(req, res);
+  if (path.startsWith("/api/") || path.startsWith("/share/")) return handler(req, res); // share links, as vercel.json routes them
   let file = normalize(join(dist, path));
   if (!file.startsWith(dist) || !existsSync(file) || statSync(file).isDirectory()) file = join(dist, "index.html");
   res.setHeader("Content-Type", types[extname(file)] ?? "application/octet-stream");

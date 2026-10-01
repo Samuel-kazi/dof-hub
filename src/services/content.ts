@@ -12,6 +12,9 @@ import { recordSnapshot } from "./driveUsage";
 import { fmtSize } from "./utils";
 import { canComment, canJoin, canView, canWrite, getRecord, isHop, selfAndAncestors, visibleRecords } from "./access";
 import { getPerson } from "./people";
+import { makeEpisode } from "./workflow/episodes";
+import { episodeOverdue } from "./workflow/gates";
+import type { Project } from "./workflow/common";
 import { logAudit } from "./audit";
 import { addDaysIso, dayNumber, daysUntil, hoursUntilEndOfDay, pad, pickKeys, todayIso } from "./utils";
 
@@ -23,8 +26,9 @@ export function getChildren(parentId: string, includeArchived = false): ContentR
     .sort((a, b) => a.contentId.localeCompare(b.contentId, undefined, { numeric: true }));
 }
 
-/** Only the level that does production work moves through a pipeline. */
+/** Only the level that does production work moves through a pipeline. Workflow records move through their own stages instead. */
 export function usesPipeline(r: ContentRecord): boolean {
+  if (r.workflow || r.episode) return false;
   const cfg = categoryOf(r.category);
   return r.hierarchyLevel === cfg.leafLevel;
 }
@@ -104,6 +108,10 @@ export function isStale(r: ContentRecord): boolean {
 }
 
 export function riskOf(r: ContentRecord): Risk {
+  // The five-stage workflow: a project is never overdue itself (its sessions and episodes are), and an episode is
+  // overdue once its current stage's deadline has passed.
+  if (r.workflow) return "ok";
+  if (r.episode) return r.episode.mdStage === "Published" ? "done" : episodeOverdue(r) ? "overdue" : "ok";
   if (isComplete(r)) return "done";
   // Devotional has no deadlines or staleness of its own yet — its Guest/Review/Closed states are
   // tracked by their own fields, not by dates, so the generic overdue and stall math never applies here.
@@ -146,6 +154,7 @@ export const tasksOf = (r: ContentRecord, stage: string | null = r.pipelineStage
 export const openTasks = (r: ContentRecord): StageTask[] => tasksOf(r).filter((t) => !t.done);
 
 export function canAdvance(r: ContentRecord): { ok: boolean; reason: string } {
+  if (r.workflow || r.episode) return { ok: false, reason: WORKFLOW_ONLY };
   if (!usesPipeline(r) || !r.pipelineStage)
     return { ok: false, reason: "This record is a container. Its episodes or tracks carry the pipeline." };
   if (r.category === "devotional" && (r.pipelineStage === "Guest" || r.pipelineStage === "Review" || r.pipelineStage === "Closed")) {
@@ -172,13 +181,17 @@ export function canAdvance(r: ContentRecord): { ok: boolean; reason: string } {
   return { ok: true, reason: "" };
 }
 
+/** Refusal for the earlier pipeline's actions on a record of the five-stage workflow. */
+const WORKFLOW_ONLY = "This uses the new workflow. Move it on with its own Done buttons.";
+
 // ── Content ID generation ────────────────────────────────────
 
 // Numbers come from counters (see src/data/ids.ts), never from the highest number in view: the browser is
 // not sent archived projects, so it would reuse their numbers. The highest existing number is still checked,
 // so data from before the counters existed can never be given a number twice.
 
-function nextTopLevelId(category: CategoryKey): string {
+/** The next top-level Content ID of a category, such as DOF-SER-008. */
+export function nextTopLevelId(category: CategoryKey): string {
   const db = getDb();
   const key = topLevelCounter(category);
   const nums = db.records
@@ -190,7 +203,8 @@ function nextTopLevelId(category: CategoryKey): string {
   return claimId(`DOF-${categoryOf(category).code}-${pad(n)}`);
 }
 
-function nextChildId(parent: ContentRecord): string {
+/** The next child Content ID of a record, such as DOF-SER-001-S2 or DOF-SER-001-S1-E05. */
+export function nextChildId(parent: ContentRecord): string {
   const db = getDb();
   const key = childCounter(parent.contentId);
   const width = parent.hierarchyLevel === 0 ? 1 : 2;
@@ -228,7 +242,8 @@ export interface NewRecordInput {
   notes?: string;
 }
 
-function blankRecord(id: string, category: CategoryKey, title: string, parentId: string | null, level: number): ContentRecord {
+/** A new record with every field at its empty value. */
+export function blankRecord(id: string, category: CategoryKey, title: string, parentId: string | null, level: number): ContentRecord {
   return {
     contentId: id,
     title,
@@ -371,7 +386,7 @@ export function createRecord(actor: Actor, input: NewRecordInput): ContentRecord
   r.showEnd = input.showEnd || null;
   r.deadline = input.deadline || null;
   r.scheduledDate = input.scheduledDate || null;
-  r.assigneePersonId = input.assigneePersonId || (input.category === "devotional" ? DEFAULT_DEVOTIONAL_PRODUCER : null);
+  r.assigneePersonId = input.assigneePersonId || null;
   r.notes = input.notes ?? "";
   if (usesPipeline(r)) {
     if (input.productionLevel) r.productionLevel = validLevel(r, input.productionLevel);
@@ -390,6 +405,8 @@ export function createChildRecord(actor: Actor, parentId: string, input: Omit<Ne
   const parent = getRecord(parentId);
   if (!parent) throw new RuleError("Parent record not found.");
   if (!canWrite(actor, parent)) throw new RuleError("You are not assigned to this project.");
+  if (parent.workflow) throw new RuleError("Episodes of this project are made when a recording session closes.");
+  if (parent.seriesType) throw new RuleError("Add a season to this series as a new project, so it starts in Development.");
   const kind = childKindFor(parent);
   if (!kind) throw new RuleError(`${categoryOf(parent.category).label} records cannot have children.`);
   if (!input.title.trim()) throw new RuleError(`Give the ${kind.toLowerCase()} a title.`);
@@ -433,6 +450,22 @@ export function splitRecording(actor: Actor, dayId: string, input: SplitInput): 
     throw new RuleError(`Choose an ${categoryOf(input.destCategory).childLevelLabel?.toLowerCase()} to put it in.`);
   if (!canWrite(actor, parent)) throw new RuleError("You are not assigned to that project.");
   if (!input.title.trim()) throw new RuleError(`Give the ${categoryOf(input.destCategory).grandchildLevelLabel?.toLowerCase()} a title.`);
+  if (parent.workflow) {
+    // A season of the five-stage workflow: the recording becomes one of its episodes, in Post production.
+    if (parent.archived || parent.workflow.stage !== "Pre-production")
+      throw new RuleError("That season has not been greenlit and handed off yet.");
+    const ep = makeEpisode(actor, parent as Project, {
+      title: input.title.trim(),
+      plannedEpisodeId: null,
+      sourceSessionId: null,
+      productionNotes: `Recorded live on ${day.title} (${day.contentId}).`,
+      scheduledDate: day.scheduledDate,
+    });
+    ep.spunOffFrom = day.contentId;
+    ep.notes = `Recorded live on ${day.title} (${day.contentId}).`;
+    commit();
+    return ep;
+  }
   const r = blankRecord(nextChildId(parent), input.destCategory, input.title.trim(), parent.contentId, parent.hierarchyLevel + 1);
   r.scheduledDate = day.scheduledDate;
   r.spunOffFrom = day.contentId;
@@ -510,6 +543,8 @@ export type RecordPatch = Partial<Pick<ContentRecord, (typeof RECORD_EDITABLE)[n
 export function updateRecord(actor: Actor, id: string, input: RecordPatch, expectedVersion?: number): ContentRecord {
   const patch = pickKeys(input, RECORD_EDITABLE);
   const r = loadForWrite(actor, id, expectedVersion);
+  if ((r.workflow || r.episode) && patch.assigneePersonId !== undefined && patch.assigneePersonId !== r.assigneePersonId)
+    throw new RuleError(r.workflow ? "Name the show producer instead." : "Choose the episode's editor instead.");
   if (patch.title !== undefined && !patch.title.trim()) throw new RuleError("Title cannot be empty.");
   if (patch.assigneePersonId !== undefined && patch.assigneePersonId !== r.assigneePersonId) {
     // Changing who is responsible puts someone on the current stage, so it follows the same rule as the stage owner actions.
@@ -649,9 +684,6 @@ export function sendBackStage(actor: Actor, id: string, expectedVersion?: number
 }
 
 // ── Devotional: its own linear flow, with two branch points generic advanceStage/sendBackStage refuse ──
-
-/** Default producer/director for a new Devotional, reassignable at creation or any time after. */
-const DEFAULT_DEVOTIONAL_PRODUCER = "DOF-P-CRW-004"; // Ruth Jepkorir
 
 /** Guest stage, approved: records who did the theological review and when, then moves on to Prep/Scripting. */
 export function approveGuestReview(actor: Actor, id: string, reviewerName: string, expectedVersion?: number): ContentRecord {
@@ -1082,6 +1114,7 @@ export function deletionSummary(impact: DeletionImpact): string {
  */
 export function deleteRecord(actor: Actor, id: string): void {
   const r = loadForWrite(actor, id);
+  if (r.workflow || r.episode) throw new RuleError("Projects of the new workflow are closed with a reason, and kept, rather than deleted.");
   const impact = deletionImpact(actor, id);
   if (impact.blockers.length) throw new RuleError(impact.blockers[0]);
   const db = getDb();
