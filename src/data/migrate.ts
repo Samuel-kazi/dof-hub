@@ -34,7 +34,9 @@ export function upgradeToV3(db: Database): Database {
   db.counters ??= {};
   for (const r of db.records) {
     remapMusic(r);
-    r.stageAssignees ??= (r.pipelineStage && r.assigneePersonId ? { [r.pipelineStage]: r.assigneePersonId } : {}) as unknown as ContentRecord["stageAssignees"]; // the old one-owner shape, converted in version 6
+    r.stageAssignees ??= (r.pipelineStage && r.assigneePersonId
+      ? { [r.pipelineStage]: r.assigneePersonId }
+      : {}) as unknown as ContentRecord["stageAssignees"]; // the old one-owner shape, converted in version 6
     r.tasks ??= [];
     r.links ??= [];
     r.productionLevel ??= null;
@@ -43,7 +45,16 @@ export function upgradeToV3(db: Database): Database {
     if (def?.tasks && !r.tasks.some((t) => t.stage === def.name)) {
       for (const label of def.tasks) {
         db.counters.task = (db.counters.task ?? 0) + 1;
-        r.tasks.push({ id: `T-${String(db.counters.task).padStart(4, "0")}`, stage: def.name, label, done: false, dueDate: r.stageDeadlines[def.name] ?? null, assigneePersonId: null, doneAt: null, doneBy: null });
+        r.tasks.push({
+          id: `T-${String(db.counters.task).padStart(4, "0")}`,
+          stage: def.name,
+          label,
+          done: false,
+          dueDate: r.stageDeadlines[def.name] ?? null,
+          assigneePersonId: null,
+          doneAt: null,
+          doneBy: null,
+        });
       }
     }
     // Attach the documents the current stage calls for, once.
@@ -53,8 +64,30 @@ export function upgradeToV3(db: Database): Database {
       db.counters.doc = (db.counters.doc ?? 0) + 1;
       db.counters.docrev = (db.counters.docrev ?? 0) + 1;
       const now = new Date().toISOString();
-      const doc: DocRecord = { id: `DOF-DCS-${String(db.counters.doc).padStart(3, "0")}`, contentId: r.contentId, title: `${tpl.title}: ${r.title}`, body: tpl.body, templateKey: key, stage: def!.name, version: 1, createdBy: "DOF-P-HOP-001", createdAt: now, updatedAt: now, updatedBy: "DOF-P-HOP-001", archived: false };
-      const rev: DocRevision = { id: `REV-${String(db.counters.docrev).padStart(5, "0")}`, docId: doc.id, version: 1, at: now, byPersonId: "DOF-P-HOP-001", title: doc.title, body: doc.body, note: "Created from template" };
+      const doc: DocRecord = {
+        id: `DOF-DCS-${String(db.counters.doc).padStart(3, "0")}`,
+        contentId: r.contentId,
+        title: `${tpl.title}: ${r.title}`,
+        body: tpl.body,
+        templateKey: key,
+        stage: def!.name,
+        version: 1,
+        createdBy: "DOF-P-HOP-001",
+        createdAt: now,
+        updatedAt: now,
+        updatedBy: "DOF-P-HOP-001",
+        archived: false,
+      };
+      const rev: DocRevision = {
+        id: `REV-${String(db.counters.docrev).padStart(5, "0")}`,
+        docId: doc.id,
+        version: 1,
+        at: now,
+        byPersonId: "DOF-P-HOP-001",
+        title: doc.title,
+        body: doc.body,
+        note: "Created from template",
+      };
       db.docs.push(doc);
       db.docRevisions.push(rev);
     }
@@ -79,7 +112,16 @@ export function upgradeToV4(db: Database): Database {
       db.counters.history = db.counters.history ?? 0;
       for (const l of m.lines) {
         db.counters.history += 1;
-        db.equipmentHistory.push({ id: `H-${String(db.counters.history).padStart(5, "0")}`, equipmentId: l.equipmentId, at: new Date().toISOString(), kind: "released", detail: `Released: ${m.contentId} was deleted`, byPersonId: "DOF-P-HOP-001", contentId: m.contentId, manifestId: m.id });
+        db.equipmentHistory.push({
+          id: `H-${String(db.counters.history).padStart(5, "0")}`,
+          equipmentId: l.equipmentId,
+          at: new Date().toISOString(),
+          kind: "released",
+          detail: `Released: ${m.contentId} was deleted`,
+          byPersonId: "DOF-P-HOP-001",
+          contentId: m.contentId,
+          manifestId: m.id,
+        });
       }
     }
     const droppedSheets = new Set(db.callSheets.filter((c) => gone.has(c.contentId)).map((c) => c.id));
@@ -107,10 +149,13 @@ export function upgradeToV5(db: Database): Database {
     r.showStart ??= null;
     r.showEnd ??= null;
   }
-  const flat = db.records.filter((r) => r.category === "live" && r.hierarchyLevel === 0 && r.pipelineStage !== null && !db.records.some((c) => c.parentId === r.contentId));
+  const flat = db.records.filter(
+    (r) =>
+      r.category === "live" && r.hierarchyLevel === 0 && r.pipelineStage !== null && !db.records.some((c) => c.parentId === r.contentId),
+  );
   for (const r of flat) {
     const id = `${r.contentId}-D1`;
-    const copy = <T,>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
+    const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
     const day: ContentRecord = {
       ...copy(r),
       contentId: id,
@@ -124,7 +169,18 @@ export function upgradeToV5(db: Database): Database {
     db.records.push(day);
     r.showStart = r.showStart ?? r.scheduledDate;
     r.showEnd = r.showEnd ?? r.scheduledDate;
-    Object.assign(r, { pipelineStage: null, stageOutputs: {}, stageDeadlines: {}, tasks: [], links: [], stageAssignees: {}, assigneePersonId: null, productionLevel: null, scheduledDate: null, version: r.version + 1 });
+    Object.assign(r, {
+      pipelineStage: null,
+      stageOutputs: {},
+      stageDeadlines: {},
+      tasks: [],
+      links: [],
+      stageAssignees: {},
+      assigneePersonId: null,
+      productionLevel: null,
+      scheduledDate: null,
+      version: r.version + 1,
+    });
     for (const d of db.docs) if (d.contentId === r.contentId && d.stage) d.contentId = id;
     for (const c of db.callSheets) c.linkedEpisodeIds = c.linkedEpisodeIds.map((x) => (x === r.contentId ? id : x));
   }
@@ -145,10 +201,16 @@ export function upgradeToV6(db: Database): Database {
     const rootId = r.contentId.split("-").slice(0, 3).join("-");
     const next: Record<string, { personId: string; roles: string[] }[]> = {};
     for (const [stage, v] of Object.entries(raw)) {
-      if (Array.isArray(v)) { next[stage] = v as { personId: string; roles: string[] }[]; continue; }
+      if (Array.isArray(v)) {
+        next[stage] = v as { personId: string; roles: string[] }[];
+        continue;
+      }
       if (typeof v !== "string") continue;
       const m = db.members.find((x) => x.personId === v && x.projectContentId === rootId);
-      const roles = (m?.roleOnProject ?? "").split(",").map((x) => x.trim()).filter((x) => x && !generic.includes(x.toLowerCase()));
+      const roles = (m?.roleOnProject ?? "")
+        .split(",")
+        .map((x) => x.trim())
+        .filter((x) => x && !generic.includes(x.toLowerCase()));
       next[stage] = [{ personId: v, roles }];
     }
     r.stageAssignees = next;
@@ -203,11 +265,19 @@ export function upgradeToV10(db: Database): Database {
     if (r.category !== "live" || !r.pipelineStage) continue;
     if (r.pipelineStage in RENAME) r.pipelineStage = RENAME[r.pipelineStage];
     for (const dict of [r.stageOutputs, r.stageDeadlines] as Record<string, unknown>[]) {
-      for (const [from, to] of Object.entries(RENAME)) if (from in dict) { dict[to] = dict[from]; delete dict[from]; }
+      for (const [from, to] of Object.entries(RENAME))
+        if (from in dict) {
+          dict[to] = dict[from];
+          delete dict[from];
+        }
       for (const s of NEW_STAGES) if (!(s in dict)) dict[s] = dict === r.stageOutputs ? false : null;
     }
     for (const t of r.tasks) if (t.stage in RENAME) t.stage = RENAME[t.stage];
-    for (const [from, to] of Object.entries(RENAME)) if (from in r.stageAssignees) { r.stageAssignees[to] = r.stageAssignees[from]; delete r.stageAssignees[from]; }
+    for (const [from, to] of Object.entries(RENAME))
+      if (from in r.stageAssignees) {
+        r.stageAssignees[to] = r.stageAssignees[from];
+        delete r.stageAssignees[from];
+      }
   }
   db.schemaVersion = 10;
   return db;
@@ -245,10 +315,18 @@ export function upgradeToV12(db: Database): Database {
     if (r.category !== "devotional" || !r.pipelineStage) continue;
     if (r.pipelineStage in RENAME) r.pipelineStage = RENAME[r.pipelineStage];
     for (const dict of [r.stageOutputs, r.stageDeadlines] as Record<string, unknown>[]) {
-      for (const [from, to] of Object.entries(RENAME)) if (from in dict) { dict[to] = dict[from]; delete dict[from]; }
+      for (const [from, to] of Object.entries(RENAME))
+        if (from in dict) {
+          dict[to] = dict[from];
+          delete dict[from];
+        }
     }
     for (const t of r.tasks) if (t.stage in RENAME) t.stage = RENAME[t.stage];
-    for (const [from, to] of Object.entries(RENAME)) if (from in r.stageAssignees) { r.stageAssignees[to] = r.stageAssignees[from]; delete r.stageAssignees[from]; }
+    for (const [from, to] of Object.entries(RENAME))
+      if (from in r.stageAssignees) {
+        r.stageAssignees[to] = r.stageAssignees[from];
+        delete r.stageAssignees[from];
+      }
   }
   db.schemaVersion = 12;
   return db;

@@ -32,7 +32,11 @@ export interface CategoryConfig {
   color: string;
 }
 
-const s = (name: string, requiredOutput: string, extra: { tasks?: string[]; docs?: string[] } = {}): StageDef => ({ name, requiredOutput, ...extra });
+const s = (name: string, requiredOutput: string, extra: { tasks?: string[]; docs?: string[] } = {}): StageDef => ({
+  name,
+  requiredOutput,
+  ...extra,
+});
 
 // The levels of finishing an edit, in order. Each one can have its own deadline and person.
 export const EDIT_TASKS = ["Story lock", "Picture lock", "Sound check", "Color"];
@@ -190,7 +194,7 @@ export const categoryColor = (key: CategoryKey): string => categoryOf(key).color
 /** What a record's pipeline items are called: Episode, Track, Day, or the project itself. */
 export const leafLabel = (key: CategoryKey): string => {
   const c = categoryOf(key);
-  return c.leafLevel === 2 ? c.grandchildLevelLabel ?? "Item" : c.leafLevel === 1 ? c.childLevelLabel ?? "Item" : c.singular;
+  return c.leafLevel === 2 ? (c.grandchildLevelLabel ?? "Item") : c.leafLevel === 1 ? (c.childLevelLabel ?? "Item") : c.singular;
 };
 
 /** The shoot date is a show date for live days, which are streamed rather than shot. */

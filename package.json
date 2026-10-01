@@ -16,7 +16,9 @@
     "build:server": "node scripts/build-server.mjs",
     "dev:server": "node scripts/dev-server.mjs",
     "check": "tsc --noEmit && tsc --noEmit -p server",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "jspdf": "^4.2.1",

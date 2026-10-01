@@ -1,7 +1,10 @@
 // Saving a file for the person. In the desktop app, and when Tauri's dialog and file plugins are
 // installed, this opens a normal save dialog. Otherwise it hands the file to the web view to download.
 
-export interface Saved { how: "saved" | "started"; where: string }
+export interface Saved {
+  how: "saved" | "started";
+  where: string;
+}
 
 interface TauriGlobal {
   dialog?: { save: (o: { defaultPath?: string; filters?: { name: string; extensions: string[] }[] }) => Promise<string | null> };

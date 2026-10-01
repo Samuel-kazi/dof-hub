@@ -27,14 +27,25 @@ async function fresh() {
 
 const t = async (name: string, fn: () => Promise<void> | void) => {
   await fresh();
-  try { await fn(); passed++; console.log("ok  ", name); } catch (e) { console.error("FAIL", name, "\n    ", (e as Error).message); process.exitCode = 1; }
+  try {
+    await fn();
+    passed++;
+    console.log("ok  ", name);
+  } catch (e) {
+    console.error("FAIL", name, "\n    ", (e as Error).message);
+    process.exitCode = 1;
+  }
 };
 
 type Json = Record<string, any>;
 class Client {
   cookie = "";
   async call(method: string, path: string, body?: unknown): Promise<{ status: number; json: Json }> {
-    const res = await fetch(base + path, { method, headers: { ...(method === "POST" ? { "Content-Type": "application/json" } : {}), ...(this.cookie ? { Cookie: this.cookie } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
+    const res = await fetch(base + path, {
+      method,
+      headers: { ...(method === "POST" ? { "Content-Type": "application/json" } : {}), ...(this.cookie ? { Cookie: this.cookie } : {}) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
     const set = res.headers.getSetCookie().find((c) => c.startsWith("dof_session="));
     if (set) this.cookie = set.split(";")[0];
     const text = await res.text();
@@ -47,7 +58,13 @@ class Client {
 
 async function setupHop() {
   const c = new Client();
-  const r = await c.post("/api/setup", { token: process.env.SETUP_TOKEN, name: "Kevin Mwangi", username: "kev", password: "correct horse battery", samples: true });
+  const r = await c.post("/api/setup", {
+    token: process.env.SETUP_TOKEN,
+    name: "Kevin Mwangi",
+    username: "kev",
+    password: "correct horse battery",
+    samples: true,
+  });
   assert.equal(r.status, 200, JSON.stringify(r.json));
   return c;
 }
@@ -56,7 +73,10 @@ async function loginFor(hop: Client, personId: string, username: string) {
   assert.equal(made.status, 200, JSON.stringify(made.json));
   const c = new Client();
   assert.equal((await c.post("/api/login", { username, password: made.json.temporaryPassword })).status, 200);
-  assert.equal((await c.post("/api/account/password", { current: made.json.temporaryPassword, next: "a fresh password here" })).status, 200);
+  assert.equal(
+    (await c.post("/api/account/password", { current: made.json.temporaryPassword, next: "a fresh password here" })).status,
+    200,
+  );
   return c;
 }
 
@@ -73,7 +93,18 @@ await t("every generated wrapper is either a server action or deliberately not o
 
 await t("names that are not actions are refused, including names every object inherits", async () => {
   const hop = await setupHop();
-  for (const name of ["constructor", "hasOwnProperty", "toString", "__proto__", "content.deletionImpact", "permissions.can", "team.addTeamMember", "people.createLoginForPerson", "settings.changePassword", "nope.nothing"]) {
+  for (const name of [
+    "constructor",
+    "hasOwnProperty",
+    "toString",
+    "__proto__",
+    "content.deletionImpact",
+    "permissions.can",
+    "team.addTeamMember",
+    "people.createLoginForPerson",
+    "settings.changePassword",
+    "nope.nothing",
+  ]) {
     const r = await hop.act(name);
     assert.equal(r.status, 400, `${name}: ${r.status}`);
     assert.match(r.json.error, /does not exist/, name);
@@ -94,7 +125,15 @@ await t("every action accepts the arguments its screen sends", async () => {
   };
   const state = async (): Promise<Json> => (await hop.get("/api/state")).json.db;
   const rec = async (id: string): Promise<Json> => (await state()).records.find((r: Json) => r.contentId === id);
-  const blankRecord = { scheduledDate: null, deadline: null, assigneePersonId: null, notes: "", productionLevel: null, showStart: null, showEnd: null };
+  const blankRecord = {
+    scheduledDate: null,
+    deadline: null,
+    assigneePersonId: null,
+    notes: "",
+    productionLevel: null,
+    showStart: null,
+    showEnd: null,
+  };
   const pixel = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 
   // Projects
@@ -103,7 +142,12 @@ await t("every action accepts the arguments its screen sends", async () => {
   const ep = (await call("content.createChildRecord", season, { title: "Episode 1", ...blankRecord })).result.contentId;
   let r = await rec(ep);
   const stage = r.pipelineStage;
-  await call("content.updateRecord", ep, { title: "Episode 1", scheduledDate: "2026-10-05", deadline: "2026-10-20", assigneePersonId: "DOF-P-CRW-001", notes: "Notes" }, r.version);
+  await call(
+    "content.updateRecord",
+    ep,
+    { title: "Episode 1", scheduledDate: "2026-10-05", deadline: "2026-10-20", assigneePersonId: "DOF-P-CRW-001", notes: "Notes" },
+    r.version,
+  );
   r = await rec(ep);
   await call("content.setStageDeadline", ep, stage, "2026-10-10", r.version);
   const task = (await call("content.addTask", ep, { label: "Check the B-roll", dueDate: null, assigneePersonId: null })).result.id;
@@ -117,7 +161,13 @@ await t("every action accepts the arguments its screen sends", async () => {
   const guest = (await call("content.addFeatured", ep, { kind: "guest", name: "Pastor Amani", note: "" })).result.id;
   await call("content.updateFeatured", ep, guest, { note: "Nairobi Chapel" });
   await call("content.removeFeatured", ep, guest);
-  const links = (await call("content.addLinks", ep, { kind: "review", stage, links: [{ url: "https://example.com/cut-1", note: "First cut", key: "row-1" }] })).result;
+  const links = (
+    await call("content.addLinks", ep, {
+      kind: "review",
+      stage,
+      links: [{ url: "https://example.com/cut-1", note: "First cut", key: "row-1" }],
+    })
+  ).result;
   await call("content.removeLink", ep, links[0].id);
   await call("content.addComment", ep, "Looks good.");
   r = await rec(ep);
@@ -127,7 +177,16 @@ await t("every action accepts the arguments its screen sends", async () => {
   r = await rec(ep);
   await call("content.sendBackStage", ep, r.version);
 
-  const live = (await call("content.createRecord", { title: "Contract live", ...blankRecord, showStart: "2026-10-10", showEnd: "2026-10-11", productionLevel: "small", category: "live" })).result.contentId;
+  const live = (
+    await call("content.createRecord", {
+      title: "Contract live",
+      ...blankRecord,
+      showStart: "2026-10-10",
+      showEnd: "2026-10-11",
+      productionLevel: "small",
+      category: "live",
+    })
+  ).result.contentId;
   r = await rec(live);
   await call("content.setStrikePlan", live, "daily", ["Lights", ""], ["Truss"], r.version);
   const day = `${live}-D1`;
@@ -148,14 +207,20 @@ await t("every action accepts the arguments its screen sends", async () => {
   const sheet = (await call("callsheets.createCallSheet", { contentId: show, date: "2026-10-05" })).result.id;
   let cs = (await state()).callSheets.find((x: Json) => x.id === sheet);
   // The form sends its whole draft, which includes fields the action does not change.
-  await call("callsheets.updateCallSheet", sheet, { ...cs, title: "Shoot day", location: "Studio A", callTime: "07:00", crewPersonIds: ["DOF-P-CRW-001"] }, cs.version);
+  await call(
+    "callsheets.updateCallSheet",
+    sheet,
+    { ...cs, title: "Shoot day", location: "Studio A", callTime: "07:00", crewPersonIds: ["DOF-P-CRW-001"] },
+    cs.version,
+  );
   cs = (await state()).callSheets.find((x: Json) => x.id === sheet);
   await call("callsheets.updateCallSheet", sheet, { crewPersonIds: ["DOF-P-CRW-001", "DOF-P-CRW-002"] }, cs.version);
   // A run of show belongs to a large live production.
   r = await rec(day);
   await call("content.updateRecord", day, { productionLevel: "large" }, r.version);
   const liveSheet = (await call("callsheets.createCallSheet", { contentId: live, date: "2026-10-10" })).result.id;
-  const seg = (await call("callsheets.addRunItem", liveSheet, { time: "09:00", title: "Opening", durationMin: 10, ownerPersonId: null })).result.id;
+  const seg = (await call("callsheets.addRunItem", liveSheet, { time: "09:00", title: "Opening", durationMin: 10, ownerPersonId: null }))
+    .result.id;
   await call("callsheets.updateRunItem", liveSheet, seg, { title: "Opening prayer" });
   await call("callsheets.removeRunItem", liveSheet, seg);
   cs = (await state()).callSheets.find((x: Json) => x.id === sheet);
@@ -171,12 +236,60 @@ await t("every action accepts the arguments its screen sends", async () => {
   await call("content.addComment", show, "On the call sheet", sheet);
 
   // Equipment
-  const kit = { make: "Sony", model: "FX9", category: "camera", unitCost: 1000, purchaseDate: null, vendor: "", condition: "Good", packaging: "", accessories: "", info: "" };
-  const cam = (await call("equipment.createItem", { trackingType: "serialized", name: "Test camera", itemFamily: "", quantity: 1, ...kit })).result.id;
-  const units = (await call("equipment.createSerializedUnits", { name: "Test camera", ...kit, units: [{ serialNumber: "SN-1", label: "" }, { serialNumber: "SN-2" }] })).result.map((u: Json) => u.id);
-  const batch = (await call("equipment.createItem", { trackingType: "aggregate", name: "XLR 5 m", make: "", model: "", category: "cabling", itemFamily: "XLR-5M", quantity: 10, unitCost: 5, purchaseDate: null, vendor: "", condition: "Good", packaging: "", accessories: "", info: "" })).result.id;
+  const kit = {
+    make: "Sony",
+    model: "FX9",
+    category: "camera",
+    unitCost: 1000,
+    purchaseDate: null,
+    vendor: "",
+    condition: "Good",
+    packaging: "",
+    accessories: "",
+    info: "",
+  };
+  const cam = (await call("equipment.createItem", { trackingType: "serialized", name: "Test camera", itemFamily: "", quantity: 1, ...kit }))
+    .result.id;
+  const units = (
+    await call("equipment.createSerializedUnits", {
+      name: "Test camera",
+      ...kit,
+      units: [{ serialNumber: "SN-1", label: "" }, { serialNumber: "SN-2" }],
+    })
+  ).result.map((u: Json) => u.id);
+  const batch = (
+    await call("equipment.createItem", {
+      trackingType: "aggregate",
+      name: "XLR 5 m",
+      make: "",
+      model: "",
+      category: "cabling",
+      itemFamily: "XLR-5M",
+      quantity: 10,
+      unitCost: 5,
+      purchaseDate: null,
+      vendor: "",
+      condition: "Good",
+      packaging: "",
+      accessories: "",
+      info: "",
+    })
+  ).result.id;
   await call("equipment.updateItem", cam, { name: "Test camera", ...kit, purchaseDate: null, serialNumber: "SN-0", unitLabel: "" });
-  await call("equipment.updateItem", batch, { name: "XLR 5 m", make: "", model: "", category: "cabling", vendor: "", packaging: "", accessories: "", info: "", unitCost: 5, purchaseDate: null, condition: "Good", quantityTotal: 10 });
+  await call("equipment.updateItem", batch, {
+    name: "XLR 5 m",
+    make: "",
+    model: "",
+    category: "cabling",
+    vendor: "",
+    packaging: "",
+    accessories: "",
+    info: "",
+    unitCost: 5,
+    purchaseDate: null,
+    condition: "Good",
+    quantityTotal: 10,
+  });
   await call("equipment.setConditionBreakdown", batch, { New: 0, Good: 8, Fair: 2, Poor: 0 });
   const att = (await call("equipment.addAttachment", cam, "photo", { url: pixel, caption: "" })).result.id;
   await call("equipment.addAttachment", cam, "receipt", { url: "https://example.com/receipt.pdf" });
@@ -186,13 +299,41 @@ await t("every action accepts the arguments its screen sends", async () => {
   await call("equipment.retireItem", units[1], "retired", "Replaced");
   await call("equipment.reinstateItem", units[1]);
   await call("equipment.deleteItem", units[1]);
-  const mf = (await call("equipment.createManifest", { contentId: show, date: "2026-10-05", destination: "outside", status: "assigned", expectedReturn: "2026-10-07", responsiblePersonId: "DOF-P-CRW-001", lines: [{ equipmentId: cam, quantity: 1 }], notes: "" })).result.id;
+  const mf = (
+    await call("equipment.createManifest", {
+      contentId: show,
+      date: "2026-10-05",
+      destination: "outside",
+      status: "assigned",
+      expectedReturn: "2026-10-07",
+      responsiblePersonId: "DOF-P-CRW-001",
+      lines: [{ equipmentId: cam, quantity: 1 }],
+      notes: "",
+    })
+  ).result.id;
   await call("equipment.addLines", mf, [{ equipmentId: batch, quantity: 2 }]);
   await call("equipment.removeLine", mf, batch);
-  await call("equipment.markGoneOut", mf, { expectedReturn: "2026-10-07", responsiblePersonId: "DOF-P-CRW-001", photos: { [cam]: [{ url: pixel, caption: "" }] } });
-  await call("equipment.checkIn", mf, [{ equipmentId: cam, returnedGood: 1, damaged: 0, lost: 0, conditionIn: "Good", description: "", sendToRepair: false, photos: [] }]);
+  await call("equipment.markGoneOut", mf, {
+    expectedReturn: "2026-10-07",
+    responsiblePersonId: "DOF-P-CRW-001",
+    photos: { [cam]: [{ url: pixel, caption: "" }] },
+  });
+  await call("equipment.checkIn", mf, [
+    { equipmentId: cam, returnedGood: 1, damaged: 0, lost: 0, conditionIn: "Good", description: "", sendToRepair: false, photos: [] },
+  ]);
   await call("equipment.attachManifest", mf, "DOF-SER-001");
-  const mf2 = (await call("equipment.createManifest", { contentId: show, date: "2026-10-12", destination: "studio", status: "assigned", expectedReturn: null, responsiblePersonId: "DOF-P-HOP-001", lines: [{ equipmentId: batch, quantity: 1 }], notes: "" })).result.id;
+  const mf2 = (
+    await call("equipment.createManifest", {
+      contentId: show,
+      date: "2026-10-12",
+      destination: "studio",
+      status: "assigned",
+      expectedReturn: null,
+      responsiblePersonId: "DOF-P-HOP-001",
+      lines: [{ equipmentId: batch, quantity: 1 }],
+      notes: "",
+    })
+  ).result.id;
   await call("equipment.releaseManifest", mf2);
   cs = (await state()).callSheets.find((x: Json) => x.id === sheet);
   await call("equipment.addGearToSheet", { id: cs.id, contentId: cs.contentId, date: cs.date }, [{ equipmentId: units[0], quantity: 1 }]);
@@ -207,8 +348,23 @@ await t("every action accepts the arguments its screen sends", async () => {
   await call("docs.archiveDoc", doc);
 
   // People
-  const pid = (await call("people.createPerson", { category: "VOL", name: "Wanjiku Mwangi", email: "", phone: "", skills: [], equipmentFamiliarity: [] })).result.personId;
-  await call("people.updatePerson", pid, { name: "Wanjiku Mwangi", email: "wanjiku@example.org", phone: "0700 000000", skills: ["Ushering"], equipmentFamiliarity: [] });
+  const pid = (
+    await call("people.createPerson", {
+      category: "VOL",
+      name: "Wanjiku Mwangi",
+      email: "",
+      phone: "",
+      skills: [],
+      equipmentFamiliarity: [],
+    })
+  ).result.personId;
+  await call("people.updatePerson", pid, {
+    name: "Wanjiku Mwangi",
+    email: "wanjiku@example.org",
+    phone: "0700 000000",
+    skills: ["Ushering"],
+    equipmentFamiliarity: [],
+  });
   await call("people.updateOwnProfile", { notifyEmail: true });
   await call("people.updateOwnProfile", { photoUrl: pixel });
   await call("people.updateOwnProfile", { photoUrl: null });
@@ -233,7 +389,9 @@ await t("every action accepts the arguments its screen sends", async () => {
   const drive = (await call("storage.createDrive", { name: "Contract drive", capacityGB: 1000, otherUsedGB: 0, notes: "" })).result.id;
   await call("storage.updateDrive", drive, { name: "Contract drive 2", capacityGB: 2000, otherUsedGB: 10, notes: "" });
   const alloc = (await call("storage.addAllocation", { driveId: drive, contentId: ep, sizeGB: 10, kind: "project", note: "" })).result.id;
-  const early = (await call("storage.addAllocation", { driveId: drive, contentId: null, label: "Youth camp raw", sizeGB: 5, kind: "raw", note: "" })).result.id;
+  const early = (
+    await call("storage.addAllocation", { driveId: drive, contentId: null, label: "Youth camp raw", sizeGB: 5, kind: "raw", note: "" })
+  ).result.id;
   await call("storage.updateAllocation", alloc, { sizeGB: 12, kind: "project", note: "", driveId: drive });
   await call("storage.moveAllocation", early, ep);
   await call("storage.removeAllocation", alloc);
@@ -249,11 +407,22 @@ await t("fields an action does not own are dropped, not applied", async () => {
   const crew = await loginFor(hop, "DOF-P-CRW-001", "wanjiru");
   const db = async () => (await hop.get("/api/state")).json.db;
   const before = (await db()).records.find((r: Json) => r.contentId === "DOF-SER-001-S1-E01");
-  const r = await crew.act("content.updateRecord", "DOF-SER-001-S1-E01", { notes: "updated", pipelineStage: "Published", parentId: null, archived: true, contentId: "DOF-X", version: 99, stageOutputs: {} });
+  const r = await crew.act("content.updateRecord", "DOF-SER-001-S1-E01", {
+    notes: "updated",
+    pipelineStage: "Published",
+    parentId: null,
+    archived: true,
+    contentId: "DOF-X",
+    version: 99,
+    stageOutputs: {},
+  });
   assert.equal(r.status, 200, JSON.stringify(r.json));
   const after = (await db()).records.find((x: Json) => x.contentId === "DOF-SER-001-S1-E01");
   assert.equal(after.notes, "updated");
-  assert.deepEqual([after.pipelineStage, after.parentId, after.archived, after.version], [before.pipelineStage, before.parentId, false, before.version + 1]);
+  assert.deepEqual(
+    [after.pipelineStage, after.parentId, after.archived, after.version],
+    [before.pipelineStage, before.parentId, false, before.version + 1],
+  );
 
   await hop.act("callsheets.updateCallSheet", "DOF-CS-001", { notes: "n", status: "final", contentId: "DOF-DOC-001", equipmentIds: ["x"] });
   const sheet = (await db()).callSheets.find((c: Json) => c.id === "DOF-CS-001");
@@ -263,7 +432,11 @@ await t("fields an action does not own are dropped, not applied", async () => {
   const p = (await db()).people.find((x: Json) => x.personId === "DOF-P-CRW-002");
   assert.deepEqual([p.phone, p.category, p.status], ["0711", "CRW", "active"]);
 
-  await hop.act("settings.updateSettings", { stageReminderHours: 12, permissions: { roles: { CRW: { "backend.audit": true } }, people: {} }, appearance: { accent: "plum", fontPairing: "classic" } });
+  await hop.act("settings.updateSettings", {
+    stageReminderHours: 12,
+    permissions: { roles: { CRW: { "backend.audit": true } }, people: {} },
+    appearance: { accent: "plum", fontPairing: "classic" },
+  });
   const settings = (await db()).settings;
   assert.equal(settings.stageReminderHours, 12);
   assert.equal(settings.permissions?.roles?.CRW?.["backend.audit"], undefined);

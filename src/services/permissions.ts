@@ -52,7 +52,10 @@ export function requireNotBeyond(actor: Actor, role: RoleCode, personId: string,
   if (actor.role === "HOP") return;
   if (role === "HOP") throw new RuleError(`Only the Head of Production can ${what} for the Head of Production.`);
   const extra = capabilitiesBeyond(actor, role, personId);
-  if (extra.length) throw new RuleError(`Only the Head of Production can ${what} for this person, because they have access you do not: ${extra.map((c) => capabilityDef(c).label).join(", ")}.`);
+  if (extra.length)
+    throw new RuleError(
+      `Only the Head of Production can ${what} for this person, because they have access you do not: ${extra.map((c) => capabilityDef(c).label).join(", ")}.`,
+    );
 }
 
 const GRANTABLE_ROLES: RoleCode[] = ["CRW", "VOL", "PTR"];
@@ -108,13 +111,33 @@ export function customisations(): { roles: number; people: number } {
 }
 
 export function effectiveGrants(role: RoleCode, personId: string): Record<Capability, { value: boolean; source: GrantSource }> {
-  return Object.fromEntries(ALL_CAPABILITIES.map((c) => [c, grantFor(role, personId, c)])) as Record<Capability, { value: boolean; source: GrantSource }>;
+  return Object.fromEntries(ALL_CAPABILITIES.map((c) => [c, grantFor(role, personId, c)])) as Record<
+    Capability,
+    { value: boolean; source: GrantSource }
+  >;
 }
 
 // ── Modules in the side menu ─────────────────────────────────
 
-const ORDER: ModuleKey[] = ["dashboard", "pipeline", "callsheets", "calendar", "equipment", "storage", "crew", "documents", "reminders", "settings"];
-const MODULE_CAP: Partial<Record<ModuleKey, Capability>> = { equipment: "equipment.use", storage: "storage.use", crew: "people.directory", reminders: "reminders.use", calendar: "reminders.use" };
+const ORDER: ModuleKey[] = [
+  "dashboard",
+  "pipeline",
+  "callsheets",
+  "calendar",
+  "equipment",
+  "storage",
+  "crew",
+  "documents",
+  "reminders",
+  "settings",
+];
+const MODULE_CAP: Partial<Record<ModuleKey, Capability>> = {
+  equipment: "equipment.use",
+  storage: "storage.use",
+  crew: "people.directory",
+  reminders: "reminders.use",
+  calendar: "reminders.use",
+};
 
 /** The modules a person sees. Those that depend on a permission follow it. */
 export function modulesFor(actor: Actor): ModuleKey[] {

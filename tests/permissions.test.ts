@@ -17,9 +17,17 @@ import { getPerson } from "../src/services/people";
 let passed = 0;
 const t = (name: string, fn: () => void) => {
   resetDemoData();
-  try { fn(); passed++; console.log("ok  ", name); } catch (e) { console.error("FAIL", name, "\n    ", (e as Error).message); process.exitCode = 1; }
+  try {
+    fn();
+    passed++;
+    console.log("ok  ", name);
+  } catch (e) {
+    console.error("FAIL", name, "\n    ", (e as Error).message);
+    process.exitCode = 1;
+  }
 };
-const throwsRule = (fn: () => unknown, match?: RegExp) => assert.throws(fn, (e) => e instanceof RuleError && (!match || match.test(e.message)));
+const throwsRule = (fn: () => unknown, match?: RegExp) =>
+  assert.throws(fn, (e) => e instanceof RuleError && (!match || match.test(e.message)));
 const hop = () => login("hop@dof.demo", "demo");
 const crew2 = () => login("crew2@dof.demo", "demo"); // Series, Documentary
 const crew1 = () => login("crew1@dof.demo", "demo");
@@ -28,17 +36,21 @@ const ptr = () => login("partner1@dof.demo", "demo");
 const rec = (id: string) => getRecord(id)!;
 
 t("the Head of Production can do everything, always", () => {
-  for (const cap of ["pipeline.viewAll", "people.manage", "backend.audit", "reports.export"] as const) assert.equal(P.can(hop(), cap), true);
+  for (const cap of ["pipeline.viewAll", "people.manage", "backend.audit", "reports.export"] as const)
+    assert.equal(P.can(hop(), cap), true);
   assert.equal(P.grantFor("HOP", null, "backend.audit").source, "always");
 });
 t("crew start able to see everything and jump in, but not edit everywhere", () => {
-  assert.equal(P.can(crew2(), "pipeline.viewAll"), true); assert.equal(P.can(crew2(), "pipeline.join"), true);
+  assert.equal(P.can(crew2(), "pipeline.viewAll"), true);
+  assert.equal(P.can(crew2(), "pipeline.join"), true);
   assert.equal(P.can(crew2(), "pipeline.editAll"), false);
-  assert.equal(P.can(vol(), "pipeline.viewAll"), false); assert.equal(P.can(ptr(), "reports.export"), false);
+  assert.equal(P.can(vol(), "pipeline.viewAll"), false);
+  assert.equal(P.can(ptr(), "reports.export"), false);
 });
 t("crew can see, but not edit, a project they are not attached to", () => {
   const live = rec("DOF-LIVE-001-D1");
-  assert.equal(canView(crew2(), live), true); assert.equal(canWrite(crew2(), live), false);
+  assert.equal(canView(crew2(), live), true);
+  assert.equal(canWrite(crew2(), live), false);
   throwsRule(() => C.updateTask(crew2(), live.contentId, "T-0001", { done: true }), /view-only|not found/);
 });
 t("crew can see completed projects too", () => {
@@ -47,7 +59,10 @@ t("crew can see completed projects too", () => {
   assert.ok(visibleRecords(crew2()).some((r) => r.contentId === "DOF-DEV-001"));
 });
 t("crew can jump in: adding themselves to a project they are not on makes them part of it", () => {
-  assert.equal(getDb().members.some((m) => m.personId === "DOF-P-CRW-002" && m.projectContentId === "DOF-LIVE-001"), false);
+  assert.equal(
+    getDb().members.some((m) => m.personId === "DOF-P-CRW-002" && m.projectContentId === "DOF-LIVE-001"),
+    false,
+  );
   C.addStageOwner(crew2(), "DOF-LIVE-001-D1", "Show", "DOF-P-CRW-002", ["Camera operator"]);
   assert.ok(getDb().members.some((m) => m.personId === "DOF-P-CRW-002" && m.projectContentId === "DOF-LIVE-001"));
   assert.equal(canWrite(crew2(), rec("DOF-LIVE-001-D1")), true);
@@ -63,7 +78,8 @@ t("crew still cannot put other people on a project they are not attached to", ()
 t("taking away 'see every project' sends crew back to their own projects", () => {
   P.setRoleGrant(hop(), "CRW", "pipeline.viewAll", false);
   const ids = visibleRecords(crew2()).map((r) => r.contentId);
-  assert.ok(ids.includes("DOF-SER-001-S1-E02")); assert.ok(!ids.includes("DOF-LIVE-001"));
+  assert.ok(ids.includes("DOF-SER-001-S1-E02"));
+  assert.ok(!ids.includes("DOF-LIVE-001"));
   assert.equal(P.grantFor("CRW", "DOF-P-CRW-002", "pipeline.viewAll").source, "role");
 });
 t("one person can be given more than their role, or less", () => {
@@ -72,7 +88,10 @@ t("one person can be given more than their role, or less", () => {
   assert.equal(P.grantFor("VOL", "DOF-P-VOL-001", "pipeline.viewAll").source, "person");
   P.setPersonGrant(hop(), "DOF-P-CRW-002", "pipeline.viewAll", false);
   assert.ok(!visibleRecords(crew2()).some((r) => r.contentId === "DOF-LIVE-001"));
-  assert.ok(visibleRecords(crew1()).some((r) => r.contentId === "DOF-LIVE-001"), "other crew are unaffected");
+  assert.ok(
+    visibleRecords(crew1()).some((r) => r.contentId === "DOF-LIVE-001"),
+    "other crew are unaffected",
+  );
   P.setPersonGrant(hop(), "DOF-P-CRW-002", "pipeline.viewAll", null);
   assert.ok(visibleRecords(crew2()).some((r) => r.contentId === "DOF-LIVE-001"));
 });
@@ -125,7 +144,10 @@ t("people management, workload and back end access follow their permissions", ()
   throwsRule(() => Pe.createPerson(crew2(), { category: "VOL", name: "X", email: "", phone: "" }), /Head of Production/);
   P.setPersonGrant(hop(), "DOF-P-CRW-002", "people.manage", true);
   assert.ok(Pe.createPerson(crew2(), { category: "VOL", name: "Made by crew", email: "", phone: "" }));
-  assert.deepEqual(W.crewWorkload(crew1()).map((x) => x.person.personId), ["DOF-P-CRW-001"]);
+  assert.deepEqual(
+    W.crewWorkload(crew1()).map((x) => x.person.personId),
+    ["DOF-P-CRW-001"],
+  );
   P.setRoleGrant(hop(), "CRW", "workload.viewAll", true);
   assert.ok(W.crewWorkload(crew1()).length >= 3);
   throwsRule(() => updateSettings(crew1(), { stageReminderHours: 12 }), /Head of Production/);

@@ -18,7 +18,14 @@ type Store = ReturnType<typeof memoryStore>;
 
 let passed = 0;
 const t = async (name: string, fn: () => Promise<void>) => {
-  try { await fn(); passed++; console.log("ok  ", name); } catch (e) { console.error("FAIL", name, "\n    ", (e as Error).stack?.split("\n").slice(0, 3).join("\n     ")); process.exitCode = 1; }
+  try {
+    await fn();
+    passed++;
+    console.log("ok  ", name);
+  } catch (e) {
+    console.error("FAIL", name, "\n    ", (e as Error).stack?.split("\n").slice(0, 3).join("\n     "));
+    process.exitCode = 1;
+  }
 };
 
 await storageContract(t, async (legacy) => memoryStore(legacy));
@@ -39,7 +46,10 @@ function slow(store: Store, ms = 15): Store {
   const s = store.state as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>;
   for (const k of ["head", "items", "commit"]) {
     const f = s[k].bind(store.state);
-    s[k] = async (...a: unknown[]) => { await new Promise((r) => setTimeout(r, ms)); return f(...a); };
+    s[k] = async (...a: unknown[]) => {
+      await new Promise((r) => setTimeout(r, ms));
+      return f(...a);
+    };
   }
   return store;
 }
@@ -48,7 +58,15 @@ type Json = Record<string, any>;
 class Client {
   cookie = "";
   async raw(method: string, path: string, body?: unknown, headers: Record<string, string> = {}) {
-    return fetch(base + path, { method, headers: { ...(method === "POST" ? { "Content-Type": "application/json" } : {}), ...(this.cookie ? { Cookie: this.cookie } : {}), ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
+    return fetch(base + path, {
+      method,
+      headers: {
+        ...(method === "POST" ? { "Content-Type": "application/json" } : {}),
+        ...(this.cookie ? { Cookie: this.cookie } : {}),
+        ...headers,
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
   }
   async call(method: string, path: string, body?: unknown): Promise<{ status: number; json: Json }> {
     const res = await this.raw(method, path, body);
@@ -63,7 +81,13 @@ class Client {
 }
 async function setupHop(samples = true) {
   const c = new Client();
-  const r = await c.post("/api/setup", { token: process.env.SETUP_TOKEN, name: "Kevin Mwangi", username: "kev", password: "correct horse battery", samples });
+  const r = await c.post("/api/setup", {
+    token: process.env.SETUP_TOKEN,
+    name: "Kevin Mwangi",
+    username: "kev",
+    password: "correct horse battery",
+    samples,
+  });
   assert.equal(r.status, 200, JSON.stringify(r.json));
   return c;
 }
@@ -72,11 +96,32 @@ const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJA
 await t("H2: people saving at the same moment, to different projects, all get saved", async () => {
   await serve(slow(memoryStore()));
   const hop = await setupHop();
-  const ids = ["DOF-SER-001", "DOF-LIVE-001", "DOF-LIVE-002", "DOF-DEV-001", "DOF-MUS-001", "DOF-DOC-001", "DOF-SER-001-S1", "DOF-SER-001-S1-E01", "DOF-SER-001-S1-E02", "DOF-SER-001-S1-E03", "DOF-SER-001-S1-E04", "DOF-LIVE-001-D1"];
+  const ids = [
+    "DOF-SER-001",
+    "DOF-LIVE-001",
+    "DOF-LIVE-002",
+    "DOF-DEV-001",
+    "DOF-MUS-001",
+    "DOF-DOC-001",
+    "DOF-SER-001-S1",
+    "DOF-SER-001-S1-E01",
+    "DOF-SER-001-S1-E02",
+    "DOF-SER-001-S1-E03",
+    "DOF-SER-001-S1-E04",
+    "DOF-LIVE-001-D1",
+  ];
   const comments = await Promise.all(ids.map((id) => hop.act("content.addComment", id, "hello")));
-  assert.deepEqual(comments.map((r) => r.status), ids.map(() => 200), "comments are a log: they never collide");
+  assert.deepEqual(
+    comments.map((r) => r.status),
+    ids.map(() => 200),
+    "comments are a log: they never collide",
+  );
   const edits = await Promise.all(ids.map((id) => hop.act("content.updateRecord", id, { notes: `note for ${id}` })));
-  assert.deepEqual(edits.map((r) => r.status), ids.map(() => 200), "edits to the same part wait their turn and go through");
+  assert.deepEqual(
+    edits.map((r) => r.status),
+    ids.map(() => 200),
+    "edits to the same part wait their turn and go through",
+  );
   const records = (await hop.get("/api/state")).json.db.records as Json[];
   for (const id of ids) assert.equal(records.find((r) => r.contentId === id)?.notes, `note for ${id}`);
 });
@@ -88,7 +133,10 @@ await t("H2: asking whether anything changed does not load the data", async () =
   const first = await hop.get("/api/state");
   let loads = 0;
   const items = store.state.items.bind(store.state);
-  store.state.items = async (keys) => { loads++; return items(keys); };
+  store.state.items = async (keys) => {
+    loads++;
+    return items(keys);
+  };
   for (let i = 0; i < 5; i++) assert.equal((await hop.get(`/api/state?rev=${first.json.revision}`)).json.unchanged, true);
   assert.equal(loads, 0, "five polls, no loads");
   await hop.act("content.addComment", "DOF-SER-001", "something new");
@@ -133,11 +181,27 @@ await t("H2: only the newest activity log entries are sent, and the log is never
   const store = memoryStore();
   await serve(store);
   const hop = await setupHop();
-  const many = Array.from({ length: AUDIT_SENT + 150 }, (_, n) => ({ k: "audit", i: `A-old-${n}`, o: n, d: { id: `A-old-${n}`, at: new Date(Date.UTC(2026, 0, 1, 0, n)).toISOString(), byPersonId: "DOF-P-HOP-001", action: "test", entity: "test", entityId: String(n), detail: "" } }));
+  const many = Array.from({ length: AUDIT_SENT + 150 }, (_, n) => ({
+    k: "audit",
+    i: `A-old-${n}`,
+    o: n,
+    d: {
+      id: `A-old-${n}`,
+      at: new Date(Date.UTC(2026, 0, 1, 0, n)).toISOString(),
+      byPersonId: "DOF-P-HOP-001",
+      action: "test",
+      entity: "test",
+      entityId: String(n),
+      detail: "",
+    },
+  }));
   await store.state.commit({ put: many, remove: [], expect: {}, schemaVersion: 14 });
   let auditLoaded = false;
   const items = store.state.items.bind(store.state);
-  store.state.items = async (keys) => { if (keys.includes("audit")) auditLoaded = true; return items(keys); };
+  store.state.items = async (keys) => {
+    if (keys.includes("audit")) auditLoaded = true;
+    return items(keys);
+  };
   await hop.act("content.addComment", "DOF-SER-001", "after the old entries");
   const audit = (await hop.get("/api/state")).json.db.audit as Json[];
   assert.equal(audit.length, AUDIT_SENT);
@@ -151,7 +215,21 @@ await t("H2: older document revisions are sent without their text, and the histo
   const hop = await setupHop();
   const db0 = (await hop.get("/api/state")).json.db;
   const doc = db0.docs[0];
-  const revs = Array.from({ length: REVISIONS_WITH_TEXT + 3 }, (_, n) => ({ k: "docRevisions", i: `REV-t${n}`, o: 1e6 + n, d: { id: `REV-t${n}`, docId: doc.id, version: 100 + n, at: new Date(Date.now() + (n + 1) * 60_000).toISOString(), byPersonId: "DOF-P-HOP-001", title: doc.title, body: `body ${n}`, note: "Edited" } }));
+  const revs = Array.from({ length: REVISIONS_WITH_TEXT + 3 }, (_, n) => ({
+    k: "docRevisions",
+    i: `REV-t${n}`,
+    o: 1e6 + n,
+    d: {
+      id: `REV-t${n}`,
+      docId: doc.id,
+      version: 100 + n,
+      at: new Date(Date.now() + (n + 1) * 60_000).toISOString(),
+      byPersonId: "DOF-P-HOP-001",
+      title: doc.title,
+      body: `body ${n}`,
+      note: "Edited",
+    },
+  }));
   await store.state.commit({ put: revs, remove: [], expect: {}, schemaVersion: 14 });
   const sent = ((await hop.get("/api/state")).json.db.docRevisions as Json[]).filter((r) => r.docId === doc.id && r.id.startsWith("REV-t"));
   assert.equal(sent.filter((r) => !r.trimmed).length, REVISIONS_WITH_TEXT);
@@ -165,14 +243,25 @@ await t("H2: older document revisions are sent without their text, and the histo
 await t("H2: data saved by the earlier layout is upgraded on first use, and works", async () => {
   const seed = buildSeed() as unknown as Record<string, unknown>;
   const people = (seed.people as Json[]).map((p) => (p.category === "HOP" ? { ...p, photoUrl: PNG, hasLogin: true, username: "kev" } : p));
-  const equipment = (seed.equipment as Json[]).map((e, n) => (n === 0 ? { ...e, photos: [{ id: "ATT-00001", url: PNG, caption: "", at: new Date().toISOString(), byPersonId: "DOF-P-HOP-001" }] } : e));
+  const equipment = (seed.equipment as Json[]).map((e, n) =>
+    n === 0 ? { ...e, photos: [{ id: "ATT-00001", url: PNG, caption: "", at: new Date().toISOString(), byPersonId: "DOF-P-HOP-001" }] } : e,
+  );
   const counters = { ...(seed.counters as Record<string, number>) };
   for (const k of Object.keys(counters)) if (k.startsWith("record:")) delete counters[k]; // saved before project counters existed
   const store = memoryStore({ data: { ...seed, people, equipment, counters }, revision: 77, schemaVersion: 13 });
   // The Head of Production's login, which lives outside the data.
   const { hashPassword } = await import("../server/crypto");
   const now = new Date().toISOString();
-  await store.users.insert({ _id: "kev", personId: "DOF-P-HOP-001", passwordHash: await hashPassword("correct horse battery"), disabled: false, mustChange: false, createdAt: now, passwordChangedAt: now, lastLoginAt: null });
+  await store.users.insert({
+    _id: "kev",
+    personId: "DOF-P-HOP-001",
+    passwordHash: await hashPassword("correct horse battery"),
+    disabled: false,
+    mustChange: false,
+    createdAt: now,
+    passwordChangedAt: now,
+    lastLoginAt: null,
+  });
   await serve(store);
   const hop = new Client();
   assert.equal((await hop.post("/api/login", { username: "kev", password: "correct horse battery" })).status, 200);

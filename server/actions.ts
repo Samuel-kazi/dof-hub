@@ -14,9 +14,16 @@ const FORBIDDEN_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 /** Refuses input that tries to reach into how objects are built, and input nested absurdly deep. */
 export function checkShape(value: unknown, depth = 0): void {
   if (depth > 12) throw new HttpError(400, "That request is too deeply nested.");
-  if (Array.isArray(value)) { if (value.length > 5000) throw new HttpError(400, "That request has too many items."); value.forEach((v) => checkShape(v, depth + 1)); return; }
+  if (Array.isArray(value)) {
+    if (value.length > 5000) throw new HttpError(400, "That request has too many items.");
+    value.forEach((v) => checkShape(v, depth + 1));
+    return;
+  }
   if (value && typeof value === "object") {
-    for (const [k, v] of Object.entries(value)) { if (FORBIDDEN_KEYS.has(k)) throw new HttpError(400, "That request is not allowed."); checkShape(v, depth + 1); }
+    for (const [k, v] of Object.entries(value)) {
+      if (FORBIDDEN_KEYS.has(k)) throw new HttpError(400, "That request is not allowed.");
+      checkShape(v, depth + 1);
+    }
   }
 }
 
@@ -32,7 +39,8 @@ export async function runAction(store: Store, who: Authed, name: unknown, args: 
   if (!Array.isArray(args)) throw new HttpError(400, "That request is not valid.");
   checkShape(args);
   // The IDs the browser gave anything new (src/data/ids.ts). A page from before this check sends none.
-  if (ids !== undefined && !(Array.isArray(ids) && ids.length <= 2000 && ids.every((x) => typeof x === "string" && x.length <= 200))) throw new HttpError(400, "That request is not valid.");
+  if (ids !== undefined && !(Array.isArray(ids) && ids.length <= 2000 && ids.every((x) => typeof x === "string" && x.length <= 200)))
+    throw new HttpError(400, "That request is not valid.");
   const expected = ids as string[] | undefined;
   // args[0] is the actor the browser used. It is ignored: the actor always comes from the session.
   const rest = args.slice(1);

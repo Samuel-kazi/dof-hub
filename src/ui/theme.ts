@@ -16,7 +16,8 @@ export function getPref(): ThemePref {
   }
 }
 
-const systemTheme = (): Theme => (hasDom && typeof window.matchMedia === "function" && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+const systemTheme = (): Theme =>
+  hasDom && typeof window.matchMedia === "function" && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
 export const resolveTheme = (pref: ThemePref): Theme => (pref === "system" ? systemTheme() : pref);
 
 /** Puts the theme on <html> so every colour token switches at once. */
@@ -33,7 +34,9 @@ export function setPref(pref: ThemePref): void {
   try {
     if (pref === "system") localStorage.removeItem(KEY);
     else localStorage.setItem(KEY, pref);
-  } catch { /* keep working without saving */ }
+  } catch {
+    /* keep working without saving */
+  }
   applyTheme(pref);
   listeners.forEach((l) => l());
 }

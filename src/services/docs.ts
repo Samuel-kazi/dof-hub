@@ -32,11 +32,18 @@ export function canEditDoc(actor: Actor, d: DocRecord): boolean {
 }
 
 export function listDocs(actor: Actor): DocRecord[] {
-  return getDb().docs.filter((d) => !d.archived && canViewDoc(actor, d)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return getDb()
+    .docs.filter((d) => !d.archived && canViewDoc(actor, d))
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
 function descendantIds(r: ContentRecord): string[] {
-  return [r.contentId, ...getDb().records.filter((c) => c.parentId === r.contentId && !c.archived).flatMap(descendantIds)];
+  return [
+    r.contentId,
+    ...getDb()
+      .records.filter((c) => c.parentId === r.contentId && !c.archived)
+      .flatMap(descendantIds),
+  ];
 }
 
 /** Documents for this record, for anything under it, and for the show above it. */
@@ -46,25 +53,61 @@ export function docsForRecord(actor: Actor, r: ContentRecord): DocRecord[] {
 }
 
 export const revisionsOf = (docId: string): DocRevision[] =>
-  getDb().docRevisions.filter((v) => v.docId === docId).sort((a, b) => b.at.localeCompare(a.at) || b.version - a.version);
+  getDb()
+    .docRevisions.filter((v) => v.docId === docId)
+    .sort((a, b) => b.at.localeCompare(a.at) || b.version - a.version);
 
 function pushRevision(d: DocRecord, byPersonId: string, note: string): DocRevision {
-  const rev: DocRevision = { id: logId("REV"), docId: d.id, version: d.version, at: new Date().toISOString(), byPersonId, title: d.title, body: d.body, note };
+  const rev: DocRevision = {
+    id: logId("REV"),
+    docId: d.id,
+    version: d.version,
+    at: new Date().toISOString(),
+    byPersonId,
+    title: d.title,
+    body: d.body,
+    note,
+  };
   getDb().docRevisions.push(rev);
   return rev;
 }
 
 /** Creates a document without saving to storage. The caller commits. Used for automatic attachment. */
-function makeDoc(actor: Actor, contentId: string, title: string, body: string, templateKey: string | null, stage: string | null): DocRecord {
+function makeDoc(
+  actor: Actor,
+  contentId: string,
+  title: string,
+  body: string,
+  templateKey: string | null,
+  stage: string | null,
+): DocRecord {
   const now = new Date().toISOString();
-  const d: DocRecord = { id: claimId(`DOF-DCS-${pad(nextCounter("doc"))}`), contentId, title, body, templateKey, stage, version: 1, createdBy: actor.personId, createdAt: now, updatedAt: now, updatedBy: actor.personId, archived: false };
+  const d: DocRecord = {
+    id: claimId(`DOF-DCS-${pad(nextCounter("doc"))}`),
+    contentId,
+    title,
+    body,
+    templateKey,
+    stage,
+    version: 1,
+    createdBy: actor.personId,
+    createdAt: now,
+    updatedAt: now,
+    updatedBy: actor.personId,
+    archived: false,
+  };
   getDb().docs.push(d);
   pushRevision(d, actor.personId, templateKey ? "Created from template" : "Created");
   logAudit(actor, "create", "document", d.id, title);
   return d;
 }
 
-export interface NewDocInput { contentId: string; title?: string; templateKey?: string | null; body?: string }
+export interface NewDocInput {
+  contentId: string;
+  title?: string;
+  templateKey?: string | null;
+  body?: string;
+}
 
 export function createDoc(actor: Actor, input: NewDocInput): DocRecord {
   const r = getRecord(input.contentId);
@@ -129,7 +172,12 @@ export function saveDoc(actor: Actor, id: string, patch: { title?: string; body?
   d.updatedAt = new Date().toISOString();
   d.updatedBy = actor.personId;
   const last = revisionsOf(d.id)[0];
-  if (last && last.byPersonId === actor.personId && !/^(Created|Restored)/.test(last.note) && Date.now() - new Date(last.at).getTime() < COALESCE_MS) {
+  if (
+    last &&
+    last.byPersonId === actor.personId &&
+    !/^(Created|Restored)/.test(last.note) &&
+    Date.now() - new Date(last.at).getTime() < COALESCE_MS
+  ) {
     Object.assign(last, { version: d.version, at: d.updatedAt, title, body });
   } else {
     pushRevision(d, actor.personId, "Edited");
@@ -176,20 +224,29 @@ export function archiveDocsFor(actor: Actor, contentId: string): number {
   return mine.length;
 }
 
-export interface DiffLine { type: "same" | "add" | "del"; text: string }
+export interface DiffLine {
+  type: "same" | "add" | "del";
+  text: string;
+}
 
 /** Line-by-line comparison, for showing what a revision changed. */
 export function diffLines(before: string, after: string): DiffLine[] {
   const a = before.split("\n");
   const b = after.split("\n");
-  const n = a.length, m = b.length;
+  const n = a.length,
+    m = b.length;
   const lcs: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
-  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) lcs[i][j] = a[i] === b[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+  for (let i = n - 1; i >= 0; i--)
+    for (let j = m - 1; j >= 0; j--) lcs[i][j] = a[i] === b[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
   const out: DiffLine[] = [];
-  let i = 0, j = 0;
+  let i = 0,
+    j = 0;
   while (i < n && j < m) {
-    if (a[i] === b[j]) { out.push({ type: "same", text: a[i] }); i++; j++; }
-    else if (lcs[i + 1][j] >= lcs[i][j + 1]) out.push({ type: "del", text: a[i++] });
+    if (a[i] === b[j]) {
+      out.push({ type: "same", text: a[i] });
+      i++;
+      j++;
+    } else if (lcs[i + 1][j] >= lcs[i][j + 1]) out.push({ type: "del", text: a[i++] });
     else out.push({ type: "add", text: b[j++] });
   }
   while (i < n) out.push({ type: "del", text: a[i++] });

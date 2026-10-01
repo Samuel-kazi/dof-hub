@@ -24,7 +24,13 @@ function readStream(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => { size += c.length; if (size > MAX_BODY) { reject(new HttpError(413, "That request is too large.")); req.destroy(); } else chunks.push(c); });
+    req.on("data", (c: Buffer) => {
+      size += c.length;
+      if (size > MAX_BODY) {
+        reject(new HttpError(413, "That request is too large."));
+        req.destroy();
+      } else chunks.push(c);
+    });
     req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
     req.on("error", reject);
   });
@@ -44,12 +50,25 @@ export async function readRequest(req: IncomingMessage): Promise<Req> {
   if (method !== "GET" && method !== "HEAD") {
     const pre = (req as IncomingMessage & { body?: unknown }).body;
     const raw = pre !== undefined ? pre : await readStream(req);
-    const parsed = typeof raw === "string" ? (raw ? JSON.parse(raw) : {}) : Buffer.isBuffer(raw) ? JSON.parse(raw.toString("utf8") || "{}") : raw;
+    const parsed =
+      typeof raw === "string" ? (raw ? JSON.parse(raw) : {}) : Buffer.isBuffer(raw) ? JSON.parse(raw.toString("utf8") || "{}") : raw;
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) body = parsed as Record<string, unknown>;
     else if (parsed !== undefined && parsed !== null) throw new HttpError(400, "That request is not valid.");
   }
-  const ip = header(req.headers["x-forwarded-for"]).split(",")[0].trim() || header(req.headers["x-real-ip"]) || req.socket?.remoteAddress || "";
-  return { method, path: url.pathname.replace(/\/+$/, "") || "/", query: url.searchParams, headers: req.headers, ip, agent: header(req.headers["user-agent"]), origin: `${proto}://${host}`, secure: proto === "https", cookies, body };
+  const ip =
+    header(req.headers["x-forwarded-for"]).split(",")[0].trim() || header(req.headers["x-real-ip"]) || req.socket?.remoteAddress || "";
+  return {
+    method,
+    path: url.pathname.replace(/\/+$/, "") || "/",
+    query: url.searchParams,
+    headers: req.headers,
+    ip,
+    agent: header(req.headers["user-agent"]),
+    origin: `${proto}://${host}`,
+    secure: proto === "https",
+    cookies,
+    body,
+  };
 }
 
 /** Changes are only accepted from this site itself. Together with SameSite cookies this stops other sites acting for a signed-in person. */

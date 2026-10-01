@@ -28,7 +28,15 @@ export function fileToDataUrl(file: File, maxSide = 640, quality = 0.6): Promise
 }
 
 /** Take or choose a photo, or paste a link. Calls onAdd with the result. */
-export function PhotoAdd({ onAdd, label = "Add photo", allowLink = true }: { onAdd: (p: PhotoInput) => void; label?: string; allowLink?: boolean }) {
+export function PhotoAdd({
+  onAdd,
+  label = "Add photo",
+  allowLink = true,
+}: {
+  onAdd: (p: PhotoInput) => void;
+  label?: string;
+  allowLink?: boolean;
+}) {
   const { toast } = useApp();
   const fileRef = useRef<HTMLInputElement>(null);
   const [link, setLink] = useState("");
@@ -48,12 +56,37 @@ export function PhotoAdd({ onAdd, label = "Add photo", allowLink = true }: { onA
   return (
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
       <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={onFile} style={{ display: "none" }} />
-      <button type="button" className="btn small" onClick={() => fileRef.current?.click()}>{label}</button>
-      {allowLink && !showLink && <button type="button" className="btn small ghost" onClick={() => setShowLink(true)}>Paste a link</button>}
+      <button type="button" className="btn small" onClick={() => fileRef.current?.click()}>
+        {label}
+      </button>
+      {allowLink && !showLink && (
+        <button type="button" className="btn small ghost" onClick={() => setShowLink(true)}>
+          Paste a link
+        </button>
+      )}
       {showLink && (
         <>
-          <input type="text" value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://drive.google.com/…" style={{ width: 240 }} aria-label="Photo link" />
-          <button type="button" className="btn small" onClick={() => { if (link.trim()) { onAdd({ url: link.trim(), caption: "" }); setLink(""); setShowLink(false); } }}>Add link</button>
+          <input
+            type="text"
+            value={link}
+            onChange={(e) => setLink(e.target.value)}
+            placeholder="https://drive.google.com/…"
+            style={{ width: 240 }}
+            aria-label="Photo link"
+          />
+          <button
+            type="button"
+            className="btn small"
+            onClick={() => {
+              if (link.trim()) {
+                onAdd({ url: link.trim(), caption: "" });
+                setLink("");
+                setShowLink(false);
+              }
+            }}
+          >
+            Add link
+          </button>
         </>
       )}
     </div>
@@ -69,7 +102,9 @@ export function PhotoList({ value, onChange, label }: { value: PhotoInput[]; onC
           {value.map((p, i) => (
             <div key={i} className="thumb-wrap">
               <Thumb url={p.url} />
-              <button type="button" className="thumb-x" aria-label="Remove photo" onClick={() => onChange(value.filter((_, j) => j !== i))}>×</button>
+              <button type="button" className="thumb-x" aria-label="Remove photo" onClick={() => onChange(value.filter((_, j) => j !== i))}>
+                ×
+              </button>
             </div>
           ))}
         </div>
@@ -82,13 +117,25 @@ export function PhotoList({ value, onChange, label }: { value: PhotoInput[]; onC
 function Thumb({ url, onClick }: { url: string; onClick?: () => void }) {
   const [broken, setBroken] = useState(false);
   if (broken || !(url.startsWith("data:") || STORED_FILE.test(url))) {
-    return <a className="thumb link" href={url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>Open link</a>;
+    return (
+      <a className="thumb link" href={url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
+        Open link
+      </a>
+    );
   }
   return <img className="thumb" src={url} alt="" onError={() => setBroken(true)} onClick={onClick} />;
 }
 
 /** Saved attachments, each with its timestamp. Click an image to enlarge. */
-export function Attachments({ items, empty = "None yet.", onRemove }: { items: Attachment[]; empty?: string; onRemove?: (id: string) => void }) {
+export function Attachments({
+  items,
+  empty = "None yet.",
+  onRemove,
+}: {
+  items: Attachment[];
+  empty?: string;
+  onRemove?: (id: string) => void;
+}) {
   const [open, setOpen] = useState<Attachment | null>(null);
   if (!items.length) return <p className="muted">{empty}</p>;
   return (
@@ -98,16 +145,32 @@ export function Attachments({ items, empty = "None yet.", onRemove }: { items: A
           <figure key={a.id} className="thumb-fig">
             <div className="thumb-wrap">
               <Thumb url={a.url} onClick={() => setOpen(a)} />
-              {onRemove && <button type="button" className="thumb-x" aria-label="Remove" onClick={() => onRemove(a.id)}>×</button>}
+              {onRemove && (
+                <button type="button" className="thumb-x" aria-label="Remove" onClick={() => onRemove(a.id)}>
+                  ×
+                </button>
+              )}
             </div>
-            <figcaption>{new Date(a.at).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</figcaption>
+            <figcaption>
+              {new Date(a.at).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+            </figcaption>
           </figure>
         ))}
       </div>
       {open && (
-        <Modal title="Photo" onClose={() => setOpen(null)} actions={<button className="btn" onClick={() => setOpen(null)}>Close</button>}>
+        <Modal
+          title="Photo"
+          onClose={() => setOpen(null)}
+          actions={
+            <button className="btn" onClick={() => setOpen(null)}>
+              Close
+            </button>
+          }
+        >
           <img src={open.url} alt="" style={{ width: "100%", borderRadius: 10 }} />
-          <p className="muted" style={{ marginTop: 8 }}>Taken {fmtDateTime(open.at)}</p>
+          <p className="muted" style={{ marginTop: 8 }}>
+            Taken {fmtDateTime(open.at)}
+          </p>
         </Modal>
       )}
     </>

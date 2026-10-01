@@ -9,7 +9,14 @@ import type { CategoryKey } from "../types";
 import { IconBack } from "../ui/Icons";
 import { Empty } from "../ui/parts";
 
-const SUBTYPE_LABEL: Record<CalSubtype, string> = { shoot: "Shoot / show day", deadline: "Stage deadline", callsheet: "Call sheet published", booking: "Gear booked", window: "Production window", stage: "Stage in progress" };
+const SUBTYPE_LABEL: Record<CalSubtype, string> = {
+  shoot: "Shoot / show day",
+  deadline: "Stage deadline",
+  callsheet: "Call sheet published",
+  booking: "Gear booked",
+  window: "Production window",
+  stage: "Stage in progress",
+};
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
@@ -28,7 +35,12 @@ function monthGrid(monthIso: string): { cells: string[]; from: string; to: strin
     d.setDate(gridStart.getDate() + i);
     return iso(d);
   });
-  return { cells, from: cells[0], to: cells[cells.length - 1], label: first.toLocaleDateString(undefined, { month: "long", year: "numeric" }) };
+  return {
+    cells,
+    from: cells[0],
+    to: cells[cells.length - 1],
+    label: first.toLocaleDateString(undefined, { month: "long", year: "numeric" }),
+  };
 }
 
 const shiftMonth = (monthIso: string, delta: number): string => {
@@ -55,28 +67,74 @@ export function CalendarPage() {
       <div className="page-head">
         <div className="grow">
           <h1>Calendar</h1>
-          <p className="sub">Shoot days, stage deadlines, published call sheets and gear bookings, worked out from the pipeline. Nothing here is entered by hand, so changing a date on its own record is all it takes.</p>
+          <p className="sub">
+            Shoot days, stage deadlines, published call sheets and gear bookings, worked out from the pipeline. Nothing here is entered by
+            hand, so changing a date on its own record is all it takes.
+          </p>
         </div>
         <div className="seg" role="group" aria-label="Month">
-          <button aria-label="Previous month" title="Previous month" onClick={() => { setMonth((m) => shiftMonth(m, -1)); setSelected(null); }}><span style={{ display: "inline-flex" }}><IconBack /></span></button>
-          <button onClick={() => { setMonth(todayIso().slice(0, 7)); setSelected(today); }}>Today</button>
-          <button aria-label="Next month" title="Next month" onClick={() => { setMonth((m) => shiftMonth(m, 1)); setSelected(null); }}><span style={{ display: "inline-flex", transform: "scaleX(-1)" }}><IconBack /></span></button>
+          <button
+            aria-label="Previous month"
+            title="Previous month"
+            onClick={() => {
+              setMonth((m) => shiftMonth(m, -1));
+              setSelected(null);
+            }}
+          >
+            <span style={{ display: "inline-flex" }}>
+              <IconBack />
+            </span>
+          </button>
+          <button
+            onClick={() => {
+              setMonth(todayIso().slice(0, 7));
+              setSelected(today);
+            }}
+          >
+            Today
+          </button>
+          <button
+            aria-label="Next month"
+            title="Next month"
+            onClick={() => {
+              setMonth((m) => shiftMonth(m, 1));
+              setSelected(null);
+            }}
+          >
+            <span style={{ display: "inline-flex", transform: "scaleX(-1)" }}>
+              <IconBack />
+            </span>
+          </button>
         </div>
       </div>
 
       <div className="chips" role="group" aria-label="Category">
-        <span className="sub" style={{ marginRight: 4 }}>{label}</span>
-        <button className={`chip ${cat ? "" : "on"}`} onClick={() => setCat(null)}>All</button>
+        <span className="sub" style={{ marginRight: 4 }}>
+          {label}
+        </span>
+        <button className={`chip ${cat ? "" : "on"}`} onClick={() => setCat(null)}>
+          All
+        </button>
         {CATEGORIES.map((c) => (
-          <button key={c.key} className={`chip ${cat === c.key ? "on" : ""}`} style={{ ["--cat-color" as string]: c.color }} onClick={() => setCat(cat === c.key ? null : c.key)}>
-            <span className="cat-dot" />{c.label}
+          <button
+            key={c.key}
+            className={`chip ${cat === c.key ? "on" : ""}`}
+            style={{ ["--cat-color" as string]: c.color }}
+            onClick={() => setCat(cat === c.key ? null : c.key)}
+          >
+            <span className="cat-dot" />
+            {c.label}
           </button>
         ))}
       </div>
 
       <section className="glass panel" aria-label="Month grid">
         <div className="cal-dow-row">
-          {DOW.map((d) => <div key={d} className="cal-dow">{d}</div>)}
+          {DOW.map((d) => (
+            <div key={d} className="cal-dow">
+              {d}
+            </div>
+          ))}
         </div>
         <div className="stack" style={{ gap: 4 }}>
           {Array.from({ length: cells.length / 7 }, (_, w) => cells.slice(w * 7, w * 7 + 7)).map((weekDates) => (
@@ -93,25 +151,39 @@ export function CalendarPage() {
           ))}
         </div>
         <div className="cal-legend">
-          <span><i className="cal-mark shoot" /> Shoot / show day</span>
-          <span><i className="cal-mark deadline" /> Stage deadline</span>
-          <span><i className="cal-mark callsheet" /> Call sheet published</span>
-          <span><i className="cal-mark booking" /> Gear booked</span>
-          <span><span className="bar-swatch" /> Production window / stage in progress</span>
+          <span>
+            <i className="cal-mark shoot" /> Shoot / show day
+          </span>
+          <span>
+            <i className="cal-mark deadline" /> Stage deadline
+          </span>
+          <span>
+            <i className="cal-mark callsheet" /> Call sheet published
+          </span>
+          <span>
+            <i className="cal-mark booking" /> Gear booked
+          </span>
+          <span>
+            <span className="bar-swatch" /> Production window / stage in progress
+          </span>
         </div>
       </section>
 
       {selected && (
         <section className="glass panel" aria-label="Selected day">
           <h2>{fmtDate(selected)}</h2>
-          {dayEvents.length === 0 ? <Empty>Nothing on this day.</Empty> : (
+          {dayEvents.length === 0 ? (
+            <Empty>Nothing on this day.</Empty>
+          ) : (
             <div className="stack" style={{ marginTop: 10 }}>
               {dayEvents.map((e) => (
                 <div key={e.id} className="cal-row" style={{ ["--cat-color" as string]: e.color }} onClick={() => go(e.open)}>
                   <i className={`cal-mark ${e.subtype}`} />
                   <div className="grow">
                     <div>{e.title}</div>
-                    <div className="muted" style={{ fontSize: ".84rem" }}>{SUBTYPE_LABEL[e.subtype]}. {e.detail}</div>
+                    <div className="muted" style={{ fontSize: ".84rem" }}>
+                      {SUBTYPE_LABEL[e.subtype]}. {e.detail}
+                    </div>
                   </div>
                 </div>
               ))}

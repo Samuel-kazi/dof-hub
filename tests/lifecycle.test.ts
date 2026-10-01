@@ -16,9 +16,17 @@ import { getRecord } from "../src/services/access";
 let passed = 0;
 const t = (name: string, fn: () => void) => {
   resetDemoData();
-  try { fn(); passed++; console.log("ok  ", name); } catch (e) { console.error("FAIL", name, "\n    ", (e as Error).message); process.exitCode = 1; }
+  try {
+    fn();
+    passed++;
+    console.log("ok  ", name);
+  } catch (e) {
+    console.error("FAIL", name, "\n    ", (e as Error).message);
+    process.exitCode = 1;
+  }
 };
-const throwsRule = (fn: () => unknown, match?: RegExp) => assert.throws(fn, (e) => e instanceof RuleError && (!match || match.test(e.message)));
+const throwsRule = (fn: () => unknown, match?: RegExp) =>
+  assert.throws(fn, (e) => e instanceof RuleError && (!match || match.test(e.message)));
 const hop = () => login("hop@dof.demo", "demo");
 const crew1 = () => login("crew1@dof.demo", "demo");
 const crew2 = () => login("crew2@dof.demo", "demo");
@@ -50,16 +58,25 @@ t("its documents are archived, and their history is kept", () => {
 });
 t("the confirmation lists what will go", () => {
   const impact = C.deletionImpact(crew1(), E01);
-  assert.equal(impact.totalGB, 780); assert.equal(impact.docs, 4); assert.deepEqual(impact.drives, [{ driveName: "Taji", sizeGB: 780 }]);
+  assert.equal(impact.totalGB, 780);
+  assert.equal(impact.docs, 4);
+  assert.deepEqual(impact.drives, [{ driveName: "Taji", sizeGB: 780 }]);
   assert.match(C.deletionSummary(impact), /release 780 GB on Taji/);
   assert.match(C.deletionSummary(impact), /files on the drives are not touched/);
 });
 t("raw footage that is not delivered keeps crew from deleting the project, but not the Head of Production", () => {
   // Samburu Stories has raw footage on Added and is still at Ingest. Its gear must be back first.
   const lists = E.checkedOutFor("DOF-DOC-001");
-  E.checkIn(crew2(), lists[0].id, lists[0].lines.map((l) => ({ equipmentId: l.equipmentId, returnedGood: 1, damaged: 0, lost: 0, conditionIn: l.conditionOut })));
+  E.checkIn(
+    crew2(),
+    lists[0].id,
+    lists[0].lines.map((l) => ({ equipmentId: l.equipmentId, returnedGood: 1, damaged: 0, lost: 0, conditionIn: l.conditionOut })),
+  );
   throwsRule(() => C.deleteRecord(crew2(), "DOF-DOC-001"), /Raw footage/);
-  assert.ok(getDb().allocations.some((a) => a.contentId === "DOF-DOC-001"), "nothing changed");
+  assert.ok(
+    getDb().allocations.some((a) => a.contentId === "DOF-DOC-001"),
+    "nothing changed",
+  );
   C.deleteRecord(hop(), "DOF-DOC-001");
   assert.ok(!getDb().allocations.some((a) => a.contentId === "DOF-DOC-001"));
   assert.equal(getRecord("DOF-DOC-001")!.archived, true);
@@ -74,7 +91,8 @@ t("reserved gear and call sheets go with the project", () => {
   E.addGearToSheet(hop(), { id: sheet.id, contentId: p.contentId, date: sheet.date }, [{ equipmentId: "DOF-EQ-AUD-002", quantity: 1 }]);
   assert.equal(E.displayStatus(E.getItem("DOF-EQ-AUD-002")!).label, "Assigned");
   const impact = C.deletionImpact(hop(), p.contentId);
-  assert.equal(impact.sheets, 1); assert.equal(impact.gearLists, 1);
+  assert.equal(impact.sheets, 1);
+  assert.equal(impact.gearLists, 1);
   C.deleteRecord(hop(), p.contentId);
   assert.equal(E.displayStatus(E.getItem("DOF-EQ-AUD-002")!).label, "Available");
   assert.ok(!CS.getCallSheet(sheet.id));
@@ -88,7 +106,8 @@ t("a deletion that is blocked changes nothing", () => {
 t("a project with active episodes still cannot be deleted", () => throwsRule(() => C.deleteRecord(hop(), "DOF-SER-001"), /active/));
 t("a record can be cleared from the drives without being deleted", () => {
   const res = S.clearRecordFromDrives(crew1(), E01);
-  assert.equal(res.gb, 780); assert.equal(getRecord(E01)!.archived, false);
+  assert.equal(res.gb, 780);
+  assert.equal(getRecord(E01)!.archived, false);
   assert.ok(!getDb().allocations.some((a) => a.contentId === E01));
   throwsRule(() => S.clearRecordFromDrives(crew1(), E01), /Nothing is recorded/);
 });

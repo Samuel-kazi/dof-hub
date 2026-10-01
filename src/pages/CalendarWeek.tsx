@@ -14,7 +14,13 @@ const BAR_ROW = BAR_HEIGHT + BAR_GAP;
  * Not wired into CalendarPage yet — this is the piece to look at on its own first.
  */
 export function CalendarWeek({
-  weekDates, events, month, today, selected, onSelectDay, onOpenEvent,
+  weekDates,
+  events,
+  month,
+  today,
+  selected,
+  onSelectDay,
+  onOpenEvent,
 }: {
   weekDates: string[]; // 7 ISO dates, Sunday to Saturday
   events: CalEvent[]; // every event touching this week (or a wider window — layoutWeek clips to weekDates)
@@ -45,7 +51,14 @@ export function CalendarWeek({
               {barSpace > 0 && <span className="cal-bar-space" style={{ height: barSpace }} />}
               {dots.length > 0 && (
                 <span className="cal-marks">
-                  {dots.slice(0, 4).map((e) => <i key={e.id} className={`cal-mark ${e.subtype}`} style={{ ["--cat-color" as string]: e.color }} title={`${e.title}${e.detail ? `. ${e.detail}` : ""}`} />)}
+                  {dots.slice(0, 4).map((e) => (
+                    <i
+                      key={e.id}
+                      className={`cal-mark ${e.subtype}`}
+                      style={{ ["--cat-color" as string]: e.color }}
+                      title={`${e.title}${e.detail ? `. ${e.detail}` : ""}`}
+                    />
+                  ))}
                   {dots.length > 4 && <span className="cal-more">+{dots.length - 4}</span>}
                 </span>
               )}

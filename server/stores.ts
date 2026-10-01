@@ -24,7 +24,12 @@ export interface SessionDoc {
   agent: string;
 }
 
-export interface AttemptDoc { _id: string; count: number; first: number; lockedUntil: number }
+export interface AttemptDoc {
+  _id: string;
+  count: number;
+  first: number;
+  lockedUntil: number;
+}
 
 /**
  * Counts of sign-in attempts. Every change is a single atomic step in the database, so attempts sent at the
@@ -49,7 +54,13 @@ export interface GoogleDoc {
   linkedAt: string;
 }
 
-export interface OAuthDoc { _id: string; username: string; verifier: string; scopes: string[]; expiresAt: number }
+export interface OAuthDoc {
+  _id: string;
+  username: string;
+  verifier: string;
+  scopes: string[];
+  expiresAt: number;
+}
 
 export interface Col<T extends { _id: string }> {
   get(id: string): Promise<T | null>;
@@ -66,10 +77,19 @@ export interface Col<T extends { _id: string }> {
 // elements, and server/state.ts for how changes are found and saved.
 
 /** One element of one part of the data. `o` keeps the order the app keeps it in. */
-export interface Item { k: string; i: string; o: number; d: unknown }
+export interface Item {
+  k: string;
+  i: string;
+  o: number;
+  d: unknown;
+}
 
 /** Where the data stands: a revision that goes up with every save, the data's schema version, and each part's own version. */
-export interface Head { revision: number; schemaVersion: number; versions: Record<string, number> }
+export interface Head {
+  revision: number;
+  schemaVersion: number;
+  versions: Record<string, number>;
+}
 
 export interface Commit {
   put: Item[]; // new or changed elements
@@ -92,7 +112,13 @@ export interface StateStore {
 }
 
 /** A photo, kept apart from the data so the data stays small. Served at /api/file?id=… to signed-in people. */
-export interface FileDoc { _id: string; type: string; data: string; size: number; at: string }
+export interface FileDoc {
+  _id: string;
+  type: string;
+  data: string;
+  size: number;
+  at: string;
+}
 
 export interface Store {
   diagnose?(): Promise<Record<string, unknown>>; // extra checks for the health address
@@ -107,12 +133,27 @@ export interface Store {
 
 class MemCol<T extends { _id: string }> implements Col<T> {
   private m = new Map<string, T>();
-  async get(id: string) { const d = this.m.get(id); return d ? structuredClone(d) : null; }
-  async all() { return [...this.m.values()].map((d) => structuredClone(d)); }
-  async find(where: Partial<T>) { return (await this.all()).filter((d) => Object.entries(where).every(([k, v]) => (d as Record<string, unknown>)[k] === v)); }
-  async insert(doc: T) { if (this.m.has(doc._id)) return false; this.m.set(doc._id, structuredClone(doc)); return true; }
-  async put(doc: T) { this.m.set(doc._id, structuredClone(doc)); }
-  async remove(id: string) { this.m.delete(id); }
+  async get(id: string) {
+    const d = this.m.get(id);
+    return d ? structuredClone(d) : null;
+  }
+  async all() {
+    return [...this.m.values()].map((d) => structuredClone(d));
+  }
+  async find(where: Partial<T>) {
+    return (await this.all()).filter((d) => Object.entries(where).every(([k, v]) => (d as Record<string, unknown>)[k] === v));
+  }
+  async insert(doc: T) {
+    if (this.m.has(doc._id)) return false;
+    this.m.set(doc._id, structuredClone(doc));
+    return true;
+  }
+  async put(doc: T) {
+    this.m.set(doc._id, structuredClone(doc));
+  }
+  async remove(id: string) {
+    this.m.delete(id);
+  }
 }
 
 class MemState implements StateStore {
@@ -123,12 +164,21 @@ class MemState implements StateStore {
     for (const it of seed.items) this.items_.set(`${it.k}/${it.i}`, structuredClone(it));
     this.head_ = structuredClone(seed.head);
   }
-  async head() { return this.head_ ? structuredClone(this.head_) : null; }
+  async head() {
+    return this.head_ ? structuredClone(this.head_) : null;
+  }
   async items(keys: string[]) {
-    return [...this.items_.values()].filter((it) => keys.includes(it.k)).sort((a, b) => (a.k < b.k ? -1 : a.k > b.k ? 1 : a.o - b.o)).map((it) => structuredClone(it));
+    return [...this.items_.values()]
+      .filter((it) => keys.includes(it.k))
+      .sort((a, b) => (a.k < b.k ? -1 : a.k > b.k ? 1 : a.o - b.o))
+      .map((it) => structuredClone(it));
   }
   async newest(key: string, limit: number) {
-    return [...this.items_.values()].filter((it) => it.k === key).sort((a, b) => b.o - a.o).slice(0, limit).map((it) => structuredClone(it));
+    return [...this.items_.values()]
+      .filter((it) => it.k === key)
+      .sort((a, b) => b.o - a.o)
+      .slice(0, limit)
+      .map((it) => structuredClone(it));
   }
   async commit(c: Commit) {
     if (!this.head_) return null;
@@ -151,7 +201,10 @@ class MemState implements StateStore {
 /** Atomic because nothing here awaits between reading a count and writing it back. */
 class MemAttempts implements AttemptStore {
   private m = new Map<string, AttemptDoc>();
-  async get(key: string) { const d = this.m.get(key); return d ? { ...d } : null; }
+  async get(key: string) {
+    const d = this.m.get(key);
+    return d ? { ...d } : null;
+  }
   async charge(key: string, now: number, windowMs: number) {
     const a = this.m.get(key);
     const fresh = !a || now - a.first > windowMs;
@@ -159,9 +212,17 @@ class MemAttempts implements AttemptStore {
     this.m.set(key, next);
     return { ...next };
   }
-  async refund(key: string) { const a = this.m.get(key); if (a && a.count > 0) a.count--; }
-  async lock(key: string, until: number) { const a = this.m.get(key); this.m.set(key, { _id: key, count: a?.count ?? 0, first: a?.first ?? Date.now(), lockedUntil: until }); }
-  async clear(key: string) { this.m.delete(key); }
+  async refund(key: string) {
+    const a = this.m.get(key);
+    if (a && a.count > 0) a.count--;
+  }
+  async lock(key: string, until: number) {
+    const a = this.m.get(key);
+    this.m.set(key, { _id: key, count: a?.count ?? 0, first: a?.first ?? Date.now(), lockedUntil: until });
+  }
+  async clear(key: string) {
+    this.m.delete(key);
+  }
 }
 
 /**
@@ -174,7 +235,22 @@ export function memoryStore(legacy?: { data: Record<string, unknown>; revision: 
   if (legacy) {
     const up = layout1ToItems(legacy.data);
     for (const f of up.files) void files.put(f);
-    state = new MemState({ items: up.items, head: { revision: legacy.revision, schemaVersion: legacy.schemaVersion, versions: Object.fromEntries(versionedKeys().map((k) => [k, 1])) } });
+    state = new MemState({
+      items: up.items,
+      head: {
+        revision: legacy.revision,
+        schemaVersion: legacy.schemaVersion,
+        versions: Object.fromEntries(versionedKeys().map((k) => [k, 1])),
+      },
+    });
   }
-  return { state, files, users: new MemCol(), sessions: new MemCol(), attempts: new MemAttempts(), google: new MemCol(), oauth: new MemCol() };
+  return {
+    state,
+    files,
+    users: new MemCol(),
+    sessions: new MemCol(),
+    attempts: new MemAttempts(),
+    google: new MemCol(),
+    oauth: new MemCol(),
+  };
 }

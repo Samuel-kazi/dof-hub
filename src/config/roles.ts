@@ -1,16 +1,7 @@
 import type { RoleCode } from "../types";
 
 export type ModuleKey =
-  | "dashboard"
-  | "pipeline"
-  | "callsheets"
-  | "calendar"
-  | "equipment"
-  | "storage"
-  | "crew"
-  | "documents"
-  | "reminders"
-  | "settings";
+  "dashboard" | "pipeline" | "callsheets" | "calendar" | "equipment" | "storage" | "crew" | "documents" | "reminders" | "settings";
 
 export interface RoleInfo {
   code: RoleCode;

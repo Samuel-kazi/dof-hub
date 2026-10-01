@@ -5,7 +5,14 @@ import { decodeRoute, encodeRoute } from "../src/ui/routeLink";
 
 let passed = 0;
 const t = (name: string, fn: () => void) => {
-  try { fn(); passed++; console.log("ok  ", name); } catch (e) { console.error("FAIL", name, "\n    ", (e as Error).message); process.exitCode = 1; }
+  try {
+    fn();
+    passed++;
+    console.log("ok  ", name);
+  } catch (e) {
+    console.error("FAIL", name, "\n    ", (e as Error).message);
+    process.exitCode = 1;
+  }
 };
 
 // Round-trips: every route encodes to a path and decodes back to the same route.

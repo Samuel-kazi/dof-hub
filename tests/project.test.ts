@@ -23,9 +23,17 @@ import { RecordPage } from "../src/pages/RecordPage";
 let passed = 0;
 const t = (name: string, fn: () => void) => {
   resetDemoData();
-  try { fn(); passed++; console.log("ok  ", name); } catch (e) { console.error("FAIL", name, "\n    ", (e as Error).message); process.exitCode = 1; }
+  try {
+    fn();
+    passed++;
+    console.log("ok  ", name);
+  } catch (e) {
+    console.error("FAIL", name, "\n    ", (e as Error).message);
+    process.exitCode = 1;
+  }
 };
-const throwsRule = (fn: () => unknown, match?: RegExp) => assert.throws(fn, (e) => e instanceof RuleError && (!match || match.test(e.message)));
+const throwsRule = (fn: () => unknown, match?: RegExp) =>
+  assert.throws(fn, (e) => e instanceof RuleError && (!match || match.test(e.message)));
 const hop = () => login("hop@dof.demo", "demo");
 const crew1 = () => login("crew1@dof.demo", "demo"); // Series, Devotional, Music
 const crew2 = () => login("crew2@dof.demo", "demo"); // Series, Documentary
@@ -43,7 +51,10 @@ t("an episode shows its show's hosts, but not the show's guests", () => {
   C.addFeatured(hop(), "DOF-SER-001", { kind: "guest", name: "Series guest" });
   const f = C.featuredFor(rec("DOF-SER-001-S1-E01"));
   assert.deepEqual(f.inherited.map((x) => x.person.name).sort(), ["Elder James Otieno", "Pastor Mary Wanjiku"]);
-  assert.deepEqual(f.own.map((x) => x.name), ["Dr. Samuel Mwangi"]);
+  assert.deepEqual(
+    f.own.map((x) => x.name),
+    ["Dr. Samuel Mwangi"],
+  );
 });
 t("names are required, not repeated, and editable", () => {
   throwsRule(() => C.addFeatured(crew1(), "DOF-DEV-001", { kind: "guest", name: "  " }), /guest's name/);
@@ -62,28 +73,45 @@ t("only people who can edit the project change its hosts and guests", () => {
 // ── Show dates, publish date ──
 t("a series has a start and an end of the show", () => {
   const s = C.createRecord(hop(), { category: "series", title: "New show", showStart: isoDay(5), showEnd: isoDay(90) });
-  assert.equal(s.showStart, isoDay(5)); assert.equal(s.showEnd, isoDay(90));
+  assert.equal(s.showStart, isoDay(5));
+  assert.equal(s.showEnd, isoDay(90));
   C.updateRecord(hop(), s.contentId, { showEnd: isoDay(120) });
   assert.equal(rec(s.contentId).showEnd, isoDay(120));
 });
 t("show dates are checked", () => {
-  throwsRule(() => C.createRecord(hop(), { category: "series", title: "x", showStart: isoDay(10), showEnd: isoDay(2) }), /cannot end before/);
+  throwsRule(
+    () => C.createRecord(hop(), { category: "series", title: "x", showStart: isoDay(10), showEnd: isoDay(2) }),
+    /cannot end before/,
+  );
   throwsRule(() => C.createRecord(hop(), { category: "series", title: "x", showEnd: isoDay(2) }), /starts as well/);
   throwsRule(() => C.createRecord(hop(), { category: "devotional", title: "x", showStart: isoDay(2) }), /series and live/);
   throwsRule(() => C.updateRecord(hop(), "DOF-SER-001", { showEnd: isoDay(-100) }), /cannot end before/);
 });
 t("the labels say shoot date and publish date", () => {
-  assert.equal(shootDateLabel("series"), "Shoot date"); assert.equal(shootDateLabel("live"), "Show date");
+  assert.equal(shootDateLabel("series"), "Shoot date");
+  assert.equal(shootDateLabel("live"), "Show date");
   const tbc = C.createRecord(hop(), { category: "live", title: "TBC" });
   throwsRule(() => CS.openOrCreateForRecord(hop(), `${tbc.contentId}-D1`), /shoot date/);
 });
 
 // ── Live shows made of days ──
 t("a five day show becomes five days, each its own item", () => {
-  const show = C.createRecord(hop(), { category: "live", title: "Revival week", showStart: isoDay(40), showEnd: isoDay(44), productionLevel: "medium" });
+  const show = C.createRecord(hop(), {
+    category: "live",
+    title: "Revival week",
+    showStart: isoDay(40),
+    showEnd: isoDay(44),
+    productionLevel: "medium",
+  });
   const days = C.getChildren(show.contentId);
-  assert.deepEqual(days.map((d) => d.contentId), [1, 2, 3, 4, 5].map((n) => `${show.contentId}-D${n}`));
-  assert.deepEqual(days.map((d) => d.scheduledDate), [40, 41, 42, 43, 44].map(isoDay));
+  assert.deepEqual(
+    days.map((d) => d.contentId),
+    [1, 2, 3, 4, 5].map((n) => `${show.contentId}-D${n}`),
+  );
+  assert.deepEqual(
+    days.map((d) => d.scheduledDate),
+    [40, 41, 42, 43, 44].map(isoDay),
+  );
   assert.ok(days.every((d) => d.pipelineStage === "Prep" && d.productionLevel === "medium" && d.title.startsWith("Day ")));
   assert.equal(show.pipelineStage, null, "the show itself has no pipeline");
   assert.equal(C.getRollupStatus(show.contentId).total, 5);
@@ -103,9 +131,11 @@ t("a show cannot run longer than 31 days, and more days can be added", () => {
 t("each day has its own call sheet and its own run of show requirement", () => {
   const large = CS.openOrCreateForRecord(hop(), "DOF-LIVE-002-D1").sheet; // large
   const small = CS.openOrCreateForRecord(hop(), "DOF-LIVE-002-D4").sheet; // small
-  assert.deepEqual(large.linkedEpisodeIds, ["DOF-LIVE-002-D1"]); assert.deepEqual(small.linkedEpisodeIds, ["DOF-LIVE-002-D4"]);
+  assert.deepEqual(large.linkedEpisodeIds, ["DOF-LIVE-002-D1"]);
+  assert.deepEqual(small.linkedEpisodeIds, ["DOF-LIVE-002-D4"]);
   assert.notEqual(large.id, small.id);
-  assert.equal(CS.runOfShowRequired(large), true); assert.equal(CS.runOfShowRequired(small), false);
+  assert.equal(CS.runOfShowRequired(large), true);
+  assert.equal(CS.runOfShowRequired(small), false);
   throwsRule(() => CS.finalizeCallSheet(hop(), large.id), /run of show/);
   assert.equal(CS.finalizeCallSheet(hop(), small.id).status, "final");
   CS.addRunItem(hop(), large.id, { time: "18:00", title: "Doors", durationMin: 30 });
@@ -119,7 +149,9 @@ t("changing one day's level changes only that day's call sheet", () => {
   assert.equal(CS.runOfShowRequired(CS.openOrCreateForRecord(hop(), "DOF-LIVE-002-D4").sheet), false);
 });
 t("days of one show are told apart in document titles", () => {
-  const titles = getDb().docs.filter((d) => d.contentId.startsWith("DOF-LIVE-002")).map((d) => d.title);
+  const titles = getDb()
+    .docs.filter((d) => d.contentId.startsWith("DOF-LIVE-002"))
+    .map((d) => d.title);
   assert.ok(titles.length >= 2 && titles.every((x) => x.includes("Youth Conference, Day")));
 });
 
@@ -133,7 +165,8 @@ t("a project team has several people, each with several roles", () => {
 t("a role can be typed by hand, and then appears in the list", () => {
   assert.ok(!T.knownRoles().includes("Drone pilot"));
   T.addTeamMember(hop(), "DOF-DEV-001", "DOF-P-CRW-003", ["Drone pilot"], true);
-  assert.ok(T.knownRoles().includes("Drone pilot")); assert.ok(T.knownRoles().includes("Director"));
+  assert.ok(T.knownRoles().includes("Drone pilot"));
+  assert.ok(T.knownRoles().includes("Director"));
 });
 t("roles are checked", () => {
   throwsRule(() => T.addTeamMember(hop(), "DOF-DEV-001", "DOF-P-CRW-002", ["Camera, Editor"], true), /commas/);
@@ -155,7 +188,10 @@ t("a person's roles on a project add up across its stages", () => {
   for (const expected of ["Audio engineer", "Sound designer"]) assert.ok(roles.includes(expected), expected);
 });
 t("a team from an episode is the whole show's team", () => {
-  assert.deepEqual(T.teamOf(rec("DOF-SER-001-S1-E01")).map((x) => x.person.personId), T.teamOf(rec("DOF-SER-001")).map((x) => x.person.personId));
+  assert.deepEqual(
+    T.teamOf(rec("DOF-SER-001-S1-E01")).map((x) => x.person.personId),
+    T.teamOf(rec("DOF-SER-001")).map((x) => x.person.personId),
+  );
 });
 t("someone who still owns a stage cannot leave the project until it is handed over", () => {
   throwsRule(() => P.removeFromProject(hop(), "DOF-P-CRW-001", "DOF-SER-001"), /still owns/);
@@ -165,7 +201,9 @@ t("someone who still owns a stage cannot leave the project until it is handed ov
       if (!list.some((o) => o.personId === "DOF-P-CRW-003")) C.addStageOwner(hop(), r.contentId, stage, "DOF-P-CRW-003", []);
       C.removeStageOwner(hop(), r.contentId, stage, "DOF-P-CRW-001");
     }
-    for (const tk of r.tasks) if (tk.assigneePersonId === "DOF-P-CRW-001" && !tk.done) C.updateTask(hop(), r.contentId, tk.id, { assigneePersonId: "DOF-P-CRW-003" });
+    for (const tk of r.tasks)
+      if (tk.assigneePersonId === "DOF-P-CRW-001" && !tk.done)
+        C.updateTask(hop(), r.contentId, tk.id, { assigneePersonId: "DOF-P-CRW-003" });
   }
   P.removeFromProject(hop(), "DOF-P-CRW-001", "DOF-SER-001");
   assert.ok(!T.teamOf(rec("DOF-SER-001")).some((x) => x.person.personId === "DOF-P-CRW-001"));
@@ -178,23 +216,49 @@ t("the crew page's attach uses the same role rules", () => {
 
 // ── Several links at once ──
 t("several links can be posted together, each with a label", () => {
-  const made = C.addLinks(crew1(), "DOF-SER-001-S1-E04", { kind: "review", links: [{ url: "https://youtu.be/a", note: "YouTube" }, { url: "https://facebook.com/b", note: "Facebook" }, { url: "", note: "" }] });
-  assert.equal(made.length, 2); assert.deepEqual(made.map((l) => l.note), ["YouTube", "Facebook"]);
+  const made = C.addLinks(crew1(), "DOF-SER-001-S1-E04", {
+    kind: "review",
+    links: [
+      { url: "https://youtu.be/a", note: "YouTube" },
+      { url: "https://facebook.com/b", note: "Facebook" },
+      { url: "", note: "" },
+    ],
+  });
+  assert.equal(made.length, 2);
+  assert.deepEqual(
+    made.map((l) => l.note),
+    ["YouTube", "Facebook"],
+  );
   assert.equal(rec("DOF-SER-001-S1-E04").links.length, 2);
 });
 t("if one link is wrong, none are posted", () => {
-  throwsRule(() => C.addLinks(crew1(), "DOF-SER-001-S1-E04", { kind: "review", links: [{ url: "https://ok.example" }, { url: "not a link" }] }), /not a link/);
+  throwsRule(
+    () => C.addLinks(crew1(), "DOF-SER-001-S1-E04", { kind: "review", links: [{ url: "https://ok.example" }, { url: "not a link" }] }),
+    /not a link/,
+  );
   assert.equal(rec("DOF-SER-001-S1-E04").links.length, 0);
   throwsRule(() => C.addLinks(crew1(), "DOF-SER-001-S1-E04", { kind: "review", links: [{ url: "" }] }), /at least one/);
   throwsRule(() => C.addLinks(crew1(), "DOF-SER-001-S1-E04", { kind: "review", links: [{ note: "label only" }] }), /needs a link/);
 });
 t("an analysis can be several notes and links", () => {
-  assert.equal(C.addLinks(crew1(), "DOF-SER-001-S1-E04", { kind: "analysis", links: [{ note: "Retention drops at 2:10" }, { url: "https://analytics.example/report", note: "Full report" }] }).length, 2);
+  assert.equal(
+    C.addLinks(crew1(), "DOF-SER-001-S1-E04", {
+      kind: "analysis",
+      links: [{ note: "Retention drops at 2:10" }, { url: "https://analytics.example/report", note: "Full report" }],
+    }).length,
+    2,
+  );
 });
 
 // ── Checkout list IDs on a project ──
 t("an existing checkout list can be attached to a project by its ID", () => {
-  const m = E.createManifest(crew1(), { contentId: "DOF-DEV-001", date: isoDay(20), destination: "studio", status: "assigned", lines: [{ equipmentId: "DOF-EQ-AUD-002", quantity: 1 }] });
+  const m = E.createManifest(crew1(), {
+    contentId: "DOF-DEV-001",
+    date: isoDay(20),
+    destination: "studio",
+    status: "assigned",
+    lines: [{ equipmentId: "DOF-EQ-AUD-002", quantity: 1 }],
+  });
   E.attachManifest(crew1(), m.id, "DOF-SER-001-S1-E04");
   assert.equal(E.getManifest(m.id)!.contentId, "DOF-SER-001-S1-E04");
   assert.equal(E.itemHistory("DOF-EQ-AUD-002")[0].kind, "edited");
@@ -202,7 +266,13 @@ t("an existing checkout list can be attached to a project by its ID", () => {
 });
 t("attaching is refused for call sheet lists, released lists, the same project, and people not on both", () => {
   throwsRule(() => E.attachManifest(hop(), "DOF-MF-001", "DOF-DEV-001"), /call sheet/);
-  const m = E.createManifest(crew1(), { contentId: "DOF-DEV-001", date: isoDay(20), destination: "studio", status: "assigned", lines: [{ equipmentId: "DOF-EQ-AUD-002", quantity: 1 }] });
+  const m = E.createManifest(crew1(), {
+    contentId: "DOF-DEV-001",
+    date: isoDay(20),
+    destination: "studio",
+    status: "assigned",
+    lines: [{ equipmentId: "DOF-EQ-AUD-002", quantity: 1 }],
+  });
   throwsRule(() => E.attachManifest(crew1(), m.id, "DOF-DEV-001"), /already attached/);
   throwsRule(() => E.attachManifest(crew2(), m.id, "DOF-DOC-001"), /both projects/);
   E.releaseManifest(crew1(), m.id);
@@ -215,7 +285,9 @@ t("the equipment list is grouped by category", () => {
   assert.ok(all.length >= 6);
   assert.deepEqual(all.map((g) => g.label).slice(0, 2), ["Camera", "Audio"]);
   const cam = E.inventoryReport("camera", false);
-  assert.equal(cam.length, 1); assert.equal(cam[0].rows.length, 4); assert.equal(cam[0].units, 4);
+  assert.equal(cam.length, 1);
+  assert.equal(cam[0].rows.length, 4);
+  assert.equal(cam[0].units, 4);
 });
 t("retired and lost items only print when asked for", () => {
   assert.ok(!E.inventoryReport("audio", false)[0].rows.some((r) => r.id === "DOF-EQ-AUD-004"));
@@ -223,7 +295,9 @@ t("retired and lost items only print when asked for", () => {
 });
 t("batches print with their count and how many are free", () => {
   const row = E.inventoryReport("cabling", false)[0].rows.find((r) => r.id === "DOF-EQ-CAB-XLR10M-B01")!;
-  assert.equal(row.qty, 12); assert.equal(row.free, 8); assert.equal(row.serial, "");
+  assert.equal(row.qty, 12);
+  assert.equal(row.free, 8);
+  assert.equal(row.serial, "");
 });
 
 // ── Production count: a live show with several days is one production, not one per day ──
@@ -233,7 +307,11 @@ t("a multi-day live show collapses to one production unit; other categories stay
   const days = leaves.filter((r) => r.category === "live");
   assert.ok(days.length >= 2, "the demo data has more than one live-show day to begin with");
   const units = C.productionUnits(leaves);
-  assert.equal(units.length, leaves.length - days.length + new Set(days.map((d) => d.parentId)).size, "each show's days collapse into one unit, everything else stays as-is");
+  assert.equal(
+    units.length,
+    leaves.length - days.length + new Set(days.map((d) => d.parentId)).size,
+    "each show's days collapse into one unit, everything else stays as-is",
+  );
   const show = units.find((u) => u.id === "DOF-LIVE-002")!;
   assert.ok(show && show.leaves.length > 1, "the show with several days rolls all of them into one unit");
   const episode = units.find((u) => u.id === "DOF-SER-001-S1-E01")!;
@@ -245,7 +323,10 @@ t("a production unit is in progress if any of its days is, even once collapsed",
   const leaves = visibleRecords(actor).filter(C.usesPipeline);
   const units = C.productionUnits(leaves);
   const show = units.find((u) => u.id === "DOF-LIVE-002")!;
-  assert.ok(show.leaves.length > 1 && show.leaves.some((l) => !C.isComplete(l)), "the show counts as in production while any of its days is unfinished");
+  assert.ok(
+    show.leaves.length > 1 && show.leaves.some((l) => !C.isComplete(l)),
+    "the show counts as in production while any of its days is unfinished",
+  );
 });
 
 // ── Live day: Prep → Build → Rehearse → Show → Wrap → Review → Post Production ──
@@ -270,7 +351,10 @@ t("Wrap pulls the show's nightly strike list every day, and adds the final list 
   assert.ok(!d1Tasks.includes("Full rig: trusses, screens, staging"), "day 1 does not strike the full rig");
   const d5 = pushToStage(actor, "DOF-LIVE-002-D5", "Wrap");
   const d5Tasks = d5.tasks.filter((t) => t.stage === "Wrap").map((t) => t.label);
-  assert.ok(d5Tasks.includes("Cover cameras and lenses") && d5Tasks.includes("Full rig: trusses, screens, staging"), "the last day gets both lists");
+  assert.ok(
+    d5Tasks.includes("Cover cameras and lenses") && d5Tasks.includes("Full rig: trusses, screens, staging"),
+    "the last day gets both lists",
+  );
 });
 
 t("a live day with no strike checklist set gets no Wrap tasks, and does not block on an empty checklist", () => {
@@ -298,7 +382,10 @@ t("saying yes requires an actual split before the day can be marked done; saying
   const made = C.splitRecording(actor, yes.contentId, { destCategory: "series", parentId: "DOF-SER-001-S1", title: "Sunday message" });
   assert.equal(made.spunOffFrom, yes.contentId);
   assert.equal(made.pipelineStage, "Editorial", "a sermon starts at Editorial, skipping the stages that assume no footage");
-  assert.deepEqual(C.spinOffsOf(yes.contentId).map((r) => r.contentId), [made.contentId]);
+  assert.deepEqual(
+    C.spinOffsOf(yes.contentId).map((r) => r.contentId),
+    [made.contentId],
+  );
   const afterSplit = getRecord(yes.contentId)!;
   C.setStageOutput(actor, yes.contentId, true, afterSplit.version); // now allowed
   assert.equal(C.isComplete(getRecord(yes.contentId)!), true);
@@ -410,7 +497,10 @@ t("a stalled item's reminder goes to whoever is responsible now, with 'no update
   assert.match(staleOne.title, /no update/i);
   assert.doesNotMatch(staleOne.title, /due/i);
   const someoneElse = remindersFor("DOF-P-VOL-002");
-  assert.ok(!someoneElse.some((x: { kind: string; contentId: string }) => x.kind === "stale" && x.contentId === r.contentId), "someone not responsible for the stage does not get nudged about it");
+  assert.ok(
+    !someoneElse.some((x: { kind: string; contentId: string }) => x.kind === "stale" && x.contentId === r.contentId),
+    "someone not responsible for the stage does not get nudged about it",
+  );
   void actor;
 });
 
@@ -454,15 +544,18 @@ t("the default producer is reassignable per project, same as any assignee", () =
   assert.equal(updated.assigneePersonId, "DOF-P-CRW-001");
 });
 
-t("the general advance and send-back buttons refuse Guest going forward, but sending it back to Creation still works; Closed is final either way", () => {
-  const hop = login("hop@dof.demo", "demo");
-  const d = freshDevotional(hop);
-  C.setStageOutput(hop, d.contentId, true);
-  C.advanceStage(hop, d.contentId); // Creation -> Guest, generic advance still works here
-  throwsRule(() => C.advanceStage(hop, d.contentId), /theological review/);
-  const back = C.sendBackStage(hop, d.contentId); // going back is not one of the gated branches
-  assert.equal(back.pipelineStage, "Creation");
-});
+t(
+  "the general advance and send-back buttons refuse Guest going forward, but sending it back to Creation still works; Closed is final either way",
+  () => {
+    const hop = login("hop@dof.demo", "demo");
+    const d = freshDevotional(hop);
+    C.setStageOutput(hop, d.contentId, true);
+    C.advanceStage(hop, d.contentId); // Creation -> Guest, generic advance still works here
+    throwsRule(() => C.advanceStage(hop, d.contentId), /theological review/);
+    const back = C.sendBackStage(hop, d.contentId); // going back is not one of the gated branches
+    assert.equal(back.pipelineStage, "Creation");
+  },
+);
 
 t("Guest, approved: records the reviewer and timestamp, and moves on to Prep/Scripting", () => {
   const hop = login("hop@dof.demo", "demo");
@@ -509,11 +602,14 @@ t("Closed and Published never show a risk, and never generate a reminder — dev
 function toReview(hop: ReturnType<typeof login>): string {
   const d = freshDevotional(hop);
   const id = d.contentId;
-  C.setStageOutput(hop, id, true); C.advanceStage(hop, id); // Creation -> Guest
+  C.setStageOutput(hop, id, true);
+  C.advanceStage(hop, id); // Creation -> Guest
   for (const task of getRecord(id)!.tasks.filter((x) => x.stage === "Guest")) C.updateTask(hop, id, task.id, { done: true });
   C.approveGuestReview(hop, id, "Pastor Samuel"); // -> Prep/Scripting
-  C.setStageOutput(hop, id, true); C.advanceStage(hop, id); // -> Recording
-  C.setStageOutput(hop, id, true); C.advanceStage(hop, id); // -> Editing
+  C.setStageOutput(hop, id, true);
+  C.advanceStage(hop, id); // -> Recording
+  C.setStageOutput(hop, id, true);
+  C.advanceStage(hop, id); // -> Editing
   return id;
 }
 
@@ -524,7 +620,8 @@ t("Editing's ready-for-review checkbox only exists at Editing, and Review checks
   throwsRule(() => C.approveDevotionalReview(hop, id), /not at the Review stage/);
   const ready = C.setDevotionalReadyForReview(hop, id, true);
   assert.equal(ready.readyForReview, true);
-  C.setStageOutput(hop, id, true); C.advanceStage(hop, id); // -> Review
+  C.setStageOutput(hop, id, true);
+  C.advanceStage(hop, id); // -> Review
   throwsRule(() => C.setDevotionalReadyForReview(hop, id, true), /not at the Editing stage/);
 });
 
@@ -532,12 +629,20 @@ t("Review, approved: only once ready for review is set, and it moves straight to
   const hop = login("hop@dof.demo", "demo");
   const id = toReview(hop);
   C.setDevotionalReadyForReview(hop, id, true);
-  C.setStageOutput(hop, id, true); C.advanceStage(hop, id); // -> Review
-  throwsRule(() => { getRecord(id)!.readyForReview = false; C.approveDevotionalReview(hop, id); }, /not marked this ready/);
+  C.setStageOutput(hop, id, true);
+  C.advanceStage(hop, id); // -> Review
+  throwsRule(() => {
+    getRecord(id)!.readyForReview = false;
+    C.approveDevotionalReview(hop, id);
+  }, /not marked this ready/);
   getRecord(id)!.readyForReview = true;
   const done = C.approveDevotionalReview(hop, id);
   assert.equal(done.pipelineStage, "Published");
-  assert.equal(C.isComplete(done), false, "Published still needs its own required output confirmed, same as any other category's final stage");
+  assert.equal(
+    C.isComplete(done),
+    false,
+    "Published still needs its own required output confirmed, same as any other category's final stage",
+  );
   C.setStageOutput(hop, id, true);
   assert.ok(C.isComplete(getRecord(id)!));
 });
@@ -546,7 +651,8 @@ t("Review, sent back: needs a reason, returns to Editing, and resets ready-for-r
   const hop = login("hop@dof.demo", "demo");
   const id = toReview(hop);
   C.setDevotionalReadyForReview(hop, id, true);
-  C.setStageOutput(hop, id, true); C.advanceStage(hop, id); // -> Review
+  C.setStageOutput(hop, id, true);
+  C.advanceStage(hop, id); // -> Review
   throwsRule(() => C.sendBackDevotionalToEditing(hop, id, ""), /Say why it is going back/);
   const back = C.sendBackDevotionalToEditing(hop, id, "Audio needs a re-mix on the second half.");
   assert.equal(back.pipelineStage, "Editing");
@@ -572,8 +678,12 @@ t("recording duration and notes, and the Prep/Scripting fields, are plain edits 
   const hop = login("hop@dof.demo", "demo");
   const d = freshDevotional(hop);
   const updated = C.updateRecord(hop, d.contentId, {
-    guestName: "Rev. Ann Wanjala", guestContact: "ann@example.com", cardStorage: "Card B, slot 2",
-    publishDate: "2026-12-01", recordingDurationMin: 24, recordingNotes: "Two retakes on the opening line.",
+    guestName: "Rev. Ann Wanjala",
+    guestContact: "ann@example.com",
+    cardStorage: "Card B, slot 2",
+    publishDate: "2026-12-01",
+    recordingDurationMin: 24,
+    recordingNotes: "Two retakes on the opening line.",
   });
   assert.equal(updated.guestName, "Rev. Ann Wanjala");
   assert.equal(updated.recordingDurationMin, 24);

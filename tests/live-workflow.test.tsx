@@ -14,10 +14,22 @@ import { categoryOf } from "../src/config/categories";
 let passed = 0;
 const t = (name: string, fn: () => void) => {
   resetDemoData();
-  try { fn(); passed++; console.log("ok  ", name); } catch (e) { console.error("FAIL", name, "\n    ", e instanceof Error ? e.message : e); process.exitCode = 1; }
+  try {
+    fn();
+    passed++;
+    console.log("ok  ", name);
+  } catch (e) {
+    console.error("FAIL", name, "\n    ", e instanceof Error ? e.message : e);
+    process.exitCode = 1;
+  }
 };
 const hop = () => login("hop@dof.demo", "demo");
-const html = (id: string) => renderToString(<AppProvider actor={hop()} onLogout={() => {}}><RecordPage id={id} /></AppProvider>);
+const html = (id: string) =>
+  renderToString(
+    <AppProvider actor={hop()} onLogout={() => {}}>
+      <RecordPage id={id} />
+    </AppProvider>,
+  );
 
 function pushToStage(id: string, target: string) {
   const actor = hop();

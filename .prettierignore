@@ -1,0 +1,9 @@
+# Generated, or not ours to format
+dist/
+api/_server.mjs
+src/services/wrapped/
+src-tauri/target/
+src-tauri/gen/
+package-lock.json
+# Prose is left as written
+*.md

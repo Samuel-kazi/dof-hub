@@ -9,7 +9,26 @@ import type { FileDoc, Item } from "./stores";
 // objects, are one document each.
 
 /** Every part of the data that lives in the database. Logins are kept apart, and never appear here. */
-export const KEYS = ["people", "members", "records", "callSheets", "comments", "audit", "equipment", "manifests", "incidents", "equipmentHistory", "drives", "allocations", "snapshots", "docs", "docRevisions", "outbox", "settings", "counters"] as const;
+export const KEYS = [
+  "people",
+  "members",
+  "records",
+  "callSheets",
+  "comments",
+  "audit",
+  "equipment",
+  "manifests",
+  "incidents",
+  "equipmentHistory",
+  "drives",
+  "allocations",
+  "snapshots",
+  "docs",
+  "docRevisions",
+  "outbox",
+  "settings",
+  "counters",
+] as const;
 
 /** Single objects rather than lists. */
 const SINGLE = new Set<string>(["settings", "counters"]);
@@ -31,11 +50,16 @@ export const loadedKeys = (): string[] => KEYS.filter((k) => !APPEND_ONLY.has(k)
 export function idOf(key: string, el: unknown): string {
   const x = (el ?? {}) as Record<string, unknown>;
   switch (key) {
-    case "people": return String(x.personId);
-    case "members": return `${x.personId}|${x.projectContentId}`;
-    case "records": return String(x.contentId);
-    case "snapshots": return String(x.date);
-    default: return String(x.id);
+    case "people":
+      return String(x.personId);
+    case "members":
+      return `${x.personId}|${x.projectContentId}`;
+    case "records":
+      return String(x.contentId);
+    case "snapshots":
+      return String(x.date);
+    default:
+      return String(x.id);
   }
 }
 
@@ -79,7 +103,10 @@ export function fileFromDataUrl(url: string): { doc: FileDoc; url: string } | nu
   const m = DATA_URL.exec(url);
   if (!m) return null;
   const id = createHash("sha256").update(url).digest("hex").slice(0, 32);
-  return { doc: { _id: id, type: m[1], data: m[2], size: Math.floor((m[2].length * 3) / 4), at: new Date().toISOString() }, url: `/api/file?id=${id}` };
+  return {
+    doc: { _id: id, type: m[1], data: m[2], size: Math.floor((m[2].length * 3) / 4), at: new Date().toISOString() },
+    url: `/api/file?id=${id}`,
+  };
 }
 
 /** Replaces every photo given as a data: URL, anywhere in `value`, with a link, and adds the file to `files`. */
@@ -92,7 +119,8 @@ export function extractFiles<T>(value: T, files: FileDoc[]): T {
     return f.url as T;
   }
   if (Array.isArray(value)) return value.map((v) => extractFiles(v, files)) as T;
-  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, extractFiles(v, files)])) as T;
+  if (value && typeof value === "object")
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, extractFiles(v, files)])) as T;
   return value;
 }
 

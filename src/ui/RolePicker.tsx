@@ -17,7 +17,16 @@ export function RolePicker({ value, onChange, disabled }: { value: string[]; onC
           {value.map((r) => (
             <span key={r} className="chip on" style={{ cursor: "default" }}>
               {r}
-              {!disabled && <button type="button" aria-label={`Remove ${r}`} onClick={() => onChange(value.filter((x) => x !== r))} style={{ background: "none", border: 0, color: "inherit", cursor: "pointer", padding: 0, lineHeight: 1 }}>×</button>}
+              {!disabled && (
+                <button
+                  type="button"
+                  aria-label={`Remove ${r}`}
+                  onClick={() => onChange(value.filter((x) => x !== r))}
+                  style={{ background: "none", border: 0, color: "inherit", cursor: "pointer", padding: 0, lineHeight: 1 }}
+                >
+                  ×
+                </button>
+              )}
             </span>
           ))}
         </div>
@@ -29,13 +38,26 @@ export function RolePicker({ value, onChange, disabled }: { value: string[]; onC
             list={id}
             value={text}
             onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                add();
+              }
+            }}
             onBlur={add}
             placeholder="Pick a role or type your own"
             aria-label="Role"
           />
-          <datalist id={id}>{knownRoles().filter((r) => !value.some((v) => v.toLowerCase() === r.toLowerCase())).map((r) => <option key={r} value={r} />)}</datalist>
-          <button type="button" className="btn" onClick={add}>Add role</button>
+          <datalist id={id}>
+            {knownRoles()
+              .filter((r) => !value.some((v) => v.toLowerCase() === r.toLowerCase()))
+              .map((r) => (
+                <option key={r} value={r} />
+              ))}
+          </datalist>
+          <button type="button" className="btn" onClick={add}>
+            Add role
+          </button>
         </div>
       )}
     </div>

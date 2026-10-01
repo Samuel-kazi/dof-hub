@@ -184,7 +184,8 @@ export interface AuditEntry {
 
 // ── Equipment ────────────────────────────────────────────────
 
-export type EquipCategoryKey = "camera" | "audio" | "lighting" | "live" | "studio" | "computing" | "cabling" | "power" | "transport" | "ministry" | "safety";
+export type EquipCategoryKey =
+  "camera" | "audio" | "lighting" | "live" | "studio" | "computing" | "cabling" | "power" | "transport" | "ministry" | "safety";
 export type EquipCondition = "New" | "Good" | "Fair" | "Poor";
 export type TrackingType = "serialized" | "aggregate";
 export type BaseStatus = "active" | "in-repair" | "retired" | "lost";
@@ -277,7 +278,19 @@ export interface EquipmentHistory {
   id: string;
   equipmentId: string;
   at: string;
-  kind: "created" | "assigned" | "released" | "checked-out" | "checked-in" | "incident" | "repair-start" | "repair-end" | "retired" | "lost" | "edited" | "photo";
+  kind:
+    | "created"
+    | "assigned"
+    | "released"
+    | "checked-out"
+    | "checked-in"
+    | "incident"
+    | "repair-start"
+    | "repair-end"
+    | "retired"
+    | "lost"
+    | "edited"
+    | "photo";
   detail: string;
   byPersonId: string;
   contentId: string | null;
@@ -347,7 +360,10 @@ export interface Settings {
   checkoutReturnDays: number;
   workDays: number[]; // days of the week people are normally at work, 0 is Sunday
   effortOverrides: Record<string, number>; // person-days per stage, keyed "category:Stage", replacing the built-in estimates
-  permissions?: { roles: Partial<Record<RoleCode, Partial<Record<string, boolean>>>>; people: Record<string, Partial<Record<string, boolean>>> }; // what the Head of Production has granted or denied
+  permissions?: {
+    roles: Partial<Record<RoleCode, Partial<Record<string, boolean>>>>;
+    people: Record<string, Partial<Record<string, boolean>>>;
+  }; // what the Head of Production has granted or denied
   // Workspace-wide look and feel, set by the Head of Production. Per-user preferences (font size,
   // density, photo) live on the Person record instead, since each person sets their own.
   appearance?: { accent: AccentKey; fontPairing: FontPairingKey };

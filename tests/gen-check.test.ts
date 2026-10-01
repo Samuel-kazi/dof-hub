@@ -8,7 +8,11 @@ import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
 let passed = 0;
-const t = (name: string, fn: () => void) => { fn(); passed++; console.log("ok  ", name); };
+const t = (name: string, fn: () => void) => {
+  fn();
+  passed++;
+  console.log("ok  ", name);
+};
 
 const run = (): { code: number; out: string } => {
   try {

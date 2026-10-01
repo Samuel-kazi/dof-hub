@@ -7,7 +7,9 @@ interface Props {
   /** Where "Go to the dashboard" leads. Without it, only reloading is offered. */
   onHome?: () => void;
 }
-interface State { error: Error | null }
+interface State {
+  error: Error | null;
+}
 
 /**
  * Keeps one broken page from blanking the whole app. Without this, an error while showing a page made React
@@ -35,10 +37,21 @@ export class ErrorBoundary extends Component<Props, State> {
       <div className="page">
         <div className="banner bad" role="alert" style={{ flexWrap: "wrap", gap: 10 }}>
           <span className="grow">
-            <b>This page could not be shown.</b> Something on it went wrong. Nothing was changed. Try again, or go somewhere else in the app.
+            <b>This page could not be shown.</b> Something on it went wrong. Nothing was changed. Try again, or go somewhere else in the
+            app.
           </span>
-          <button className="btn small" onClick={() => this.setState({ error: null })}>Try again</button>
-          {this.props.onHome ? <button className="btn small" onClick={this.props.onHome}>Go to the dashboard</button> : <button className="btn small" onClick={() => window.location.reload()}>Reload</button>}
+          <button className="btn small" onClick={() => this.setState({ error: null })}>
+            Try again
+          </button>
+          {this.props.onHome ? (
+            <button className="btn small" onClick={this.props.onHome}>
+              Go to the dashboard
+            </button>
+          ) : (
+            <button className="btn small" onClick={() => window.location.reload()}>
+              Reload
+            </button>
+          )}
         </div>
       </div>
     );

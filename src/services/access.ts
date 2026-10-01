@@ -77,7 +77,8 @@ export function visibleCallSheets(actor: Actor): CallSheet[] {
 export function redactPerson(actor: Actor, p: Person): Person {
   if (isHop(actor) || actor.personId === p.personId) return p;
   let out = p;
-  const hideContact = !can(actor, "people.contacts") && (actor.role === "VOL" || actor.role === "PTR" || p.category === "VOL" || p.category === "PTR");
+  const hideContact =
+    !can(actor, "people.contacts") && (actor.role === "VOL" || actor.role === "PTR" || p.category === "VOL" || p.category === "PTR");
   // Left empty and flagged, rather than filled with the word "Hidden": a word in the data can be saved back as if it were real.
   if (hideContact) out = { ...out, email: "", phone: "", equipmentFamiliarity: [], contactHidden: true };
   if (!can(actor, "people.loginStatus")) out = { ...out, hasLogin: false, username: undefined, loginOff: undefined };

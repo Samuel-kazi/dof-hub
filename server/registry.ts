@@ -11,7 +11,18 @@ import * as team from "../src/services/team";
 import { RPC_NAMES } from "../src/services/wrapped/names";
 import { ACTIONS, type ActionSpec } from "./schemas";
 
-const modules: Record<string, Record<string, unknown>> = { callsheets, content, docs, equipment, people, permissions, reminders, settings, storage, team };
+const modules: Record<string, Record<string, unknown>> = {
+  callsheets,
+  content,
+  docs,
+  equipment,
+  people,
+  permissions,
+  reminders,
+  settings,
+  storage,
+  team,
+};
 
 export interface Action {
   fn: (...args: unknown[]) => unknown;

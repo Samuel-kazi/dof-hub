@@ -5,7 +5,16 @@ import { useDb } from "../data/store";
 
 import { categoryOf } from "../config/categories";
 import { visibleCallSheets, visibleRecords } from "../services/access";
-import { currentStageDeadline, displayTitle, getBlockedOnUser, isComplete, leavesUnder, productionUnits, riskOf, usesPipeline } from "../services/wrapped/content";
+import {
+  currentStageDeadline,
+  displayTitle,
+  getBlockedOnUser,
+  isComplete,
+  leavesUnder,
+  productionUnits,
+  riskOf,
+  usesPipeline,
+} from "../services/wrapped/content";
 import { nameOf } from "../services/wrapped/people";
 import { daysUntil, fmtShort, fmtSize, relativeDays, todayIso } from "../services/utils";
 import { RiskBadge } from "../ui/parts";
@@ -20,7 +29,10 @@ import { crewWorkload } from "../services/workload";
 import { modulesFor } from "../services/wrapped/permissions";
 import { searchAll, type Hit } from "../services/search";
 
-const greeting = (): string => { const h = new Date().getHours(); return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening"; };
+const greeting = (): string => {
+  const h = new Date().getHours();
+  return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+};
 
 /** Search across everything this person may see. Arrow keys and Enter work. */
 function HeroSearch() {
@@ -31,7 +43,17 @@ function HeroSearch() {
   const box = useRef<HTMLDivElement>(null);
   const open = (h: Hit) => {
     setQ("");
-    go(h.kind === "project" ? { n: "record", id: h.id } : h.kind === "doc" ? { n: "doc", id: h.id } : h.kind === "callsheet" ? { n: "callsheet", id: h.id } : h.kind === "gear" ? { n: "item", id: h.id } : { n: "drive", id: h.id });
+    go(
+      h.kind === "project"
+        ? { n: "record", id: h.id }
+        : h.kind === "doc"
+          ? { n: "doc", id: h.id }
+          : h.kind === "callsheet"
+            ? { n: "callsheet", id: h.id }
+            : h.kind === "gear"
+              ? { n: "item", id: h.id }
+              : { n: "drive", id: h.id },
+    );
   };
   const KIND: Record<Hit["kind"], string> = { project: "Project", doc: "Document", callsheet: "Call sheet", gear: "Gear", drive: "Drive" };
   return (
@@ -39,11 +61,18 @@ function HeroSearch() {
       <input
         type="text"
         value={q}
-        onChange={(e) => { setQ(e.target.value); setSel(0); }}
+        onChange={(e) => {
+          setQ(e.target.value);
+          setSel(0);
+        }}
         onKeyDown={(e) => {
-          if (e.key === "ArrowDown") { e.preventDefault(); setSel((i) => Math.min(hits.length - 1, i + 1)); }
-          else if (e.key === "ArrowUp") { e.preventDefault(); setSel((i) => Math.max(0, i - 1)); }
-          else if (e.key === "Enter" && hits[sel]) open(hits[sel]);
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setSel((i) => Math.min(hits.length - 1, i + 1));
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setSel((i) => Math.max(0, i - 1));
+          } else if (e.key === "Enter" && hits[sel]) open(hits[sel]);
           else if (e.key === "Escape") setQ("");
         }}
         placeholder="Search projects, documents, gear"
@@ -53,12 +82,26 @@ function HeroSearch() {
       <div className="underline" />
       {q.trim().length >= 2 && (
         <div className="results" role="listbox">
-          {hits.length === 0 ? <div className="empty">Nothing matches "{q.trim()}".</div> : hits.map((h, i) => (
-            <button key={`${h.kind}-${h.id}`} className={`result ${i === sel ? "sel" : ""}`} role="option" aria-selected={i === sel} onMouseEnter={() => setSel(i)} onClick={() => open(h)}>
-              <span className="kind">{KIND[h.kind]}</span>
-              <span className="grow" style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block" }}>{h.title}</span><span className="cid">{h.sub}</span></span>
-            </button>
-          ))}
+          {hits.length === 0 ? (
+            <div className="empty">Nothing matches "{q.trim()}".</div>
+          ) : (
+            hits.map((h, i) => (
+              <button
+                key={`${h.kind}-${h.id}`}
+                className={`result ${i === sel ? "sel" : ""}`}
+                role="option"
+                aria-selected={i === sel}
+                onMouseEnter={() => setSel(i)}
+                onClick={() => open(h)}
+              >
+                <span className="kind">{KIND[h.kind]}</span>
+                <span className="grow" style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: "block" }}>{h.title}</span>
+                  <span className="cid">{h.sub}</span>
+                </span>
+              </button>
+            ))
+          )}
         </div>
       )}
     </div>
@@ -66,12 +109,45 @@ function HeroSearch() {
 }
 
 /** One number, one line about it, and where to go for more. */
-function StatCard({ icon, title, range, big, unit, foot, bad, share, onClick }: { icon: JSX.Element; title: string; range?: string; big: string | number; unit?: string; foot: string; bad?: boolean; share?: number; onClick: () => void }) {
+function StatCard({
+  icon,
+  title,
+  range,
+  big,
+  unit,
+  foot,
+  bad,
+  share,
+  onClick,
+}: {
+  icon: JSX.Element;
+  title: string;
+  range?: string;
+  big: string | number;
+  unit?: string;
+  foot: string;
+  bad?: boolean;
+  share?: number;
+  onClick: () => void;
+}) {
   return (
     <section className="glass gcard" aria-label={title} onClick={onClick} tabIndex={0} onKeyDown={(e) => e.key === "Enter" && onClick()}>
-      <div className="gcard-head"><span className="tile">{icon}</span><h3>{title}</h3>{range && <span className="range">{range}</span>}</div>
-      <div><span className="big">{big}{unit && <small>{unit}</small>}</span></div>
-      {share !== undefined && <div className="meter" role="img" aria-label={`${Math.round(share)} percent`}><i style={{ width: `${Math.max(2, Math.min(100, share))}%` }} /></div>}
+      <div className="gcard-head">
+        <span className="tile">{icon}</span>
+        <h3>{title}</h3>
+        {range && <span className="range">{range}</span>}
+      </div>
+      <div>
+        <span className="big">
+          {big}
+          {unit && <small>{unit}</small>}
+        </span>
+      </div>
+      {share !== undefined && (
+        <div className="meter" role="img" aria-label={`${Math.round(share)} percent`}>
+          <i style={{ width: `${Math.max(2, Math.min(100, share))}%` }} />
+        </div>
+      )}
       <div className={`gcard-foot ${bad ? "bad" : ""}`}>{foot}</div>
     </section>
   );
@@ -90,17 +166,25 @@ export function Dashboard() {
   const overdue = leaves.filter((r) => riskOf(r) === "overdue");
   const atRisk = leaves.filter((r) => riskOf(r) === "at-risk");
   const blocked = getBlockedOnUser(actor);
-  const soon = visibleCallSheets(actor).filter((cs) => daysUntil(cs.date) >= 0 && daysUntil(cs.date) <= 7).sort((a, b) => a.date.localeCompare(b.date));
+  const soon = visibleCallSheets(actor)
+    .filter((cs) => daysUntil(cs.date) >= 0 && daysUntil(cs.date) <= 7)
+    .sort((a, b) => a.date.localeCompare(b.date));
   // The Production card counts productions, not pipeline stages: a live show with several days is one production, not one per day.
   const units = productionUnits(leaves);
   const unitsInProgress = units.filter((u) => u.leaves.some((l) => !isComplete(l)));
   const unitsOverdue = units.filter((u) => u.leaves.some((l) => riskOf(l) === "overdue"));
   const unitsAtRisk = units.filter((u) => !unitsOverdue.includes(u) && u.leaves.some((l) => riskOf(l) === "at-risk"));
-  const onTrack = unitsInProgress.length ? Math.round((100 * (unitsInProgress.length - unitsOverdue.length - unitsAtRisk.length)) / unitsInProgress.length) : 100;
+  const onTrack = unitsInProgress.length
+    ? Math.round((100 * (unitsInProgress.length - unitsOverdue.length - unitsAtRisk.length)) / unitsInProgress.length)
+    : 100;
 
   const gearAccess = hasGearAccess(actor);
   const storageAccess = hasStorageAccess(actor);
-  const gearOut = gearAccess ? listManifests(actor).filter((m) => m.status === "checked-out").sort((a, b) => (a.expectedReturn ?? "").localeCompare(b.expectedReturn ?? "")) : [];
+  const gearOut = gearAccess
+    ? listManifests(actor)
+        .filter((m) => m.status === "checked-out")
+        .sort((a, b) => (a.expectedReturn ?? "").localeCompare(b.expectedReturn ?? ""))
+    : [];
   const gearLate = gearOut.filter(isOverdue);
   const gearUnitsOut = gearOut.reduce((n, m) => n + m.lines.reduce((a, l) => a + l.quantity, 0), 0);
   const fleet = storageAccess ? fleetTotals() : { used: 0, capacity: 0 };
@@ -130,23 +214,125 @@ export function Dashboard() {
   return (
     <div className="page">
       <div className="hero">
-        <h1>{greeting()}, {me.name.split(" ")[0]}</h1>
+        <h1>
+          {greeting()}, {me.name.split(" ")[0]}
+        </h1>
         <HeroSearch />
         <div className="dash-actions">
-          <span className="chip" style={{ cursor: "default" }}><IconCalendar /> {new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}</span>
-          {can(actor, "pipeline.manage") && <button className="chip" onClick={() => setCreating(true)}><IconPlus /> New project</button>}
+          <span className="chip" style={{ cursor: "default" }}>
+            <IconCalendar /> {new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}
+          </span>
+          {can(actor, "pipeline.manage") && (
+            <button className="chip" onClick={() => setCreating(true)}>
+              <IconPlus /> New project
+            </button>
+          )}
         </div>
       </div>
 
       <div className="stat-row">
-        <StatCard icon={<IconFilm />} title="Production" big={unitsInProgress.length} unit=" in production" share={onTrack} foot={unitsOverdue.length || unitsAtRisk.length ? `${unitsOverdue.length} overdue, ${unitsAtRisk.length} at risk, ${activeProjects.length} active project${activeProjects.length === 1 ? "" : "s"}` : `${onTrack}% on track, ${activeProjects.length} active project${activeProjects.length === 1 ? "" : "s"}`} bad={unitsOverdue.length > 0} onClick={() => go({ n: "pipeline" })} />
-        {gearAccess && <StatCard icon={<IconCam />} title="Gear" big={gearUnitsOut} unit={gearUnitsOut === 1 ? " unit out" : " units out"} foot={gearLate.length ? `${gearLate.length} checkout list${gearLate.length === 1 ? "" : "s"} overdue` : gearOut.length ? "All on time" : "Everything is in the studio"} bad={gearLate.length > 0} onClick={() => go({ n: "equipment", tab: "checkouts" })} />}
-        {storageAccess && <StatCard icon={<IconDrive />} title="Storage" big={(fleet.used / 1000).toFixed(1)} unit=" TB used" share={fleet.capacity ? (100 * fleet.used) / fleet.capacity : 0} foot={nearlyFull.length ? `${nearlyFull.length} drive${nearlyFull.length === 1 ? "" : "s"} nearly full` : fc && fc.slopeGBPerDay > 0 ? `${fmtSize(fc.slopeGBPerDay * 7)} added per week` : `${fmtSize(fleet.capacity - fleet.used)} free`} bad={nearlyFull.length > 0} onClick={() => go({ n: "storage" })} />}
-        {crewAccess && (can(actor, "workload.viewAll")
-          ? <StatCard icon={<IconUsers />} title="Crew capacity" big={stretched.length} unit={stretched.length === 1 ? " person over capacity" : " people over capacity"} foot={stretched.length ? `${stretched.slice(0, 3).map((r) => r.person.name.split(" ")[0]).join(", ")}${stretched.length > 3 ? " and more" : ""}, in the next 7 days` : "Everyone has room this week"} bad={stretched.length > 0} onClick={() => go({ n: "crew", tab: "workload" })} />
-          : <StatCard icon={<IconUsers />} title="Your week" big={week[0]?.workload.overDays.length ?? 0} unit=" days over capacity" foot={week[0] && week[0].workload.overDays.length ? `Over capacity on ${week[0].workload.overDays.slice(0, 3).map(fmtShort).join(", ")}` : "You have room this week"} bad={!!week[0]?.workload.overDays.length} onClick={() => go({ n: "crew", tab: "workload" })} />)}
-        {!gearAccess && <StatCard icon={<IconPulse />} title="Waiting on you" big={blocked.length} unit={blocked.length === 1 ? " item" : " items"} foot={blocked[0] ? `Next: ${displayTitle(blocked[0])}` : "Nothing needs you"} onClick={() => go({ n: "pipeline" })} />}
-        {!gearAccess && <StatCard icon={<IconSheet />} title="Shoots" big={soon.length} unit={soon.length === 1 ? " this week" : " this week"} foot={soon[0] ? `Next: ${soon[0].title}` : "None scheduled"} onClick={() => go({ n: "callsheets" })} />}
+        <StatCard
+          icon={<IconFilm />}
+          title="Production"
+          big={unitsInProgress.length}
+          unit=" in production"
+          share={onTrack}
+          foot={
+            unitsOverdue.length || unitsAtRisk.length
+              ? `${unitsOverdue.length} overdue, ${unitsAtRisk.length} at risk, ${activeProjects.length} active project${activeProjects.length === 1 ? "" : "s"}`
+              : `${onTrack}% on track, ${activeProjects.length} active project${activeProjects.length === 1 ? "" : "s"}`
+          }
+          bad={unitsOverdue.length > 0}
+          onClick={() => go({ n: "pipeline" })}
+        />
+        {gearAccess && (
+          <StatCard
+            icon={<IconCam />}
+            title="Gear"
+            big={gearUnitsOut}
+            unit={gearUnitsOut === 1 ? " unit out" : " units out"}
+            foot={
+              gearLate.length
+                ? `${gearLate.length} checkout list${gearLate.length === 1 ? "" : "s"} overdue`
+                : gearOut.length
+                  ? "All on time"
+                  : "Everything is in the studio"
+            }
+            bad={gearLate.length > 0}
+            onClick={() => go({ n: "equipment", tab: "checkouts" })}
+          />
+        )}
+        {storageAccess && (
+          <StatCard
+            icon={<IconDrive />}
+            title="Storage"
+            big={(fleet.used / 1000).toFixed(1)}
+            unit=" TB used"
+            share={fleet.capacity ? (100 * fleet.used) / fleet.capacity : 0}
+            foot={
+              nearlyFull.length
+                ? `${nearlyFull.length} drive${nearlyFull.length === 1 ? "" : "s"} nearly full`
+                : fc && fc.slopeGBPerDay > 0
+                  ? `${fmtSize(fc.slopeGBPerDay * 7)} added per week`
+                  : `${fmtSize(fleet.capacity - fleet.used)} free`
+            }
+            bad={nearlyFull.length > 0}
+            onClick={() => go({ n: "storage" })}
+          />
+        )}
+        {crewAccess &&
+          (can(actor, "workload.viewAll") ? (
+            <StatCard
+              icon={<IconUsers />}
+              title="Crew capacity"
+              big={stretched.length}
+              unit={stretched.length === 1 ? " person over capacity" : " people over capacity"}
+              foot={
+                stretched.length
+                  ? `${stretched
+                      .slice(0, 3)
+                      .map((r) => r.person.name.split(" ")[0])
+                      .join(", ")}${stretched.length > 3 ? " and more" : ""}, in the next 7 days`
+                  : "Everyone has room this week"
+              }
+              bad={stretched.length > 0}
+              onClick={() => go({ n: "crew", tab: "workload" })}
+            />
+          ) : (
+            <StatCard
+              icon={<IconUsers />}
+              title="Your week"
+              big={week[0]?.workload.overDays.length ?? 0}
+              unit=" days over capacity"
+              foot={
+                week[0] && week[0].workload.overDays.length
+                  ? `Over capacity on ${week[0].workload.overDays.slice(0, 3).map(fmtShort).join(", ")}`
+                  : "You have room this week"
+              }
+              bad={!!week[0]?.workload.overDays.length}
+              onClick={() => go({ n: "crew", tab: "workload" })}
+            />
+          ))}
+        {!gearAccess && (
+          <StatCard
+            icon={<IconPulse />}
+            title="Waiting on you"
+            big={blocked.length}
+            unit={blocked.length === 1 ? " item" : " items"}
+            foot={blocked[0] ? `Next: ${displayTitle(blocked[0])}` : "Nothing needs you"}
+            onClick={() => go({ n: "pipeline" })}
+          />
+        )}
+        {!gearAccess && (
+          <StatCard
+            icon={<IconSheet />}
+            title="Shoots"
+            big={soon.length}
+            unit={soon.length === 1 ? " this week" : " this week"}
+            foot={soon[0] ? `Next: ${soon[0].title}` : "None scheduled"}
+            onClick={() => go({ n: "callsheets" })}
+          />
+        )}
       </div>
 
       <section className="glass panel" aria-label="Nearest deadlines">
@@ -158,18 +344,40 @@ export function Dashboard() {
             {horizon.map((r) => {
               const late = riskOf(r) === "overdue";
               const stageDue = currentStageDeadline(r);
-              const lateDays = late ? Math.max(daysUntil(r.deadline!) < 0 ? -daysUntil(r.deadline!) : 0, stageDue && daysUntil(stageDue) < 0 ? -daysUntil(stageDue) : 0) : 0;
+              const lateDays = late
+                ? Math.max(
+                    daysUntil(r.deadline!) < 0 ? -daysUntil(r.deadline!) : 0,
+                    stageDue && daysUntil(stageDue) < 0 ? -daysUntil(stageDue) : 0,
+                  )
+                : 0;
               return (
-                <div key={r.contentId} className="hz-row" onClick={() => go({ n: "record", id: r.contentId })} role="link" tabIndex={0} onKeyDown={(e) => e.key === "Enter" && go({ n: "record", id: r.contentId })}>
+                <div
+                  key={r.contentId}
+                  className="hz-row"
+                  onClick={() => go({ n: "record", id: r.contentId })}
+                  role="link"
+                  tabIndex={0}
+                  onKeyDown={(e) => e.key === "Enter" && go({ n: "record", id: r.contentId })}
+                >
                   <div>
                     <div className="hz-title">{displayTitle(r)}</div>
                     <div className="cid">{r.contentId}</div>
                   </div>
                   <div className="hz-track" title={late ? "Overdue" : `Due ${fmtShort(r.deadline)}`}>
-                    <div className={`hz-fill ${late ? "late" : ""}`} style={{ width: `${late ? 100 : elapsed(r.startDate, r.deadline!) * 100}%` }} />
+                    <div
+                      className={`hz-fill ${late ? "late" : ""}`}
+                      style={{ width: `${late ? 100 : elapsed(r.startDate, r.deadline!) * 100}%` }}
+                    />
                   </div>
                   <div className="hz-when">
-                    {late ? <span className="badge bad">{lateDays > 0 ? `${lateDays} days late` : "Overdue"}</span> : <span>{fmtShort(r.deadline)}<span className="muted"> ({relativeDays(r.deadline!)})</span></span>}
+                    {late ? (
+                      <span className="badge bad">{lateDays > 0 ? `${lateDays} days late` : "Overdue"}</span>
+                    ) : (
+                      <span>
+                        {fmtShort(r.deadline)}
+                        <span className="muted"> ({relativeDays(r.deadline!)})</span>
+                      </span>
+                    )}
                   </div>
                 </div>
               );
@@ -192,9 +400,13 @@ export function Dashboard() {
                   <div key={r.contentId} className="list-item" onClick={() => go({ n: "record", id: r.contentId })}>
                     <div className="grow">
                       <div className="title">{displayTitle(r)}</div>
-                      <div className="muted" style={{ fontSize: ".84rem" }}>{r.pipelineStage}: {out}</div>
+                      <div className="muted" style={{ fontSize: ".84rem" }}>
+                        {r.pipelineStage}: {out}
+                      </div>
                     </div>
-                    {due && <span className={`badge ${daysUntil(due) < 0 ? "bad" : daysUntil(due) <= 1 ? "warn" : ""}`}>{relativeDays(due)}</span>}
+                    {due && (
+                      <span className={`badge ${daysUntil(due) < 0 ? "bad" : daysUntil(due) <= 1 ? "warn" : ""}`}>{relativeDays(due)}</span>
+                    )}
                   </div>
                 );
               })}
@@ -212,7 +424,9 @@ export function Dashboard() {
                 <div key={r.contentId} className="list-item" onClick={() => go({ n: "record", id: r.contentId })}>
                   <div className="grow">
                     <div className="title">{displayTitle(r)}</div>
-                    <div className="muted" style={{ fontSize: ".84rem" }}>{r.pipelineStage}, {nameOf(r.assigneePersonId)}</div>
+                    <div className="muted" style={{ fontSize: ".84rem" }}>
+                      {r.pipelineStage}, {nameOf(r.assigneePersonId)}
+                    </div>
                   </div>
                   <RiskBadge record={r} />
                 </div>
@@ -228,7 +442,9 @@ export function Dashboard() {
             <section className="glass panel" aria-label="Crew load">
               <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
                 <h2 style={{ flex: 1 }}>{can(actor, "workload.viewAll") ? "Crew load this week" : "Your week"}</h2>
-                <button className="btn small" onClick={() => go({ n: "crew", tab: "workload" })}>Full workload</button>
+                <button className="btn small" onClick={() => go({ n: "crew", tab: "workload" })}>
+                  Full workload
+                </button>
               </div>
               <WorkloadGrid rows={week} compact />
             </section>
@@ -236,12 +452,23 @@ export function Dashboard() {
           {gearAccess && (
             <section className="glass panel" aria-label="Gear out">
               <h2>Gear out</h2>
-              {gearOut.length === 0 ? <Empty>All gear is in the studio.</Empty> : (
+              {gearOut.length === 0 ? (
+                <Empty>All gear is in the studio.</Empty>
+              ) : (
                 <div className="list">
                   {gearOut.map((m) => (
                     <div key={m.id} className="list-item" onClick={() => go({ n: "manifest", id: m.id })}>
-                      <div className="grow"><div className="title">{projectLabel(actor, m.contentId)}</div><div className="muted" style={{ fontSize: ".84rem" }}>{nameOf(m.responsiblePersonId)}, {manifestSummary(m)}</div></div>
-                      {isOverdue(m) ? <span className="badge bad">Due {relativeDays(m.expectedReturn!)}</span> : <span className="badge">Back {relativeDays(m.expectedReturn ?? m.date)}</span>}
+                      <div className="grow">
+                        <div className="title">{projectLabel(actor, m.contentId)}</div>
+                        <div className="muted" style={{ fontSize: ".84rem" }}>
+                          {nameOf(m.responsiblePersonId)}, {manifestSummary(m)}
+                        </div>
+                      </div>
+                      {isOverdue(m) ? (
+                        <span className="badge bad">Due {relativeDays(m.expectedReturn!)}</span>
+                      ) : (
+                        <span className="badge">Back {relativeDays(m.expectedReturn ?? m.date)}</span>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -257,7 +484,12 @@ export function Dashboard() {
           <div className="stack">
             {nearlyFull.map((u) => (
               <div key={u.drive.id} style={{ cursor: "pointer" }} onClick={() => go({ n: "drive", id: u.drive.id })}>
-                <div style={{ display: "flex", gap: 8, marginBottom: 4 }}><span style={{ flex: 1 }}>{u.drive.name}</span><span className="muted">{u.pct.toFixed(0)}%, {fmtSize(u.freeGB)} free</span></div>
+                <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
+                  <span style={{ flex: 1 }}>{u.drive.name}</span>
+                  <span className="muted">
+                    {u.pct.toFixed(0)}%, {fmtSize(u.freeGB)} free
+                  </span>
+                </div>
                 <StorageBar usage={u} legend={false} />
               </div>
             ))}
@@ -275,7 +507,9 @@ export function Dashboard() {
               <div key={cs.id} className="list-item" onClick={() => go({ n: "callsheet", id: cs.id })}>
                 <div className="grow">
                   <div className="title">{cs.title}</div>
-                  <div className="muted" style={{ fontSize: ".84rem" }}>{cs.location || "Location not set"}, call time {cs.callTime}</div>
+                  <div className="muted" style={{ fontSize: ".84rem" }}>
+                    {cs.location || "Location not set"}, call time {cs.callTime}
+                  </div>
                 </div>
                 <span className="badge accent">{relativeDays(cs.date)}</span>
                 <span className={`badge ${cs.status === "final" ? "ok" : ""}`}>{cs.status === "final" ? "Final" : "Draft"}</span>
@@ -284,7 +518,15 @@ export function Dashboard() {
           </div>
         )}
       </section>
-      {creating && <NewRecordModal onClose={() => setCreating(false)} onCreated={(r) => { setCreating(false); go({ n: "record", id: r.contentId }); }} />}
+      {creating && (
+        <NewRecordModal
+          onClose={() => setCreating(false)}
+          onCreated={(r) => {
+            setCreating(false);
+            go({ n: "record", id: r.contentId });
+          }}
+        />
+      )}
     </div>
   );
 }

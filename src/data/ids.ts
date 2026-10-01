@@ -15,7 +15,9 @@ import { categoryOf } from "../config/categories";
 
 export class IdMismatch extends ConflictError {
   constructor() {
-    super("Someone else added something at the same moment, so this change was not saved. Your screen now shows the latest. Please do it again.");
+    super(
+      "Someone else added something at the same moment, so this change was not saved. Your screen now shows the latest. Please do it again.",
+    );
     this.name = "IdMismatch";
   }
 }
@@ -107,7 +109,8 @@ export const childToken = (parent: ContentRecord): string => {
 };
 
 export const topLevelNumber = (contentId: string): number => parseInt(contentId.split("-")[2], 10);
-export const childNumber = (contentId: string, parent: ContentRecord): number => parseInt(contentId.slice(parent.contentId.length + 1 + childToken(parent).length), 10);
+export const childNumber = (contentId: string, parent: ContentRecord): number =>
+  parseInt(contentId.slice(parent.contentId.length + 1 + childToken(parent).length), 10);
 
 /** Raises each project counter to at least the highest number already used, archived projects included. */
 export function syncRecordCounters(db: Database): void {

@@ -8,7 +8,13 @@ import { STORED_FILE } from "./utils";
 // exposes: only the actions listed in server/schemas.ts can be called from a browser.
 
 /** Adds a line to an item's history. */
-export function hist(by: Actor, equipmentId: string, kind: EquipmentHistory["kind"], detail: string, extra: { contentId?: string; manifestId?: string } = {}): void {
+export function hist(
+  by: Actor,
+  equipmentId: string,
+  kind: EquipmentHistory["kind"],
+  detail: string,
+  extra: { contentId?: string; manifestId?: string } = {},
+): void {
   getDb().equipmentHistory.push({
     id: logId("H"),
     equipmentId,

@@ -20,7 +20,9 @@ if (!uri) {
     const { MongoMemoryReplSet } = await import("mongodb-memory-server-core");
     const rs = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: "wiredTiger" } });
     uri = rs.getUri();
-    stopServer = async () => { await rs.stop(); };
+    stopServer = async () => {
+      await rs.stop();
+    };
   } catch (e) {
     const why = (e as Error).message.split("\n")[0];
     if (process.env.CI) {
@@ -38,7 +40,14 @@ const used: string[] = [];
 
 let passed = 0;
 const t = async (name: string, fn: () => Promise<void>) => {
-  try { await fn(); passed++; console.log("ok  ", name); } catch (e) { console.error("FAIL", name, "\n    ", (e as Error).stack?.split("\n").slice(0, 4).join("\n     ")); process.exitCode = 1; }
+  try {
+    await fn();
+    passed++;
+    console.log("ok  ", name);
+  } catch (e) {
+    console.error("FAIL", name, "\n    ", (e as Error).stack?.split("\n").slice(0, 4).join("\n     "));
+    process.exitCode = 1;
+  }
 };
 
 /** A store on a fresh database. With `legacy`, the database first holds data in the earlier layout. */
@@ -62,7 +71,9 @@ try {
     const name = used.at(-1)!;
     const old = await client.db(name).collection("state").find({}).toArray();
     assert.deepEqual(old.map((d) => d._id).sort(), ["meta", "records"]);
-    assert.deepEqual((old.find((d) => d._id === "records") as unknown as { data: unknown }).data, [{ contentId: "DOF-SER-001", title: "A" }]);
+    assert.deepEqual((old.find((d) => d._id === "records") as unknown as { data: unknown }).data, [
+      { contentId: "DOF-SER-001", title: "A" },
+    ]);
   });
 
   await t("mongo: several servers starting at once upgrade the data once", async () => {
@@ -73,7 +84,8 @@ try {
     const results = await Promise.allSettled([first, ...others].map((s) => s.state.head()));
     const ok = results.filter((r) => r.status === "fulfilled" && r.value);
     assert.ok(ok.length >= 1, "at least one server finished the upgrade");
-    for (const r of results) if (r.status === "rejected") assert.match((r.reason as Error).message, /new layout/, "the others are asked to try again shortly");
+    for (const r of results)
+      if (r.status === "rejected") assert.match((r.reason as Error).message, /new layout/, "the others are asked to try again shortly");
     const again = await Promise.all([first, ...others].map((s) => s.state.head()));
     assert.ok(again.every((h) => h?.revision === 9));
     assert.equal(await client.db(name).collection("hub_items").countDocuments({ k: "records" }), 40, "no element twice");
@@ -82,13 +94,26 @@ try {
   await t("mongo: an upgrade left half done by a server that stopped is started again after a while", async () => {
     const s = await make({ data: { records: [{ contentId: "DOF-SER-001" }] }, revision: 3, schemaVersion: 13 });
     const name = used.at(-1)!;
-    await client.db(name).collection("hub_meta").insertOne({ _id: "upgrading", at: new Date(Date.now() - 10 * 60 * 1000) } as never);
+    await client
+      .db(name)
+      .collection("hub_meta")
+      .insertOne({ _id: "upgrading", at: new Date(Date.now() - 10 * 60 * 1000) } as never);
     const head = await s.state.head();
     assert.equal(head?.revision, 3);
-    assert.equal(await client.db(name).collection("hub_meta").countDocuments({ _id: "upgrading" } as never), 0);
+    assert.equal(
+      await client
+        .db(name)
+        .collection("hub_meta")
+        .countDocuments({ _id: "upgrading" } as never),
+      0,
+    );
   });
 } finally {
-  for (const name of used) await client.db(name).dropDatabase().catch(() => undefined);
+  for (const name of used)
+    await client
+      .db(name)
+      .dropDatabase()
+      .catch(() => undefined);
   await client.close();
   await stopServer();
 }

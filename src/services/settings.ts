@@ -11,7 +11,13 @@ import { pickKeys } from "./utils";
  * The system settings this form changes. Permissions and the workspace look are deliberately not here: they
  * belong to the Head of Production alone, through setRoleGrant / setPersonGrant and updateWorkspaceAppearance.
  */
-export const SETTINGS_EDITABLE = ["stageReminderHours", "storageWarningThreshold", "checkoutReturnDays", "workDays", "effortOverrides"] as const;
+export const SETTINGS_EDITABLE = [
+  "stageReminderHours",
+  "storageWarningThreshold",
+  "checkoutReturnDays",
+  "workDays",
+  "effortOverrides",
+] as const;
 
 export function updateSettings(actor: Actor, input: Partial<Pick<Settings, (typeof SETTINGS_EDITABLE)[number]>>): void {
   requireCan(actor, "backend.settings", "change system settings");
@@ -19,19 +25,27 @@ export function updateSettings(actor: Actor, input: Partial<Pick<Settings, (type
   if (patch.stageReminderHours !== undefined && !(patch.stageReminderHours >= 1 && patch.stageReminderHours <= 240)) {
     throw new RuleError("Reminder window must be between 1 and 240 hours.");
   }
-  if (patch.checkoutReturnDays !== undefined && !(Number.isInteger(patch.checkoutReturnDays) && patch.checkoutReturnDays >= 1 && patch.checkoutReturnDays <= 60)) {
+  if (
+    patch.checkoutReturnDays !== undefined &&
+    !(Number.isInteger(patch.checkoutReturnDays) && patch.checkoutReturnDays >= 1 && patch.checkoutReturnDays <= 60)
+  ) {
     throw new RuleError("Return window must be a whole number of days, 1 to 60.");
   }
   if (patch.storageWarningThreshold !== undefined && !(patch.storageWarningThreshold >= 50 && patch.storageWarningThreshold <= 99)) {
     throw new RuleError("Flag drives as full between 50% and 99%.");
   }
-  if (patch.workDays !== undefined && !(Array.isArray(patch.workDays) && patch.workDays.length > 0 && patch.workDays.every((d) => Number.isInteger(d) && d >= 0 && d <= 6))) {
+  if (
+    patch.workDays !== undefined &&
+    !(Array.isArray(patch.workDays) && patch.workDays.length > 0 && patch.workDays.every((d) => Number.isInteger(d) && d >= 0 && d <= 6))
+  ) {
     throw new RuleError("Choose at least one working day.");
   }
   if (patch.effortOverrides !== undefined) {
-    if (!patch.effortOverrides || typeof patch.effortOverrides !== "object" || Array.isArray(patch.effortOverrides)) throw new RuleError("Those stage estimates are not valid.");
+    if (!patch.effortOverrides || typeof patch.effortOverrides !== "object" || Array.isArray(patch.effortOverrides))
+      throw new RuleError("Those stage estimates are not valid.");
     for (const [key, v] of Object.entries(patch.effortOverrides)) {
-      if (!Number.isFinite(v) || v < 0 || v > 30 || Math.round(v * 4) !== v * 4) throw new RuleError(`${key.split(":")[1] ?? key}: use a number of days from 0 to 30, in steps of a quarter day.`);
+      if (!Number.isFinite(v) || v < 0 || v > 30 || Math.round(v * 4) !== v * 4)
+        throw new RuleError(`${key.split(":")[1] ?? key}: use a number of days from 0 to 30, in steps of a quarter day.`);
     }
   }
   Object.assign(getDb().settings, patch);
@@ -47,8 +61,10 @@ export function updateSettings(actor: Actor, input: Partial<Pick<Settings, (type
 export function updateWorkspaceAppearance(actor: Actor, input: Partial<NonNullable<Settings["appearance"]>>): void {
   if (!isHop(actor)) throw new RuleError("Only the Head of Production can change the workspace's accent colour and font.");
   const patch = pickKeys(input, ["accent", "fontPairing"] as const);
-  if (patch.accent !== undefined && !ACCENTS.some((a) => a.key === patch.accent)) throw new RuleError("Choose one of the accent colours offered.");
-  if (patch.fontPairing !== undefined && !FONT_PAIRINGS.some((f) => f.key === patch.fontPairing)) throw new RuleError("Choose one of the font pairings offered.");
+  if (patch.accent !== undefined && !ACCENTS.some((a) => a.key === patch.accent))
+    throw new RuleError("Choose one of the accent colours offered.");
+  if (patch.fontPairing !== undefined && !FONT_PAIRINGS.some((f) => f.key === patch.fontPairing))
+    throw new RuleError("Choose one of the font pairings offered.");
   const db = getDb();
   db.settings.appearance = { ...(db.settings.appearance ?? { accent: "terracotta", fontPairing: "modern" }), ...patch };
   logAudit(actor, "settings", "settings", "appearance", Object.keys(patch).join(", "));

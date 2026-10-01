@@ -4,7 +4,12 @@ import { promisify } from "node:util";
 // Passwords are never stored. Only a slow, salted hash is kept, made with scrypt (built into Node).
 // The settings are recorded inside each hash, so they can be raised later without locking anyone out.
 
-const scrypt = promisify(scryptCb) as (password: string, salt: Buffer, keylen: number, options: { N: number; r: number; p: number; maxmem: number }) => Promise<Buffer>;
+const scrypt = promisify(scryptCb) as (
+  password: string,
+  salt: Buffer,
+  keylen: number,
+  options: { N: number; r: number; p: number; maxmem: number },
+) => Promise<Buffer>;
 
 const cost = (): number => Number(process.env.DOF_SCRYPT_N ?? 65536); // 64 MB and roughly a fifth of a second
 const R = 8;
@@ -22,7 +27,12 @@ export async function verifyPassword(password: string, stored: string): Promise<
   const [scheme, n, r, p, salt, hash] = stored.split("$");
   if (scheme !== "scrypt" || !hash) return false;
   const expected = Buffer.from(hash, "base64");
-  const actual = await scrypt(password.normalize("NFKC"), Buffer.from(salt, "base64"), expected.length, { N: Number(n), r: Number(r), p: Number(p), maxmem: MAXMEM });
+  const actual = await scrypt(password.normalize("NFKC"), Buffer.from(salt, "base64"), expected.length, {
+    N: Number(n),
+    r: Number(r),
+    p: Number(p),
+    maxmem: MAXMEM,
+  });
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 

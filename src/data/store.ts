@@ -2,7 +2,20 @@ import { useSyncExternalStore } from "react";
 import type { Database } from "../types";
 import { buildSeed } from "./seed";
 import { buildGearSeed } from "./seedGear";
-import { upgradeToV10, upgradeToV11, upgradeToV12, upgradeToV13, upgradeToV14, upgradeToV3, upgradeToV4, upgradeToV5, upgradeToV6, upgradeToV7, upgradeToV8, upgradeToV9 } from "./migrate";
+import {
+  upgradeToV10,
+  upgradeToV11,
+  upgradeToV12,
+  upgradeToV13,
+  upgradeToV14,
+  upgradeToV3,
+  upgradeToV4,
+  upgradeToV5,
+  upgradeToV6,
+  upgradeToV7,
+  upgradeToV8,
+  upgradeToV9,
+} from "./migrate";
 
 // In-memory store with localStorage persistence.
 // This is the ONLY file that knows where data lives. When the real database
@@ -41,21 +54,58 @@ function migrate(old: Database): Database {
 /** Brings saved data of any older version up to the current one. Returns null if it is not recognisable. */
 export function upgradeDb(parsed: Database): Database | null {
   switch (parsed.schemaVersion) {
-    case SCHEMA_VERSION: return parsed;
-    case 1: return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(migrate(parsed)))))))))))));
-    case 2: return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(parsed))))))))))));
-    case 3: return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(parsed)))))))))));
-    case 4: return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(parsed))))))))));
-    case 5: return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(parsed)))))))));
-    case 6: return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(parsed))))))));
-    case 7: return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(parsed)))))));
-    case 8: return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(parsed))))));
-    case 9: return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(parsed)))));
-    case 10: return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(parsed))));
-    case 11: return upgradeToV14(upgradeToV13(upgradeToV12(parsed)));
-    case 12: return upgradeToV14(upgradeToV13(parsed));
-    case 13: return upgradeToV14(parsed);
-    default: return null;
+    case SCHEMA_VERSION:
+      return parsed;
+    case 1:
+      return upgradeToV14(
+        upgradeToV13(
+          upgradeToV12(
+            upgradeToV11(
+              upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(migrate(parsed))))))))),
+            ),
+          ),
+        ),
+      );
+    case 2:
+      return upgradeToV14(
+        upgradeToV13(
+          upgradeToV12(
+            upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(parsed))))))))),
+          ),
+        ),
+      );
+    case 3:
+      return upgradeToV14(
+        upgradeToV13(
+          upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(parsed))))))))),
+        ),
+      );
+    case 4:
+      return upgradeToV14(
+        upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(parsed))))))))),
+      );
+    case 5:
+      return upgradeToV14(
+        upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(parsed)))))))),
+      );
+    case 6:
+      return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(parsed))))))));
+    case 7:
+      return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(parsed)))))));
+    case 8:
+      return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(parsed))))));
+    case 9:
+      return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(parsed)))));
+    case 10:
+      return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(parsed))));
+    case 11:
+      return upgradeToV14(upgradeToV13(upgradeToV12(parsed)));
+    case 12:
+      return upgradeToV14(upgradeToV13(parsed));
+    case 13:
+      return upgradeToV14(parsed);
+    default:
+      return null;
   }
 }
 
@@ -86,7 +136,9 @@ export const didSaveFail = (): boolean => saveFailed;
 
 let persist = true;
 /** Signed-in sessions on the server keep data off this device. Only the local demo saves here. */
-export const setPersist = (on: boolean): void => { persist = on; };
+export const setPersist = (on: boolean): void => {
+  persist = on;
+};
 
 /** Counts every change. The action recorder uses it to tell a change from a read. */
 export const getTick = (): number => tick;
@@ -128,6 +180,10 @@ const subscribe = (l: () => void) => {
 
 // Components call this to re-render whenever any data changes.
 export function useDb(): Database {
-  useSyncExternalStore(subscribe, () => tick, () => tick);
+  useSyncExternalStore(
+    subscribe,
+    () => tick,
+    () => tick,
+  );
   return db;
 }

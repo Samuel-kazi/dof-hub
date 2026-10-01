@@ -7,8 +7,19 @@ import { setRpcSink, type Call } from "./rpc";
 // data in the browser. On the real site it signs in to the server, which holds the data, decides who
 // may see and do what, and answers every change. This file is the second way.
 
-export interface SessionUser { personId: string; role: RoleCode; name: string; username: string; mustChange: boolean }
-export interface SessionInfo { needsSetup: boolean; user: SessionUser | null; google: { available: boolean }; unavailable?: string }
+export interface SessionUser {
+  personId: string;
+  role: RoleCode;
+  name: string;
+  username: string;
+  mustChange: boolean;
+}
+export interface SessionInfo {
+  needsSetup: boolean;
+  user: SessionUser | null;
+  google: { available: boolean };
+  unavailable?: string;
+}
 
 let remote = false;
 export const isRemote = (): boolean => remote;
@@ -17,23 +28,42 @@ export const isRemote = (): boolean => remote;
 export const syncEvents = { onError: (_message: string): void => {}, onSignedOut: (): void => {} };
 
 export class ApiError extends RuleError {
-  constructor(message: string, public code?: string, public status?: number) { super(message); }
+  constructor(
+    message: string,
+    public code?: string,
+    public status?: number,
+  ) {
+    super(message);
+  }
 }
 
 async function call<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T & { ok: true }> {
   let res: Response;
   try {
-    res = await fetch(path, { method, credentials: "same-origin", headers: body !== undefined ? { "Content-Type": "application/json" } : undefined, body: body !== undefined ? JSON.stringify(body) : undefined });
+    res = await fetch(path, {
+      method,
+      credentials: "same-origin",
+      headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
   } catch {
     throw new ApiError("The server could not be reached. Check your connection and try again.", "offline");
   }
   const json = (await res.json().catch(() => null)) as ({ ok: boolean; error?: string; code?: string } & Record<string, unknown>) | null;
-  if (!json || json.ok !== true) throw new ApiError(json?.error ?? (res.status === 404 ? "The server could not find that address (404). If you have just updated the site, wait a minute, refresh the page and try again." : `The server sent an answer the app could not read (status ${res.status}). Try again. If it keeps happening, look at the Vercel logs for this deployment.`), json?.code, res.status);
+  if (!json || json.ok !== true)
+    throw new ApiError(
+      json?.error ??
+        (res.status === 404
+          ? "The server could not find that address (404). If you have just updated the site, wait a minute, refresh the page and try again."
+          : `The server sent an answer the app could not read (status ${res.status}). Try again. If it keeps happening, look at the Vercel logs for this deployment.`),
+      json?.code,
+      res.status,
+    );
   return json as T & { ok: true };
 }
 
 export const api = {
-  get: <T,>(path: string) => call<T>("GET", path),
+  get: <T>(path: string) => call<T>("GET", path),
   post: <T = Record<string, never>>(path: string, body: unknown = {}) => call<T>("POST", path, body),
 };
 
@@ -68,11 +98,18 @@ export async function probe(allowDemo = demoAllowed()): Promise<SessionInfo | nu
   } catch {
     json = null;
   }
-  if (json?.remote !== true) return noServer(allowDemo, `The server did not answer properly (status ${res.status}). Wait a minute, then try again.`);
+  if (json?.remote !== true)
+    return noServer(allowDemo, `The server did not answer properly (status ${res.status}). Wait a minute, then try again.`);
   remote = true;
   // There is a server, but it could not do its job (for example, it cannot reach the database).
   // Never fall back to the demo here: that would show data that is not the real data.
-  if (json.ok === false) return { needsSetup: false, user: null, google: { available: false }, unavailable: json.error ?? "The server is not answering properly. Try again in a minute." };
+  if (json.ok === false)
+    return {
+      needsSetup: false,
+      user: null,
+      google: { available: false },
+      unavailable: json.error ?? "The server is not answering properly. Try again in a minute.",
+    };
   return json;
 }
 
@@ -109,9 +146,16 @@ async function pump(): Promise<void> {
         // The screen goes back to what the server has, and the person is told how much did not save.
         const later = queue.length - 1;
         queue = [];
-        if (e instanceof ApiError && e.code === "signed-out") { syncEvents.onSignedOut(); return; }
+        if (e instanceof ApiError && e.code === "signed-out") {
+          syncEvents.onSignedOut();
+          return;
+        }
         const why = e instanceof Error ? e.message : "That change could not be saved.";
-        syncEvents.onError(later > 0 ? `${why} The ${later === 1 ? "change" : `${later} changes`} you made right after it ${later === 1 ? "was" : "were"} not saved either.` : why);
+        syncEvents.onError(
+          later > 0
+            ? `${why} The ${later === 1 ? "change" : `${later} changes`} you made right after it ${later === 1 ? "was" : "were"} not saved either.`
+            : why,
+        );
         await refresh(true);
         return;
       }
@@ -122,7 +166,9 @@ async function pump(): Promise<void> {
   }
 }
 
-const poll = (): void => { if (!running && !queue.length && document.visibilityState !== "hidden") void refresh(); };
+const poll = (): void => {
+  if (!running && !queue.length && document.visibilityState !== "hidden") void refresh();
+};
 
 /** Resolves once every change made on this screen has been sent to the server (or has failed and been undone). */
 export async function whenSynced(): Promise<void> {
@@ -148,7 +194,10 @@ export async function hydrate(): Promise<void> {
 
 export function startSync(): void {
   setPersist(false); // what the server sends stays off this computer's storage
-  setRpcSink((c) => { queue.push(c); void pump(); }, "That is handled by the server.");
+  setRpcSink((c) => {
+    queue.push(c);
+    void pump();
+  }, "That is handled by the server.");
   timer = setInterval(poll, 15000);
   document.addEventListener("visibilitychange", poll);
 }
@@ -163,7 +212,11 @@ export function stopSync(): void {
 export const actorOf = (u: SessionUser): Actor => ({ personId: u.personId, role: u.role });
 
 export async function signOut(): Promise<void> {
-  try { await api.post("/api/logout"); } catch { /* signed out on this device anyway */ }
+  try {
+    await api.post("/api/logout");
+  } catch {
+    /* signed out on this device anyway */
+  }
   stopSync();
   window.location.reload(); // clears everything the server sent from memory
 }

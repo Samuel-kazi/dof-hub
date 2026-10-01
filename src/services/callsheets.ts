@@ -22,7 +22,9 @@ export function episodesOnDate(projectId: string, date: string): ContentRecord[]
 export function callSheetForRecord(record: ContentRecord): CallSheet | undefined {
   const rootId = rootOf(record).contentId;
   return getDb().callSheets.find(
-    (cs) => cs.contentId === rootId && (cs.linkedEpisodeIds.includes(record.contentId) || (record.scheduledDate !== null && cs.date === record.scheduledDate)),
+    (cs) =>
+      cs.contentId === rootId &&
+      (cs.linkedEpisodeIds.includes(record.contentId) || (record.scheduledDate !== null && cs.date === record.scheduledDate)),
   );
 }
 
@@ -77,7 +79,11 @@ export function openOrCreateForRecord(actor: Actor, recordId: string): { sheet: 
 }
 
 /** Crew, location, format and gear carry over. Episode links are re-resolved for the new date. */
-export function duplicateCallSheet(actor: Actor, id: string, newDate: string): { sheet: CallSheet; gear: { copied: number; skipped: string[] } } {
+export function duplicateCallSheet(
+  actor: Actor,
+  id: string,
+  newDate: string,
+): { sheet: CallSheet; gear: { copied: number; skipped: string[] } } {
   const src = getCallSheet(id);
   if (!src) throw new RuleError("Call sheet not found.");
   const copy = createCallSheet(actor, {
@@ -132,7 +138,12 @@ function loadSheet(actor: Actor, id: string, expectedVersion?: number): CallShee
 /** The fields the call sheet form changes. Status, project, gear and run of show have their own actions and checks. */
 export const SHEET_EDITABLE = ["title", "location", "callTime", "crewPersonIds", "format", "notes", "date"] as const;
 
-export function updateCallSheet(actor: Actor, id: string, input: Partial<Pick<CallSheet, (typeof SHEET_EDITABLE)[number]>>, expectedVersion?: number): CallSheet {
+export function updateCallSheet(
+  actor: Actor,
+  id: string,
+  input: Partial<Pick<CallSheet, (typeof SHEET_EDITABLE)[number]>>,
+  expectedVersion?: number,
+): CallSheet {
   const patch = pickKeys(input, SHEET_EDITABLE);
   const cs = loadSheet(actor, id, expectedVersion);
   if (cs.status === "final") throw new RuleError("This call sheet is final. Reopen it to make changes.");
@@ -183,10 +194,13 @@ export function finalizeCallSheet(actor: Actor, id: string, expectedVersion?: nu
     throw new RuleError(`Crew double-booked on ${cs.date}: ${[...new Set(names)].join(", ")}. Resolve before finalizing.`);
   }
   const mm = getMismatches(cs);
-  if (mm.moved.length || mm.unlinked.length) throw new RuleError("Episode dates no longer match this call sheet. Resolve the mismatch before finalizing.");
-  if (runOfShowRequired(cs) && cs.runOfShow.length === 0) throw new RuleError("This is a large production, so the call sheet needs a run of show before it can be final.");
+  if (mm.moved.length || mm.unlinked.length)
+    throw new RuleError("Episode dates no longer match this call sheet. Resolve the mismatch before finalizing.");
+  if (runOfShowRequired(cs) && cs.runOfShow.length === 0)
+    throw new RuleError("This is a large production, so the call sheet needs a run of show before it can be final.");
   const gear = gearIssues(cs.id);
-  if (gear.length) throw new RuleError(`Gear needs attention before finalizing: ${gear[0]}${gear.length > 1 ? ` (and ${gear.length - 1} more)` : ""}`);
+  if (gear.length)
+    throw new RuleError(`Gear needs attention before finalizing: ${gear[0]}${gear.length > 1 ? ` (and ${gear.length - 1} more)` : ""}`);
   cs.status = "final";
   cs.version += 1;
   logAudit(actor, "finalize", "callsheet", id);
@@ -225,7 +239,9 @@ export function daysOf(cs: CallSheet): ContentRecord[] {
 /** The biggest level among the days on this sheet, or the show's own if no days are linked. */
 export function sheetLevel(cs: CallSheet): ProductionLevel | null {
   const order: ProductionLevel[] = ["small", "medium", "large"];
-  const levels = [...daysOf(cs).map((d) => d.productionLevel), getRecord(cs.contentId)?.productionLevel ?? null].filter((l): l is ProductionLevel => !!l);
+  const levels = [...daysOf(cs).map((d) => d.productionLevel), getRecord(cs.contentId)?.productionLevel ?? null].filter(
+    (l): l is ProductionLevel => !!l,
+  );
   return levels.sort((a, b) => order.indexOf(b) - order.indexOf(a))[0] ?? null;
 }
 
@@ -236,12 +252,19 @@ export function runOfShowRequired(cs: CallSheet): boolean {
 
 export const sortedRunOfShow = (cs: CallSheet): RunItem[] => [...cs.runOfShow].sort((a, b) => a.time.localeCompare(b.time));
 
-export interface RunItemInput { time: string; title: string; durationMin: number; ownerPersonId?: string | null; notes?: string }
+export interface RunItemInput {
+  time: string;
+  title: string;
+  durationMin: number;
+  ownerPersonId?: string | null;
+  notes?: string;
+}
 
 function checkRunItem(input: RunItemInput): void {
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(input.time)) throw new RuleError("Enter the start time as hours and minutes, for example 09:30.");
   if (!input.title.trim()) throw new RuleError("Give this segment a name.");
-  if (!Number.isInteger(input.durationMin) || input.durationMin < 0 || input.durationMin > 600) throw new RuleError("Length must be a whole number of minutes, up to 600.");
+  if (!Number.isInteger(input.durationMin) || input.durationMin < 0 || input.durationMin > 600)
+    throw new RuleError("Length must be a whole number of minutes, up to 600.");
   if (input.ownerPersonId) {
     const p = getPerson(input.ownerPersonId);
     if (!p || p.status !== "active") throw new RuleError("Choose an active person.");
@@ -251,14 +274,22 @@ function checkRunItem(input: RunItemInput): void {
 function editableSheet(actor: Actor, id: string): CallSheet {
   const cs = loadSheet(actor, id);
   if (cs.status === "final") throw new RuleError("This call sheet is final. Reopen it to make changes.");
-  if (!runOfShowRequired(cs) && cs.runOfShow.length === 0) throw new RuleError("A run of show is for large productions. Set the level of production to Large on the day first.");
+  if (!runOfShowRequired(cs) && cs.runOfShow.length === 0)
+    throw new RuleError("A run of show is for large productions. Set the level of production to Large on the day first.");
   return cs;
 }
 
 export function addRunItem(actor: Actor, sheetId: string, input: RunItemInput): RunItem {
   const cs = editableSheet(actor, sheetId);
   checkRunItem(input);
-  const item: RunItem = { id: localId("RS", (x) => cs.runOfShow.some((i) => i.id === x)), time: input.time, title: input.title.trim(), durationMin: input.durationMin, ownerPersonId: input.ownerPersonId || null, notes: (input.notes ?? "").trim() };
+  const item: RunItem = {
+    id: localId("RS", (x) => cs.runOfShow.some((i) => i.id === x)),
+    time: input.time,
+    title: input.title.trim(),
+    durationMin: input.durationMin,
+    ownerPersonId: input.ownerPersonId || null,
+    notes: (input.notes ?? "").trim(),
+  };
   cs.runOfShow.push(item);
   cs.version += 1;
   logAudit(actor, "run-add", "callsheet", sheetId, `${item.time} ${item.title}`);
@@ -270,7 +301,13 @@ export function updateRunItem(actor: Actor, sheetId: string, itemId: string, pat
   const cs = editableSheet(actor, sheetId);
   const item = cs.runOfShow.find((x) => x.id === itemId);
   if (!item) throw new RuleError("That segment no longer exists.");
-  const next = { time: patch.time ?? item.time, title: patch.title ?? item.title, durationMin: patch.durationMin ?? item.durationMin, ownerPersonId: patch.ownerPersonId === undefined ? item.ownerPersonId : patch.ownerPersonId, notes: patch.notes ?? item.notes };
+  const next = {
+    time: patch.time ?? item.time,
+    title: patch.title ?? item.title,
+    durationMin: patch.durationMin ?? item.durationMin,
+    ownerPersonId: patch.ownerPersonId === undefined ? item.ownerPersonId : patch.ownerPersonId,
+    notes: patch.notes ?? item.notes,
+  };
   checkRunItem(next);
   Object.assign(item, { ...next, title: next.title.trim(), notes: next.notes.trim() });
   cs.version += 1;

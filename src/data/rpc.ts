@@ -6,7 +6,11 @@ import { getTick } from "./store";
 // function with the same rules, checks who is asking, and saves the result under those same IDs, or refuses
 // (see src/data/ids.ts). The person sees the change straight away, and the server has the final say.
 
-export interface Call { name: string; args: unknown[]; ids: string[] }
+export interface Call {
+  name: string;
+  args: unknown[];
+  ids: string[];
+}
 
 let sink: ((c: Call) => void) | null = null;
 let blockedMessage: string | null = null;
@@ -19,7 +23,7 @@ export function setRpcSink(next: ((c: Call) => void) | null, blocked: string | n
 }
 
 type AnyFn = (...a: unknown[]) => unknown;
-const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
+const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
 /** Wraps a service function so that a call which changes data is recorded. Reads pass straight through. */
 export function rpc<F extends (...a: never[]) => unknown>(name: string, fn: F): F {

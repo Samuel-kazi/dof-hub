@@ -14,6 +14,6 @@ export function describeDbProblem(e: unknown): string {
   if (name === "MongoServerSelectionError" || /ECONNREFUSED|ETIMEDOUT|timed out|Server selection/i.test(text))
     return "The server could not reach MongoDB. In Atlas, Network Access must allow 0.0.0.0/0 (Vercel's addresses change), and the cluster must not be paused. Wait a minute after changing either, then try again.";
   if (/not authorized|Unauthorized|requires authentication/i.test(text))
-    return "The database user in MONGODB_URI is not allowed to use this database. In Atlas, Database Access, give the user the role \"Read and write to any database\", or read and write on the database named in MONGODB_DB.";
+    return 'The database user in MONGODB_URI is not allowed to use this database. In Atlas, Database Access, give the user the role "Read and write to any database", or read and write on the database named in MONGODB_DB.';
   return `The database could not be reached${name ? ` (${name})` : ""}. The details are in the Vercel logs for this deployment.`;
 }

@@ -32,9 +32,24 @@ export interface FontPairingDef {
 // Web-safe stacks only, on purpose: the Hub runs as a desktop app that can't always reach a font
 // CDN, so a pairing has to look right offline, every time, on macOS and Windows alike.
 export const FONT_PAIRINGS: FontPairingDef[] = [
-  { key: "modern", label: "Modern", heading: `"Avenir Next", "SF Pro Display", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif`, body: `"Avenir Next", "SF Pro Display", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif` },
-  { key: "editorial", label: "Editorial", heading: `Georgia, "Iowan Old Style", "Palatino Linotype", serif`, body: `"Avenir Next", "SF Pro Display", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif` },
-  { key: "classic", label: "Classic Serif", heading: `Georgia, "Iowan Old Style", "Palatino Linotype", serif`, body: `Georgia, "Iowan Old Style", "Times New Roman", serif` },
+  {
+    key: "modern",
+    label: "Modern",
+    heading: `"Avenir Next", "SF Pro Display", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif`,
+    body: `"Avenir Next", "SF Pro Display", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif`,
+  },
+  {
+    key: "editorial",
+    label: "Editorial",
+    heading: `Georgia, "Iowan Old Style", "Palatino Linotype", serif`,
+    body: `"Avenir Next", "SF Pro Display", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif`,
+  },
+  {
+    key: "classic",
+    label: "Classic Serif",
+    heading: `Georgia, "Iowan Old Style", "Palatino Linotype", serif`,
+    body: `Georgia, "Iowan Old Style", "Times New Roman", serif`,
+  },
 ];
 
 export const fontPairingOf = (key: FontPairingKey): FontPairingDef => FONT_PAIRINGS.find((f) => f.key === key) ?? FONT_PAIRINGS[0];

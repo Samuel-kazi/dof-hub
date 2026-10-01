@@ -18,7 +18,9 @@ export function Soon({ module }: { module: ModuleKey }) {
       <div className="glass panel">
         <h2>What it will cover</h2>
         <ul className="stack" style={{ margin: 0, paddingLeft: 20 }}>
-          {(PLANS[module] ?? []).map((p) => <li key={p}>{p}</li>)}
+          {(PLANS[module] ?? []).map((p) => (
+            <li key={p}>{p}</li>
+          ))}
         </ul>
       </div>
     </div>

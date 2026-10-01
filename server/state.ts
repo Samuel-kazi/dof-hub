@@ -30,12 +30,45 @@ export { KEYS };
 export function newDatabase(hop: { name: string; username: string }, withSamples: boolean): { db: Database; hop: Person } {
   const seed = buildSeed();
   const hopSeed = seed.people.find((p) => p.category === "HOP")!;
-  const person: Person = { ...hopSeed, name: hop.name, email: "", phone: "", hasLogin: true, username: hop.username, createdAt: new Date().toISOString() };
+  const person: Person = {
+    ...hopSeed,
+    name: hop.name,
+    email: "",
+    phone: "",
+    hasLogin: true,
+    username: hop.username,
+    createdAt: new Date().toISOString(),
+  };
   if (withSamples) {
-    const db: Database = { ...seed, users: [], people: seed.people.map((p) => (p.personId === person.personId ? person : { ...p, hasLogin: false })) };
+    const db: Database = {
+      ...seed,
+      users: [],
+      people: seed.people.map((p) => (p.personId === person.personId ? person : { ...p, hasLogin: false })),
+    };
     return { db, hop: person };
   }
-  const db: Database = { ...seed, users: [], people: [person], members: [], records: [], callSheets: [], comments: [], audit: [], equipment: [], manifests: [], incidents: [], equipmentHistory: [], drives: [], allocations: [], snapshots: [], docs: [], docRevisions: [], outbox: [], counters: {}, settings: { ...seed.settings, permissions: { roles: {}, people: {} } } };
+  const db: Database = {
+    ...seed,
+    users: [],
+    people: [person],
+    members: [],
+    records: [],
+    callSheets: [],
+    comments: [],
+    audit: [],
+    equipment: [],
+    manifests: [],
+    incidents: [],
+    equipmentHistory: [],
+    drives: [],
+    allocations: [],
+    snapshots: [],
+    docs: [],
+    docRevisions: [],
+    outbox: [],
+    counters: {},
+    settings: { ...seed.settings, permissions: { roles: {}, people: {} } },
+  };
   return { db, hop: person };
 }
 
@@ -118,7 +151,8 @@ export function withDb<T>(db: Database, fn: () => T): T {
   setDb(db);
   try {
     const out = fn();
-    if (out && typeof (out as { then?: unknown }).then === "function") throw new Error("Service functions must be synchronous: the data they see is only theirs until they return.");
+    if (out && typeof (out as { then?: unknown }).then === "function")
+      throw new Error("Service functions must be synchronous: the data they see is only theirs until they return.");
     return out;
   } finally {
     setDb(prev);
@@ -144,7 +178,11 @@ function diff(base: Base, db: Database): Commit & { keys: string[] } {
       const before = base.order.get(k) ?? [];
       const was = new Set(before);
       const is = new Set(els.map((e) => e.i));
-      for (const i of before) if (!is.has(i)) { remove.push({ k, i }); changed = true; }
+      for (const i of before)
+        if (!is.has(i)) {
+          remove.push({ k, i });
+          changed = true;
+        }
       // New elements at the end, and the rest still in the same order: only what changed is written.
       const keptNow = els.filter((e) => was.has(e.i)).map((e) => e.i);
       const keptBefore = before.filter((i) => is.has(i));
@@ -154,8 +192,13 @@ function diff(base: Base, db: Database): Commit & { keys: string[] } {
         let next = Math.max((base.maxO.get(k) ?? -1) + 1, now);
         for (const e of els) {
           const key = `${k}/${e.i}`;
-          if (!was.has(e.i)) { put.push({ k, i: e.i, o: next++, d: e.d }); changed = true; }
-          else if (base.json.get(key) !== JSON.stringify(e.d)) { put.push({ k, i: e.i, o: base.o.get(key)!, d: e.d }); changed = true; }
+          if (!was.has(e.i)) {
+            put.push({ k, i: e.i, o: next++, d: e.d });
+            changed = true;
+          } else if (base.json.get(key) !== JSON.stringify(e.d)) {
+            put.push({ k, i: e.i, o: base.o.get(key)!, d: e.d });
+            changed = true;
+          }
         }
       } else {
         els.forEach((e, j) => put.push({ k, i: e.i, o: now + j, d: e.d })); // the order changed: write it all again
@@ -228,7 +271,13 @@ export async function snapshotFor(store: Store, actor: Actor): Promise<{ revisio
     const docs = db.docs.filter((d) => canViewDoc(actor, d));
     const docIds = new Set(docs.map((d) => d.id));
     const settings = { ...db.settings };
-    if (!hop) settings.permissions = { roles: { [actor.role]: db.settings.permissions?.roles?.[actor.role] ?? {} }, people: db.settings.permissions?.people?.[actor.personId] ? { [actor.personId]: db.settings.permissions.people[actor.personId] } : {} };
+    if (!hop)
+      settings.permissions = {
+        roles: { [actor.role]: db.settings.permissions?.roles?.[actor.role] ?? {} },
+        people: db.settings.permissions?.people?.[actor.personId]
+          ? { [actor.personId]: db.settings.permissions.people[actor.personId] }
+          : {},
+      };
     return {
       schemaVersion: db.schemaVersion,
       users: [],

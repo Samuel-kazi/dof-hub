@@ -35,7 +35,11 @@ export function leavesUnder(r: ContentRecord): ContentRecord[] {
   return getChildren(r.contentId).flatMap(leavesUnder);
 }
 
-export interface ProductionUnit { id: string; title: string; leaves: ContentRecord[] }
+export interface ProductionUnit {
+  id: string;
+  title: string;
+  leaves: ContentRecord[];
+}
 
 /**
  * One row per production for dashboard counts. A live show with several days is many leaves
@@ -72,7 +76,7 @@ export function childKindFor(r: ContentRecord): string | null {
 // ── Stage state ──────────────────────────────────────────────
 
 export const currentStageDeadline = (r: ContentRecord): string | null =>
-  r.pipelineStage ? r.stageDeadlines[r.pipelineStage] ?? null : null;
+  r.pipelineStage ? (r.stageDeadlines[r.pipelineStage] ?? null) : null;
 
 export function isComplete(r: ContentRecord): boolean {
   if (!usesPipeline(r) || !r.pipelineStage) return false;
@@ -126,7 +130,9 @@ export const ownersOf = (r: ContentRecord, stage: string): StageOwner[] => r.sta
 
 /** Owner of the stage an item is in now. Carried-over responsibility counts until the stage has owners of its own. */
 export const isOwnerNow = (r: ContentRecord, personId: string): boolean =>
-  !!r.pipelineStage && (ownersOf(r, r.pipelineStage).some((o) => o.personId === personId) || (ownersOf(r, r.pipelineStage).length === 0 && r.assigneePersonId === personId));
+  !!r.pipelineStage &&
+  (ownersOf(r, r.pipelineStage).some((o) => o.personId === personId) ||
+    (ownersOf(r, r.pipelineStage).length === 0 && r.assigneePersonId === personId));
 
 /** The person responsible right now is the first owner of the current stage. */
 function syncResponsible(r: ContentRecord): void {
@@ -140,10 +146,19 @@ export const tasksOf = (r: ContentRecord, stage: string | null = r.pipelineStage
 export const openTasks = (r: ContentRecord): StageTask[] => tasksOf(r).filter((t) => !t.done);
 
 export function canAdvance(r: ContentRecord): { ok: boolean; reason: string } {
-  if (!usesPipeline(r) || !r.pipelineStage) return { ok: false, reason: "This record is a container. Its episodes or tracks carry the pipeline." };
+  if (!usesPipeline(r) || !r.pipelineStage)
+    return { ok: false, reason: "This record is a container. Its episodes or tracks carry the pipeline." };
   if (r.category === "devotional" && (r.pipelineStage === "Guest" || r.pipelineStage === "Review" || r.pipelineStage === "Closed")) {
-    const action = r.pipelineStage === "Guest" ? "the theological review decision" : r.pipelineStage === "Review" ? "Approve or Send back" : "Closed is final";
-    return { ok: false, reason: r.pipelineStage === "Closed" ? action : `Use ${action}, not the general advance button, to leave ${r.pipelineStage}.` };
+    const action =
+      r.pipelineStage === "Guest"
+        ? "the theological review decision"
+        : r.pipelineStage === "Review"
+          ? "Approve or Send back"
+          : "Closed is final";
+    return {
+      ok: false,
+      reason: r.pipelineStage === "Closed" ? action : `Use ${action}, not the general advance button, to leave ${r.pipelineStage}.`,
+    };
   }
   const stages = categoryOf(r.category).stages;
   const idx = stages.findIndex((s) => s.name === r.pipelineStage);
@@ -166,7 +181,10 @@ export function canAdvance(r: ContentRecord): { ok: boolean; reason: string } {
 function nextTopLevelId(category: CategoryKey): string {
   const db = getDb();
   const key = topLevelCounter(category);
-  const nums = db.records.filter((r) => r.category === category && r.hierarchyLevel === 0).map((r) => topLevelNumber(r.contentId)).filter((n) => !Number.isNaN(n));
+  const nums = db.records
+    .filter((r) => r.category === category && r.hierarchyLevel === 0)
+    .map((r) => topLevelNumber(r.contentId))
+    .filter((n) => !Number.isNaN(n));
   const n = Math.max(db.counters[key] ?? 0, ...nums) + 1;
   db.counters[key] = n;
   return claimId(`DOF-${categoryOf(category).code}-${pad(n)}`);
@@ -176,7 +194,9 @@ function nextChildId(parent: ContentRecord): string {
   const db = getDb();
   const key = childCounter(parent.contentId);
   const width = parent.hierarchyLevel === 0 ? 1 : 2;
-  const nums = getChildren(parent.contentId, true).map((c) => childNumber(c.contentId, parent)).filter((n) => !Number.isNaN(n));
+  const nums = getChildren(parent.contentId, true)
+    .map((c) => childNumber(c.contentId, parent))
+    .filter((n) => !Number.isNaN(n));
   const n = Math.max(db.counters[key] ?? 0, ...nums) + 1;
   db.counters[key] = n;
   return claimId(`${parent.contentId}-${childToken(parent)}${pad(n, width)}`);
@@ -285,7 +305,16 @@ export function ensureStageTasks(r: ContentRecord, stage: string): void {
   const def = categoryOf(r.category).stages.find((x) => x.name === stage);
   const labels = stage === "Wrap" ? wrapTasksFor(r) : (def?.tasks ?? []);
   for (const label of labels) {
-    r.tasks.push({ id: localId("T", (id) => r.tasks.some((t) => t.id === id)), stage, label, done: false, dueDate: r.stageDeadlines[stage] ?? null, assigneePersonId: null, doneAt: null, doneBy: null });
+    r.tasks.push({
+      id: localId("T", (id) => r.tasks.some((t) => t.id === id)),
+      stage,
+      label,
+      done: false,
+      dueDate: r.stageDeadlines[stage] ?? null,
+      assigneePersonId: null,
+      doneAt: null,
+      doneBy: null,
+    });
   }
 }
 
@@ -334,7 +363,12 @@ export function createRecord(actor: Actor, input: NewRecordInput): ContentRecord
   requireCan(actor, "pipeline.manage", "create a new project");
   if (!input.title.trim()) throw new RuleError("Give the project a title.");
   checkShowDates(input.category, input.showStart, input.showEnd);
-  if (input.category === "live" && input.showStart && datesBetween(input.showStart, input.showEnd || input.showStart).length > MAX_SHOW_DAYS) throw new RuleError(`A live show can run for up to ${MAX_SHOW_DAYS} days. Add a longer one in parts.`);
+  if (
+    input.category === "live" &&
+    input.showStart &&
+    datesBetween(input.showStart, input.showEnd || input.showStart).length > MAX_SHOW_DAYS
+  )
+    throw new RuleError(`A live show can run for up to ${MAX_SHOW_DAYS} days. Add a longer one in parts.`);
   const r = blankRecord(nextTopLevelId(input.category), input.category, input.title.trim(), null, 0);
   r.showStart = input.showStart || null;
   r.showEnd = input.showEnd || null;
@@ -384,7 +418,11 @@ export function createChildRecord(actor: Actor, parentId: string, input: Omit<Ne
 const SPIN_OFF_START_STAGE: Record<"music" | "series", string> = { music: "Audio post-production", series: "Editorial" };
 export const spinOffCategories: ("music" | "series")[] = ["music", "series"];
 
-export interface SplitInput { destCategory: "music" | "series"; parentId: string; title: string }
+export interface SplitInput {
+  destCategory: "music" | "series";
+  parentId: string;
+  title: string;
+}
 
 /** Splits a recording made on a live day into its own Music track or Series episode, already past Recording. */
 export function splitRecording(actor: Actor, dayId: string, input: SplitInput): ContentRecord {
@@ -394,7 +432,8 @@ export function splitRecording(actor: Actor, dayId: string, input: SplitInput): 
   if (!canWrite(actor, day)) throw new RuleError("You are not assigned to this project.");
   if (!spinOffCategories.includes(input.destCategory)) throw new RuleError("Choose Music or Series.");
   const parent = getRecord(input.parentId);
-  if (!parent || parent.category !== input.destCategory) throw new RuleError(`Choose an ${categoryOf(input.destCategory).childLevelLabel?.toLowerCase()} to put it in.`);
+  if (!parent || parent.category !== input.destCategory)
+    throw new RuleError(`Choose an ${categoryOf(input.destCategory).childLevelLabel?.toLowerCase()} to put it in.`);
   if (!canWrite(actor, parent)) throw new RuleError("You are not assigned to that project.");
   if (!input.title.trim()) throw new RuleError(`Give the ${categoryOf(input.destCategory).grandchildLevelLabel?.toLowerCase()} a title.`);
   const r = blankRecord(nextChildId(parent), input.destCategory, input.title.trim(), parent.contentId, parent.hierarchyLevel + 1);
@@ -403,7 +442,13 @@ export function splitRecording(actor: Actor, dayId: string, input: SplitInput): 
   r.notes = `Recorded live on ${day.title} (${day.contentId}).`;
   initPipeline(actor, r, 4, SPIN_OFF_START_STAGE[input.destCategory]);
   getDb().records.push(r);
-  logAudit(actor, "create", "record", r.contentId, `${categoryOf(input.destCategory).grandchildLevelLabel}: ${r.title}, split from ${day.contentId}`);
+  logAudit(
+    actor,
+    "create",
+    "record",
+    r.contentId,
+    `${categoryOf(input.destCategory).grandchildLevelLabel}: ${r.title}, split from ${day.contentId}`,
+  );
   commit();
   return r;
 }
@@ -414,7 +459,14 @@ export function spinOffsOf(dayId: string): ContentRecord[] {
 }
 
 /** The show's strike plan: what comes down every night, and what stays rigged until the last day. Live shows only. */
-export function setStrikePlan(actor: Actor, id: string, pattern: "daily" | "continuous", daily: string[], final: string[], expectedVersion?: number): ContentRecord {
+export function setStrikePlan(
+  actor: Actor,
+  id: string,
+  pattern: "daily" | "continuous",
+  daily: string[],
+  final: string[],
+  expectedVersion?: number,
+): ContentRecord {
   const r = loadForWrite(actor, id, expectedVersion);
   if (r.category !== "live" || r.hierarchyLevel !== 0) throw new RuleError("Only a live show itself has a strike plan.");
   const clean = (list: string[]) => list.map((s) => s.trim()).filter(Boolean);
@@ -439,7 +491,23 @@ function loadForWrite(actor: Actor, id: string, expectedVersion?: number): Conte
 }
 
 /** The only fields the edit forms change. Stage, parent, archived, version and the rest have their own actions and rules. */
-export const RECORD_EDITABLE = ["title", "scheduledDate", "deadline", "assigneePersonId", "notes", "productionLevel", "showStart", "showEnd", "guestName", "guestContact", "cardStorage", "publishDate", "recordingDurationMin", "recordingNotes", "editorNotes"] as const;
+export const RECORD_EDITABLE = [
+  "title",
+  "scheduledDate",
+  "deadline",
+  "assigneePersonId",
+  "notes",
+  "productionLevel",
+  "showStart",
+  "showEnd",
+  "guestName",
+  "guestContact",
+  "cardStorage",
+  "publishDate",
+  "recordingDurationMin",
+  "recordingNotes",
+  "editorNotes",
+] as const;
 export type RecordPatch = Partial<Pick<ContentRecord, (typeof RECORD_EDITABLE)[number]>>;
 
 export function updateRecord(actor: Actor, id: string, input: RecordPatch, expectedVersion?: number): ContentRecord {
@@ -448,20 +516,33 @@ export function updateRecord(actor: Actor, id: string, input: RecordPatch, expec
   if (patch.title !== undefined && !patch.title.trim()) throw new RuleError("Title cannot be empty.");
   if (patch.assigneePersonId !== undefined && patch.assigneePersonId !== r.assigneePersonId) {
     // Changing who is responsible puts someone on the current stage, so it follows the same rule as the stage owner actions.
-    if (patch.assigneePersonId && patch.assigneePersonId !== actor.personId && !can(actor, "pipeline.assign")) throw new RuleError("Only the Head of Production, or someone given \"Assign other people's work\", can change other people's work. You can change your own.");
+    if (patch.assigneePersonId && patch.assigneePersonId !== actor.personId && !can(actor, "pipeline.assign"))
+      throw new RuleError(
+        "Only the Head of Production, or someone given \"Assign other people's work\", can change other people's work. You can change your own.",
+      );
     if (patch.assigneePersonId) {
       const p = getPerson(patch.assigneePersonId);
-      if (!p || p.status !== "active" || (p.category !== "CRW" && p.category !== "HOP")) throw new RuleError("Only active crew can be responsible for a project.");
+      if (!p || p.status !== "active" || (p.category !== "CRW" && p.category !== "HOP"))
+        throw new RuleError("Only active crew can be responsible for a project.");
     }
   }
   if (patch.productionLevel !== undefined && patch.productionLevel !== null) patch.productionLevel = validLevel(r, patch.productionLevel);
-  if (patch.showStart !== undefined || patch.showEnd !== undefined) checkShowDates(r.category, patch.showStart !== undefined ? patch.showStart : r.showStart, patch.showEnd !== undefined ? patch.showEnd : r.showEnd);
+  if (patch.showStart !== undefined || patch.showEnd !== undefined)
+    checkShowDates(
+      r.category,
+      patch.showStart !== undefined ? patch.showStart : r.showStart,
+      patch.showEnd !== undefined ? patch.showEnd : r.showEnd,
+    );
   Object.assign(r, patch);
   if (patch.assigneePersonId !== undefined && r.pipelineStage) {
     // The responsible person is the first owner of the current stage, so the two stay in step.
     const rest = ownersOf(r, r.pipelineStage);
     const kept = rest.find((o) => o.personId === patch.assigneePersonId);
-    if (patch.assigneePersonId) r.stageAssignees[r.pipelineStage] = [kept ?? { personId: patch.assigneePersonId, roles: [] }, ...rest.filter((o) => o.personId !== patch.assigneePersonId)];
+    if (patch.assigneePersonId)
+      r.stageAssignees[r.pipelineStage] = [
+        kept ?? { personId: patch.assigneePersonId, roles: [] },
+        ...rest.filter((o) => o.personId !== patch.assigneePersonId),
+      ];
     else r.stageAssignees[r.pipelineStage] = rest.slice(1);
   }
   if (patch.assigneePersonId) ensureMember(actor, patch.assigneePersonId, r);
@@ -505,12 +586,20 @@ export function setStageOutput(actor: Actor, id: string, present: boolean, expec
   if (present && r.category === "live" && r.pipelineStage === "Post Production") {
     if (r.postProductionNeeded === null) throw new RuleError("First say whether anything recorded on this day needs post-production.");
     if (r.postProductionNeeded && !getDb().records.some((x) => x.spunOffFrom === r.contentId)) {
-      throw new RuleError("Attach the recording that needs post-production first (split it into a Music track or Series episode), or say that nothing was recorded.");
+      throw new RuleError(
+        "Attach the recording that needs post-production first (split it into a Music track or Series episode), or say that nothing was recorded.",
+      );
     }
   }
   r.stageOutputs[r.pipelineStage] = present;
   r.version += 1;
-  logAudit(actor, present ? "output-confirmed" : "output-cleared", "record", id, `${r.pipelineStage}: ${categoryOf(r.category).stages.find((s) => s.name === r.pipelineStage)?.requiredOutput}`);
+  logAudit(
+    actor,
+    present ? "output-confirmed" : "output-cleared",
+    "record",
+    id,
+    `${r.pipelineStage}: ${categoryOf(r.category).stages.find((s) => s.name === r.pipelineStage)?.requiredOutput}`,
+  );
   commit();
 }
 
@@ -555,7 +644,8 @@ function stepBack(actor: Actor, r: ContentRecord): void {
 
 export function sendBackStage(actor: Actor, id: string, expectedVersion?: number): ContentRecord {
   const r = loadForWrite(actor, id, expectedVersion);
-  if (r.category === "devotional" && r.pipelineStage === "Review") throw new RuleError("Use Send back with a reason, not the general button, to leave Review.");
+  if (r.category === "devotional" && r.pipelineStage === "Review")
+    throw new RuleError("Use Send back with a reason, not the general button, to leave Review.");
   stepBack(actor, r);
   commit();
   return r;
@@ -655,19 +745,32 @@ function ownerTarget(actor: Actor, id: string, stage: string, personId: string, 
   const mine = personId === actor.personId;
   const existing = getRecord(id);
   // Anyone who may jump in can add themselves to a project they are not attached to yet.
-  const r = existing && mine && !canWrite(actor, existing) && canJoin(actor, existing) ? existing : loadForWrite(actor, id, expectedVersion);
+  const r =
+    existing && mine && !canWrite(actor, existing) && canJoin(actor, existing) ? existing : loadForWrite(actor, id, expectedVersion);
   if (stage !== PROJECT_STAGE) {
-    if (!usesPipeline(r)) throw new RuleError("Stages belong to episodes, tracks, days and single projects. Use the project team row for the whole project.");
+    if (!usesPipeline(r))
+      throw new RuleError("Stages belong to episodes, tracks, days and single projects. Use the project team row for the whole project.");
     if (!categoryOf(r.category).stages.some((s) => s.name === stage)) throw new RuleError("That stage does not exist for this category.");
   }
-  if (!mine && !can(actor, "pipeline.assign")) throw new RuleError("Only the Head of Production, or someone given \"Assign other people's work\", can change other people's work. You can change your own.");
+  if (!mine && !can(actor, "pipeline.assign"))
+    throw new RuleError(
+      "Only the Head of Production, or someone given \"Assign other people's work\", can change other people's work. You can change your own.",
+    );
   return r;
 }
 
-export function addStageOwner(actor: Actor, id: string, stage: string, personId: string, roles: string[], expectedVersion?: number): ContentRecord {
+export function addStageOwner(
+  actor: Actor,
+  id: string,
+  stage: string,
+  personId: string,
+  roles: string[],
+  expectedVersion?: number,
+): ContentRecord {
   const r = ownerTarget(actor, id, stage, personId, expectedVersion);
   const p = getPerson(personId);
-  if (!p || p.status !== "active" || (p.category !== "CRW" && p.category !== "HOP")) throw new RuleError("Only active crew can own a stage.");
+  if (!p || p.status !== "active" || (p.category !== "CRW" && p.category !== "HOP"))
+    throw new RuleError("Only active crew can own a stage.");
   const list = ownersOf(r, stage);
   if (list.some((o) => o.personId === personId)) throw new RuleError(`${p.name} is already on ${stage}. Change their roles instead.`);
   r.stageAssignees[stage] = [...list, { personId, roles: cleanRoles(roles) }];
@@ -703,12 +806,18 @@ export function removeStageOwner(actor: Actor, id: string, stage: string, person
 
 // ── Stage checklists ─────────────────────────────────────────
 
-export interface TaskInput { stage?: string; label: string; dueDate?: string | null; assigneePersonId?: string | null }
+export interface TaskInput {
+  stage?: string;
+  label: string;
+  dueDate?: string | null;
+  assigneePersonId?: string | null;
+}
 
 function checkAssignee(personId: string | null | undefined): void {
   if (!personId) return;
   const p = getPerson(personId);
-  if (!p || p.status !== "active" || (p.category !== "CRW" && p.category !== "HOP")) throw new RuleError("Only active crew can be given a task.");
+  if (!p || p.status !== "active" || (p.category !== "CRW" && p.category !== "HOP"))
+    throw new RuleError("Only active crew can be given a task.");
 }
 
 export function addTask(actor: Actor, id: string, input: TaskInput): StageTask {
@@ -717,9 +826,19 @@ export function addTask(actor: Actor, id: string, input: TaskInput): StageTask {
   const stage = input.stage ?? r.pipelineStage!;
   if (!categoryOf(r.category).stages.some((s) => s.name === stage)) throw new RuleError("That stage does not exist for this category.");
   if (!input.label.trim()) throw new RuleError("Give the task a name.");
-  if (r.tasks.some((t) => t.stage === stage && t.label.toLowerCase() === input.label.trim().toLowerCase())) throw new RuleError(`${stage} already has a task called ${input.label.trim()}.`);
+  if (r.tasks.some((t) => t.stage === stage && t.label.toLowerCase() === input.label.trim().toLowerCase()))
+    throw new RuleError(`${stage} already has a task called ${input.label.trim()}.`);
   checkAssignee(input.assigneePersonId);
-  const t: StageTask = { id: localId("T", (x) => r.tasks.some((t) => t.id === x)), stage, label: input.label.trim(), done: false, dueDate: input.dueDate || r.stageDeadlines[stage] || null, assigneePersonId: input.assigneePersonId || null, doneAt: null, doneBy: null };
+  const t: StageTask = {
+    id: localId("T", (x) => r.tasks.some((t) => t.id === x)),
+    stage,
+    label: input.label.trim(),
+    done: false,
+    dueDate: input.dueDate || r.stageDeadlines[stage] || null,
+    assigneePersonId: input.assigneePersonId || null,
+    doneAt: null,
+    doneBy: null,
+  };
   r.tasks.push(t);
   if (t.assigneePersonId) ensureMember(actor, t.assigneePersonId, r);
   r.version += 1;
@@ -728,7 +847,12 @@ export function addTask(actor: Actor, id: string, input: TaskInput): StageTask {
   return t;
 }
 
-export function updateTask(actor: Actor, id: string, taskId: string, patch: { label?: string; dueDate?: string | null; assigneePersonId?: string | null; done?: boolean }): StageTask {
+export function updateTask(
+  actor: Actor,
+  id: string,
+  taskId: string,
+  patch: { label?: string; dueDate?: string | null; assigneePersonId?: string | null; done?: boolean },
+): StageTask {
   const r = loadForWrite(actor, id);
   const t = r.tasks.find((x) => x.id === taskId);
   if (!t) throw new RuleError("Task not found.");
@@ -765,14 +889,24 @@ export function removeTask(actor: Actor, id: string, taskId: string): void {
 
 // ── Hosts and guests ─────────────────────────────────────────
 
-export interface FeaturedInput { kind: Featured["kind"]; name: string; note?: string }
+export interface FeaturedInput {
+  kind: Featured["kind"];
+  name: string;
+  note?: string;
+}
 
 export function addFeatured(actor: Actor, id: string, input: FeaturedInput): Featured {
   const r = loadForWrite(actor, id);
   const name = input.name.trim();
   if (!name) throw new RuleError(input.kind === "host" ? "Enter the host's name." : "Enter the guest's name.");
-  if (r.featured.some((f) => f.kind === input.kind && f.name.toLowerCase() === name.toLowerCase())) throw new RuleError(`${name} is already listed as a ${input.kind}.`);
-  const f: Featured = { id: localId("F", (x) => r.featured.some((f) => f.id === x)), kind: input.kind, name, note: (input.note ?? "").trim() };
+  if (r.featured.some((f) => f.kind === input.kind && f.name.toLowerCase() === name.toLowerCase()))
+    throw new RuleError(`${name} is already listed as a ${input.kind}.`);
+  const f: Featured = {
+    id: localId("F", (x) => r.featured.some((f) => f.id === x)),
+    kind: input.kind,
+    name,
+    note: (input.note ?? "").trim(),
+  };
   r.featured.push(f);
   r.version += 1;
   logAudit(actor, "featured-add", "record", id, `${input.kind}: ${name}`);
@@ -785,7 +919,11 @@ export function updateFeatured(actor: Actor, id: string, featuredId: string, pat
   const f = r.featured.find((x) => x.id === featuredId);
   if (!f) throw new RuleError("That person is no longer listed.");
   if (patch.name !== undefined && !patch.name.trim()) throw new RuleError("Enter a name.");
-  Object.assign(f, { ...(patch.kind ? { kind: patch.kind } : {}), ...(patch.name !== undefined ? { name: patch.name.trim() } : {}), ...(patch.note !== undefined ? { note: patch.note.trim() } : {}) });
+  Object.assign(f, {
+    ...(patch.kind ? { kind: patch.kind } : {}),
+    ...(patch.name !== undefined ? { name: patch.name.trim() } : {}),
+    ...(patch.note !== undefined ? { note: patch.note.trim() } : {}),
+  });
   r.version += 1;
   logAudit(actor, "featured-update", "record", id, f.name);
   commit();
@@ -804,14 +942,25 @@ export function removeFeatured(actor: Actor, id: string, featuredId: string): vo
 
 /** Hosts and guests on this record, plus the hosts of the show it belongs to. */
 export function featuredFor(r: ContentRecord): { own: Featured[]; inherited: { person: Featured; from: ContentRecord }[] } {
-  const inherited = selfAndAncestors(r).slice(1).flatMap((a) => a.featured.filter((f) => f.kind === "host").map((person) => ({ person, from: a })));
+  const inherited = selfAndAncestors(r)
+    .slice(1)
+    .flatMap((a) => a.featured.filter((f) => f.kind === "host").map((person) => ({ person, from: a })));
   return { own: r.featured, inherited };
 }
 
 // ── Links: review cuts, the final published link, analysis ───
 
-export interface LinkInput { stage?: string; kind: StageLink["kind"]; url?: string; note?: string }
-export interface LinkBatchInput { stage?: string; kind: StageLink["kind"]; links: { url?: string; note?: string }[] }
+export interface LinkInput {
+  stage?: string;
+  kind: StageLink["kind"];
+  url?: string;
+  note?: string;
+}
+export interface LinkBatchInput {
+  stage?: string;
+  kind: StageLink["kind"];
+  links: { url?: string; note?: string }[];
+}
 
 /** Posts several links at once, for example a review cut in two places. All are checked before any is saved. */
 export function addLinks(actor: Actor, id: string, input: LinkBatchInput): StageLink[] {
@@ -820,14 +969,24 @@ export function addLinks(actor: Actor, id: string, input: LinkBatchInput): Stage
   const stages = categoryOf(r.category).stages;
   const stage = input.stage ?? r.pipelineStage!;
   if (!stages.some((s) => s.name === stage)) throw new RuleError("That stage does not exist for this category.");
-  if (input.kind === "final" && r.pipelineStage !== finalStageOf(r.category).name) throw new RuleError(`The final link is posted once this reaches ${finalStageOf(r.category).name}.`);
+  if (input.kind === "final" && r.pipelineStage !== finalStageOf(r.category).name)
+    throw new RuleError(`The final link is posted once this reaches ${finalStageOf(r.category).name}.`);
   const rows = input.links.map((x) => ({ url: (x.url ?? "").trim(), note: (x.note ?? "").trim() })).filter((x) => x.url || x.note);
   if (!rows.length) throw new RuleError(input.kind === "analysis" ? "Add a link or write the analysis." : "Paste at least one link.");
   for (const row of rows) {
     if (input.kind !== "analysis" && !row.url) throw new RuleError("Every row needs a link. Remove the empty ones.");
-    if (row.url && !/^https?:\/\//i.test(row.url)) throw new RuleError(`"${row.url}" is not a link. Links must start with http:// or https://.`);
+    if (row.url && !/^https?:\/\//i.test(row.url))
+      throw new RuleError(`"${row.url}" is not a link. Links must start with http:// or https://.`);
   }
-  const made = rows.map((row): StageLink => ({ id: localId("L", (x) => r.links.some((l) => l.id === x)), stage, kind: input.kind, url: row.url, note: row.note, byPersonId: actor.personId, at: new Date().toISOString() }));
+  const made = rows.map((row): StageLink => ({
+    id: localId("L", (x) => r.links.some((l) => l.id === x)),
+    stage,
+    kind: input.kind,
+    url: row.url,
+    note: row.note,
+    byPersonId: actor.personId,
+    at: new Date().toISOString(),
+  }));
   r.links.push(...made);
   r.version += 1;
   logAudit(actor, "link-add", "record", id, `${stage}: ${input.kind} x ${made.length}`);
@@ -843,7 +1002,8 @@ export function removeLink(actor: Actor, id: string, linkId: string): void {
   const r = loadForWrite(actor, id);
   const l = r.links.find((x) => x.id === linkId);
   if (!l) throw new RuleError("Link not found.");
-  if (!isHop(actor) && l.byPersonId !== actor.personId) throw new RuleError("Only the person who posted a link, or the Head of Production, can remove it.");
+  if (!isHop(actor) && l.byPersonId !== actor.personId)
+    throw new RuleError("Only the person who posted a link, or the Head of Production, can remove it.");
   r.links = r.links.filter((x) => x.id !== linkId);
   r.version += 1;
   logAudit(actor, "link-remove", "record", id, `${l.stage}: ${l.kind}`);
@@ -854,7 +1014,10 @@ export function canDelete(id: string): { ok: boolean; reason: string } {
   const active = getChildren(id);
   if (active.length) {
     const kind = childKindFor(getRecord(id)!) ?? "item";
-    return { ok: false, reason: `This still has ${active.length} active ${kind.toLowerCase()}${active.length > 1 ? "s" : ""}. Remove those first.` };
+    return {
+      ok: false,
+      reason: `This still has ${active.length} active ${kind.toLowerCase()}${active.length > 1 ? "s" : ""}. Remove those first.`,
+    };
   }
   return { ok: true, reason: "" };
 }
@@ -878,7 +1041,9 @@ export function deletionImpact(actor: Actor, id: string): DeletionImpact {
   if (!gate.ok) blockers.push(gate.reason);
   const allocs = db.allocations.filter((a) => a.contentId === id);
   if (allocs.some((a) => a.kind === "raw") && !isHop(actor) && leavesUnder(r).some((l) => !isComplete(l))) {
-    blockers.push(`Raw footage for ${r.title} is still on a drive and it is not Delivered. Deliver it first, or ask the Head of Production to delete it.`);
+    blockers.push(
+      `Raw footage for ${r.title} is still on a drive and it is not Delivered. Deliver it first, or ask the Head of Production to delete it.`,
+    );
   }
   const out = checkedOutFor(id);
   if (out.length) blockers.push(`Gear is checked out for ${r.title} (${out.map((m) => m.id).join(", ")}). Check it back in first.`);
@@ -900,12 +1065,17 @@ export function deletionImpact(actor: Actor, id: string): DeletionImpact {
 /** What the confirmation dialog tells the person before a project is deleted. */
 export function deletionSummary(impact: DeletionImpact): string {
   const parts: string[] = [];
-  if (impact.drives.length) parts.push(`release ${fmtSize(impact.totalGB)} on ${impact.drives.length === 1 ? impact.drives[0].driveName : impact.drives.map((d) => `${d.driveName} (${fmtSize(d.sizeGB)})`).join(", ")}`);
+  if (impact.drives.length)
+    parts.push(
+      `release ${fmtSize(impact.totalGB)} on ${impact.drives.length === 1 ? impact.drives[0].driveName : impact.drives.map((d) => `${d.driveName} (${fmtSize(d.sizeGB)})`).join(", ")}`,
+    );
   if (impact.docs) parts.push(`archive ${impact.docs} document${impact.docs > 1 ? "s" : ""}, keeping their history`);
   if (impact.gearLists) parts.push(`release ${impact.gearLists} reserved gear list${impact.gearLists > 1 ? "s" : ""}`);
   if (impact.sheets) parts.push(`delete ${impact.sheets} call sheet${impact.sheets > 1 ? "s" : ""}`);
   const also = parts.length ? ` It will also ${parts.join("; ")}.` : "";
-  const files = impact.drives.length ? " This updates the records here. The files on the drives are not touched, so remove them from the disk yourself." : "";
+  const files = impact.drives.length
+    ? " This updates the records here. The files on the drives are not touched, so remove them from the disk yourself."
+    : "";
   return `It moves to the archive. Its Content ID is kept and never reused.${also}${files}`;
 }
 
@@ -918,7 +1088,8 @@ export function deleteRecord(actor: Actor, id: string): void {
   const impact = deletionImpact(actor, id);
   if (impact.blockers.length) throw new RuleError(impact.blockers[0]);
   const db = getDb();
-  for (const a of db.allocations.filter((x) => x.contentId === id)) logAudit(actor, "deallocate", "drive", a.driveId, `${id} ${fmtSize(a.sizeGB)} (project deleted)`);
+  for (const a of db.allocations.filter((x) => x.contentId === id))
+    logAudit(actor, "deallocate", "drive", a.driveId, `${id} ${fmtSize(a.sizeGB)} (project deleted)`);
   db.allocations = db.allocations.filter((a) => a.contentId !== id);
   archiveDocsFor(actor, id);
   releaseReservedFor(actor, id);

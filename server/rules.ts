@@ -5,13 +5,32 @@ export const USERNAME = /^[a-z0-9][a-z0-9._-]{2,29}$/;
 export const normalizeUsername = (u: string): string => u.trim().toLowerCase();
 
 export function checkUsername(username: string): string | null {
-  if (!USERNAME.test(username)) return "A username is 3 to 30 letters, numbers, dots, dashes or underscores, and starts with a letter or number.";
+  if (!USERNAME.test(username))
+    return "A username is 3 to 30 letters, numbers, dots, dashes or underscores, and starts with a letter or number.";
   return null;
 }
 
 const COMMON = new Set([
-  "password", "password1", "password123", "passw0rd", "123456789", "1234567890", "12345678910", "qwertyuiop", "qwerty12345", "iloveyou123",
-  "welcome123", "welcome1234", "admin12345", "letmein1234", "changeme123", "dawnoffaith", "dawnoffaith1", "productionhub", "abcd123456", "111111111111",
+  "password",
+  "password1",
+  "password123",
+  "passw0rd",
+  "123456789",
+  "1234567890",
+  "12345678910",
+  "qwertyuiop",
+  "qwerty12345",
+  "iloveyou123",
+  "welcome123",
+  "welcome1234",
+  "admin12345",
+  "letmein1234",
+  "changeme123",
+  "dawnoffaith",
+  "dawnoffaith1",
+  "productionhub",
+  "abcd123456",
+  "111111111111",
 ]);
 
 /** Returns why a password is not acceptable, or null if it is. */

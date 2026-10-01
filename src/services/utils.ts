@@ -46,7 +46,8 @@ export const fromDayNumber = (n: number): string => new Date(n * 86400000).toISO
 /** 1200 becomes "1.20 TB", 350 becomes "350 GB". */
 export const fmtSize = (gb: number): string => (gb >= 1000 ? `${(gb / 1000).toFixed(2)} TB` : `${Math.round(gb)} GB`);
 
-export const fmtDateTime = (iso: string): string => new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+export const fmtDateTime = (iso: string): string =>
+  new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
 /**
  * Copies only the listed keys that are present. Every "update" function runs its patch through this, so a

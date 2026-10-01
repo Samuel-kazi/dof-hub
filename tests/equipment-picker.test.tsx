@@ -12,9 +12,23 @@ import { resetDemoData, getDb } from "../src/data/store";
 import { addAttachment, createSerializedUnits } from "../src/services/equipment";
 
 let passed = 0;
-const t = (name: string, fn: () => void) => { resetDemoData(); try { fn(); passed++; console.log("ok  ", name); } catch (e) { console.error("FAIL", name, "\n    ", e instanceof Error ? e.message : e); process.exitCode = 1; } };
+const t = (name: string, fn: () => void) => {
+  resetDemoData();
+  try {
+    fn();
+    passed++;
+    console.log("ok  ", name);
+  } catch (e) {
+    console.error("FAIL", name, "\n    ", e instanceof Error ? e.message : e);
+    process.exitCode = 1;
+  }
+};
 const hop = () => login("hop@dof.demo", "demo");
-const withCtx = (el: React.ReactElement) => <AppProvider actor={hop()} onLogout={() => {}}>{el}</AppProvider>;
+const withCtx = (el: React.ReactElement) => (
+  <AppProvider actor={hop()} onLogout={() => {}}>
+    {el}
+  </AppProvider>
+);
 
 t("the picker groups items under a category heading, not one flat list", () => {
   const html = renderToString(withCtx(<GearPicker from="2026-10-01" to="2026-10-01" onConfirm={() => {}} onClose={() => {}} />));
@@ -44,8 +58,16 @@ t("a single unit left entirely blank (no serial, no label) still gets added, not
   // error for what should just be "add one item with no serial."
   const actor = hop();
   const made = createSerializedUnits(actor, {
-    name: "stands", make: "Sony", model: "FX6", category: "camera",
-    unitCost: 0, vendor: "", condition: "Good", packaging: "", accessories: "", info: "",
+    name: "stands",
+    make: "Sony",
+    model: "FX6",
+    category: "camera",
+    unitCost: 0,
+    vendor: "",
+    condition: "Good",
+    packaging: "",
+    accessories: "",
+    info: "",
     units: [{ serialNumber: "" }],
   });
   assert.equal(made.length, 1);
@@ -54,7 +76,10 @@ t("a single unit left entirely blank (no serial, no label) still gets added, not
 
 t("with more than one row, a row left entirely blank is still dropped rather than added as a mystery unit", () => {
   assert.deepEqual(
-    unitsToSubmit([{ serial: "FX6-900", label: "" }, { serial: "", label: "" }]),
+    unitsToSubmit([
+      { serial: "FX6-900", label: "" },
+      { serial: "", label: "" },
+    ]),
     [{ serial: "FX6-900", label: "" }],
     "the blank second row is dropped, since a real serial was entered on the first",
   );

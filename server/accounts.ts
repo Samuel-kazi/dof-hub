@@ -29,18 +29,41 @@ const LIMIT_USER = 100;
 const LIMIT_SETUP = 5;
 const LIMIT_PASSWORD_CHANGE = 5;
 
-export interface Authed { user: UserDoc; session: SessionDoc; person: Person; actor: Actor }
+export interface Authed {
+  user: UserDoc;
+  session: SessionDoc;
+  person: Person;
+  actor: Actor;
+}
 
-export interface PublicUser { personId: string; role: string; name: string; username: string; mustChange: boolean }
-export const publicUser = (a: Authed): PublicUser => ({ personId: a.person.personId, role: a.actor.role, name: a.person.name, username: a.user._id, mustChange: a.user.mustChange });
+export interface PublicUser {
+  personId: string;
+  role: string;
+  name: string;
+  username: string;
+  mustChange: boolean;
+}
+export const publicUser = (a: Authed): PublicUser => ({
+  personId: a.person.personId,
+  role: a.actor.role,
+  name: a.person.name,
+  username: a.user._id,
+  mustChange: a.user.mustChange,
+});
 
 // ── Wrong guesses ────────────────────────────────────────────
 
-interface Limit { key: string; max: number }
+interface Limit {
+  key: string;
+  max: number;
+}
 
 class Locked extends HttpError {
   /** The limit this attempt pushed over, when it was this attempt that locked it (not one already locked). */
-  constructor(ms: number, public newlyLocked: string | null) {
+  constructor(
+    ms: number,
+    public newlyLocked: string | null,
+  ) {
     super(429, `Too many attempts. Try again in ${Math.max(1, Math.ceil(ms / 60000))} minutes.`, "locked");
   }
 }
@@ -83,7 +106,15 @@ async function record(store: Store, personId: string, action: string, detail: st
 async function startSession(store: Store, username: string, ip: string, agent: string): Promise<string> {
   const token = randomToken(32);
   const now = Date.now();
-  await store.sessions.put({ _id: sha256(token), username, createdAt: now, lastSeen: now, expiresAt: now + MAX_MS, ip, agent: agent.slice(0, 200) });
+  await store.sessions.put({
+    _id: sha256(token),
+    username,
+    createdAt: now,
+    lastSeen: now,
+    expiresAt: now + MAX_MS,
+    ip,
+    agent: agent.slice(0, 200),
+  });
   // Keep the newest few, so old sign-ins on forgotten devices do not pile up.
   const mine = (await store.sessions.find({ username })).sort((a, b) => b.createdAt - a.createdAt);
   for (const old of mine.slice(MAX_SESSIONS)) await store.sessions.remove(old._id);
@@ -99,7 +130,10 @@ export async function authenticate(store: Store, token: string | undefined): Pro
   const session = await store.sessions.get(sha256(token));
   if (!session) return null;
   const now = Date.now();
-  if (now > session.expiresAt || now - session.lastSeen > IDLE_MS) { await store.sessions.remove(session._id); return null; }
+  if (now > session.expiresAt || now - session.lastSeen > IDLE_MS) {
+    await store.sessions.remove(session._id);
+    return null;
+  }
   const user = await store.users.get(session.username);
   if (!user || user.disabled) return null;
   const loaded = await loadDb(store, ["people"]);
@@ -119,7 +153,12 @@ export async function needsSetup(store: Store): Promise<boolean> {
   return (await store.users.all()).length === 0 && !(await store.state.head());
 }
 
-export async function setup(store: Store, input: { token: string; name: string; username: string; password: string; samples: boolean }, ip: string, agent: string): Promise<{ token: string; user: PublicUser }> {
+export async function setup(
+  store: Store,
+  input: { token: string; name: string; username: string; password: string; samples: boolean },
+  ip: string,
+  agent: string,
+): Promise<{ token: string; user: PublicUser }> {
   const expected = process.env.SETUP_TOKEN;
   if (!expected) throw new HttpError(503, "Setup is not switched on. Add a SETUP_TOKEN in Vercel first.");
   if (!(await needsSetup(store))) throw new HttpError(409, "This app has already been set up.");
@@ -137,24 +176,48 @@ export async function setup(store: Store, input: { token: string; name: string; 
   const { db, hop } = newDatabase({ name, username }, !!input.samples);
   if (!(await initDatabase(store, db))) throw new HttpError(409, "This app has already been set up.");
   const now = new Date().toISOString();
-  await store.users.insert({ _id: username, personId: hop.personId, passwordHash: await hashPassword(input.password), disabled: false, mustChange: false, createdAt: now, passwordChangedAt: now, lastLoginAt: now });
+  await store.users.insert({
+    _id: username,
+    personId: hop.personId,
+    passwordHash: await hashPassword(input.password),
+    disabled: false,
+    mustChange: false,
+    createdAt: now,
+    passwordChangedAt: now,
+    lastLoginAt: now,
+  });
   const token = await startSession(store, username, ip, agent);
   await record(store, hop.personId, "setup", "The app was set up");
   const a = await authenticate(store, token);
   return { token, user: publicUser(a!) };
 }
 
-export async function login(store: Store, input: { username: string; password: string }, ip: string, agent: string): Promise<{ token: string; user: PublicUser }> {
+export async function login(
+  store: Store,
+  input: { username: string; password: string },
+  ip: string,
+  agent: string,
+): Promise<{ token: string; user: PublicUser }> {
   const username = normalizeUsername(String(input.username ?? ""));
   const password = String(input.password ?? "");
   if (!username || !password || password.length > 128) throw new HttpError(400, "Enter your username and password.");
   const here = `ui:${username}|${ip}`;
-  const limits = [{ key: here, max: LIMIT_USER_AT_ADDRESS }, { key: `ip:${ip}`, max: LIMIT_ADDRESS }, { key: `u:${username}`, max: LIMIT_USER }];
+  const limits = [
+    { key: here, max: LIMIT_USER_AT_ADDRESS },
+    { key: `ip:${ip}`, max: LIMIT_ADDRESS },
+    { key: `u:${username}`, max: LIMIT_USER },
+  ];
   try {
     await chargeAttempt(store, limits);
   } catch (e) {
     const user = e instanceof Locked && e.newlyLocked && e.newlyLocked !== `ip:${ip}` ? await store.users.get(username) : null;
-    if (user) await record(store, user.personId, "login-locked", `Too many wrong passwords for ${username}${e instanceof Locked && e.newlyLocked === here ? ` from ${ip || "an unknown address"}` : " from many addresses"}`);
+    if (user)
+      await record(
+        store,
+        user.personId,
+        "login-locked",
+        `Too many wrong passwords for ${username}${e instanceof Locked && e.newlyLocked === here ? ` from ${ip || "an unknown address"}` : " from many addresses"}`,
+      );
     throw e;
   }
   const user = await store.users.get(username);
@@ -162,7 +225,8 @@ export async function login(store: Store, input: { username: string; password: s
   if (!user || !ok) throw new HttpError(401, "Wrong username or password.");
   const loaded = await loadDb(store, ["people"]);
   const person = loaded?.db.people.find((p) => p.personId === user.personId);
-  if (user.disabled || !person || person.status !== "active") throw new HttpError(403, "This login has been switched off. Ask the Head of Production.");
+  if (user.disabled || !person || person.status !== "active")
+    throw new HttpError(403, "This login has been switched off. Ask the Head of Production.");
   await attemptSucceeded(store, here, [`ip:${ip}`, `u:${username}`]);
   await store.users.put({ ...user, lastLoginAt: new Date().toISOString() });
   const token = await startSession(store, username, ip, agent);
@@ -176,7 +240,8 @@ export async function login(store: Store, input: { username: string; password: s
 export async function changePassword(store: Store, who: Authed, current: string, next: string): Promise<void> {
   const key = `pw:${who.user._id}`;
   await chargeAttempt(store, [{ key, max: LIMIT_PASSWORD_CHANGE }]);
-  if (!(await verifyPassword(String(current ?? ""), who.user.passwordHash))) throw new HttpError(403, "Your current password is not right.");
+  if (!(await verifyPassword(String(current ?? ""), who.user.passwordHash)))
+    throw new HttpError(403, "Your current password is not right.");
   await store.attempts.clear(key);
   const bad = checkPassword(String(next ?? ""), { username: who.user._id, name: who.person.name });
   if (bad) throw new HttpError(400, bad);
@@ -198,7 +263,8 @@ async function allowed(store: Store, actor: Actor, personId: string, what: strin
   const l = await loadDb(store, ["settings", "people"]);
   if (!l) throw new HttpError(503, "The app has not been set up yet.");
   return withDb(l.db, () => {
-    if (!can(actor, "people.manage")) throw new HttpError(403, "Only the Head of Production, or someone given \"Add and change people\", can manage logins.");
+    if (!can(actor, "people.manage"))
+      throw new HttpError(403, 'Only the Head of Production, or someone given "Add and change people", can manage logins.');
     const person = l.db.people.find((p) => p.personId === personId);
     if (!person) throw new HttpError(404, "Choose a person.");
     try {
@@ -211,7 +277,11 @@ async function allowed(store: Store, actor: Actor, personId: string, what: strin
   });
 }
 
-export async function createAccount(store: Store, who: Authed, input: { personId: string; username: string; password?: string }): Promise<{ username: string; temporaryPassword: string }> {
+export async function createAccount(
+  store: Store,
+  who: Authed,
+  input: { personId: string; username: string; password?: string },
+): Promise<{ username: string; temporaryPassword: string }> {
   await allowed(store, who.actor, String(input.personId ?? ""), "create a login");
   const username = normalizeUsername(String(input.username ?? ""));
   const badName = checkUsername(username);
@@ -224,7 +294,19 @@ export async function createAccount(store: Store, who: Authed, input: { personId
   const bad = checkPassword(password, { username, name: person.name });
   if (bad) throw new HttpError(400, bad);
   const now = new Date().toISOString();
-  if (!(await store.users.insert({ _id: username, personId: person.personId, passwordHash: await hashPassword(password), disabled: false, mustChange: true, createdAt: now, passwordChangedAt: now, lastLoginAt: null }))) throw new HttpError(409, "That username is taken. Choose another.");
+  if (
+    !(await store.users.insert({
+      _id: username,
+      personId: person.personId,
+      passwordHash: await hashPassword(password),
+      disabled: false,
+      mustChange: true,
+      createdAt: now,
+      passwordChangedAt: now,
+      lastLoginAt: null,
+    }))
+  )
+    throw new HttpError(409, "That username is taken. Choose another.");
   try {
     await mutateState(store, (db) => {
       const p = db.people.find((x) => x.personId === person.personId)!;

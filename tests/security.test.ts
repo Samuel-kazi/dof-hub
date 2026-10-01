@@ -25,7 +25,14 @@ async function fresh() {
 
 const t = async (name: string, fn: () => Promise<void>) => {
   await fresh();
-  try { await fn(); passed++; console.log("ok  ", name); } catch (e) { console.error("FAIL", name, "\n    ", (e as Error).message); process.exitCode = 1; }
+  try {
+    await fn();
+    passed++;
+    console.log("ok  ", name);
+  } catch (e) {
+    console.error("FAIL", name, "\n    ", (e as Error).message);
+    process.exitCode = 1;
+  }
 };
 
 type Json = Record<string, any>;
@@ -34,7 +41,15 @@ class Client {
   /** The address the server sees, as Vercel reports it. */
   constructor(public address = "127.0.0.1") {}
   async call(method: string, path: string, body?: unknown): Promise<{ status: number; json: Json }> {
-    const res = await fetch(base + path, { method, headers: { "x-forwarded-for": this.address, ...(method === "POST" ? { "Content-Type": "application/json" } : {}), ...(this.cookie ? { Cookie: this.cookie } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
+    const res = await fetch(base + path, {
+      method,
+      headers: {
+        "x-forwarded-for": this.address,
+        ...(method === "POST" ? { "Content-Type": "application/json" } : {}),
+        ...(this.cookie ? { Cookie: this.cookie } : {}),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
     const set = res.headers.getSetCookie().find((c) => c.startsWith("dof_session="));
     if (set) this.cookie = set.split(";")[0];
     const text = await res.text();
@@ -42,13 +57,20 @@ class Client {
   }
   get = (p: string) => this.call("GET", p);
   post = (p: string, b: unknown = {}) => this.call("POST", p, b);
-  act = (name: string, ...args: unknown[]) => this.post("/api/action", { name, args: [{ personId: "DOF-P-HOP-001", role: "HOP" }, ...args] });
+  act = (name: string, ...args: unknown[]) =>
+    this.post("/api/action", { name, args: [{ personId: "DOF-P-HOP-001", role: "HOP" }, ...args] });
 }
 
 const PW = "correct horse battery";
 async function setupHop() {
   const c = new Client();
-  const r = await c.post("/api/setup", { token: process.env.SETUP_TOKEN, name: "Kevin Mwangi", username: "kev", password: PW, samples: true });
+  const r = await c.post("/api/setup", {
+    token: process.env.SETUP_TOKEN,
+    name: "Kevin Mwangi",
+    username: "kev",
+    password: PW,
+    samples: true,
+  });
   assert.equal(r.status, 200, JSON.stringify(r.json));
   return c;
 }
@@ -57,7 +79,10 @@ async function loginFor(hop: Client, personId: string, username: string) {
   assert.equal(made.status, 200, JSON.stringify(made.json));
   const c = new Client();
   assert.equal((await c.post("/api/login", { username, password: made.json.temporaryPassword })).status, 200);
-  assert.equal((await c.post("/api/account/password", { current: made.json.temporaryPassword, next: "a fresh password here" })).status, 200);
+  assert.equal(
+    (await c.post("/api/account/password", { current: made.json.temporaryPassword, next: "a fresh password here" })).status,
+    200,
+  );
   return c;
 }
 const db = async (c: Client): Promise<Json> => (await c.get("/api/state")).json.db;
@@ -95,7 +120,9 @@ await t("C1: crew without 'Assign other people's work' cannot hand a stage to so
 await t("C1: gear is booked against the call sheet's own project and date, whatever the request says", async () => {
   const hop = await setupHop();
   const cs = (await db(hop)).callSheets.find((c: Json) => c.id === "DOF-CS-001");
-  const r = await hop.act("equipment.addGearToSheet", { id: "DOF-CS-001", contentId: "DOF-DOC-001", date: "2030-01-01" }, [{ equipmentId: "DOF-EQ-AUD-003", quantity: 1 }]);
+  const r = await hop.act("equipment.addGearToSheet", { id: "DOF-CS-001", contentId: "DOF-DOC-001", date: "2030-01-01" }, [
+    { equipmentId: "DOF-EQ-AUD-003", quantity: 1 },
+  ]);
   assert.equal(r.status, 200, JSON.stringify(r.json));
   assert.deepEqual([r.json.result.contentId, r.json.result.date], [cs.contentId, cs.date]);
 });
@@ -118,7 +145,19 @@ await t("C2: 'Add and change people' cannot make anyone Head of Production", asy
   const brian = await loginFor(hop, "DOF-P-CRW-002", "brian");
   assert.equal((await brian.act("people.updatePersonCategory", "DOF-P-CRW-002", "HOP")).status, 400);
   assert.equal((await brian.act("people.updatePerson", "DOF-P-CRW-002", { category: "HOP" })).status, 200); // accepted, but the field is dropped
-  assert.equal((await brian.act("people.createPerson", { category: "HOP", name: "Second boss", email: "", phone: "", skills: [], equipmentFamiliarity: [] })).status, 400);
+  assert.equal(
+    (
+      await brian.act("people.createPerson", {
+        category: "HOP",
+        name: "Second boss",
+        email: "",
+        phone: "",
+        skills: [],
+        equipmentFamiliarity: [],
+      })
+    ).status,
+    400,
+  );
   assert.equal(await role(brian), "CRW");
 });
 
@@ -127,7 +166,11 @@ await t("C2: 'Add and change people' cannot reset, switch off or sign out the He
   await hop.act("permissions.setPersonGrant", "DOF-P-CRW-002", "people.manage", true);
   const brian = await loginFor(hop, "DOF-P-CRW-002", "brian");
   const hopId = (await hop.get("/api/session")).json.user.personId;
-  for (const [path, body] of [["/api/accounts/reset", { personId: hopId }], ["/api/accounts/disable", { personId: hopId, disabled: true }], ["/api/accounts/signout", { personId: hopId }]] as const) {
+  for (const [path, body] of [
+    ["/api/accounts/reset", { personId: hopId }],
+    ["/api/accounts/disable", { personId: hopId, disabled: true }],
+    ["/api/accounts/signout", { personId: hopId }],
+  ] as const) {
     const r = await brian.post(path, body);
     assert.equal(r.status, 403, `${path}: ${JSON.stringify(r.json)}`);
     assert.equal(r.json.temporaryPassword, undefined);
@@ -156,7 +199,10 @@ await t("C2: 'Change system settings' cannot grant permissions", async () => {
   const hop = await setupHop();
   await hop.act("permissions.setPersonGrant", "DOF-P-CRW-002", "backend.settings", true);
   const brian = await loginFor(hop, "DOF-P-CRW-002", "brian");
-  const r = await brian.act("settings.updateSettings", { stageReminderHours: 12, permissions: { roles: {}, people: { "DOF-P-CRW-002": { "backend.audit": true, "people.manage": true } } } });
+  const r = await brian.act("settings.updateSettings", {
+    stageReminderHours: 12,
+    permissions: { roles: {}, people: { "DOF-P-CRW-002": { "backend.audit": true, "people.manage": true } } },
+  });
   assert.equal(r.status, 200, JSON.stringify(r.json));
   const seen = await db(brian);
   assert.equal(seen.settings.stageReminderHours, 12);
@@ -173,7 +219,13 @@ await t("M5: someone who cannot see a person's contact details cannot overwrite 
   const seen = (await db(brian)).people.find((p: Json) => p.personId === "DOF-P-VOL-001");
   assert.deepEqual([seen.email, seen.phone, seen.contactHidden], ["", "", true], "nothing that looks like data is sent in its place");
   // What the edit form used to send: the whole profile as shown, including the placeholders.
-  const r = await brian.act("people.updatePerson", "DOF-P-VOL-001", { name: "Joseph K.", email: "Hidden", phone: "Hidden", skills: [], equipmentFamiliarity: [] });
+  const r = await brian.act("people.updatePerson", "DOF-P-VOL-001", {
+    name: "Joseph K.",
+    email: "Hidden",
+    phone: "Hidden",
+    skills: [],
+    equipmentFamiliarity: [],
+  });
   assert.equal(r.status, 200, JSON.stringify(r.json));
   const after = (await db(hop)).people.find((p: Json) => p.personId === "DOF-P-VOL-001");
   assert.deepEqual([after.name, after.email, after.phone], ["Joseph K.", before.email, before.phone]);
@@ -190,19 +242,28 @@ await t("C3: wrong passwords sent all at once are all counted, so at most five a
   const refused = results.filter((r) => r.status === 429).length;
   assert.equal(checked + refused, 40);
   assert.ok(checked <= 5, `${checked} guesses were checked against the password`);
-  assert.equal((await new Client("10.0.0.7").post("/api/login", { username: "kev", password: PW })).status, 429, "even the right password waits");
+  assert.equal(
+    (await new Client("10.0.0.7").post("/api/login", { username: "kev", password: PW })).status,
+    429,
+    "even the right password waits",
+  );
 });
 
 await t("C3: a stranger guessing at the Head of Production's username does not lock them out", async () => {
   await setupHop();
   for (let i = 0; i < 12; i++) await guess(new Client("203.0.113.9"));
   assert.equal((await guess(new Client("203.0.113.9"))).status, 429, "the guessing address is locked");
-  assert.equal((await new Client("198.51.100.4").post("/api/login", { username: "kev", password: PW })).status, 200, "the real person, from their own address, still gets in");
+  assert.equal(
+    (await new Client("198.51.100.4").post("/api/login", { username: "kev", password: PW })).status,
+    200,
+    "the real person, from their own address, still gets in",
+  );
 });
 
 await t("C3: right passwords do not use up the limit for an office that shares one address", async () => {
   await setupHop();
-  for (let i = 0; i < 40; i++) assert.equal((await new Client("192.0.2.1").post("/api/login", { username: "kev", password: PW })).status, 200, `sign-in ${i + 1}`);
+  for (let i = 0; i < 40; i++)
+    assert.equal((await new Client("192.0.2.1").post("/api/login", { username: "kev", password: PW })).status, 200, `sign-in ${i + 1}`);
 });
 
 await t("C3: guessing spread over many addresses is stopped at 100 for that username", async () => {
@@ -219,10 +280,18 @@ await t("C3: a lock is written to the activity log once, not on every refused at
 });
 
 await t("C3: setup codes and password changes are limited the same way", async () => {
-  const results = await Promise.all(Array.from({ length: 20 }, () => new Client("10.9.9.9").post("/api/setup", { token: `nope ${Math.random()}`, name: "X", username: "xx1", password: PW })));
+  const results = await Promise.all(
+    Array.from({ length: 20 }, () =>
+      new Client("10.9.9.9").post("/api/setup", { token: `nope ${Math.random()}`, name: "X", username: "xx1", password: PW }),
+    ),
+  );
   assert.ok(results.filter((r) => r.status === 403).length <= 5);
   const hop = await setupHop();
-  const changes = await Promise.all(Array.from({ length: 20 }, () => hop.post("/api/account/password", { current: `wrong ${Math.random()}`, next: "another fresh password" })));
+  const changes = await Promise.all(
+    Array.from({ length: 20 }, () =>
+      hop.post("/api/account/password", { current: `wrong ${Math.random()}`, next: "another fresh password" }),
+    ),
+  );
   assert.ok(changes.filter((r) => r.status === 403).length <= 5);
   assert.ok(changes.some((r) => r.status === 429));
 });
@@ -233,10 +302,17 @@ const { setDb } = await import("../src/data/store");
 const { setRpcSink } = await import("../src/data/rpc");
 const W = await import("../src/services/wrapped/content");
 type Call = { name: string; args: unknown[]; ids: string[] };
-const actorOf = async (c: Client) => { const u = (await c.get("/api/session")).json.user; return { personId: u.personId, role: u.role }; };
+const actorOf = async (c: Client) => {
+  const u = (await c.get("/api/session")).json.user;
+  return { personId: u.personId, role: u.role };
+};
 
 /** Does what a signed-in page does: works on the snapshot it was sent, and records the calls it would send. */
-async function asBrowser<T>(c: Client, fn: (actor: { personId: string; role: string }) => T, snapshot?: Json): Promise<{ out: T; calls: Call[] }> {
+async function asBrowser<T>(
+  c: Client,
+  fn: (actor: { personId: string; role: string }) => T,
+  snapshot?: Json,
+): Promise<{ out: T; calls: Call[] }> {
   setDb(structuredClone(snapshot ?? (await db(c))));
   const actor = await actorOf(c);
   const calls: Call[] = [];
@@ -263,20 +339,23 @@ await t("H1: after a project is archived, the next project gets the same number 
   assert.equal(records.find((r) => r.contentId === out.contentId)?.notes, "edited from the screen");
 });
 
-await t("H1: two people creating at the same moment: the second is refused, not saved under a number their screen never showed", async () => {
-  const hop = await setupHop();
-  const snapshot = await db(hop);
-  const a = await asBrowser(hop, (actor) => W.createRecord(actor as never, { category: "series", title: "From screen A" }), snapshot);
-  const b = await asBrowser(hop, (actor) => W.createRecord(actor as never, { category: "series", title: "From screen B" }), snapshot);
-  assert.equal(a.out.contentId, b.out.contentId, "both screens showed the same next number");
-  assert.equal((await send(hop, a.calls[0])).status, 200);
-  const second = await send(hop, b.calls[0]);
-  assert.equal(second.status, 409);
-  assert.equal(second.json.code, "conflict");
-  assert.match(second.json.error, /at the same moment/);
-  const titles = ((await db(hop)).records as Json[]).filter((r) => r.contentId === a.out.contentId).map((r) => r.title);
-  assert.deepEqual(titles, ["From screen A"]);
-});
+await t(
+  "H1: two people creating at the same moment: the second is refused, not saved under a number their screen never showed",
+  async () => {
+    const hop = await setupHop();
+    const snapshot = await db(hop);
+    const a = await asBrowser(hop, (actor) => W.createRecord(actor as never, { category: "series", title: "From screen A" }), snapshot);
+    const b = await asBrowser(hop, (actor) => W.createRecord(actor as never, { category: "series", title: "From screen B" }), snapshot);
+    assert.equal(a.out.contentId, b.out.contentId, "both screens showed the same next number");
+    assert.equal((await send(hop, a.calls[0])).status, 200);
+    const second = await send(hop, b.calls[0]);
+    assert.equal(second.status, 409);
+    assert.equal(second.json.code, "conflict");
+    assert.match(second.json.error, /at the same moment/);
+    const titles = ((await db(hop)).records as Json[]).filter((r) => r.contentId === a.out.contentId).map((r) => r.title);
+    assert.deepEqual(titles, ["From screen A"]);
+  },
+);
 
 await t("H1: checklist items made on screen keep their ID on the server, so the next edit finds them", async () => {
   const hop = await setupHop();
@@ -292,10 +371,18 @@ await t("H1: a page cannot choose a malformed ID, or one already used", async ()
   const hop = await setupHop();
   const existing = ((await db(hop)).records as Json[]).find((r) => r.contentId === "DOF-SER-001-S1-E01")!.tasks[0].id;
   for (const id of ["T-x", "DOF-SER-001", "T-<script>alert(1)</script>", existing]) {
-    const r = await hop.post("/api/action", { name: "content.addTask", args: [{}, "DOF-SER-001-S1-E01", { label: `Task ${Math.random()}` }], ids: [id] });
+    const r = await hop.post("/api/action", {
+      name: "content.addTask",
+      args: [{}, "DOF-SER-001-S1-E01", { label: `Task ${Math.random()}` }],
+      ids: [id],
+    });
     assert.equal(r.status, 409, `${id}: ${JSON.stringify(r.json)}`);
   }
-  const wrongCount = await hop.post("/api/action", { name: "content.addTask", args: [{}, "DOF-SER-001-S1-E01", { label: "Two IDs" }], ids: ["T-aaaaaaaaaaaa", "T-bbbbbbbbbbbb"] });
+  const wrongCount = await hop.post("/api/action", {
+    name: "content.addTask",
+    args: [{}, "DOF-SER-001-S1-E01", { label: "Two IDs" }],
+    ids: ["T-aaaaaaaaaaaa", "T-bbbbbbbbbbbb"],
+  });
   assert.equal(wrongCount.status, 409);
 });
 

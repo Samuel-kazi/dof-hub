@@ -94,37 +94,85 @@ const recordFields = {
 
 export const ACTIONS: Record<string, ActionSpec> = {
   // Call sheets
-  "callsheets.createCallSheet": args([z.object({ contentId: id, date, title: short().optional(), location: short(500).optional(), callTime: time.optional(), crewPersonIds: ids(200).optional(), format: short().optional(), notes: text().optional() })]),
+  "callsheets.createCallSheet": args([
+    z.object({
+      contentId: id,
+      date,
+      title: short().optional(),
+      location: short(500).optional(),
+      callTime: time.optional(),
+      crewPersonIds: ids(200).optional(),
+      format: short().optional(),
+      notes: text().optional(),
+    }),
+  ]),
   "callsheets.openOrCreateForRecord": args([id]),
   "callsheets.duplicateCallSheet": args([id, date]),
   "callsheets.resolveMismatches": args([id], [version]),
-  "callsheets.updateCallSheet": args([id, z.object({ title: short().optional(), location: short(500).optional(), callTime: time.optional(), crewPersonIds: ids(200).optional(), format: short().optional(), notes: text().optional(), date: date.optional() })], [version]),
+  "callsheets.updateCallSheet": args(
+    [
+      id,
+      z.object({
+        title: short().optional(),
+        location: short(500).optional(),
+        callTime: time.optional(),
+        crewPersonIds: ids(200).optional(),
+        format: short().optional(),
+        notes: text().optional(),
+        date: date.optional(),
+      }),
+    ],
+    [version],
+  ),
   "callsheets.attachCallSheet": args([id, id], [version]),
   "callsheets.finalizeCallSheet": args([id], [version]),
   "callsheets.reopenCallSheet": args([id]),
   "callsheets.deleteCallSheet": args([id]),
-  "callsheets.addRunItem": args([id, z.object({ time, title: short(), durationMin: count(600), ownerPersonId: ref.nullable().optional(), notes: text(2000).optional() })]),
-  "callsheets.updateRunItem": args([id, id, z.object({ time: time.optional(), title: short().optional(), durationMin: count(600).optional(), ownerPersonId: ref.nullable().optional(), notes: text(2000).optional() })]),
+  "callsheets.addRunItem": args([
+    id,
+    z.object({ time, title: short(), durationMin: count(600), ownerPersonId: ref.nullable().optional(), notes: text(2000).optional() }),
+  ]),
+  "callsheets.updateRunItem": args([
+    id,
+    id,
+    z.object({
+      time: time.optional(),
+      title: short().optional(),
+      durationMin: count(600).optional(),
+      ownerPersonId: ref.nullable().optional(),
+      notes: text(2000).optional(),
+    }),
+  ]),
   "callsheets.removeRunItem": args([id, id]),
 
   // Projects and their pipeline
-  "content.createRecord": args([z.object({ category, ...recordFields }).partial().required({ category: true, title: true })]),
+  "content.createRecord": args([
+    z
+      .object({ category, ...recordFields })
+      .partial()
+      .required({ category: true, title: true }),
+  ]),
   "content.createChildRecord": args([id, z.object(recordFields).partial().required({ title: true })]),
   "content.splitRecording": args([id, z.object({ destCategory: z.enum(["music", "series"]), parentId: id, title: short() })]),
-  "content.setStrikePlan": args([id, z.enum(["daily", "continuous"]), z.array(short(500)).max(200), z.array(short(500)).max(200)], [version]),
+  "content.setStrikePlan": args(
+    [id, z.enum(["daily", "continuous"]), z.array(short(500)).max(200), z.array(short(500)).max(200)],
+    [version],
+  ),
   "content.updateRecord": args(
     [
       id,
-      z.object({
-        ...recordFields,
-        guestName: short(),
-        guestContact: short(500),
-        cardStorage: short(500),
-        publishDate: date.nullable(),
-        recordingDurationMin: amount(100_000).nullable(),
-        recordingNotes: text(),
-        editorNotes: text(),
-      }).partial(),
+      z
+        .object({
+          ...recordFields,
+          guestName: short(),
+          guestContact: short(500),
+          cardStorage: short(500),
+          publishDate: date.nullable(),
+          recordingDurationMin: amount(100_000).nullable(),
+          recordingNotes: text(),
+          editorNotes: text(),
+        })
+        .partial(),
     ],
     [version],
   ),
@@ -141,19 +189,49 @@ export const ACTIONS: Record<string, ActionSpec> = {
   "content.addStageOwner": args([id, short(100), id, roles], [version]),
   "content.setOwnerRoles": args([id, short(100), id, roles]),
   "content.removeStageOwner": args([id, short(100), id]),
-  "content.addTask": args([id, z.object({ stage: short(100).optional(), label: short(), dueDate: date.nullable().optional(), assigneePersonId: ref.nullable().optional() })]),
-  "content.updateTask": args([id, id, z.object({ label: short().optional(), dueDate: date.nullable().optional(), assigneePersonId: ref.nullable().optional(), done: z.boolean().optional() })]),
+  "content.addTask": args([
+    id,
+    z.object({
+      stage: short(100).optional(),
+      label: short(),
+      dueDate: date.nullable().optional(),
+      assigneePersonId: ref.nullable().optional(),
+    }),
+  ]),
+  "content.updateTask": args([
+    id,
+    id,
+    z.object({
+      label: short().optional(),
+      dueDate: date.nullable().optional(),
+      assigneePersonId: ref.nullable().optional(),
+      done: z.boolean().optional(),
+    }),
+  ]),
   "content.removeTask": args([id, id]),
   "content.addFeatured": args([id, z.object({ kind: z.enum(["host", "guest"]), name: short(), note: short(500).optional() })]),
-  "content.updateFeatured": args([id, id, z.object({ kind: z.enum(["host", "guest"]).optional(), name: short().optional(), note: short(500).optional() })]),
+  "content.updateFeatured": args([
+    id,
+    id,
+    z.object({ kind: z.enum(["host", "guest"]).optional(), name: short().optional(), note: short(500).optional() }),
+  ]),
   "content.removeFeatured": args([id, id]),
-  "content.addLinks": args([id, z.object({ stage: short(100).optional(), kind: z.enum(["review", "final", "analysis", "reference"]), links: z.array(z.object({ url: short(2000).optional(), note: text(5000).optional() })).max(50) })]),
+  "content.addLinks": args([
+    id,
+    z.object({
+      stage: short(100).optional(),
+      kind: z.enum(["review", "final", "analysis", "reference"]),
+      links: z.array(z.object({ url: short(2000).optional(), note: text(5000).optional() })).max(50),
+    }),
+  ]),
   "content.removeLink": args([id, id]),
   "content.deleteRecord": args([id]),
   "content.addComment": args([id, text(5000)], [ref.nullable()]),
 
   // Documents
-  "docs.createDoc": args([z.object({ contentId: id, title: short().optional(), templateKey: ref.nullable().optional(), body: text(250_000).optional() })]),
+  "docs.createDoc": args([
+    z.object({ contentId: id, title: short().optional(), templateKey: ref.nullable().optional(), body: text(250_000).optional() }),
+  ]),
   "docs.attachDoc": args([id, id]),
   "docs.saveDoc": args([id, z.object({ title: short().optional(), body: text(250_000).optional() }), version]),
   "docs.restoreRevision": args([id, id]),
@@ -193,29 +271,37 @@ export const ACTIONS: Record<string, ActionSpec> = {
       packaging: short(2000),
       accessories: short(2000),
       info: text(5000),
-      units: z.array(z.object({ serialNumber: short(200), label: short(100).optional() })).min(1).max(200),
+      units: z
+        .array(z.object({ serialNumber: short(200), label: short(100).optional() }))
+        .min(1)
+        .max(200),
     }),
   ]),
   "equipment.updateItem": args([
     id,
-    z.object({
-      name: short(),
-      make: short(),
-      model: short(),
-      vendor: short(),
-      packaging: short(2000),
-      accessories: short(2000),
-      info: text(5000),
-      unitCost: amount(),
-      purchaseDate: date.nullable(),
-      serialNumber: short(200).nullable(),
-      unitLabel: short(100).nullable(),
-      condition,
-      quantityTotal: count(100_000),
-      category: equipCategory,
-    }).partial(),
+    z
+      .object({
+        name: short(),
+        make: short(),
+        model: short(),
+        vendor: short(),
+        packaging: short(2000),
+        accessories: short(2000),
+        info: text(5000),
+        unitCost: amount(),
+        purchaseDate: date.nullable(),
+        serialNumber: short(200).nullable(),
+        unitLabel: short(100).nullable(),
+        condition,
+        quantityTotal: count(100_000),
+        category: equipCategory,
+      })
+      .partial(),
   ]),
-  "equipment.setConditionBreakdown": args([id, z.object({ New: count(100_000), Good: count(100_000), Fair: count(100_000), Poor: count(100_000) }).partial()]),
+  "equipment.setConditionBreakdown": args([
+    id,
+    z.object({ New: count(100_000), Good: count(100_000), Fair: count(100_000), Poor: count(100_000) }).partial(),
+  ]),
   "equipment.addAttachment": args([id, z.enum(["photo", "receipt"]), photo]),
   "equipment.removeAttachment": args([id, id]),
   "equipment.startRepair": args([id, text(5000)]),
@@ -238,21 +324,32 @@ export const ACTIONS: Record<string, ActionSpec> = {
   ]),
   "equipment.addLines": args([id, z.array(line).max(500)]),
   "equipment.removeLine": args([id, id]),
-  "equipment.markGoneOut": args([id], [z.object({ expectedReturn: date.optional(), responsiblePersonId: ref.optional(), photos: z.record(id, z.array(photo).max(20)).optional() })]),
+  "equipment.markGoneOut": args(
+    [id],
+    [
+      z.object({
+        expectedReturn: date.optional(),
+        responsiblePersonId: ref.optional(),
+        photos: z.record(id, z.array(photo).max(20)).optional(),
+      }),
+    ],
+  ),
   "equipment.checkIn": args([
     id,
-    z.array(
-      z.object({
-        equipmentId: id,
-        returnedGood: count(100_000),
-        damaged: count(100_000),
-        lost: count(100_000),
-        conditionIn: condition.optional(),
-        description: text(5000).optional(),
-        sendToRepair: z.boolean().optional(),
-        photos: z.array(photo).max(20).optional(),
-      }),
-    ).max(500),
+    z
+      .array(
+        z.object({
+          equipmentId: id,
+          returnedGood: count(100_000),
+          damaged: count(100_000),
+          lost: count(100_000),
+          conditionIn: condition.optional(),
+          description: text(5000).optional(),
+          sendToRepair: z.boolean().optional(),
+          photos: z.array(photo).max(20).optional(),
+        }),
+      )
+      .max(500),
   ]),
   "equipment.attachManifest": args([id, id]),
   "equipment.releaseManifest": args([id]),
@@ -260,19 +357,41 @@ export const ACTIONS: Record<string, ActionSpec> = {
   "equipment.removeGearFromSheet": args([id, id]),
 
   // People
-  "people.createPerson": args([z.object({ category: staffCategory, name: short(), email: short(), phone: short(100), skills: z.array(short(100)).max(100), equipmentFamiliarity: z.array(short(100)).max(200) })]),
-  "people.updatePerson": args([id, z.object({ name: short(), email: short(), phone: short(100), skills: z.array(short(100)).max(100), equipmentFamiliarity: z.array(short(100)).max(200) }).partial()]),
-  "people.updateOwnProfile": args([
+  "people.createPerson": args([
     z.object({
+      category: staffCategory,
       name: short(),
       email: short(),
       phone: short(100),
-      notifyEmail: z.boolean(),
-      notifySms: z.boolean(),
-      photoUrl: url.nullable(),
-      fontSize: z.enum(["small", "default", "large", "xl"]),
-      density: z.enum(["comfortable", "compact"]),
-    }).partial(),
+      skills: z.array(short(100)).max(100),
+      equipmentFamiliarity: z.array(short(100)).max(200),
+    }),
+  ]),
+  "people.updatePerson": args([
+    id,
+    z
+      .object({
+        name: short(),
+        email: short(),
+        phone: short(100),
+        skills: z.array(short(100)).max(100),
+        equipmentFamiliarity: z.array(short(100)).max(200),
+      })
+      .partial(),
+  ]),
+  "people.updateOwnProfile": args([
+    z
+      .object({
+        name: short(),
+        email: short(),
+        phone: short(100),
+        notifyEmail: z.boolean(),
+        notifySms: z.boolean(),
+        photoUrl: url.nullable(),
+        fontSize: z.enum(["small", "default", "large", "xl"]),
+        density: z.enum(["comfortable", "compact"]),
+      })
+      .partial(),
   ]),
   "people.updatePersonCategory": args([id, staffCategory]),
   "people.deactivatePerson": args([id]),
@@ -290,22 +409,51 @@ export const ACTIONS: Record<string, ActionSpec> = {
 
   // Settings
   "settings.updateSettings": args([
-    z.object({
-      stageReminderHours: z.number().min(0).max(10_000),
-      storageWarningThreshold: z.number().min(0).max(100),
-      checkoutReturnDays: count(1000),
-      workDays: z.array(z.number().int().min(0).max(6)).max(7),
-      effortOverrides: z.record(short(200), z.number().min(0).max(1000)),
-    }).partial(),
+    z
+      .object({
+        stageReminderHours: z.number().min(0).max(10_000),
+        storageWarningThreshold: z.number().min(0).max(100),
+        checkoutReturnDays: count(1000),
+        workDays: z.array(z.number().int().min(0).max(6)).max(7),
+        effortOverrides: z.record(short(200), z.number().min(0).max(1000)),
+      })
+      .partial(),
   ]),
-  "settings.updateWorkspaceAppearance": args([z.object({ accent: enumOf(ACCENTS.map((a) => a.key)), fontPairing: enumOf(FONT_PAIRINGS.map((f) => f.key)) }).partial()]),
+  "settings.updateWorkspaceAppearance": args([
+    z.object({ accent: enumOf(ACCENTS.map((a) => a.key)), fontPairing: enumOf(FONT_PAIRINGS.map((f) => f.key)) }).partial(),
+  ]),
 
   // Storage
-  "storage.createDrive": args([z.object({ name: short(), capacityGB: amount(1e8), otherUsedGB: amount(1e8).optional(), notes: text(5000).optional() })]),
-  "storage.updateDrive": args([id, z.object({ name: short(), capacityGB: amount(1e8), otherUsedGB: amount(1e8), notes: text(5000) }).partial()]),
+  "storage.createDrive": args([
+    z.object({ name: short(), capacityGB: amount(1e8), otherUsedGB: amount(1e8).optional(), notes: text(5000).optional() }),
+  ]),
+  "storage.updateDrive": args([
+    id,
+    z.object({ name: short(), capacityGB: amount(1e8), otherUsedGB: amount(1e8), notes: text(5000) }).partial(),
+  ]),
   "storage.deleteDrive": args([id]),
-  "storage.addAllocation": args([z.object({ driveId: id, contentId: ref.nullable(), sizeGB: amount(1e8), kind: z.enum(["raw", "project", "delivered", "other"]), note: text(5000).optional(), label: short().optional() })]),
-  "storage.updateAllocation": args([id, z.object({ sizeGB: amount(1e8), kind: z.enum(["raw", "project", "delivered", "other"]), note: text(5000), label: short(), driveId: id }).partial()]),
+  "storage.addAllocation": args([
+    z.object({
+      driveId: id,
+      contentId: ref.nullable(),
+      sizeGB: amount(1e8),
+      kind: z.enum(["raw", "project", "delivered", "other"]),
+      note: text(5000).optional(),
+      label: short().optional(),
+    }),
+  ]),
+  "storage.updateAllocation": args([
+    id,
+    z
+      .object({
+        sizeGB: amount(1e8),
+        kind: z.enum(["raw", "project", "delivered", "other"]),
+        note: text(5000),
+        label: short(),
+        driveId: id,
+      })
+      .partial(),
+  ]),
   "storage.moveAllocation": args([id, id]),
   "storage.removeAllocation": args([id]),
   "storage.clearRecordFromDrives": args([id]),

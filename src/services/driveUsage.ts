@@ -29,9 +29,18 @@ export function driveUsage(drive: Drive): DriveUsage {
     cur.kinds.add(a.kind);
     by.set(key, cur);
   }
-  const projects = [...by.values()].map((v) => ({ contentId: v.contentId, label: v.label, gb: v.gb, kinds: [...v.kinds] })).sort((a, b) => b.gb - a.gb);
+  const projects = [...by.values()]
+    .map((v) => ({ contentId: v.contentId, label: v.label, gb: v.gb, kinds: [...v.kinds] }))
+    .sort((a, b) => b.gb - a.gb);
   const used = drive.otherUsedGB + projects.reduce((n, p) => n + p.gb, 0);
-  return { drive, usedGB: used, freeGB: Math.max(0, drive.capacityGB - used), pct: drive.capacityGB ? (used / drive.capacityGB) * 100 : 0, otherGB: drive.otherUsedGB, projects };
+  return {
+    drive,
+    usedGB: used,
+    freeGB: Math.max(0, drive.capacityGB - used),
+    pct: drive.capacityGB ? (used / drive.capacityGB) * 100 : 0,
+    otherGB: drive.otherUsedGB,
+    projects,
+  };
 }
 
 export const allDriveUsage = (): DriveUsage[] => getDb().drives.map(driveUsage);
@@ -55,4 +64,3 @@ export function recordSnapshot(): void {
   } else db.snapshots.push({ date: today, usedGB: t.used, capacityGB: t.capacity });
   db.snapshots.sort((a, b) => a.date.localeCompare(b.date));
 }
-

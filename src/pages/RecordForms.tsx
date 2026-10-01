@@ -14,7 +14,17 @@ function assigneeOptions() {
 }
 
 /** New top-level project, or a child (Season / Episode / Album / Track) when `parent` is given. */
-export function NewRecordModal({ category, parent, onClose, onCreated }: { category?: CategoryKey; parent?: ContentRecord; onClose: () => void; onCreated: (r: ContentRecord) => void }) {
+export function NewRecordModal({
+  category,
+  parent,
+  onClose,
+  onCreated,
+}: {
+  category?: CategoryKey;
+  parent?: ContentRecord;
+  onClose: () => void;
+  onCreated: (r: ContentRecord) => void;
+}) {
   const { actor, attempt } = useApp();
   const [cat, setCat] = useState<CategoryKey>(parent?.category ?? category ?? "series");
   const [title, setTitle] = useState("");
@@ -35,8 +45,20 @@ export function NewRecordModal({ category, parent, onClose, onCreated }: { categ
   const options = assigneeOptions();
 
   const save = () => {
-    const input = { title, scheduledDate: scheduled || null, deadline: deadline || null, assigneePersonId: assignee || null, notes, productionLevel: cat === "live" ? level : null, showStart: hasShowDates ? showStart || null : null, showEnd: hasShowDates ? showEnd || null : null };
-    const rec = attempt(() => (parent ? createChildRecord(actor, parent.contentId, input) : createRecord(actor, { ...input, category: cat })), "Created");
+    const input = {
+      title,
+      scheduledDate: scheduled || null,
+      deadline: deadline || null,
+      assigneePersonId: assignee || null,
+      notes,
+      productionLevel: cat === "live" ? level : null,
+      showStart: hasShowDates ? showStart || null : null,
+      showEnd: hasShowDates ? showEnd || null : null,
+    };
+    const rec = attempt(
+      () => (parent ? createChildRecord(actor, parent.contentId, input) : createRecord(actor, { ...input, category: cat })),
+      "Created",
+    );
     if (rec) onCreated(rec);
   };
 
@@ -46,8 +68,12 @@ export function NewRecordModal({ category, parent, onClose, onCreated }: { categ
       onClose={onClose}
       actions={
         <>
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn primary" onClick={save}>Create</button>
+          <button className="btn" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="btn primary" onClick={save}>
+            Create
+          </button>
         </>
       }
     >
@@ -55,21 +81,45 @@ export function NewRecordModal({ category, parent, onClose, onCreated }: { categ
         {!parent && (
           <Field label="Category">
             <select value={cat} onChange={(e) => setCat(e.target.value as CategoryKey)}>
-              {CATEGORIES.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+              {CATEGORIES.map((c) => (
+                <option key={c.key} value={c.key}>
+                  {c.label}
+                </option>
+              ))}
             </select>
           </Field>
         )}
         <Field label="Title">
-          <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} autoFocus placeholder={parent ? `${kind} title` : "Project title"} />
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            autoFocus
+            placeholder={parent ? `${kind} title` : "Project title"}
+          />
         </Field>
-        {!parent && cfg.supportsChildren && !liveShow && <p className="muted">{cfg.label} projects hold {cfg.childLevelLabel?.toLowerCase()}s and {cfg.grandchildLevelLabel?.toLowerCase()}s. The {cfg.grandchildLevelLabel?.toLowerCase()}s move through the pipeline.</p>}
+        {!parent && cfg.supportsChildren && !liveShow && (
+          <p className="muted">
+            {cfg.label} projects hold {cfg.childLevelLabel?.toLowerCase()}s and {cfg.grandchildLevelLabel?.toLowerCase()}s. The{" "}
+            {cfg.grandchildLevelLabel?.toLowerCase()}s move through the pipeline.
+          </p>
+        )}
         {hasShowDates && (
           <div className="row">
-            <Field label={liveShow ? "First day of the show" : "Show starts"}><input type="date" value={showStart} onChange={(e) => setShowStart(e.target.value)} /></Field>
-            <Field label={liveShow ? "Last day of the show" : "Show ends"}><input type="date" value={showEnd} onChange={(e) => setShowEnd(e.target.value)} /></Field>
+            <Field label={liveShow ? "First day of the show" : "Show starts"}>
+              <input type="date" value={showStart} onChange={(e) => setShowStart(e.target.value)} />
+            </Field>
+            <Field label={liveShow ? "Last day of the show" : "Show ends"}>
+              <input type="date" value={showEnd} onChange={(e) => setShowEnd(e.target.value)} />
+            </Field>
           </div>
         )}
-        {liveShow && <p className="muted">Each day between those dates is created as its own item, with its own pipeline, call sheet and run of show. A one-day show is a single day. Leave the dates empty to add days later.</p>}
+        {liveShow && (
+          <p className="muted">
+            Each day between those dates is created as its own item, with its own pipeline, call sheet and run of show. A one-day show is a
+            single day. Leave the dates empty to add days later.
+          </p>
+        )}
         <div className="row">
           {willUsePipeline && (
             <Field label={shootDateLabel(cat)}>
@@ -84,7 +134,11 @@ export function NewRecordModal({ category, parent, onClose, onCreated }: { categ
           <Field label="Responsible person">
             <select value={assignee} onChange={(e) => setAssignee(e.target.value)}>
               <option value="">Unassigned</option>
-              {options.map((p) => <option key={p.personId} value={p.personId}>{p.name}</option>)}
+              {options.map((p) => (
+                <option key={p.personId} value={p.personId}>
+                  {p.name}
+                </option>
+              ))}
             </select>
           </Field>
         )}
@@ -113,36 +167,81 @@ export function EditRecordModal({ record, onClose }: { record: ContentRecord; on
 
   const save = () => {
     const ok = attempt(
-      () => updateRecord(actor, record.contentId, { title, scheduledDate: scheduled || null, deadline: deadline || null, assigneePersonId: assignee || null, notes, ...(record.category === "live" && carriesPipeline ? { productionLevel: level } : {}), ...(hasShowDates ? { showStart: showStart || null, showEnd: showEnd || null } : {}) }, version),
+      () =>
+        updateRecord(
+          actor,
+          record.contentId,
+          {
+            title,
+            scheduledDate: scheduled || null,
+            deadline: deadline || null,
+            assigneePersonId: assignee || null,
+            notes,
+            ...(record.category === "live" && carriesPipeline ? { productionLevel: level } : {}),
+            ...(hasShowDates ? { showStart: showStart || null, showEnd: showEnd || null } : {}),
+          },
+          version,
+        ),
       "Saved",
     );
     if (ok) onClose();
   };
 
   return (
-    <Modal title={`Edit ${record.title}`} onClose={onClose} actions={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save}>Save changes</button></>}>
+    <Modal
+      title={`Edit ${record.title}`}
+      onClose={onClose}
+      actions={
+        <>
+          <button className="btn" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="btn primary" onClick={save}>
+            Save changes
+          </button>
+        </>
+      }
+    >
       <div className="stack">
-        <Field label="Title"><input type="text" value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
+        <Field label="Title">
+          <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} />
+        </Field>
         <div className="row">
-          {carriesPipeline && <Field label={shootDateLabel(record.category)}><input type="date" value={scheduled} onChange={(e) => setScheduled(e.target.value)} /></Field>}
-          <Field label="Publish date"><input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} /></Field>
+          {carriesPipeline && (
+            <Field label={shootDateLabel(record.category)}>
+              <input type="date" value={scheduled} onChange={(e) => setScheduled(e.target.value)} />
+            </Field>
+          )}
+          <Field label="Publish date">
+            <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
+          </Field>
         </div>
         {hasShowDates && (
           <div className="row">
-            <Field label="Show starts"><input type="date" value={showStart} onChange={(e) => setShowStart(e.target.value)} /></Field>
-            <Field label="Show ends"><input type="date" value={showEnd} onChange={(e) => setShowEnd(e.target.value)} /></Field>
+            <Field label="Show starts">
+              <input type="date" value={showStart} onChange={(e) => setShowStart(e.target.value)} />
+            </Field>
+            <Field label="Show ends">
+              <input type="date" value={showEnd} onChange={(e) => setShowEnd(e.target.value)} />
+            </Field>
           </div>
         )}
         {carriesPipeline && (
           <Field label="Responsible person">
             <select value={assignee} onChange={(e) => setAssignee(e.target.value)}>
               <option value="">Unassigned</option>
-              {assigneeOptions().map((p) => <option key={p.personId} value={p.personId}>{p.name}</option>)}
+              {assigneeOptions().map((p) => (
+                <option key={p.personId} value={p.personId}>
+                  {p.name}
+                </option>
+              ))}
             </select>
           </Field>
         )}
         {record.category === "live" && carriesPipeline && <LevelField value={level} onChange={setLevel} />}
-        <Field label="Notes"><textarea value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
+        <Field label="Notes">
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
+        </Field>
       </div>
     </Modal>
   );

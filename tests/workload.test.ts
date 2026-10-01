@@ -14,7 +14,14 @@ import { effortFor } from "../src/config/capacity";
 let passed = 0;
 const t = (name: string, fn: () => void) => {
   resetDemoData();
-  try { fn(); passed++; console.log("ok  ", name); } catch (e) { console.error("FAIL", name, "\n    ", (e as Error).message); process.exitCode = 1; }
+  try {
+    fn();
+    passed++;
+    console.log("ok  ", name);
+  } catch (e) {
+    console.error("FAIL", name, "\n    ", (e as Error).message);
+    process.exitCode = 1;
+  }
 };
 const hop = () => login("hop@dof.demo", "demo");
 const crew1 = () => login("crew1@dof.demo", "demo");
@@ -37,7 +44,12 @@ function editorial(deadline: string, ownersList: string[] = [B], fresh = true) {
   const show = C.createRecord(hop(), { category: "series", title: "Test show" });
   const season = C.createChildRecord(hop(), show.contentId, { title: "S1" });
   const ep = C.createChildRecord(hop(), season.contentId, { title: "Ep 1" });
-  Object.assign(ep, { pipelineStage: "Editorial", stageOutputs: { Idea: true, Scripting: true, "Pre-production": true, Recording: true, Ingest: true }, stageDeadlines: { Editorial: deadline, Review: deadline, Delivered: deadline }, scheduledDate: null });
+  Object.assign(ep, {
+    pipelineStage: "Editorial",
+    stageOutputs: { Idea: true, Scripting: true, "Pre-production": true, Recording: true, Ingest: true },
+    stageDeadlines: { Editorial: deadline, Review: deadline, Delivered: deadline },
+    scheduledDate: null,
+  });
   ep.tasks = [];
   for (const p of ownersList) C.addStageOwner(hop(), ep.contentId, "Editorial", p, ["Editor"]);
   return ep;
@@ -47,7 +59,8 @@ const day = (who: string, date: string, asOf = MON) => W.workloadFor(who, asOf, 
 t("finishing a series cut takes two days when the person has nothing else on", () => {
   assert.equal(effortFor("series", "Editorial"), 2);
   editorial("2030-01-08"); // Monday and Tuesday
-  assert.equal(day(B, "2030-01-07").load, 1); assert.equal(day(B, "2030-01-08").load, 1);
+  assert.equal(day(B, "2030-01-07").load, 1);
+  assert.equal(day(B, "2030-01-08").load, 1);
   assert.equal(day(B, "2030-01-07").status, "busy"); // full, but not over
   assert.equal(day(B, "2030-01-09").load, 0);
 });
@@ -59,23 +72,32 @@ t("with only one day to do it, the cut is more than one person can do", () => {
 });
 t("more time spreads the same work thinner", () => {
   editorial("2030-01-11"); // five working days
-  assert.equal(day(B, "2030-01-07").load, 0.4); assert.equal(day(B, "2030-01-07").status, "free");
+  assert.equal(day(B, "2030-01-07").load, 0.4);
+  assert.equal(day(B, "2030-01-07").status, "free");
 });
 t("a second owner splits the work between them", () => {
   editorial("2030-01-07", [B, F]);
-  assert.equal(day(B, "2030-01-07").load, 1); assert.equal(day(F, "2030-01-07").load, 1);
+  assert.equal(day(B, "2030-01-07").load, 1);
+  assert.equal(day(F, "2030-01-07").load, 1);
 });
 t("weekends do not count as time to work", () => {
   editorial("2030-01-13", [B]); // due Sunday
   const w = W.workloadFor(B, "2030-01-11", 5); // asked from Friday
-  assert.equal(w.days[0].load, 2); assert.equal(w.days[1].load, 0); assert.equal(w.days[1].status, "off");
+  assert.equal(w.days[0].load, 2);
+  assert.equal(w.days[1].load, 0);
+  assert.equal(w.days[1].status, "off");
 });
 t("a shoot day on a call sheet takes the whole day, and stacks with editing", () => {
   const ep = editorial("2030-01-08");
-  const sheet = CS.createCallSheet(hop(), { contentId: getRecord(ep.contentId)!.contentId.split("-").slice(0, 3).join("-"), date: "2030-01-08", crewPersonIds: [B] });
+  const sheet = CS.createCallSheet(hop(), {
+    contentId: getRecord(ep.contentId)!.contentId.split("-").slice(0, 3).join("-"),
+    date: "2030-01-08",
+    crewPersonIds: [B],
+  });
   assert.ok(sheet.id);
   const d = day(B, "2030-01-08");
-  assert.equal(d.load, 2); assert.equal(d.status, "over");
+  assert.equal(d.load, 2);
+  assert.equal(d.status, "over");
   assert.equal(d.parts.filter((p) => p.item.kind === "shoot").length, 1);
 });
 t("a booked shoot with no call sheet still takes the crew's day", () => {
@@ -89,8 +111,17 @@ t("a booked shoot with no call sheet still takes the crew's day", () => {
 t("being away with gear takes the whole day, weekends included", () => {
   clean();
   const show = C.createRecord(hop(), { category: "documentary", title: "Field" });
-  E.createManifest(hop(), { contentId: show.contentId, date: "2030-01-12", expectedReturn: "2030-01-14", destination: "outside", status: "assigned", responsiblePersonId: B, lines: [{ equipmentId: "DOF-EQ-AUD-002", quantity: 1 }] });
-  assert.equal(day(B, "2030-01-12").load, 1); assert.equal(day(B, "2030-01-12").workDay, false);
+  E.createManifest(hop(), {
+    contentId: show.contentId,
+    date: "2030-01-12",
+    expectedReturn: "2030-01-14",
+    destination: "outside",
+    status: "assigned",
+    responsiblePersonId: B,
+    lines: [{ equipmentId: "DOF-EQ-AUD-002", quantity: 1 }],
+  });
+  assert.equal(day(B, "2030-01-12").load, 1);
+  assert.equal(day(B, "2030-01-12").workDay, false);
   assert.equal(day(B, "2030-01-14").load, 1);
   assert.equal(day(B, "2030-01-15").load, 0);
 });
@@ -98,15 +129,29 @@ t("a stage that is already late becomes catch-up work from today", () => {
   editorial("2030-01-01");
   const w = W.workloadFor(B, MON, 14);
   assert.ok(w.items[0].late);
-  assert.equal(day(B, "2030-01-07").load, 1); assert.equal(day(B, "2030-01-08").load, 1); assert.equal(day(B, "2030-01-09").load, 0);
+  assert.equal(day(B, "2030-01-07").load, 1);
+  assert.equal(day(B, "2030-01-08").load, 1);
+  assert.equal(day(B, "2030-01-09").load, 0);
 });
 t("checklist items go to the person they are given to, and done items are not counted", () => {
   const ep = editorial("2030-01-08", [B]);
   ep.tasks = [];
-  for (const [label, who] of [["Story lock", B], ["Picture lock", B], ["Sound check", F], ["Color", F]] as const) C.addTask(hop(), ep.contentId, { label, assigneePersonId: who, dueDate: "2030-01-08" });
-  assert.equal(W.workloadFor(B, MON, 14).items.reduce((n, i) => n + i.effort, 0), 1); // two of four tasks, half a day each
+  for (const [label, who] of [
+    ["Story lock", B],
+    ["Picture lock", B],
+    ["Sound check", F],
+    ["Color", F],
+  ] as const)
+    C.addTask(hop(), ep.contentId, { label, assigneePersonId: who, dueDate: "2030-01-08" });
+  assert.equal(
+    W.workloadFor(B, MON, 14).items.reduce((n, i) => n + i.effort, 0),
+    1,
+  ); // two of four tasks, half a day each
   C.updateTask(hop(), ep.contentId, ep.tasks[0].id, { done: true });
-  assert.equal(W.workloadFor(B, MON, 14).items.reduce((n, i) => n + i.effort, 0), 0.5);
+  assert.equal(
+    W.workloadFor(B, MON, 14).items.reduce((n, i) => n + i.effort, 0),
+    0.5,
+  );
 });
 t("a stage whose output is confirmed has nothing left to do", () => {
   const ep = editorial("2030-01-08");
@@ -119,12 +164,17 @@ t("later stages are planned in the time between the earlier deadlines", () => {
   C.addStageOwner(hop(), ep.contentId, "Review", B, ["Reviewer"]);
   // Review is half a day, between Wednesday and Thursday
   assert.equal(day(B, "2030-01-08").load, 1);
-  assert.equal(day(B, "2030-01-09").load, 0.25); assert.equal(day(B, "2030-01-10").load, 0.25);
+  assert.equal(day(B, "2030-01-09").load, 0.25);
+  assert.equal(day(B, "2030-01-10").load, 0.25);
 });
 t("filming, recording and streaming stages are not counted as desk work", () => {
   clean();
   const show = C.createRecord(hop(), { category: "devotional", title: "Rec" });
-  Object.assign(show, { pipelineStage: "Recording", stageDeadlines: { Recording: "2030-01-08", Editorial: "2030-01-12" }, scheduledDate: null });
+  Object.assign(show, {
+    pipelineStage: "Recording",
+    stageDeadlines: { Recording: "2030-01-08", Editorial: "2030-01-12" },
+    scheduledDate: null,
+  });
   C.addStageOwner(hop(), show.contentId, "Recording", B, ["Camera operator"]);
   assert.equal(day(B, "2030-01-07").load, 0);
 });
@@ -172,8 +222,13 @@ t("settings are checked", () => {
 t("the Head of Production sees every crew member's load; crew see only their own", () => {
   editorial("2030-01-08");
   assert.ok(W.crewWorkload(hop(), MON).length >= 3);
-  assert.deepEqual(W.crewWorkload(crew2(), MON).map((x) => x.person.personId), [B]);
-  assert.equal(W.canSeeWorkload(crew1(), B), false); assert.equal(W.canSeeWorkload(crew2(), B), true); assert.equal(W.canSeeWorkload(hop(), B), true);
+  assert.deepEqual(
+    W.crewWorkload(crew2(), MON).map((x) => x.person.personId),
+    [B],
+  );
+  assert.equal(W.canSeeWorkload(crew1(), B), false);
+  assert.equal(W.canSeeWorkload(crew2(), B), true);
+  assert.equal(W.canSeeWorkload(hop(), B), true);
 });
 t("the crew list puts the most stretched first", () => {
   editorial("2030-01-07");

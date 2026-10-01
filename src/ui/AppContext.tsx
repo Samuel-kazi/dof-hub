@@ -35,7 +35,12 @@ export interface MenuItem {
   divider?: boolean;
 }
 
-interface ConfirmOpts { title: string; body: string; confirmLabel?: string; danger?: boolean }
+interface ConfirmOpts {
+  title: string;
+  body: string;
+  confirmLabel?: string;
+  danger?: boolean;
+}
 
 interface Ctx {
   actor: Actor;
@@ -61,7 +66,12 @@ interface Ctx {
   copyLink: (r?: Route) => Promise<void>;
 }
 
-export interface AppNote { id: number; title: string; body: string; at: string }
+export interface AppNote {
+  id: number;
+  title: string;
+  body: string;
+  at: string;
+}
 
 import type { ReportDoc } from "../services/reports";
 import { syncEvents } from "../data/remote";
@@ -77,13 +87,21 @@ export const useApp = (): Ctx => {
 
 export function AppProvider({ actor, onLogout, children }: { actor: Actor; onLogout: () => void; children: ReactNode }) {
   // A link shared before signing in lands here once, right after login, instead of on the dashboard.
-  const [stack, setStack] = useState<Route[]>(() => { const r = routeFromLocation(); return [r ?? { n: "dashboard" }]; });
+  const [stack, setStack] = useState<Route[]>(() => {
+    const r = routeFromLocation();
+    return [r ?? { n: "dashboard" }];
+  });
   const [toasts, setToasts] = useState<{ id: number; msg: string; kind: string }[]>([]);
   const [menuState, setMenuState] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
   const [confirmState, setConfirmState] = useState<(ConfirmOpts & { resolve: (v: boolean) => void }) | null>(null);
   const idRef = useRef(0);
   const [notes, setNotes] = useState<AppNote[]>([]);
-  useEffect(() => { syncEvents.onError = (m) => toast(m, "error"); return () => { syncEvents.onError = () => {}; }; }, []);
+  useEffect(() => {
+    syncEvents.onError = (m) => toast(m, "error");
+    return () => {
+      syncEvents.onError = () => {};
+    };
+  }, []);
   const [printing, setPrinting] = useState<ReportDoc | null>(null);
 
   const go = useCallback((r: Route) => setStack((s) => [...s, r]), []);
@@ -104,7 +122,11 @@ export function AppProvider({ actor, onLogout, children }: { actor: Actor; onLog
     // Let the report draw, then open the print dialog.
     setTimeout(() => {
       document.body.classList.add("printing-report");
-      const done = () => { document.body.classList.remove("printing-report"); setPrinting(null); window.removeEventListener("afterprint", done); };
+      const done = () => {
+        document.body.classList.remove("printing-report");
+        setPrinting(null);
+        window.removeEventListener("afterprint", done);
+      };
       window.addEventListener("afterprint", done);
       window.print();
     }, 150);
@@ -129,7 +151,11 @@ export function AppProvider({ actor, onLogout, children }: { actor: Actor; onLog
   const confirm = useCallback((o: ConfirmOpts) => new Promise<boolean>((resolve) => setConfirmState({ ...o, resolve })), []);
   const menu = useCallback((e: { clientX: number; clientY: number; preventDefault: () => void }, items: MenuItem[]) => {
     e.preventDefault();
-    setMenuState({ x: Math.min(e.clientX, window.innerWidth - 220), y: Math.min(e.clientY, window.innerHeight - items.length * 40 - 20), items });
+    setMenuState({
+      x: Math.min(e.clientX, window.innerWidth - 220),
+      y: Math.min(e.clientY, window.innerHeight - items.length * 40 - 20),
+      items,
+    });
   }, []);
 
   useEffect(() => {
@@ -169,7 +195,25 @@ export function AppProvider({ actor, onLogout, children }: { actor: Actor; onLog
     [shareLink, toast],
   );
   const value = useMemo<Ctx>(
-    () => ({ actor, me, route, go, back, canBack: stack.length > 1, toast, attempt, confirm, menu, logout: onLogout, notify, notifications: notes, clearNotifications: () => setNotes([]), printReport, shareLink, copyLink }),
+    () => ({
+      actor,
+      me,
+      route,
+      go,
+      back,
+      canBack: stack.length > 1,
+      toast,
+      attempt,
+      confirm,
+      menu,
+      logout: onLogout,
+      notify,
+      notifications: notes,
+      clearNotifications: () => setNotes([]),
+      printReport,
+      shareLink,
+      copyLink,
+    }),
     [actor, me, route, stack, go, back, toast, attempt, confirm, menu, onLogout, notify, notes, printReport, shareLink, copyLink],
   );
 
@@ -207,8 +251,22 @@ export function AppProvider({ actor, onLogout, children }: { actor: Actor; onLog
           }}
           actions={
             <>
-              <button className="btn" onClick={() => { confirmState.resolve(false); setConfirmState(null); }}>Cancel</button>
-              <button className={`btn ${confirmState.danger ? "danger" : "primary"}`} onClick={() => { confirmState.resolve(true); setConfirmState(null); }}>
+              <button
+                className="btn"
+                onClick={() => {
+                  confirmState.resolve(false);
+                  setConfirmState(null);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                className={`btn ${confirmState.danger ? "danger" : "primary"}`}
+                onClick={() => {
+                  confirmState.resolve(true);
+                  setConfirmState(null);
+                }}
+              >
                 {confirmState.confirmLabel ?? "Confirm"}
               </button>
             </>
@@ -217,10 +275,19 @@ export function AppProvider({ actor, onLogout, children }: { actor: Actor; onLog
           <p className="sub">{confirmState.body}</p>
         </Modal>
       )}
-      {printing && typeof document !== "undefined" && createPortal(<div id="print-root"><ReportView report={printing} /></div>, document.body)}
+      {printing &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div id="print-root">
+            <ReportView report={printing} />
+          </div>,
+          document.body,
+        )}
       <div className="toasts" aria-live="polite">
         {toasts.map((t) => (
-          <div key={t.id} className={`toast ${t.kind}`}>{t.msg}</div>
+          <div key={t.id} className={`toast ${t.kind}`}>
+            {t.msg}
+          </div>
         ))}
       </div>
     </AppCtx.Provider>
