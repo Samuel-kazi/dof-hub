@@ -13,6 +13,8 @@ export function pdfSafe(text: string): string {
     .replace(/[\u2022\u25CF]/g, "-")
     .replace(/[\u2610]/g, "[ ]")
     .replace(/[\u2611\u2612]/g, "[x]")
+    // Keeps tabs, newlines and printable Latin-1, which is all the PDF's built-in font can draw.
+    // eslint-disable-next-line no-control-regex
     .replace(/[^\x09\x0A\x20-\x7E\u00A0-\u00FF]/g, "");
 }
 

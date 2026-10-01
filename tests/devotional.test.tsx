@@ -57,7 +57,7 @@ t("a Closed project shows its reason plainly, on its own page", () => {
 
 t("Editing has exactly one working ready-for-review checkbox, and the advance button waits on it", () => {
   const html = page(toEditing());
-  assert.equal((html.match(/<input type="checkbox"/g) ?? []).filter((_, i) => html.indexOf("Ready for review") > -1).length >= 1, true);
+  assert.equal((html.match(/<input type="checkbox"/g) ?? []).filter(() => html.indexOf("Ready for review") > -1).length >= 1, true);
   assert.doesNotMatch(html, /"Ready for review" is in place/, "the generic duplicate checkbox is hidden");
   assert.match(html, /Done, move to.*Review/s);
   assert.match(html, /disabled=""[^>]*>Done, move to/s, "disabled until ready-for-review is ticked");

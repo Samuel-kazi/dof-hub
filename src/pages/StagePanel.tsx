@@ -6,7 +6,7 @@ import { categoryOf, finalStageOf } from "../config/categories";
 import { Empty, Field } from "../ui/parts";
 import { Modal } from "../ui/Modal";
 import { IconPlus } from "../ui/Icons";
-import { canJoin, canWrite, isHop } from "../services/access";
+import { canJoin, canWrite } from "../services/access";
 import { can } from "../services/wrapped/permissions";
 import { PROJECT_STAGE, addLinks, addStageOwner, addTask, approveDevotionalReview, approveGuestReview, closeDevotional, ownersOf, removeLink, removeStageOwner, removeTask, sendBackDevotionalToEditing, setDevotionalReadyForReview, setOwnerRoles, setPostProductionNeeded, setStageDeadline, setStrikePlan, spinOffsOf, splitRecording, tasksOf, updateTask, usesPipeline } from "../services/wrapped/content";
 import { teamOf } from "../services/wrapped/team";

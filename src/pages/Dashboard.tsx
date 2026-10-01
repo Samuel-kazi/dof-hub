@@ -2,9 +2,9 @@ import { useMemo, useRef, useState } from "react";
 import { can } from "../services/wrapped/permissions";
 import { useApp } from "../ui/AppContext";
 import { useDb } from "../data/store";
-import { ROLES } from "../config/roles";
+
 import { categoryOf } from "../config/categories";
-import { visibleCallSheets, visibleRecords, isHop } from "../services/access";
+import { visibleCallSheets, visibleRecords } from "../services/access";
 import { currentStageDeadline, displayTitle, getBlockedOnUser, isComplete, leavesUnder, productionUnits, riskOf, usesPipeline } from "../services/wrapped/content";
 import { nameOf } from "../services/wrapped/people";
 import { daysUntil, fmtShort, fmtSize, relativeDays, todayIso } from "../services/utils";
@@ -65,7 +65,6 @@ function HeroSearch() {
   );
 }
 
-
 /** One number, one line about it, and where to go for more. */
 function StatCard({ icon, title, range, big, unit, foot, bad, share, onClick }: { icon: JSX.Element; title: string; range?: string; big: string | number; unit?: string; foot: string; bad?: boolean; share?: number; onClick: () => void }) {
   return (
@@ -80,9 +79,8 @@ function StatCard({ icon, title, range, big, unit, foot, bad, share, onClick }: 
 
 export function Dashboard() {
   const { actor, me, go } = useApp();
-  const db = useDb();
+  useDb(); // shows changes as they happen
   const [creating, setCreating] = useState(false);
-  const role = ROLES[actor.role];
 
   const records = visibleRecords(actor);
   const leaves = records.filter(usesPipeline);

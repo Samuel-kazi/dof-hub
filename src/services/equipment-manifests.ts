@@ -1,4 +1,4 @@
-import type { Actor, Attachment, EquipCondition, EquipmentHistory, EquipmentItem, Incident, Manifest, ManifestLine } from "../types";
+import type { Actor, Attachment, EquipCondition, EquipmentItem, Incident, Manifest, ManifestLine } from "../types";
 import { RuleError } from "../types";
 import { commit, getDb, nextCounter } from "../data/store";
 import { claimId } from "../data/ids";
@@ -9,8 +9,7 @@ import { logAudit } from "./audit";
 import { getPerson } from "./people";
 import { fmtShort, pad, todayIso } from "./utils";
 import {
-  addUnits, applyConditionBreakdown, availabilityOn, endOf, getItem, isOverdue, removeFromThenWorst, removeWorstFirst, requireGearAccess,
-  type Availability,
+  addUnits, applyConditionBreakdown, availabilityOn, getItem, isOverdue, removeFromThenWorst, removeWorstFirst, requireGearAccess, type Availability,
 } from "./equipment-items";
 import { groupByFamily } from "./equipment-reports";
 

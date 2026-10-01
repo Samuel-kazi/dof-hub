@@ -6,7 +6,7 @@ import { renderToString } from "react-dom/server";
 import { AppProvider } from "../src/ui/AppContext";
 import { RecordPage } from "../src/pages/RecordPage";
 import { login } from "../src/services/auth";
-import { resetDemoData, getDb } from "../src/data/store";
+import { resetDemoData } from "../src/data/store";
 import { getRecord } from "../src/services/access";
 import * as C from "../src/services/content";
 import { categoryOf } from "../src/config/categories";

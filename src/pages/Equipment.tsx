@@ -11,7 +11,7 @@ import {
 } from "../services/wrapped/equipment";
 import { getDb } from "../data/store";
 import { nameOf } from "../services/wrapped/people";
-import { fmtDate, fmtShort, relativeDays, todayIso, daysUntil } from "../services/utils";
+import { fmtDate, fmtShort, relativeDays, daysUntil } from "../services/utils";
 import { ItemFormModal, NewCheckoutModal, useItemActions } from "./EquipmentForms";
 
 type Tab = "inventory" | "checkouts" | "incidents";
@@ -96,7 +96,7 @@ function Inventory({ actions }: { actions: ReturnType<typeof useItemActions> }) 
     const open = openModel.has(g.key);
     const free = g.items.filter((i) => i.baseStatus === "active" && qtyOut(i) === 0 && qtyAssigned(i) === 0).length;
     const head = (
-      <tr key={g.key} className="clickable fam-row" onClick={() => setOpenModel((s) => { const n = new Set(s); n.has(g.key) ? n.delete(g.key) : n.add(g.key); return n; })}>
+      <tr key={g.key} className="clickable fam-row" onClick={() => setOpenModel((s) => { const n = new Set(s); if (n.has(g.key)) n.delete(g.key); else n.add(g.key); return n; })}>
         <td><span className="cid">{g.items.length} units</span></td>
         <td>
           <div>{g.name}</div>
@@ -118,7 +118,7 @@ function Inventory({ actions }: { actions: ReturnType<typeof useItemActions> }) 
     const total = f.items.reduce((n, i) => n + i.quantityTotal, 0);
     const free = f.items.reduce((n, i) => n + (i.baseStatus === "active" ? Math.max(0, i.quantityTotal - qtyOut(i) - qtyAssigned(i)) : 0), 0);
     const head = (
-      <tr key={f.key} className="clickable fam-row" onClick={() => setOpenFam((s) => { const n = new Set(s); n.has(f.key) ? n.delete(f.key) : n.add(f.key); return n; })}>
+      <tr key={f.key} className="clickable fam-row" onClick={() => setOpenFam((s) => { const n = new Set(s); if (n.has(f.key)) n.delete(f.key); else n.add(f.key); return n; })}>
         <td><span className="cid">{f.key}</span></td>
         <td><div>{f.name}</div><div className="muted" style={{ fontSize: ".82rem" }}>{f.items.length} batch{f.items.length === 1 ? "" : "es"}. Click to {open ? "hide" : "show"} them.</div></td>
         <td>{equipCategory(f.category).label}</td>

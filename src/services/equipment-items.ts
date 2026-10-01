@@ -1,6 +1,6 @@
-import type { Actor, Attachment, EquipCategoryKey, EquipCondition, EquipmentHistory, EquipmentItem, Manifest, TrackingType } from "../types";
+import type { Actor, Attachment, EquipCategoryKey, EquipCondition, EquipmentItem, Manifest, TrackingType } from "../types";
 import { RuleError } from "../types";
-import { commit, getDb, nextCounter } from "../data/store";
+import { commit, getDb } from "../data/store";
 import { claimId } from "../data/ids";
 import { hist, makeAttachment } from "./equipment-log";
 import { CONDITIONS, equipCategory } from "../config/equipment";

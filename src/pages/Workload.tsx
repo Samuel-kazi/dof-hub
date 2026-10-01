@@ -6,7 +6,7 @@ import { useApp } from "../ui/AppContext";
 import { Empty } from "../ui/parts";
 import { DEFAULT_STAGE_EFFORT, HORIZON_DAYS } from "../config/capacity";
 import { categoryOf } from "../config/categories";
-import { isHop } from "../services/access";
+
 import { assignmentRisks, canSeeWorkload, crewWorkload, fmtDays, workloadFor, type DayLoad, type LoadStatus, type Risk, type Workload } from "../services/workload";
 import { fmtShort, todayIso } from "../services/utils";
 

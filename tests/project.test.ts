@@ -29,7 +29,6 @@ const throwsRule = (fn: () => unknown, match?: RegExp) => assert.throws(fn, (e) 
 const hop = () => login("hop@dof.demo", "demo");
 const crew1 = () => login("crew1@dof.demo", "demo"); // Series, Devotional, Music
 const crew2 = () => login("crew2@dof.demo", "demo"); // Series, Documentary
-const crew3 = () => login("crew3@dof.demo", "demo"); // Series, Live, Music
 const vol = () => login("volunteer1@dof.demo", "demo"); // Series
 const rec = (id: string) => getRecord(id)!;
 

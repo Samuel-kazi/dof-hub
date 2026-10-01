@@ -8,7 +8,7 @@ import { daysInStage, displayTitle, isComplete, isOwnerNow, isStale, ownersOf, u
 import { getRecord } from "./access";
 import { can, requireCan } from "./permissions";
 import { getPerson } from "./people";
-import { dayNumber, fmtShort, fromDayNumber, hoursUntilEndOfDay, pad, todayIso } from "./utils";
+import { dayNumber, fmtShort, fromDayNumber, hoursUntilEndOfDay, todayIso } from "./utils";
 
 // Everything a person has coming up that they should not forget: stage deadlines, checklist items,
 // shoot days and gear to bring back. These feed the bell, the calendar file and the email and text messages.

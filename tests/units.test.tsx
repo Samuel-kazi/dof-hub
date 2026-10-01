@@ -8,7 +8,7 @@ import { ItemFormModal } from "../src/pages/EquipmentForms";
 import { EquipmentItemPage } from "../src/pages/EquipmentItem";
 import { Equipment } from "../src/pages/Equipment";
 import { login } from "../src/services/auth";
-import { resetDemoData, getDb } from "../src/data/store";
+import { resetDemoData } from "../src/data/store";
 import { createSerializedUnits, getItem } from "../src/services/equipment";
 
 let passed = 0;

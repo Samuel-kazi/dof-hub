@@ -2,7 +2,7 @@
 // The "General Use" category: a placeholder project ID for storage, a call sheet, a document, or a
 // gear checkout that has nowhere real to attach yet, and the "move it to a real project" actions.
 import assert from "node:assert/strict";
-import { getDb, resetDemoData } from "../src/data/store";
+import { resetDemoData } from "../src/data/store";
 import { login } from "../src/services/auth";
 import { getRecord, visibleRecords } from "../src/services/access";
 import * as C from "../src/services/content";

@@ -75,7 +75,7 @@ async function attemptSucceeded(store: Store, reset: string, refund: string[]): 
 
 /** Adds a line to the activity log the Head of Production can read. */
 async function record(store: Store, personId: string, action: string, detail: string): Promise<void> {
-  await mutateState(store, (db) => logAudit({ personId, role: "HOP" }, action, "account", personId, detail));
+  await mutateState(store, () => logAudit({ personId, role: "HOP" }, action, "account", personId, detail));
 }
 
 // ── Sessions ─────────────────────────────────────────────────

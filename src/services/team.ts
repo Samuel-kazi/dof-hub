@@ -3,7 +3,7 @@ import { RuleError } from "../types";
 import { commit, getDb } from "../data/store";
 import { PROJECT_ROLES, cleanRoles, rolesOf } from "../config/projectRoles";
 export { cleanRoles, rolesOf };
-import { getRecord, isHop, rootOf, selfAndAncestors } from "./access";
+import { getRecord, rootOf, selfAndAncestors } from "./access";
 import { logAudit } from "./audit";
 import { requireCan } from "./permissions";
 import { getPerson } from "./people";

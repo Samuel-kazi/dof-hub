@@ -44,7 +44,6 @@ function slow(store: Store, ms = 15): Store {
   return store;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Json = Record<string, any>;
 class Client {
   cookie = "";

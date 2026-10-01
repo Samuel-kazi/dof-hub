@@ -8,7 +8,7 @@ import { Modal } from "../ui/Modal";
 import { PromptModal } from "../ui/Prompt";
 import { Field } from "../ui/parts";
 import { GearPicker } from "../ui/GearPicker";
-import { canWrite, isHop } from "../services/access";
+import { canWrite } from "../services/access";
 import { addDays, createItem, createManifest, createSerializedUnits, deleteItem, finishRepair, getItem, reinstateItem, retireItem, startRepair, updateItem, type LineRequest, type UnitInput } from "../services/wrapped/equipment";
 import { todayIso } from "../services/utils";
 import { IconPlus } from "../ui/Icons";

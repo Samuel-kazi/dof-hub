@@ -2,7 +2,7 @@ import type { Actor, CategoryKey, Comment, ContentRecord, Featured, ProductionLe
 import { cleanRoles } from "../config/projectRoles";
 import { can, requireCan } from "./permissions";
 import { ConflictError, RuleError } from "../types";
-import { commit, getDb, nextCounter } from "../data/store";
+import { commit, getDb } from "../data/store";
 import { childCounter, childNumber, childToken, claimId, logId, localId, topLevelCounter, topLevelNumber } from "../data/ids";
 import { categoryOf, finalStageOf } from "../config/categories";
 import { effortFor } from "../config/capacity";

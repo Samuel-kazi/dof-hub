@@ -8,9 +8,9 @@ import { Modal } from "../ui/Modal";
 import { Empty, Field } from "../ui/parts";
 import { IconPlus } from "../ui/Icons";
 import { ForecastChart, ForecastNote, StorageBar } from "../ui/StorageViz";
-import { canWrite, getRecord, isHop } from "../services/access";
+import { canWrite, getRecord } from "../services/access";
 import {
-  addAllocation, allDriveUsage, createDrive, deleteDrive, driveReportText, driveUsage, fleetReportText, fleetTotals, forecast, getDrive, isNearlyFull, hasStorageAccess, moveAllocation, removeAllocation, updateAllocation, updateDrive,
+  addAllocation, allDriveUsage, createDrive, deleteDrive, driveUsage, fleetTotals, forecast, getDrive, isNearlyFull, hasStorageAccess, moveAllocation, removeAllocation, updateAllocation, updateDrive,
 } from "../services/wrapped/storage";
 import { fmtDate, fmtSize, todayIso } from "../services/utils";
 
@@ -30,7 +30,7 @@ function SizeInput({ gb, onChange, label }: { gb: string; onChange: (gb: string)
 }
 
 export function Storage() {
-  const { actor, go, menu, confirm, attempt, toast } = useApp();
+  const { actor, go, menu, confirm, attempt } = useApp();
   useDb();
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Drive | null>(null);
@@ -112,7 +112,7 @@ function DriveFormModal({ drive, onClose, onSaved }: { drive?: Drive; onClose: (
 }
 
 export function DrivePage({ id }: { id: string }) {
-  const { actor, go, menu, confirm, attempt, toast } = useApp();
+  const { actor, go, menu, confirm, attempt } = useApp();
   useDb();
   const [adding, setAdding] = useState(false);
   const [editingDrive, setEditingDrive] = useState(false);

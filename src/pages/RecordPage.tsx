@@ -1,18 +1,17 @@
 import { useState } from "react";
 import { ReportButton } from "../ui/ReportDialog";
-import type { ContentRecord } from "../types";
+
 import { useApp } from "../ui/AppContext";
 import { useDb } from "../data/store";
 import { categoryOf, leafLabel } from "../config/categories";
 import { levelLabel as productionLabel } from "../config/production";
 import { canComment, canView, canWrite, getRecord } from "../services/access";
 import {
-  addComment, advanceStage, canAdvance, canDelete, childKindFor, currentStageDeadline, deleteRecord, deletionImpact, deletionSummary, getBreadcrumb, getChildren, getComments,
-  getRollupStatus, isComplete, levelLabel, sendBackStage, setStageDeadline, setStageOutput, updateRecord, usesPipeline,
+  addComment, advanceStage, canAdvance, canDelete, childKindFor, currentStageDeadline, deleteRecord, deletionImpact, deletionSummary, getBreadcrumb, getChildren, getComments, getRollupStatus, isComplete, levelLabel, sendBackStage, setStageDeadline, setStageOutput, usesPipeline,
 } from "../services/wrapped/content";
 import { callSheetForRecord, openOrCreateForRecord } from "../services/wrapped/callsheets";
 import { nameOf } from "../services/wrapped/people";
-import { fmtDate, fmtShort, relativeDays } from "../services/utils";
+import { fmtShort, relativeDays } from "../services/utils";
 import { Empty, Field, RiskBadge, StageBadge } from "../ui/parts";
 import { IconPlus } from "../ui/Icons";
 import { EditRecordModal, NewRecordModal } from "./RecordForms";
@@ -23,7 +22,7 @@ import { CastPanel } from "./CastPanel";
 import { LinksPanel, DevotionalPanel, PostProductionPanel, StageChecklist, StagePlan, StrikePlanPanel } from "./StagePanel";
 
 export function RecordPage({ id }: { id: string }) {
-  const { actor, go, back, attempt, confirm, menu, toast } = useApp();
+  const { actor, go, back, attempt, confirm, toast } = useApp();
   useDb();
   const [editing, setEditing] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -60,14 +59,6 @@ export function RecordPage({ id }: { id: string }) {
     const res = attempt(() => openOrCreateForRecord(actor, rec.contentId), "Call sheet created");
     if (res) go({ n: "callsheet", id: res.sheet.id });
   };
-
-  const fieldMenu = (e: React.MouseEvent, label: string, clear?: () => void, hasValue = true) =>
-    menu(e, [
-      { label: `Edit ${label}…`, disabled: !write, onClick: () => setEditing(true) },
-      ...(clear ? [{ label: `Clear ${label}`, danger: true, disabled: !write || !hasValue, onClick: clear }] : []),
-    ]);
-
-  const clearField = (patch: Partial<ContentRecord>) => () => attempt(() => updateRecord(actor, rec.contentId, patch, rec.version), "Cleared");
 
   const postComment = () => {
     if (attempt(() => addComment(actor, rec.contentId, comment), "Comment added")) setComment("");

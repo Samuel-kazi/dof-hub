@@ -1,6 +1,6 @@
 import { createPortal } from "react-dom";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { Actor, CategoryKey, EquipCategoryKey, Person } from "../types";
+import type { Actor, CategoryKey, Person } from "../types";
 import { RuleError } from "../types";
 import type { ModuleKey } from "../config/roles";
 import { getPerson } from "../services/wrapped/people";
