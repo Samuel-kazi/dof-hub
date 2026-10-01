@@ -3,10 +3,17 @@ import { RuleError } from "../types";
 import { commit, getDb } from "../data/store";
 import { ROLES } from "../config/roles";
 import { cleanRoles } from "../config/projectRoles";
-import { requireCan } from "./permissions";
+import { requireCan, requireNotBeyond } from "./permissions";
 import { getRecord, isHop } from "./access";
 import { logAudit } from "./audit";
-import { pad, todayIso } from "./utils";
+import { pad, pickKeys, todayIso } from "./utils";
+
+/** The categories a person can be given here. There is one Head of Production, made when the app is set up. */
+export const STAFF_CATEGORIES = ["CRW", "VOL", "PTR"] as const;
+
+function requireStaffCategory(category: unknown): asserts category is Exclude<RoleCode, "HOP"> {
+  if (!STAFF_CATEGORIES.includes(category as (typeof STAFF_CATEGORIES)[number])) throw new RuleError("Choose Crew, Volunteer or Partner.");
+}
 
 /** Highest existing number for the role prefix, plus one. Called once, at save time. */
 export function generatePersonId(category: RoleCode): string {
@@ -63,6 +70,7 @@ export function createLoginForPerson(actor: Actor, personId: string, email: stri
 /** Creates the profile, then the login if requested, as a single action from the user's view. */
 export function createPerson(actor: Actor, input: PersonInput, login?: { email: string; password: string }): Person {
   requireHop(actor, "add people");
+  requireStaffCategory(input.category);
   if (!input.name.trim()) throw new RuleError("Enter a name.");
   if (login) {
     // Validate the login half up front so we never end up with a half-created person.
@@ -89,10 +97,16 @@ export function createPerson(actor: Actor, input: PersonInput, login?: { email: 
   return person;
 }
 
-export function updatePerson(actor: Actor, personId: string, patch: Partial<Pick<Person, "name" | "email" | "phone" | "skills" | "equipmentFamiliarity">>): Person {
+/** The details "Edit person" changes. Category, status and login have their own actions and rules. */
+export const PERSON_EDITABLE = ["name", "email", "phone", "skills", "equipmentFamiliarity"] as const;
+
+export function updatePerson(actor: Actor, personId: string, input: Partial<Pick<Person, (typeof PERSON_EDITABLE)[number]>>): Person {
   requireHop(actor, "edit people");
+  const patch = pickKeys(input, PERSON_EDITABLE);
   const p = getPerson(personId);
   if (!p) throw new RuleError("Person not found.");
+  if (p.category === "HOP" && !isHop(actor)) throw new RuleError("Only the Head of Production can change the Head of Production's details.");
+  if (patch.name !== undefined && !patch.name.trim()) throw new RuleError("Enter a name.");
   Object.assign(p, patch);
   logAudit(actor, "update", "person", personId, Object.keys(patch).join(", "));
   commit();
@@ -124,9 +138,12 @@ export function updateOwnProfile(actor: Actor, patch: Partial<Pick<Person, "name
 /** Promotion: the number in the ID never changes; only the category and login role do. */
 export function updatePersonCategory(actor: Actor, personId: string, newCategory: Exclude<RoleCode, "HOP">): Person {
   requireHop(actor, "change someone's category");
+  requireStaffCategory(newCategory);
   const p = getPerson(personId);
   if (!p) throw new RuleError("Person not found.");
   if (p.category === "HOP") throw new RuleError("The Head of Production category cannot be changed here.");
+  requireNotBeyond(actor, p.category, personId, "change the category");
+  requireNotBeyond(actor, newCategory, personId, "change the category"); // and not to one that would have more access than the actor
   const from = p.category;
   p.category = newCategory;
   const u = getDb().users.find((x) => x.personId === personId);
@@ -142,6 +159,7 @@ export function deactivatePerson(actor: Actor, personId: string): void {
   const p = getPerson(personId);
   if (!p) throw new RuleError("Person not found.");
   if (p.category === "HOP") throw new RuleError("The Head of Production cannot be deactivated.");
+  requireNotBeyond(actor, p.category, personId, "deactivate a login");
   p.status = "inactive";
   const u = getDb().users.find((x) => x.personId === personId);
   if (u) u.active = false;
@@ -153,6 +171,7 @@ export function reactivatePerson(actor: Actor, personId: string): void {
   requireHop(actor, "reactivate people");
   const p = getPerson(personId);
   if (!p) throw new RuleError("Person not found.");
+  requireNotBeyond(actor, p.category, personId, "reactivate a login");
   p.status = "active";
   const u = getDb().users.find((x) => x.personId === personId);
   if (u) u.active = true;

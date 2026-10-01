@@ -470,12 +470,18 @@ export function manifestForSheet(sheetId: string): Manifest | undefined {
 
 export function addGearToSheet(actor: Actor, sheet: SheetRef, lines: LineRequest[]): Manifest {
   requireGearAccess(actor);
-  const existing = manifestForSheet(sheet.id);
+  // Only the sheet's ID is taken from the caller. Its project and date come from the sheet itself, so gear
+  // can never be booked against another project's call sheet, or on a date the sheet does not have.
+  const cs = getDb().callSheets.find((c) => c.id === sheet.id);
+  if (!cs) throw new RuleError("Call sheet not found.");
+  const project = getRecord(cs.contentId);
+  if (!project || !canWrite(actor, project)) throw new RuleError("You have view-only access to this project.");
+  const existing = manifestForSheet(cs.id);
   if (existing) {
     if (existing.status !== "assigned") throw new RuleError("This call sheet's gear has already gone out. Manage it from the checkout list.");
     return addLines(actor, existing.id, lines);
   }
-  return createManifest(actor, { contentId: sheet.contentId, date: sheet.date, destination: "studio", status: "assigned", lines, callSheetId: sheet.id });
+  return createManifest(actor, { contentId: cs.contentId, date: cs.date, destination: "studio", status: "assigned", lines, callSheetId: cs.id });
 }
 
 export function removeGearFromSheet(actor: Actor, sheetId: string, equipmentId: string): void {

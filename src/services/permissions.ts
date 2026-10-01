@@ -37,6 +37,31 @@ export function requireCan(actor: Actor, cap: Capability, what: string): void {
   if (!can(actor, cap)) throw new RuleError(`Only the Head of Production, or someone given "${capabilityDef(cap).label}", can ${what}.`);
 }
 
+/** What a person in `role` would be able to do that the actor cannot. Empty when the actor has everything they have. */
+export function capabilitiesBeyond(actor: Actor, role: RoleCode, personId: string): Capability[] {
+  if (actor.role === "HOP") return [];
+  if (role === "HOP") return [...ALL_CAPABILITIES];
+  return ALL_CAPABILITIES.filter((c) => grantFor(role, personId, c).value && !can(actor, c));
+}
+
+/**
+ * Someone given "Add and change people" manages other people, but never anyone with more access than
+ * their own. Otherwise they could reset that person's password, sign in as them, and gain their access.
+ */
+export function requireNotBeyond(actor: Actor, role: RoleCode, personId: string, what: string): void {
+  if (actor.role === "HOP") return;
+  if (role === "HOP") throw new RuleError(`Only the Head of Production can ${what} for the Head of Production.`);
+  const extra = capabilitiesBeyond(actor, role, personId);
+  if (extra.length) throw new RuleError(`Only the Head of Production can ${what} for this person, because they have access you do not: ${extra.map((c) => capabilityDef(c).label).join(", ")}.`);
+}
+
+const GRANTABLE_ROLES: RoleCode[] = ["CRW", "VOL", "PTR"];
+
+function checkGrant(cap: unknown, value: unknown): void {
+  if (!ALL_CAPABILITIES.includes(cap as Capability)) throw new RuleError("That is not a permission this app knows.");
+  if (value !== null && typeof value !== "boolean") throw new RuleError("Choose allowed, denied or the default.");
+}
+
 function requireAdmin(actor: Actor): void {
   if (actor.role !== "HOP") throw new RuleError("Only the Head of Production can change who can do what.");
 }
@@ -45,6 +70,8 @@ function requireAdmin(actor: Actor): void {
 export function setRoleGrant(actor: Actor, role: RoleCode, cap: Capability, value: boolean | null): void {
   requireAdmin(actor);
   if (role === "HOP") throw new RuleError("The Head of Production always has full access.");
+  if (!GRANTABLE_ROLES.includes(role)) throw new RuleError("Choose Crew, Volunteer or Partner.");
+  checkGrant(cap, value);
   const r = (store().roles[role] ??= {});
   if (value === null) delete r[cap];
   else r[cap] = value;
@@ -58,6 +85,7 @@ export function setPersonGrant(actor: Actor, personId: string, cap: Capability, 
   const person = getDb().people.find((p) => p.personId === personId);
   if (!person) throw new RuleError("Person not found.");
   if (person.category === "HOP") throw new RuleError("The Head of Production always has full access.");
+  checkGrant(cap, value);
   const p = (store().people[personId] ??= {});
   if (value === null) delete p[cap];
   else p[cap] = value;

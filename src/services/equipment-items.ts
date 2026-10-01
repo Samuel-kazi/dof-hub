@@ -5,7 +5,7 @@ import { CONDITIONS, equipCategory } from "../config/equipment";
 import { canView, getRecord } from "./access";
 import { logAudit } from "./audit";
 import { can, requireCan } from "./permissions";
-import { fmtShort, pad, todayIso } from "./utils";
+import { fmtShort, pad, pickKeys, todayIso } from "./utils";
 
 // ── Access ───────────────────────────────────────────────────
 
@@ -359,10 +359,14 @@ export function createSerializedUnits(actor: Actor, input: UnitsInput): Equipmen
   return items;
 }
 
-export type ItemPatch = Partial<Pick<EquipmentItem, "name" | "make" | "model" | "vendor" | "packaging" | "accessories" | "info" | "unitCost" | "purchaseDate" | "serialNumber" | "unitLabel" | "condition" | "quantityTotal" | "category">>;
+/** The fields "Edit item" changes. Status, history, photos and counts of damaged or lost units have their own actions. */
+export const ITEM_EDITABLE = ["name", "make", "model", "vendor", "packaging", "accessories", "info", "unitCost", "purchaseDate", "serialNumber", "unitLabel", "condition", "quantityTotal", "category"] as const;
+export type ItemPatch = Partial<Pick<EquipmentItem, (typeof ITEM_EDITABLE)[number]>>;
 
-export function updateItem(actor: Actor, id: string, patch: ItemPatch): EquipmentItem {
+export function updateItem(actor: Actor, id: string, input: ItemPatch): EquipmentItem {
   requireGearAccess(actor);
+  const patch = pickKeys(input, ITEM_EDITABLE);
+  if (patch.condition !== undefined && !CONDITIONS.includes(patch.condition)) throw new RuleError("Choose New, Good, Fair or Poor.");
   const item = getItem(id);
   if (!item) throw new RuleError("Item not found.");
   if (patch.name !== undefined && !patch.name.trim()) throw new RuleError("Name cannot be empty.");

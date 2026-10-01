@@ -47,3 +47,15 @@ export const fromDayNumber = (n: number): string => new Date(n * 86400000).toISO
 export const fmtSize = (gb: number): string => (gb >= 1000 ? `${(gb / 1000).toFixed(2)} TB` : `${Math.round(gb)} GB`);
 
 export const fmtDateTime = (iso: string): string => new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+
+/**
+ * Copies only the listed keys that are present. Every "update" function runs its patch through this, so a
+ * request can only ever change the fields that function is meant to change. TypeScript types alone do not
+ * do this: they are gone by the time the server runs, and the server receives whatever the request sent.
+ */
+export function pickKeys<T extends object, K extends keyof T>(patch: T, keys: readonly K[]): Pick<T, K> {
+  const out = {} as Pick<T, K>;
+  if (!patch || typeof patch !== "object") return out;
+  for (const k of keys) if (Object.prototype.hasOwnProperty.call(patch, k) && patch[k] !== undefined) out[k] = patch[k];
+  return out;
+}

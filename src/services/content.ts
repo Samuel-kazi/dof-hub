@@ -12,7 +12,7 @@ import { fmtSize } from "./utils";
 import { canComment, canJoin, canView, canWrite, getRecord, isHop, selfAndAncestors, visibleRecords } from "./access";
 import { getPerson } from "./people";
 import { logAudit } from "./audit";
-import { dayNumber, daysUntil, hoursUntilEndOfDay, pad, todayIso } from "./utils";
+import { dayNumber, daysUntil, hoursUntilEndOfDay, pad, pickKeys, todayIso } from "./utils";
 
 // ── Hierarchy helpers ────────────────────────────────────────
 
@@ -432,14 +432,22 @@ function loadForWrite(actor: Actor, id: string, expectedVersion?: number): Conte
   return r;
 }
 
-export function updateRecord(
-  actor: Actor,
-  id: string,
-  patch: Partial<Pick<ContentRecord, "title" | "scheduledDate" | "deadline" | "assigneePersonId" | "notes" | "productionLevel" | "showStart" | "showEnd" | "guestName" | "guestContact" | "cardStorage" | "publishDate" | "recordingDurationMin" | "recordingNotes" | "editorNotes">>,
-  expectedVersion?: number,
-): ContentRecord {
+/** The only fields the edit forms change. Stage, parent, archived, version and the rest have their own actions and rules. */
+export const RECORD_EDITABLE = ["title", "scheduledDate", "deadline", "assigneePersonId", "notes", "productionLevel", "showStart", "showEnd", "guestName", "guestContact", "cardStorage", "publishDate", "recordingDurationMin", "recordingNotes", "editorNotes"] as const;
+export type RecordPatch = Partial<Pick<ContentRecord, (typeof RECORD_EDITABLE)[number]>>;
+
+export function updateRecord(actor: Actor, id: string, input: RecordPatch, expectedVersion?: number): ContentRecord {
+  const patch = pickKeys(input, RECORD_EDITABLE);
   const r = loadForWrite(actor, id, expectedVersion);
   if (patch.title !== undefined && !patch.title.trim()) throw new RuleError("Title cannot be empty.");
+  if (patch.assigneePersonId !== undefined && patch.assigneePersonId !== r.assigneePersonId) {
+    // Changing who is responsible puts someone on the current stage, so it follows the same rule as the stage owner actions.
+    if (patch.assigneePersonId && patch.assigneePersonId !== actor.personId && !can(actor, "pipeline.assign")) throw new RuleError("Only the Head of Production, or someone given \"Assign other people's work\", can change other people's work. You can change your own.");
+    if (patch.assigneePersonId) {
+      const p = getPerson(patch.assigneePersonId);
+      if (!p || p.status !== "active" || (p.category !== "CRW" && p.category !== "HOP")) throw new RuleError("Only active crew can be responsible for a project.");
+    }
+  }
   if (patch.productionLevel !== undefined && patch.productionLevel !== null) patch.productionLevel = validLevel(r, patch.productionLevel);
   if (patch.showStart !== undefined || patch.showEnd !== undefined) checkShowDates(r.category, patch.showStart !== undefined ? patch.showStart : r.showStart, patch.showEnd !== undefined ? patch.showEnd : r.showEnd);
   Object.assign(r, patch);
@@ -465,6 +473,7 @@ function validLevel(r: ContentRecord, level: ProductionLevel): ProductionLevel {
 
 export function setStageDeadline(actor: Actor, id: string, stage: string, date: string, expectedVersion?: number): void {
   const r = loadForWrite(actor, id, expectedVersion);
+  if (!categoryOf(r.category).stages.some((s) => s.name === stage)) throw new RuleError("That stage does not exist for this category.");
   r.stageDeadlines[stage] = date;
   r.version += 1;
   logAudit(actor, "stage-deadline", "record", id, `${stage} → ${date}`);

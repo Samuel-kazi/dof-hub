@@ -6,7 +6,7 @@ import { getChildren, isComplete, leavesUnder } from "./content";
 import { logAudit } from "./audit";
 import { can, requireCan } from "./permissions";
 import { allDriveUsage, driveUsage, fleetTotals, getDrive, recordSnapshot } from "./driveUsage";
-import { dayNumber, fmtDate, fmtSize, fromDayNumber, pad, todayIso } from "./utils";
+import { dayNumber, fmtDate, fmtSize, fromDayNumber, pad, pickKeys, todayIso } from "./utils";
 
 export const hasStorageAccess = (actor: Actor): boolean => can(actor, "storage.use");
 function requireStorageAccess(actor: Actor): void {
@@ -103,11 +103,20 @@ export function addAllocation(actor: Actor, input: AllocationInput): DriveAlloca
 }
 
 /** Edits the size, type, label or note, or moves the entry to another drive. Space is checked on the drive it ends up on. */
-export function updateAllocation(actor: Actor, id: string, patch: { sizeGB?: number; kind?: DriveAllocation["kind"]; note?: string; label?: string; driveId?: string }): DriveAllocation {
+const ALLOCATION_EDITABLE = ["sizeGB", "kind", "note", "label", "driveId"] as const;
+const ALLOCATION_KINDS: DriveAllocation["kind"][] = ["raw", "project", "delivered", "other"];
+
+export function updateAllocation(actor: Actor, id: string, input: Partial<Pick<DriveAllocation, (typeof ALLOCATION_EDITABLE)[number]>>): DriveAllocation {
   requireStorageAccess(actor);
+  const patch = pickKeys(input, ALLOCATION_EDITABLE);
   const a = getDb().allocations.find((x) => x.id === id);
   if (!a) throw new RuleError("Entry not found.");
-  if (a.contentId !== null) requireProjectWrite(actor, a.contentId);
+  if (patch.kind !== undefined && !ALLOCATION_KINDS.includes(patch.kind)) throw new RuleError("Choose raw, project, delivered or other.");
+  const rec = a.contentId !== null ? requireProjectWrite(actor, a.contentId) : null;
+  // Changing raw footage into another kind would let it be removed before it is Delivered.
+  if (rec && a.kind === "raw" && patch.kind && patch.kind !== "raw" && !isHop(actor) && leavesUnder(rec).some((l) => !isComplete(l))) {
+    throw new RuleError(`Raw footage for ${rec.title} stays marked as raw until everything under it is Delivered.`);
+  }
   const label = a.contentId === null ? requireLabel(patch.label ?? a.label) : (patch.label ?? a.label);
   const target = getDrive(patch.driveId ?? a.driveId);
   if (!target) throw new RuleError("Drive not found.");

@@ -106,8 +106,10 @@ export const RPC_NAMES: Record<string, string[]> = {
   ],
   "permissions": [
     "can",
+    "capabilitiesBeyond",
     "modulesFor",
     "requireCan",
+    "requireNotBeyond",
     "resetPermissions",
     "setPersonGrant",
     "setRoleGrant"

@@ -8,17 +8,17 @@ var __export = (target, all) => {
 // server/dbproblem.ts
 function describeDbProblem(e) {
   const name = e instanceof Error ? e.name : "";
-  const text = e instanceof Error ? `${e.message} ${e.cause?.message ?? ""}` : String(e);
+  const text2 = e instanceof Error ? `${e.message} ${e.cause?.message ?? ""}` : String(e);
   const code = e.code;
-  if (code === 18 || /bad auth|authentication failed|AuthenticationFailed/i.test(text))
+  if (code === 18 || /bad auth|authentication failed|AuthenticationFailed/i.test(text2))
     return "MongoDB refused the username or password in MONGODB_URI. If the password has symbols such as @ : / ? # or %, they must be URL-encoded. The simplest fix is to reset the database user's password to letters and numbers only, then update MONGODB_URI in Vercel and redeploy.";
-  if (name === "MongoParseError" || /invalid scheme|invalid connection string|must be a string|URI malformed|Invalid namespace/i.test(text))
+  if (name === "MongoParseError" || /invalid scheme|invalid connection string|must be a string|URI malformed|Invalid namespace/i.test(text2))
     return "MONGODB_URI is not a valid connection string. It should start with mongodb+srv:// and be copied whole from Atlas (Connect, Drivers), with <password> replaced by the real password and no spaces or quotes.";
-  if (/ENOTFOUND|querySrv|EBADNAME/i.test(text))
+  if (/ENOTFOUND|querySrv|EBADNAME/i.test(text2))
     return "The cluster address in MONGODB_URI was not found. Copy the connection string again from Atlas (Connect, Drivers).";
-  if (name === "MongoServerSelectionError" || /ECONNREFUSED|ETIMEDOUT|timed out|Server selection/i.test(text))
+  if (name === "MongoServerSelectionError" || /ECONNREFUSED|ETIMEDOUT|timed out|Server selection/i.test(text2))
     return "The server could not reach MongoDB. In Atlas, Network Access must allow 0.0.0.0/0 (Vercel's addresses change), and the cluster must not be paused. Wait a minute after changing either, then try again.";
-  if (/not authorized|Unauthorized|requires authentication/i.test(text))
+  if (/not authorized|Unauthorized|requires authentication/i.test(text2))
     return 'The database user in MONGODB_URI is not allowed to use this database. In Atlas, Database Access, give the user the role "Read and write to any database", or read and write on the database named in MONGODB_DB.';
   return `The database could not be reached${name ? ` (${name})` : ""}. The details are in the Vercel logs for this deployment.`;
 }
@@ -52,8 +52,8 @@ var MongoCol = class {
   inn(d) {
     return this.expiry ? { ...d, _exp: new Date(this.expiry(d)) } : { ...d };
   }
-  async get(id) {
-    return this.out(await this.col.findOne({ _id: id }));
+  async get(id2) {
+    return this.out(await this.col.findOne({ _id: id2 }));
   }
   async all() {
     return (await this.col.find({}).toArray()).map((d) => this.out(d));
@@ -73,8 +73,8 @@ var MongoCol = class {
   async put(doc) {
     await this.col.replaceOne({ _id: doc._id }, this.inn(doc), { upsert: true });
   }
-  async remove(id) {
-    await this.col.deleteOne({ _id: id });
+  async remove(id2) {
+    await this.col.deleteOne({ _id: id2 });
   }
 };
 var MongoState = class {
@@ -406,6 +406,12 @@ var fmtShort = (iso) => {
 var pad = (n, width = 3) => String(n).padStart(width, "0");
 var fromDayNumber = (n) => new Date(n * 864e5).toISOString().slice(0, 10);
 var fmtSize = (gb) => gb >= 1e3 ? `${(gb / 1e3).toFixed(2)} TB` : `${Math.round(gb)} GB`;
+function pickKeys(patch, keys) {
+  const out = {};
+  if (!patch || typeof patch !== "object") return out;
+  for (const k of keys) if (Object.prototype.hasOwnProperty.call(patch, k) && patch[k] !== void 0) out[k] = patch[k];
+  return out;
+}
 
 // src/data/seedGear.ts
 var stamp = (daysAgo, hour = 10) => {
@@ -419,9 +425,9 @@ function buildGearSeed() {
   const history = [];
   let h = 0;
   const hist3 = (equipmentId, daysAgo, kind, detail, contentId = null, manifestId = null, by = "DOF-P-HOP-001") => history.push({ id: `H-${String(++h).padStart(5, "0")}`, equipmentId, at: stamp(daysAgo), byPersonId: by, kind, detail, contentId, manifestId });
-  const serial = (id, cat, name, make, model, sn, cost2, condition, ageDays, extra = {}) => {
+  const serial = (id2, cat, name, make, model, sn, cost2, condition2, ageDays, extra = {}) => {
     equipment.push({
-      id,
+      id: id2,
       trackingType: "serialized",
       name,
       make,
@@ -436,7 +442,7 @@ function buildGearSeed() {
       unitCost: cost2,
       purchaseDate: isoDay(-ageDays),
       vendor: "",
-      condition,
+      condition: condition2,
       conditionBreakdown: null,
       packaging: "",
       accessories: "",
@@ -447,11 +453,11 @@ function buildGearSeed() {
       createdAt: stamp(ageDays),
       ...extra
     });
-    hist3(id, ageDays, "created", "Added to inventory");
+    hist3(id2, ageDays, "created", "Added to inventory");
   };
-  const batch = (id, cat, family, name, make, qty, unitCost, ageDays, vendor) => {
+  const batch = (id2, cat, family, name, make, qty, unitCost, ageDays, vendor) => {
     equipment.push({
-      id,
+      id: id2,
       trackingType: "aggregate",
       name,
       make,
@@ -476,7 +482,7 @@ function buildGearSeed() {
       baseStatus: "active",
       createdAt: stamp(ageDays)
     });
-    hist3(id, ageDays, "created", `New batch of ${qty}`);
+    hist3(id2, ageDays, "created", `New batch of ${qty}`);
   };
   serial("DOF-EQ-CAM-001", "camera", "Sony FX3 camera body", "Sony", "FX3", "S-FX3-0412", 3900, "Good", 400, { unitLabel: "A-cam", accessories: "2 batteries, cage, top handle", packaging: "Pelican 1620" });
   serial("DOF-EQ-CAM-002", "camera", "Sony FX3 camera body", "Sony", "FX3", "S-FX3-0433", 3900, "Good", 380, { unitLabel: "B-cam", accessories: "2 batteries, cage" });
@@ -497,7 +503,7 @@ function buildGearSeed() {
   batch("DOF-EQ-PWR-SANDBAG-B01", "power", "SANDBAG", "Sandbag 7 kg", "Generic", 6, 12, 350, "Local");
   hist3("DOF-EQ-LGT-002", 5, "repair-start", "Fan noise. Sent to the vendor for service");
   hist3("DOF-EQ-AUD-004", 120, "retired", "Channel 3 faulty. Retired from inventory");
-  const line = (equipmentId, quantity, conditionOut, extra = {}) => ({
+  const line2 = (equipmentId, quantity, conditionOut, extra = {}) => ({
     equipmentId,
     quantity,
     conditionOut,
@@ -526,7 +532,7 @@ function buildGearSeed() {
       createdBy: "DOF-P-CRW-002",
       checkedOutAt: stamp(72),
       returnedAt: stamp(69),
-      lines: [line("DOF-EQ-CAM-003", 1, "New", { conditionIn: "Good", returnedGood: 0, damaged: 1 })]
+      lines: [line2("DOF-EQ-CAM-003", 1, "New", { conditionIn: "Good", returnedGood: 0, damaged: 1 })]
     },
     {
       id: "DOF-MF-004",
@@ -542,7 +548,7 @@ function buildGearSeed() {
       createdBy: "DOF-P-CRW-002",
       checkedOutAt: stamp(35),
       returnedAt: stamp(32),
-      lines: [line("DOF-EQ-CAM-003", 1, "Good", { conditionIn: "Fair", returnedGood: 0, damaged: 1 })]
+      lines: [line2("DOF-EQ-CAM-003", 1, "Good", { conditionIn: "Fair", returnedGood: 0, damaged: 1 })]
     },
     // Out now and late.
     {
@@ -559,7 +565,7 @@ function buildGearSeed() {
       createdBy: "DOF-P-CRW-002",
       checkedOutAt: stamp(8),
       returnedAt: null,
-      lines: [line("DOF-EQ-CAM-002", 1, "Good"), line("DOF-EQ-CAM-004", 1, "Good"), line("DOF-EQ-AUD-003", 1, "Good")]
+      lines: [line2("DOF-EQ-CAM-002", 1, "Good"), line2("DOF-EQ-CAM-004", 1, "Good"), line2("DOF-EQ-AUD-003", 1, "Good")]
     },
     // Reserved in the studio for the upcoming Season 1 recording day.
     {
@@ -576,7 +582,7 @@ function buildGearSeed() {
       createdBy: "DOF-P-CRW-002",
       checkedOutAt: null,
       returnedAt: null,
-      lines: [line("DOF-EQ-CAM-001", 1, "Good"), line("DOF-EQ-CAM-003", 1, "Fair"), line("DOF-EQ-AUD-001", 1, "Good"), line("DOF-EQ-CAB-XLR10M-B01", 4, "Good")]
+      lines: [line2("DOF-EQ-CAM-001", 1, "Good"), line2("DOF-EQ-CAM-003", 1, "Fair"), line2("DOF-EQ-AUD-001", 1, "Good"), line2("DOF-EQ-CAB-XLR10M-B01", 4, "Good")]
     }
   ];
   const inc = (n, equipmentId, daysAgo, description, contentId, manifestId) => {
@@ -591,8 +597,8 @@ function buildGearSeed() {
   hist3("DOF-EQ-CAM-003", 35, "checked-out", `DOF-DOC-001, back by ${fmtShort(isoDay(-32))}`, "DOF-DOC-001", "DOF-MF-004", "DOF-P-CRW-002");
   inc(2, "DOF-EQ-CAM-003", 32, "Second scratch near the edge of the front element.", "DOF-DOC-001", "DOF-MF-004");
   hist3("DOF-EQ-CAM-003", 32, "checked-in", "DOF-DOC-001, back in Fair condition", "DOF-DOC-001", "DOF-MF-004", "DOF-P-CRW-002");
-  for (const id of ["DOF-EQ-CAM-002", "DOF-EQ-CAM-004", "DOF-EQ-AUD-003"]) hist3(id, 8, "checked-out", `DOF-DOC-001, back by ${fmtShort(isoDay(-2))}`, "DOF-DOC-001", "DOF-MF-002", "DOF-P-CRW-002");
-  for (const id of ["DOF-EQ-CAM-001", "DOF-EQ-CAM-003", "DOF-EQ-AUD-001", "DOF-EQ-CAB-XLR10M-B01"]) hist3(id, 1, "assigned", `${id.includes("XLR") ? "4 units, " : ""}DOF-SER-001, ${fmtShort(isoDay(2))}`, "DOF-SER-001", "DOF-MF-001", "DOF-P-CRW-002");
+  for (const id2 of ["DOF-EQ-CAM-002", "DOF-EQ-CAM-004", "DOF-EQ-AUD-003"]) hist3(id2, 8, "checked-out", `DOF-DOC-001, back by ${fmtShort(isoDay(-2))}`, "DOF-DOC-001", "DOF-MF-002", "DOF-P-CRW-002");
+  for (const id2 of ["DOF-EQ-CAM-001", "DOF-EQ-CAM-003", "DOF-EQ-AUD-001", "DOF-EQ-CAB-XLR10M-B01"]) hist3(id2, 1, "assigned", `${id2.includes("XLR") ? "4 units, " : ""}DOF-SER-001, ${fmtShort(isoDay(2))}`, "DOF-SER-001", "DOF-MF-001", "DOF-P-CRW-002");
   const drives = [
     { id: "DRV-001", name: "Added", capacityGB: 4e3, otherUsedGB: 120, notes: "" },
     { id: "DRV-002", name: "Taji", capacityGB: 4e3, otherUsedGB: 0, notes: "" },
@@ -751,9 +757,9 @@ var isoDay = (offset = 0) => {
   d.setDate(d.getDate() + offset);
   return d.toISOString().slice(0, 10);
 };
-var person = (personId, category, name, skills, hasLogin) => ({
+var person = (personId, category2, name, skills, hasLogin) => ({
   personId,
-  category,
+  category: category2,
   name,
   email: `${name.split(" ")[0].toLowerCase()}@dof.demo`,
   phone: "+254 700 000 000",
@@ -762,7 +768,7 @@ var person = (personId, category, name, skills, hasLogin) => ({
   hasLogin,
   status: "active",
   createdAt: isoDay(-90),
-  notifyEmail: category === "CRW" || category === "HOP",
+  notifyEmail: category2 === "CRW" || category2 === "HOP",
   notifySms: personId === "DOF-P-CRW-001"
 });
 var deadlinesFor = (cat, current, currentOffset, stepDays = 4) => {
@@ -908,7 +914,7 @@ function buildSeed() {
     rec({ contentId: "DOF-MUS-001-A1-T01", title: "First Light", category: "music", parentId: "DOF-MUS-001-A1", level: 2, stage: "Recording", stageOffset: 6, scheduled: 6, deadline: 40, assignee: "DOF-P-CRW-003" }),
     rec({ contentId: "DOF-MUS-001-A1-T02", title: "Morning Mercies", category: "music", parentId: "DOF-MUS-001-A1", level: 2, stage: "Idea", stageOffset: 4, deadline: 44, assignee: "DOF-P-CRW-001" })
   ];
-  const byId = (id) => records.find((r) => r.contentId === id);
+  const byId = (id2) => records.find((r) => r.contentId === id2);
   const task = (n, stage, label, done, dueOffset, who, doneBy = null) => ({
     id: `T-${String(n).padStart(4, "0")}`,
     stage,
@@ -919,7 +925,7 @@ function buildSeed() {
     doneAt: done ? (/* @__PURE__ */ new Date()).toISOString() : null,
     doneBy: done ? doneBy : null
   });
-  const feat = (id, kind, name, note) => ({ id, kind, name, note });
+  const feat = (id2, kind, name, note) => ({ id: id2, kind, name, note });
   byId("DOF-SER-001").featured = [feat("F-0001", "host", "Pastor Mary Wanjiku", "Lead pastor, hosts every episode"), feat("F-0002", "host", "Elder James Otieno", "Co-host")];
   byId("DOF-SER-001-S1-E01").featured = [feat("F-0003", "guest", "Dr. Samuel Mwangi", "Psychologist, Nairobi Counselling Centre")];
   byId("DOF-DEV-001").featured = [feat("F-0004", "host", "Rev. Grace Achieng", "")];
@@ -948,8 +954,8 @@ function buildSeed() {
   const docs = [];
   const docRevisions = [];
   let docN = 0, revN = 0;
-  const subject = (id) => {
-    const r = byId(id);
+  const subject = (id2) => {
+    const r = byId(id2);
     const p = r.parentId ? byId(r.parentId) : null;
     return r.category === "live" && p ? `${p.title}, ${r.title}` : r.title;
   };
@@ -1156,11 +1162,11 @@ function upgradeToV5(db2) {
   }
   const flat = db2.records.filter((r) => r.category === "live" && r.hierarchyLevel === 0 && r.pipelineStage !== null && !db2.records.some((c) => c.parentId === r.contentId));
   for (const r of flat) {
-    const id = `${r.contentId}-D1`;
+    const id2 = `${r.contentId}-D1`;
     const copy = (v) => JSON.parse(JSON.stringify(v));
     const day = {
       ...copy(r),
-      contentId: id,
+      contentId: id2,
       title: "Day 1",
       parentId: r.contentId,
       hierarchyLevel: 1,
@@ -1172,8 +1178,8 @@ function upgradeToV5(db2) {
     r.showStart = r.showStart ?? r.scheduledDate;
     r.showEnd = r.showEnd ?? r.scheduledDate;
     Object.assign(r, { pipelineStage: null, stageOutputs: {}, stageDeadlines: {}, tasks: [], links: [], stageAssignees: {}, assigneePersonId: null, productionLevel: null, scheduledDate: null, version: r.version + 1 });
-    for (const d of db2.docs) if (d.contentId === r.contentId && d.stage) d.contentId = id;
-    for (const c of db2.callSheets) c.linkedEpisodeIds = c.linkedEpisodeIds.map((x) => x === r.contentId ? id : x);
+    for (const d of db2.docs) if (d.contentId === r.contentId && d.stage) d.contentId = id2;
+    for (const c of db2.callSheets) c.linkedEpisodeIds = c.linkedEpisodeIds.map((x) => x === r.contentId ? id2 : x);
   }
   db2.schemaVersion = 5;
   return db2;
@@ -1193,8 +1199,8 @@ function upgradeToV6(db2) {
       }
       if (typeof v !== "string") continue;
       const m = db2.members.find((x) => x.personId === v && x.projectContentId === rootId);
-      const roles = (m?.roleOnProject ?? "").split(",").map((x) => x.trim()).filter((x) => x && !generic.includes(x.toLowerCase()));
-      next[stage] = [{ personId: v, roles }];
+      const roles2 = (m?.roleOnProject ?? "").split(",").map((x) => x.trim()).filter((x) => x && !generic.includes(x.toLowerCase()));
+      next[stage] = [{ personId: v, roles: roles2 }];
     }
     r.stageAssignees = next;
   }
@@ -1416,11 +1422,13 @@ var permissions_exports = {};
 __export(permissions_exports, {
   MODULE_LABELS: () => MODULE_LABELS,
   can: () => can,
+  capabilitiesBeyond: () => capabilitiesBeyond,
   customisations: () => customisations,
   effectiveGrants: () => effectiveGrants,
   grantFor: () => grantFor,
   modulesFor: () => modulesFor,
   requireCan: () => requireCan,
+  requireNotBeyond: () => requireNotBeyond,
   resetPermissions: () => resetPermissions,
   setPersonGrant: () => setPersonGrant,
   setRoleGrant: () => setRoleGrant
@@ -1529,12 +1537,30 @@ var can = (actor, cap) => grantFor(actor.role, actor.personId, cap).value;
 function requireCan(actor, cap, what) {
   if (!can(actor, cap)) throw new RuleError(`Only the Head of Production, or someone given "${capabilityDef(cap).label}", can ${what}.`);
 }
+function capabilitiesBeyond(actor, role, personId) {
+  if (actor.role === "HOP") return [];
+  if (role === "HOP") return [...ALL_CAPABILITIES];
+  return ALL_CAPABILITIES.filter((c) => grantFor(role, personId, c).value && !can(actor, c));
+}
+function requireNotBeyond(actor, role, personId, what) {
+  if (actor.role === "HOP") return;
+  if (role === "HOP") throw new RuleError(`Only the Head of Production can ${what} for the Head of Production.`);
+  const extra = capabilitiesBeyond(actor, role, personId);
+  if (extra.length) throw new RuleError(`Only the Head of Production can ${what} for this person, because they have access you do not: ${extra.map((c) => capabilityDef(c).label).join(", ")}.`);
+}
+var GRANTABLE_ROLES = ["CRW", "VOL", "PTR"];
+function checkGrant(cap, value) {
+  if (!ALL_CAPABILITIES.includes(cap)) throw new RuleError("That is not a permission this app knows.");
+  if (value !== null && typeof value !== "boolean") throw new RuleError("Choose allowed, denied or the default.");
+}
 function requireAdmin(actor) {
   if (actor.role !== "HOP") throw new RuleError("Only the Head of Production can change who can do what.");
 }
 function setRoleGrant(actor, role, cap, value) {
   requireAdmin(actor);
   if (role === "HOP") throw new RuleError("The Head of Production always has full access.");
+  if (!GRANTABLE_ROLES.includes(role)) throw new RuleError("Choose Crew, Volunteer or Partner.");
+  checkGrant(cap, value);
   const r = store().roles[role] ??= {};
   if (value === null) delete r[cap];
   else r[cap] = value;
@@ -1546,6 +1572,7 @@ function setPersonGrant(actor, personId, cap, value) {
   const person2 = getDb().people.find((p2) => p2.personId === personId);
   if (!person2) throw new RuleError("Person not found.");
   if (person2.category === "HOP") throw new RuleError("The Head of Production always has full access.");
+  checkGrant(cap, value);
   const p = store().people[personId] ??= {};
   if (value === null) delete p[cap];
   else p[cap] = value;
@@ -1687,7 +1714,7 @@ __export(docs_exports, {
 });
 
 // src/services/access.ts
-var getRecord = (id) => getDb().records.find((r) => r.contentId === id);
+var getRecord = (id2) => getDb().records.find((r) => r.contentId === id2);
 function selfAndAncestors(record2) {
   const out = [record2];
   let cur = record2;
@@ -1701,8 +1728,8 @@ function selfAndAncestors(record2) {
 }
 var rootOf = (record2) => selfAndAncestors(record2).slice(-1)[0];
 function membershipFor(actor, record2) {
-  const ids = new Set(selfAndAncestors(record2).map((r) => r.contentId));
-  return getDb().members.find((m) => m.personId === actor.personId && ids.has(m.projectContentId));
+  const ids2 = new Set(selfAndAncestors(record2).map((r) => r.contentId));
+  return getDb().members.find((m) => m.personId === actor.personId && ids2.has(m.projectContentId));
 }
 function isHop(actor) {
   return ROLES[actor.role].globalAccess;
@@ -1754,7 +1781,7 @@ function docSubject(r) {
   const parent = r.parentId ? getRecord(r.parentId) : void 0;
   return r.category === "live" && parent ? `${parent.title}, ${r.title}` : r.title;
 }
-var getDoc = (id) => getDb().docs.find((d) => d.id === id);
+var getDoc = (id2) => getDb().docs.find((d) => d.id === id2);
 function canViewDoc(actor, d) {
   const r = getRecord(d.contentId);
   return !!r && canView(actor, r);
@@ -1770,8 +1797,8 @@ function descendantIds(r) {
   return [r.contentId, ...getDb().records.filter((c) => c.parentId === r.contentId && !c.archived).flatMap(descendantIds)];
 }
 function docsForRecord(actor, r) {
-  const ids = /* @__PURE__ */ new Set([...descendantIds(r), ...selfAndAncestors(r).map((x) => x.contentId)]);
-  return listDocs(actor).filter((d) => ids.has(d.contentId));
+  const ids2 = /* @__PURE__ */ new Set([...descendantIds(r), ...selfAndAncestors(r).map((x) => x.contentId)]);
+  return listDocs(actor).filter((d) => ids2.has(d.contentId));
 }
 var revisionsOf = (docId) => getDb().docRevisions.filter((v) => v.docId === docId).sort((a, b) => b.at.localeCompare(a.at) || b.version - a.version);
 function pushRevision(d, byPersonId, note) {
@@ -1798,8 +1825,8 @@ function createDoc(actor, input) {
   commit();
   return d;
 }
-function attachDoc(actor, id, contentId) {
-  const d = getDoc(id);
+function attachDoc(actor, id2, contentId) {
+  const d = getDoc(id2);
   if (!d) throw new RuleError("Document not found.");
   if (!canEditDoc(actor, d)) throw new RuleError("You have view-only access to this document.");
   if (d.contentId === contentId) throw new RuleError("This document is already attached here.");
@@ -1810,7 +1837,7 @@ function attachDoc(actor, id, contentId) {
   d.contentId = contentId;
   d.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
   d.updatedBy = actor.personId;
-  logAudit(actor, "attach", "document", id, `${from} to ${contentId}`);
+  logAudit(actor, "attach", "document", id2, `${from} to ${contentId}`);
   commit();
   return d;
 }
@@ -1825,8 +1852,8 @@ function attachStageDocs(actor, r, stage) {
   }
   return made;
 }
-function saveDoc(actor, id, patch, baseVersion) {
-  const d = getDoc(id);
+function saveDoc(actor, id2, patch, baseVersion) {
+  const d = getDoc(id2);
   if (!d) throw new RuleError("Document not found.");
   if (!canEditDoc(actor, d)) throw new RuleError("You can read this document but not edit it.");
   if (d.version !== baseVersion) throw new ConflictError();
@@ -1864,12 +1891,12 @@ function restoreRevision(actor, docId, revisionId) {
   commit();
   return d;
 }
-function archiveDoc(actor, id) {
-  const d = getDoc(id);
+function archiveDoc(actor, id2) {
+  const d = getDoc(id2);
   if (!d) throw new RuleError("Document not found.");
   if (!canEditDoc(actor, d)) throw new RuleError("You can read this document but not edit it.");
   d.archived = true;
-  logAudit(actor, "archive", "document", id, d.title);
+  logAudit(actor, "archive", "document", id2, d.title);
   commit();
 }
 function archiveDocsFor(actor, contentId) {
@@ -1956,7 +1983,7 @@ async function mutateState(store2, fn) {
 function snapshotFor(db2, actor) {
   return withDb(db2, () => {
     const recs = visibleRecords(actor);
-    const ids = new Set(recs.map((r) => r.contentId));
+    const ids2 = new Set(recs.map((r) => r.contentId));
     const hop = actor.role === "HOP";
     const docs = db2.docs.filter((d) => canViewDoc(actor, d));
     const docIds = new Set(docs.map((d) => d.id));
@@ -1966,10 +1993,10 @@ function snapshotFor(db2, actor) {
       schemaVersion: db2.schemaVersion,
       users: [],
       people: db2.people.map((p) => redactPerson(actor, p)),
-      members: hop ? db2.members : db2.members.filter((m) => ids.has(m.projectContentId) || m.personId === actor.personId),
+      members: hop ? db2.members : db2.members.filter((m) => ids2.has(m.projectContentId) || m.personId === actor.personId),
       records: recs,
       callSheets: visibleCallSheets(actor),
-      comments: db2.comments.filter((c) => ids.has(c.contentId)),
+      comments: db2.comments.filter((c) => ids2.has(c.contentId)),
       audit: can(actor, "backend.audit") ? db2.audit : [],
       equipment: can(actor, "equipment.use") ? db2.equipment : [],
       manifests: can(actor, "equipment.use") ? db2.manifests : [],
@@ -2006,9 +2033,9 @@ async function recordFailure(store2, key2, limit) {
   const now = Date.now();
   const a = await store2.attempts.get(key2);
   const fresh = !a || now - a.first > WINDOW_MS;
-  const count = fresh ? 1 : a.count + 1;
-  const lockedUntil = count >= limit ? now + LOCK_MS : 0;
-  await store2.attempts.put({ _id: key2, count, first: fresh ? now : a.first, lockedUntil });
+  const count2 = fresh ? 1 : a.count + 1;
+  const lockedUntil = count2 >= limit ? now + LOCK_MS : 0;
+  await store2.attempts.put({ _id: key2, count: count2, first: fresh ? now : a.first, lockedUntil });
   return lockedUntil > 0;
 }
 async function record(store2, personId, action, detail) {
@@ -2109,13 +2136,24 @@ async function changePassword(store2, who, current, next) {
   await revokeSessions(store2, who.user._id, who.session._id);
   await record(store2, who.person.personId, "change-password", "Password changed");
 }
-function allowed(store2, actor) {
-  return loadDb(store2, ["settings", "people"]).then((l) => {
-    if (!l || !withDb(l.db, () => can(actor, "people.manage"))) throw new HttpError(403, 'Only the Head of Production, or someone given "Add and change people", can manage logins.');
+async function allowed(store2, actor, personId, what) {
+  const l = await loadDb(store2, ["settings", "people"]);
+  if (!l) throw new HttpError(503, "The app has not been set up yet.");
+  return withDb(l.db, () => {
+    if (!can(actor, "people.manage")) throw new HttpError(403, 'Only the Head of Production, or someone given "Add and change people", can manage logins.');
+    const person2 = l.db.people.find((p) => p.personId === personId);
+    if (!person2) throw new HttpError(404, "Choose a person.");
+    try {
+      requireNotBeyond(actor, person2.category, person2.personId, what);
+    } catch (e) {
+      if (e instanceof RuleError) throw new HttpError(403, e.message);
+      throw e;
+    }
+    return person2;
   });
 }
 async function createAccount(store2, who, input) {
-  await allowed(store2, who.actor);
+  await allowed(store2, who.actor, String(input.personId ?? ""), "create a login");
   const username = normalizeUsername(String(input.username ?? ""));
   const badName = checkUsername(username);
   if (badName) throw new HttpError(400, badName);
@@ -2147,9 +2185,9 @@ async function userOf(store2, personId) {
   return u;
 }
 async function resetPassword(store2, who, personId) {
-  await allowed(store2, who.actor);
+  if (personId === who.person.personId) throw new HttpError(400, "Change your own password from Settings.");
+  await allowed(store2, who.actor, personId, "reset the password");
   const u = await userOf(store2, personId);
-  if (u._id === who.user._id) throw new HttpError(400, "Change your own password from Settings.");
   const temp = temporaryPassword();
   await store2.users.put({ ...u, passwordHash: await hashPassword(temp), mustChange: true, passwordChangedAt: (/* @__PURE__ */ new Date()).toISOString() });
   await revokeSessions(store2, u._id);
@@ -2157,9 +2195,9 @@ async function resetPassword(store2, who, personId) {
   return { username: u._id, temporaryPassword: temp };
 }
 async function setDisabled(store2, who, personId, disabled) {
-  await allowed(store2, who.actor);
+  if (personId === who.person.personId) throw new HttpError(400, "You cannot switch off your own login.");
+  await allowed(store2, who.actor, personId, "switch a login on or off");
   const u = await userOf(store2, personId);
-  if (u._id === who.user._id) throw new HttpError(400, "You cannot switch off your own login.");
   await store2.users.put({ ...u, disabled });
   if (disabled) await revokeSessions(store2, u._id);
   await mutateState(store2, (db2) => {
@@ -2169,7 +2207,7 @@ async function setDisabled(store2, who, personId, disabled) {
   });
 }
 async function signOutEverywhere(store2, who, personId) {
-  if (personId !== who.person.personId) await allowed(store2, who.actor);
+  if (personId !== who.person.personId) await allowed(store2, who.actor, personId, "sign out a login");
   const u = await userOf(store2, personId);
   await revokeSessions(store2, u._id);
   await mutateState(store2, () => logAudit(who.actor, "sign-out-everywhere", "person", personId, u._id));
@@ -2181,6 +2219,7 @@ async function afterPeopleChange(store2, personId) {
 // src/services/callsheets.ts
 var callsheets_exports = {};
 __export(callsheets_exports, {
+  SHEET_EDITABLE: () => SHEET_EDITABLE,
   addRunItem: () => addRunItem,
   attachCallSheet: () => attachCallSheet,
   callSheetForRecord: () => callSheetForRecord,
@@ -2210,6 +2249,7 @@ __export(callsheets_exports, {
 var content_exports = {};
 __export(content_exports, {
   PROJECT_STAGE: () => PROJECT_STAGE,
+  RECORD_EDITABLE: () => RECORD_EDITABLE,
   addComment: () => addComment,
   addFeatured: () => addFeatured,
   addLink: () => addLink,
@@ -2298,9 +2338,9 @@ var PROJECT_ROLES = [
   "Floor crew"
 ];
 var rolesOf = (m) => m.roleOnProject.split(",").map((s2) => s2.trim()).filter(Boolean);
-function cleanRoles(roles) {
+function cleanRoles(roles2) {
   const out = [];
-  for (const raw of roles) {
+  for (const raw of roles2) {
     const role = raw.trim().replace(/\s+/g, " ");
     if (!role) continue;
     if (role.includes(",")) throw new RuleError("Add one role at a time. Roles cannot contain commas.");
@@ -2319,14 +2359,15 @@ var DEFAULT_STAGE_EFFORT = {
   documentary: { Idea: 1, Research: 3, "Pre-production": 2, Ingest: 1, Editorial: 5, Review: 1, Delivered: 0.5 },
   music: { Idea: 0.5, "Pre-production": 1, "Audio post-production": 2, "Video editing": 2, Review: 0.5, Publish: 0.5 }
 };
-var effortKey = (category, stage) => `${category}:${stage}`;
-function effortFor(category, stage, overrides = {}) {
-  return overrides[effortKey(category, stage)] ?? DEFAULT_STAGE_EFFORT[category]?.[stage] ?? 0.5;
+var effortKey = (category2, stage) => `${category2}:${stage}`;
+function effortFor(category2, stage, overrides = {}) {
+  return overrides[effortKey(category2, stage)] ?? DEFAULT_STAGE_EFFORT[category2]?.[stage] ?? 0.5;
 }
 
 // src/services/equipment.ts
 var equipment_exports = {};
 __export(equipment_exports, {
+  ITEM_EDITABLE: () => ITEM_EDITABLE,
   addAttachment: () => addAttachment,
   addDays: () => addDays,
   addGearToSheet: () => addGearToSheet,
@@ -2425,7 +2466,7 @@ function projectLabel(actor, contentId) {
   const r = getRecord(contentId);
   return r && canView(actor, r) ? r.title : contentId;
 }
-var getItem = (id) => getDb().equipment.find((e) => e.id === id);
+var getItem = (id2) => getDb().equipment.find((e) => e.id === id2);
 var isActive = (m) => m.status === "assigned" || m.status === "checked-out";
 var breakdownTotal = (bd) => CONDITIONS.reduce((n, c) => n + (bd[c] ?? 0), 0);
 function worstCondition(bd) {
@@ -2481,15 +2522,15 @@ function hist(actor, equipmentId, kind, detail, extra = {}) {
   });
 }
 function makeAttachment(actor, input) {
-  const url = input.url.trim();
-  if (!url) throw new RuleError("Add a photo or paste a link.");
-  if (url.startsWith("data:")) {
-    if (!url.startsWith("data:image/")) throw new RuleError("Only images can be attached.");
-    if (url.length > 42e4) throw new RuleError("That image is too large. Try a smaller photo.");
-  } else if (!/^https?:\/\//i.test(url)) {
+  const url2 = input.url.trim();
+  if (!url2) throw new RuleError("Add a photo or paste a link.");
+  if (url2.startsWith("data:")) {
+    if (!url2.startsWith("data:image/")) throw new RuleError("Only images can be attached.");
+    if (url2.length > 42e4) throw new RuleError("That image is too large. Try a smaller photo.");
+  } else if (!/^https?:\/\//i.test(url2)) {
     throw new RuleError("Links must start with http:// or https://.");
   }
-  return { id: `ATT-${pad(nextCounter("attachment"), 5)}`, url, caption: (input.caption ?? "").trim(), at: (/* @__PURE__ */ new Date()).toISOString(), byPersonId: actor.personId };
+  return { id: `ATT-${pad(nextCounter("attachment"), 5)}`, url: url2, caption: (input.caption ?? "").trim(), at: (/* @__PURE__ */ new Date()).toISOString(), byPersonId: actor.personId };
 }
 function qtyIn(item, status2) {
   let n = 0;
@@ -2549,11 +2590,11 @@ function nextAssetCode(cat) {
   const nums = getDb().equipment.filter((e) => e.trackingType === "serialized" && e.id.startsWith(prefix)).map((e) => parseInt(e.id.slice(prefix.length), 10)).filter((n) => !Number.isNaN(n));
   return `${prefix}${pad((nums.length ? Math.max(...nums) : 0) + 1)}`;
 }
-function nextAssetCodes(cat, count) {
+function nextAssetCodes(cat, count2) {
   const prefix = `DOF-EQ-${equipCategory(cat).code}-`;
   const nums = getDb().equipment.filter((e) => e.trackingType === "serialized" && e.id.startsWith(prefix)).map((e) => parseInt(e.id.slice(prefix.length), 10)).filter((n) => !Number.isNaN(n));
   const start = (nums.length ? Math.max(...nums) : 0) + 1;
-  return Array.from({ length: count }, (_, i) => `${prefix}${pad(start + i)}`);
+  return Array.from({ length: count2 }, (_, i) => `${prefix}${pad(start + i)}`);
 }
 function nextBatchCode(cat, family) {
   const token = family.toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -2664,9 +2705,12 @@ function createSerializedUnits(actor, input) {
   commit();
   return items;
 }
-function updateItem(actor, id, patch) {
+var ITEM_EDITABLE = ["name", "make", "model", "vendor", "packaging", "accessories", "info", "unitCost", "purchaseDate", "serialNumber", "unitLabel", "condition", "quantityTotal", "category"];
+function updateItem(actor, id2, input) {
   requireGearAccess(actor);
-  const item = getItem(id);
+  const patch = pickKeys(input, ITEM_EDITABLE);
+  if (patch.condition !== void 0 && !CONDITIONS.includes(patch.condition)) throw new RuleError("Choose New, Good, Fair or Poor.");
+  const item = getItem(id2);
   if (!item) throw new RuleError("Item not found.");
   if (patch.name !== void 0 && !patch.name.trim()) throw new RuleError("Name cannot be empty.");
   if (patch.category !== void 0 && !equipCategory(patch.category)) throw new RuleError("Choose a valid category.");
@@ -2674,7 +2718,7 @@ function updateItem(actor, id, patch) {
   if (patch.serialNumber !== void 0 && item.trackingType === "serialized") {
     const s2 = patch.serialNumber?.trim() ?? "";
     if (s2) {
-      const dupe = getDb().equipment.find((e) => e.id !== id && e.serialNumber && e.serialNumber.toLowerCase() === s2.toLowerCase());
+      const dupe = getDb().equipment.find((e) => e.id !== id2 && e.serialNumber && e.serialNumber.toLowerCase() === s2.toLowerCase());
       if (dupe) throw new RuleError(`Serial number ${s2} is already registered as ${dupe.id}.`);
     }
     patch.serialNumber = s2 || null;
@@ -2706,14 +2750,14 @@ function updateItem(actor, id, patch) {
     }
     applyConditionBreakdown(item, bd);
   }
-  hist(actor, id, "edited", changes.length ? changes.join(", ") : "Details updated");
-  logAudit(actor, "update", "equipment", id, Object.keys(patch).join(", "));
+  hist(actor, id2, "edited", changes.length ? changes.join(", ") : "Details updated");
+  logAudit(actor, "update", "equipment", id2, Object.keys(patch).join(", "));
   commit();
   return item;
 }
-function setConditionBreakdown(actor, id, counts) {
+function setConditionBreakdown(actor, id2, counts) {
   requireGearAccess(actor);
-  const item = getItem(id);
+  const item = getItem(id2);
   if (!item) throw new RuleError("Item not found.");
   if (item.trackingType !== "aggregate") throw new RuleError("Only batches can split their condition by unit.");
   const clean = {};
@@ -2725,87 +2769,89 @@ function setConditionBreakdown(actor, id, counts) {
   const total = breakdownTotal(clean);
   if (total !== item.quantityTotal) throw new RuleError(`Those counts add up to ${total}, but this batch has ${item.quantityTotal} units.`);
   applyConditionBreakdown(item, clean);
-  hist(actor, id, "edited", `Condition split: ${CONDITIONS.filter((c) => clean[c]).map((c) => `${clean[c]} ${c}`).join(", ")}`);
-  logAudit(actor, "update", "equipment", id, "condition breakdown");
+  hist(actor, id2, "edited", `Condition split: ${CONDITIONS.filter((c) => clean[c]).map((c) => `${clean[c]} ${c}`).join(", ")}`);
+  logAudit(actor, "update", "equipment", id2, "condition breakdown");
   commit();
   return item;
 }
-function addAttachment(actor, id, kind, input) {
+function addAttachment(actor, id2, kind, input) {
   requireGearAccess(actor);
-  const item = getItem(id);
+  const item = getItem(id2);
   if (!item) throw new RuleError("Item not found.");
   const att = makeAttachment(actor, input);
   (kind === "photo" ? item.photos : item.receipts).push(att);
-  hist(actor, id, "photo", kind === "photo" ? "Reference photo added" : "Receipt attached");
+  hist(actor, id2, "photo", kind === "photo" ? "Reference photo added" : "Receipt attached");
   commit();
   return att;
 }
-function removeAttachment(actor, id, attachmentId) {
+function removeAttachment(actor, id2, attachmentId) {
   requireGearAccess(actor);
-  const item = getItem(id);
+  const item = getItem(id2);
   if (!item) throw new RuleError("Item not found.");
   item.photos = item.photos.filter((a) => a.id !== attachmentId);
   item.receipts = item.receipts.filter((a) => a.id !== attachmentId);
   commit();
 }
-function startRepair(actor, id, note) {
+function startRepair(actor, id2, note) {
   requireGearAccess(actor);
-  const item = getItem(id);
+  const item = getItem(id2);
   if (!item) throw new RuleError("Item not found.");
   if (item.trackingType === "aggregate") throw new RuleError("Batches are not repaired. Record damaged units when they are checked in.");
   if (item.baseStatus !== "active") throw new RuleError("Only items in service can be sent to repair.");
   if (qtyOut(item) > 0) throw new RuleError("This item is checked out. Check it in first.");
   item.baseStatus = "in-repair";
-  hist(actor, id, "repair-start", note.trim() || "Sent for repair");
-  logAudit(actor, "repair-start", "equipment", id, note);
+  hist(actor, id2, "repair-start", note.trim() || "Sent for repair");
+  logAudit(actor, "repair-start", "equipment", id2, note);
   commit();
 }
-function finishRepair(actor, id, condition, note) {
+function finishRepair(actor, id2, condition2, note) {
   requireGearAccess(actor);
-  const item = getItem(id);
+  const item = getItem(id2);
   if (!item) throw new RuleError("Item not found.");
   if (item.baseStatus !== "in-repair") throw new RuleError("This item is not in repair.");
   item.baseStatus = "active";
-  item.condition = condition;
-  hist(actor, id, "repair-end", `${note.trim() || "Back from repair"}. Condition: ${condition}`);
-  logAudit(actor, "repair-end", "equipment", id, condition);
+  item.condition = condition2;
+  hist(actor, id2, "repair-end", `${note.trim() || "Back from repair"}. Condition: ${condition2}`);
+  logAudit(actor, "repair-end", "equipment", id2, condition2);
   commit();
 }
-function retireItem(actor, id, kind, note) {
+function retireItem(actor, id2, kind, note) {
   requireHop(actor, "retire equipment");
-  const item = getItem(id);
+  const item = getItem(id2);
   if (!item) throw new RuleError("Item not found.");
   if (item.baseStatus === "retired" || item.baseStatus === "lost") throw new RuleError("This item is already out of service.");
-  if (getDb().manifests.some((m) => isActive(m) && m.lines.some((l) => l.equipmentId === id))) throw new RuleError("This item is on an active checkout list. Check it in or release it first.");
+  if (getDb().manifests.some((m) => isActive(m) && m.lines.some((l) => l.equipmentId === id2))) throw new RuleError("This item is on an active checkout list. Check it in or release it first.");
   item.baseStatus = kind;
-  hist(actor, id, kind, note.trim() || (kind === "lost" ? "Marked lost" : "Retired from inventory"));
-  logAudit(actor, kind, "equipment", id, note);
+  hist(actor, id2, kind, note.trim() || (kind === "lost" ? "Marked lost" : "Retired from inventory"));
+  logAudit(actor, kind, "equipment", id2, note);
   commit();
 }
-function reinstateItem(actor, id) {
+function reinstateItem(actor, id2) {
   requireHop(actor, "reinstate equipment");
-  const item = getItem(id);
+  const item = getItem(id2);
   if (!item || item.baseStatus !== "retired" && item.baseStatus !== "lost") throw new RuleError("This item is not retired or lost.");
   item.baseStatus = "active";
-  hist(actor, id, "edited", "Back in service");
-  logAudit(actor, "reinstate", "equipment", id);
+  hist(actor, id2, "edited", "Back in service");
+  logAudit(actor, "reinstate", "equipment", id2);
   commit();
 }
-function deleteItem(actor, id) {
+function deleteItem(actor, id2) {
   requireHop(actor, "delete equipment");
-  const item = getItem(id);
+  const item = getItem(id2);
   if (!item) throw new RuleError("Item not found.");
-  const used = getDb().manifests.some((m) => m.lines.some((l) => l.equipmentId === id)) || getDb().incidents.some((i) => i.equipmentId === id);
+  const used = getDb().manifests.some((m) => m.lines.some((l) => l.equipmentId === id2)) || getDb().incidents.some((i) => i.equipmentId === id2);
   if (used) throw new RuleError("This item has checkout history. Retire it instead so the history is kept.");
-  getDb().equipment = getDb().equipment.filter((e) => e.id !== id);
-  getDb().equipmentHistory = getDb().equipmentHistory.filter((h) => h.equipmentId !== id);
-  logAudit(actor, "delete", "equipment", id, item.name);
+  getDb().equipment = getDb().equipment.filter((e) => e.id !== id2);
+  getDb().equipmentHistory = getDb().equipmentHistory.filter((h) => h.equipmentId !== id2);
+  logAudit(actor, "delete", "equipment", id2, item.name);
   commit();
 }
 
 // src/services/people.ts
 var people_exports = {};
 __export(people_exports, {
+  PERSON_EDITABLE: () => PERSON_EDITABLE,
+  STAFF_CATEGORIES: () => STAFF_CATEGORIES,
   assignToProject: () => assignToProject,
   createLoginForPerson: () => createLoginForPerson,
   createPerson: () => createPerson,
@@ -2822,18 +2868,22 @@ __export(people_exports, {
   updatePersonCategory: () => updatePersonCategory,
   workOwnedOn: () => workOwnedOn
 });
-function generatePersonId(category) {
-  const prefix = ROLES[category].idPrefix;
+var STAFF_CATEGORIES = ["CRW", "VOL", "PTR"];
+function requireStaffCategory(category2) {
+  if (!STAFF_CATEGORIES.includes(category2)) throw new RuleError("Choose Crew, Volunteer or Partner.");
+}
+function generatePersonId(category2) {
+  const prefix = ROLES[category2].idPrefix;
   const nums = getDb().people.filter((p) => p.personId.startsWith(prefix + "-")).map((p) => parseInt(p.personId.slice(prefix.length + 1), 10)).filter((n) => !Number.isNaN(n));
   return `${prefix}-${pad((nums.length ? Math.max(...nums) : 0) + 1)}`;
 }
 function requireHop2(actor, what) {
   requireCan(actor, "people.manage", what);
 }
-function getPerson(id) {
-  return getDb().people.find((p) => p.personId === id);
+function getPerson(id2) {
+  return getDb().people.find((p) => p.personId === id2);
 }
-var nameOf = (id) => id ? getPerson(id)?.name ?? id : "Unassigned";
+var nameOf = (id2) => id2 ? getPerson(id2)?.name ?? id2 : "Unassigned";
 function createLoginForPerson(actor, personId, email, password) {
   requireHop2(actor, "create logins");
   const p = getPerson(personId);
@@ -2860,6 +2910,7 @@ function createLoginForPerson(actor, personId, email, password) {
 }
 function createPerson(actor, input, login2) {
   requireHop2(actor, "add people");
+  requireStaffCategory(input.category);
   if (!input.name.trim()) throw new RuleError("Enter a name.");
   if (login2) {
     if (!login2.email.trim()) throw new RuleError("Enter an email address for the login.");
@@ -2884,10 +2935,14 @@ function createPerson(actor, input, login2) {
   if (login2) createLoginForPerson(actor, person2.personId, login2.email, login2.password);
   return person2;
 }
-function updatePerson(actor, personId, patch) {
+var PERSON_EDITABLE = ["name", "email", "phone", "skills", "equipmentFamiliarity"];
+function updatePerson(actor, personId, input) {
   requireHop2(actor, "edit people");
+  const patch = pickKeys(input, PERSON_EDITABLE);
   const p = getPerson(personId);
   if (!p) throw new RuleError("Person not found.");
+  if (p.category === "HOP" && !isHop(actor)) throw new RuleError("Only the Head of Production can change the Head of Production's details.");
+  if (patch.name !== void 0 && !patch.name.trim()) throw new RuleError("Enter a name.");
   Object.assign(p, patch);
   logAudit(actor, "update", "person", personId, Object.keys(patch).join(", "));
   commit();
@@ -2914,9 +2969,12 @@ function updateOwnProfile(actor, patch) {
 }
 function updatePersonCategory(actor, personId, newCategory) {
   requireHop2(actor, "change someone's category");
+  requireStaffCategory(newCategory);
   const p = getPerson(personId);
   if (!p) throw new RuleError("Person not found.");
   if (p.category === "HOP") throw new RuleError("The Head of Production category cannot be changed here.");
+  requireNotBeyond(actor, p.category, personId, "change the category");
+  requireNotBeyond(actor, newCategory, personId, "change the category");
   const from = p.category;
   p.category = newCategory;
   const u = getDb().users.find((x) => x.personId === personId);
@@ -2930,6 +2988,7 @@ function deactivatePerson(actor, personId) {
   const p = getPerson(personId);
   if (!p) throw new RuleError("Person not found.");
   if (p.category === "HOP") throw new RuleError("The Head of Production cannot be deactivated.");
+  requireNotBeyond(actor, p.category, personId, "deactivate a login");
   p.status = "inactive";
   const u = getDb().users.find((x) => x.personId === personId);
   if (u) u.active = false;
@@ -2940,6 +2999,7 @@ function reactivatePerson(actor, personId) {
   requireHop2(actor, "reactivate people");
   const p = getPerson(personId);
   if (!p) throw new RuleError("Person not found.");
+  requireNotBeyond(actor, p.category, personId, "reactivate a login");
   p.status = "active";
   const u = getDb().users.find((x) => x.personId === personId);
   if (u) u.active = true;
@@ -2954,8 +3014,8 @@ function assignToProject(actor, personId, contentId, roleOnProject, canComment2)
   const rec2 = getRecord(contentId);
   if (!rec2) throw new RuleError("Project not found.");
   if (getDb().members.some((m) => m.personId === personId && m.projectContentId === contentId)) throw new RuleError("Already assigned to this project.");
-  const roles = cleanRoles(roleOnProject.split(","));
-  getDb().members.push({ personId, projectContentId: contentId, roleOnProject: roles.join(", ") || "Team member", canComment: canComment2 });
+  const roles2 = cleanRoles(roleOnProject.split(","));
+  getDb().members.push({ personId, projectContentId: contentId, roleOnProject: roles2.join(", ") || "Team member", canComment: canComment2 });
   logAudit(actor, "assign", "person", personId, contentId);
   commit();
 }
@@ -2977,18 +3037,18 @@ function removeFromProject(actor, personId, contentId) {
   logAudit(actor, "unassign", "person", personId, contentId);
   commit();
 }
-function crewAvailableOn(date) {
+function crewAvailableOn(date2) {
   const db2 = getDb();
   const total = db2.people.filter((p) => p.category === "CRW" && p.status === "active");
-  const busy = new Set(db2.callSheets.filter((cs) => cs.date === date).flatMap((cs) => cs.crewPersonIds));
+  const busy = new Set(db2.callSheets.filter((cs) => cs.date === date2).flatMap((cs) => cs.crewPersonIds));
   return { available: total.filter((p) => !busy.has(p.personId)), total };
 }
 
 // src/services/equipment-reports.ts
-function inventoryReport(category, includeOutOfService) {
+function inventoryReport(category2, includeOutOfService) {
   const groups = [];
   for (const cat of EQUIP_CATEGORIES) {
-    if (category !== "all" && cat.key !== category) continue;
+    if (category2 !== "all" && cat.key !== category2) continue;
     const items = getDb().equipment.filter((i) => i.category === cat.key && (includeOutOfService || i.baseStatus === "active" || i.baseStatus === "in-repair")).sort((a, b) => a.id.localeCompare(b.id));
     if (!items.length) continue;
     const rows = items.map((i) => ({
@@ -3036,8 +3096,8 @@ function groupSerializedByModel(items) {
   for (const f of map.values()) f.items.sort((a, b) => (a.purchaseDate ?? a.createdAt).localeCompare(b.purchaseDate ?? b.createdAt));
   return [...map.values()];
 }
-var itemHistory = (id) => getDb().equipmentHistory.filter((h) => h.equipmentId === id).sort((a, b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id));
-var itemIncidents = (id) => getDb().incidents.filter((i) => i.equipmentId === id).sort((a, b) => b.at.localeCompare(a.at));
+var itemHistory = (id2) => getDb().equipmentHistory.filter((h) => h.equipmentId === id2).sort((a, b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id));
+var itemIncidents = (id2) => getDb().incidents.filter((i) => i.equipmentId === id2).sort((a, b) => b.at.localeCompare(a.at));
 var allIncidents = () => [...getDb().incidents].sort((a, b) => b.at.localeCompare(a.at));
 
 // src/services/equipment-manifests.ts
@@ -3054,17 +3114,17 @@ function hist2(actor, equipmentId, kind, detail, extra = {}) {
   });
 }
 function makeAttachment2(actor, input) {
-  const url = input.url.trim();
-  if (!url) throw new RuleError("Add a photo or paste a link.");
-  if (url.startsWith("data:")) {
-    if (!url.startsWith("data:image/")) throw new RuleError("Only images can be attached.");
-    if (url.length > 42e4) throw new RuleError("That image is too large. Try a smaller photo.");
-  } else if (!/^https?:\/\//i.test(url)) {
+  const url2 = input.url.trim();
+  if (!url2) throw new RuleError("Add a photo or paste a link.");
+  if (url2.startsWith("data:")) {
+    if (!url2.startsWith("data:image/")) throw new RuleError("Only images can be attached.");
+    if (url2.length > 42e4) throw new RuleError("That image is too large. Try a smaller photo.");
+  } else if (!/^https?:\/\//i.test(url2)) {
     throw new RuleError("Links must start with http:// or https://.");
   }
-  return { id: `ATT-${pad(nextCounter("attachment"), 5)}`, url, caption: (input.caption ?? "").trim(), at: (/* @__PURE__ */ new Date()).toISOString(), byPersonId: actor.personId };
+  return { id: `ATT-${pad(nextCounter("attachment"), 5)}`, url: url2, caption: (input.caption ?? "").trim(), at: (/* @__PURE__ */ new Date()).toISOString(), byPersonId: actor.personId };
 }
-var getManifest = (id) => getDb().manifests.find((m) => m.id === id);
+var getManifest = (id2) => getDb().manifests.find((m) => m.id === id2);
 function addDays(iso, n) {
   const [y, m, d] = iso.split("-").map(Number);
   const dt = new Date(y, m - 1, d + n);
@@ -3087,9 +3147,9 @@ function checkLine(item, qty, from, to, excludeManifestId) {
   }
   return item;
 }
-function loadManifest(actor, id) {
+function loadManifest(actor, id2) {
   requireGearAccess(actor);
-  const m = getManifest(id);
+  const m = getManifest(id2);
   if (!m) throw new RuleError("Checkout list not found.");
   const rec2 = getRecord(m.contentId);
   if (rec2 ? !canWrite(actor, rec2) : !isHop(actor)) throw new RuleError("You are not attached to this project.");
@@ -3206,13 +3266,13 @@ var nonNeg = (n) => Number.isInteger(n) && n >= 0;
 function checkIn(actor, manifestId, returns) {
   const m = loadManifest(actor, manifestId);
   if (m.status !== "checked-out") throw new RuleError("This gear is not checked out.");
-  const plans = m.lines.map((line) => {
-    const item = getItem(line.equipmentId);
+  const plans = m.lines.map((line2) => {
+    const item = getItem(line2.equipmentId);
     if (!item) throw new RuleError("An item on this list no longer exists.");
-    const r = returns.find((x) => x.equipmentId === line.equipmentId);
+    const r = returns.find((x) => x.equipmentId === line2.equipmentId);
     if (!r) throw new RuleError(`Record the return for ${item.name}.`);
     if (![r.returnedGood, r.damaged, r.lost].every(nonNeg)) throw new RuleError(`Counts for ${item.name} must be whole numbers.`);
-    if (r.returnedGood + r.damaged + r.lost !== line.quantity) throw new RuleError(`${item.name}: returned, damaged and lost must add up to ${line.quantity}.`);
+    if (r.returnedGood + r.damaged + r.lost !== line2.quantity) throw new RuleError(`${item.name}: returned, damaged and lost must add up to ${line2.quantity}.`);
     let good = r.returnedGood;
     let damaged = r.damaged;
     const lost = r.lost;
@@ -3221,7 +3281,7 @@ function checkIn(actor, manifestId, returns) {
       if (good + damaged > 0) {
         if (!r.conditionIn) throw new RuleError(`Choose the condition ${item.name} came back in.`);
         cond = r.conditionIn;
-        if (good === 1 && conditionRank(cond) > conditionRank(line.conditionOut)) {
+        if (good === 1 && conditionRank(cond) > conditionRank(line2.conditionOut)) {
           good = 0;
           damaged = 1;
         }
@@ -3232,7 +3292,7 @@ function checkIn(actor, manifestId, returns) {
     const desc = (r.description ?? "").trim();
     if (damaged + lost > 0 && !desc) throw new RuleError(`Describe what happened to ${item.name}.`);
     if (damaged + lost > item.quantityTotal) throw new RuleError(`${item.name}: more units damaged or lost than the batch holds.`);
-    return { line, item, good, damaged, lost, cond, desc, repair: !!r.sendToRepair && item.trackingType === "serialized" && damaged === 1, photos: (r.photos ?? []).map((p) => makeAttachment2(actor, p)) };
+    return { line: line2, item, good, damaged, lost, cond, desc, repair: !!r.sendToRepair && item.trackingType === "serialized" && damaged === 1, photos: (r.photos ?? []).map((p) => makeAttachment2(actor, p)) };
   });
   const now = (/* @__PURE__ */ new Date()).toISOString();
   for (const p of plans) {
@@ -3319,9 +3379,9 @@ function releaseManifest(actor, manifestId) {
 function addLinePhoto(actor, manifestId, equipmentId, input) {
   const m = loadManifest(actor, manifestId);
   if (m.status !== "assigned" && m.status !== "checked-out") throw new RuleError("Photos are added while the gear is out.");
-  const line = m.lines.find((l) => l.equipmentId === equipmentId);
-  if (!line) throw new RuleError("That item is not on this list.");
-  line.photosOut.push(makeAttachment2(actor, input));
+  const line2 = m.lines.find((l) => l.equipmentId === equipmentId);
+  if (!line2) throw new RuleError("That item is not on this list.");
+  line2.photosOut.push(makeAttachment2(actor, input));
   commit();
 }
 function listManifests(actor) {
@@ -3399,12 +3459,16 @@ function manifestForSheet(sheetId) {
 }
 function addGearToSheet(actor, sheet, lines) {
   requireGearAccess(actor);
-  const existing = manifestForSheet(sheet.id);
+  const cs = getDb().callSheets.find((c) => c.id === sheet.id);
+  if (!cs) throw new RuleError("Call sheet not found.");
+  const project = getRecord(cs.contentId);
+  if (!project || !canWrite(actor, project)) throw new RuleError("You have view-only access to this project.");
+  const existing = manifestForSheet(cs.id);
   if (existing) {
     if (existing.status !== "assigned") throw new RuleError("This call sheet's gear has already gone out. Manage it from the checkout list.");
     return addLines(actor, existing.id, lines);
   }
-  return createManifest(actor, { contentId: sheet.contentId, date: sheet.date, destination: "studio", status: "assigned", lines, callSheetId: sheet.id });
+  return createManifest(actor, { contentId: cs.contentId, date: cs.date, destination: "studio", status: "assigned", lines, callSheetId: cs.id });
 }
 function removeGearFromSheet(actor, sheetId, equipmentId) {
   const m = manifestForSheet(sheetId);
@@ -3460,7 +3524,7 @@ function releaseSheetGear(actor, sheetId) {
 }
 
 // src/services/driveUsage.ts
-var getDrive = (id) => getDb().drives.find((d) => d.id === id);
+var getDrive = (id2) => getDb().drives.find((d) => d.id === id2);
 function driveUsage(drive) {
   const rows = getDb().allocations.filter((a) => a.driveId === drive.id);
   const by = /* @__PURE__ */ new Map();
@@ -3587,9 +3651,9 @@ function canAdvance(r) {
   }
   return { ok: true, reason: "" };
 }
-function nextTopLevelId(category) {
-  const code = categoryOf(category).code;
-  const nums = getDb().records.filter((r) => r.category === category && r.hierarchyLevel === 0).map((r) => parseInt(r.contentId.split("-")[2], 10)).filter((n) => !Number.isNaN(n));
+function nextTopLevelId(category2) {
+  const code = categoryOf(category2).code;
+  const nums = getDb().records.filter((r) => r.category === category2 && r.hierarchyLevel === 0).map((r) => parseInt(r.contentId.split("-")[2], 10)).filter((n) => !Number.isNaN(n));
   return `DOF-${code}-${pad((nums.length ? Math.max(...nums) : 0) + 1)}`;
 }
 function nextChildId(parent) {
@@ -3610,13 +3674,13 @@ function ensureMember(actor, personId, r) {
   getDb().members.push({ personId, projectContentId: rootId, roleOnProject: "Assigned", canComment: person2.category !== "VOL" });
   logAudit(actor, "assign", "person", personId, `${rootId} (via assignment)`);
 }
-function blankRecord(id, category, title, parentId, level) {
+function blankRecord(id2, category2, title, parentId, level2) {
   return {
-    contentId: id,
+    contentId: id2,
     title,
-    category,
+    category: category2,
     parentId,
-    hierarchyLevel: level,
+    hierarchyLevel: level2,
     pipelineStage: null,
     stageOutputs: {},
     stageDeadlines: {},
@@ -3685,9 +3749,9 @@ function ensureStageTasks(r, stage) {
     r.tasks.push({ id: `T-${pad(nextCounter("task"), 4)}`, stage, label, done: false, dueDate: r.stageDeadlines[stage] ?? null, assigneePersonId: null, doneAt: null, doneBy: null });
   }
 }
-function checkShowDates(category, start, end) {
+function checkShowDates(category2, start, end) {
   if (!start && !end) return;
-  if (category !== "series" && category !== "live") throw new RuleError("Show dates apply to series and live shows.");
+  if (category2 !== "series" && category2 !== "live") throw new RuleError("Show dates apply to series and live shows.");
   if (end && !start) throw new RuleError("Set the day the show starts as well as the day it ends.");
   if (start && end && end < start) throw new RuleError("The show cannot end before it starts.");
 }
@@ -3707,10 +3771,10 @@ function datesBetween(start, end) {
 function createDays(actor, show, input) {
   const dates = input.showStart ? datesBetween(input.showStart, input.showEnd || input.showStart) : [null];
   if (dates.length > MAX_SHOW_DAYS) throw new RuleError(`A live show can run for up to ${MAX_SHOW_DAYS} days. Add a longer one in parts.`);
-  dates.forEach((date, i) => {
+  dates.forEach((date2, i) => {
     const day = blankRecord(nextChildId(show), "live", `Day ${i + 1}`, show.contentId, 1);
-    day.scheduledDate = date;
-    day.deadline = date ?? input.deadline ?? null;
+    day.scheduledDate = date2;
+    day.deadline = date2 ?? input.deadline ?? null;
     day.assigneePersonId = input.assigneePersonId || null;
     day.productionLevel = input.productionLevel ?? null;
     initPipeline(actor, day);
@@ -3791,30 +3855,39 @@ function splitRecording(actor, dayId, input) {
 function spinOffsOf(dayId) {
   return getDb().records.filter((r) => r.spunOffFrom === dayId);
 }
-function setStrikePlan(actor, id, pattern, daily, final, expectedVersion) {
-  const r = loadForWrite(actor, id, expectedVersion);
+function setStrikePlan(actor, id2, pattern, daily, final, expectedVersion) {
+  const r = loadForWrite(actor, id2, expectedVersion);
   if (r.category !== "live" || r.hierarchyLevel !== 0) throw new RuleError("Only a live show itself has a strike plan.");
   const clean = (list) => list.map((s2) => s2.trim()).filter(Boolean);
   r.strikePattern = pattern;
   r.strikeChecklist = { daily: clean(daily), final: clean(final) };
-  for (const day of getChildren(id)) {
+  for (const day of getChildren(id2)) {
     if (day.pipelineStage === "Wrap" && !day.tasks.some((t2) => t2.stage === "Wrap")) ensureStageTasks(day, "Wrap");
   }
   r.version += 1;
-  logAudit(actor, "update", "record", id, "Strike plan");
+  logAudit(actor, "update", "record", id2, "Strike plan");
   commit();
   return r;
 }
-function loadForWrite(actor, id, expectedVersion) {
-  const r = getRecord(id);
+function loadForWrite(actor, id2, expectedVersion) {
+  const r = getRecord(id2);
   if (!r) throw new RuleError("Record not found.");
   if (!canWrite(actor, r)) throw new RuleError("You have view-only access to this project.");
   if (expectedVersion !== void 0 && r.version !== expectedVersion) throw new ConflictError();
   return r;
 }
-function updateRecord(actor, id, patch, expectedVersion) {
-  const r = loadForWrite(actor, id, expectedVersion);
+var RECORD_EDITABLE = ["title", "scheduledDate", "deadline", "assigneePersonId", "notes", "productionLevel", "showStart", "showEnd", "guestName", "guestContact", "cardStorage", "publishDate", "recordingDurationMin", "recordingNotes", "editorNotes"];
+function updateRecord(actor, id2, input, expectedVersion) {
+  const patch = pickKeys(input, RECORD_EDITABLE);
+  const r = loadForWrite(actor, id2, expectedVersion);
   if (patch.title !== void 0 && !patch.title.trim()) throw new RuleError("Title cannot be empty.");
+  if (patch.assigneePersonId !== void 0 && patch.assigneePersonId !== r.assigneePersonId) {
+    if (patch.assigneePersonId && patch.assigneePersonId !== actor.personId && !can(actor, "pipeline.assign")) throw new RuleError(`Only the Head of Production, or someone given "Assign other people's work", can change other people's work. You can change your own.`);
+    if (patch.assigneePersonId) {
+      const p = getPerson(patch.assigneePersonId);
+      if (!p || p.status !== "active" || p.category !== "CRW" && p.category !== "HOP") throw new RuleError("Only active crew can be responsible for a project.");
+    }
+  }
   if (patch.productionLevel !== void 0 && patch.productionLevel !== null) patch.productionLevel = validLevel(r, patch.productionLevel);
   if (patch.showStart !== void 0 || patch.showEnd !== void 0) checkShowDates(r.category, patch.showStart !== void 0 ? patch.showStart : r.showStart, patch.showEnd !== void 0 ? patch.showEnd : r.showEnd);
   Object.assign(r, patch);
@@ -3826,34 +3899,35 @@ function updateRecord(actor, id, patch, expectedVersion) {
   }
   if (patch.assigneePersonId) ensureMember(actor, patch.assigneePersonId, r);
   r.version += 1;
-  logAudit(actor, "update", "record", id, Object.keys(patch).join(", "));
+  logAudit(actor, "update", "record", id2, Object.keys(patch).join(", "));
   commit();
   return r;
 }
-function validLevel(r, level) {
+function validLevel(r, level2) {
   if (r.category !== "live" || !usesPipeline(r)) throw new RuleError("Level of production is set on each day of a live show.");
-  if (!["small", "medium", "large"].includes(level)) throw new RuleError("Choose small, medium or large.");
-  return level;
+  if (!["small", "medium", "large"].includes(level2)) throw new RuleError("Choose small, medium or large.");
+  return level2;
 }
-function setStageDeadline(actor, id, stage, date, expectedVersion) {
-  const r = loadForWrite(actor, id, expectedVersion);
-  r.stageDeadlines[stage] = date;
+function setStageDeadline(actor, id2, stage, date2, expectedVersion) {
+  const r = loadForWrite(actor, id2, expectedVersion);
+  if (!categoryOf(r.category).stages.some((s2) => s2.name === stage)) throw new RuleError("That stage does not exist for this category.");
+  r.stageDeadlines[stage] = date2;
   r.version += 1;
-  logAudit(actor, "stage-deadline", "record", id, `${stage} \u2192 ${date}`);
+  logAudit(actor, "stage-deadline", "record", id2, `${stage} \u2192 ${date2}`);
   commit();
 }
-function setPostProductionNeeded(actor, id, needed, expectedVersion) {
-  const r = loadForWrite(actor, id, expectedVersion);
+function setPostProductionNeeded(actor, id2, needed, expectedVersion) {
+  const r = loadForWrite(actor, id2, expectedVersion);
   if (r.category !== "live") throw new RuleError("Only live days ask this.");
   r.postProductionNeeded = needed;
   r.stageOutputs["Post Production"] = false;
   r.version += 1;
-  logAudit(actor, "output-cleared", "record", id, `Post-production needed: ${needed ? "yes" : "no"}`);
+  logAudit(actor, "output-cleared", "record", id2, `Post-production needed: ${needed ? "yes" : "no"}`);
   commit();
   return r;
 }
-function setStageOutput(actor, id, present, expectedVersion) {
-  const r = loadForWrite(actor, id, expectedVersion);
+function setStageOutput(actor, id2, present, expectedVersion) {
+  const r = loadForWrite(actor, id2, expectedVersion);
   if (!r.pipelineStage) throw new RuleError("This record has no pipeline.");
   if (present && r.category === "live" && r.pipelineStage === "Post Production") {
     if (r.postProductionNeeded === null) throw new RuleError("First say whether anything recorded on this day needs post-production.");
@@ -3863,7 +3937,7 @@ function setStageOutput(actor, id, present, expectedVersion) {
   }
   r.stageOutputs[r.pipelineStage] = present;
   r.version += 1;
-  logAudit(actor, present ? "output-confirmed" : "output-cleared", "record", id, `${r.pipelineStage}: ${categoryOf(r.category).stages.find((s2) => s2.name === r.pipelineStage)?.requiredOutput}`);
+  logAudit(actor, present ? "output-confirmed" : "output-cleared", "record", id2, `${r.pipelineStage}: ${categoryOf(r.category).stages.find((s2) => s2.name === r.pipelineStage)?.requiredOutput}`);
   commit();
 }
 function stepForward(actor, r) {
@@ -3879,8 +3953,8 @@ function stepForward(actor, r) {
   r.version += 1;
   logAudit(actor, "stage-advance", "record", r.contentId, `${from} \u2192 ${r.pipelineStage}`);
 }
-function advanceStage(actor, id, expectedVersion) {
-  const r = loadForWrite(actor, id, expectedVersion);
+function advanceStage(actor, id2, expectedVersion) {
+  const r = loadForWrite(actor, id2, expectedVersion);
   const gate = canAdvance(r);
   if (!gate.ok) throw new RuleError(gate.reason);
   stepForward(actor, r);
@@ -3900,16 +3974,16 @@ function stepBack(actor, r) {
   r.version += 1;
   logAudit(actor, "stage-back", "record", r.contentId, `${from} \u2192 ${r.pipelineStage}`);
 }
-function sendBackStage(actor, id, expectedVersion) {
-  const r = loadForWrite(actor, id, expectedVersion);
+function sendBackStage(actor, id2, expectedVersion) {
+  const r = loadForWrite(actor, id2, expectedVersion);
   if (r.category === "devotional" && r.pipelineStage === "Review") throw new RuleError("Use Send back with a reason, not the general button, to leave Review.");
   stepBack(actor, r);
   commit();
   return r;
 }
 var DEFAULT_DEVOTIONAL_PRODUCER = "DOF-P-CRW-004";
-function approveGuestReview(actor, id, reviewerName, expectedVersion) {
-  const r = loadForWrite(actor, id, expectedVersion);
+function approveGuestReview(actor, id2, reviewerName, expectedVersion) {
+  const r = loadForWrite(actor, id2, expectedVersion);
   if (r.category !== "devotional") throw new RuleError("Only a Devotional has a theological review.");
   if (r.pipelineStage !== "Guest") throw new RuleError("This project is not at the Guest stage.");
   if (!reviewerName.trim()) throw new RuleError("Name who did the theological review.");
@@ -3922,8 +3996,8 @@ function approveGuestReview(actor, id, reviewerName, expectedVersion) {
   commit();
   return r;
 }
-function closeDevotional(actor, id, reason, expectedVersion) {
-  const r = loadForWrite(actor, id, expectedVersion);
+function closeDevotional(actor, id2, reason, expectedVersion) {
+  const r = loadForWrite(actor, id2, expectedVersion);
   if (r.category !== "devotional") throw new RuleError("Only a Devotional can be closed this way.");
   if (r.pipelineStage === "Closed") throw new RuleError("Already closed.");
   if (isComplete(r)) throw new RuleError("This project is already published.");
@@ -3933,23 +4007,23 @@ function closeDevotional(actor, id, reason, expectedVersion) {
   r.pipelineStage = "Closed";
   r.stageEnteredAt = todayIso();
   r.version += 1;
-  logAudit(actor, "stage-advance", "record", id, `${from} \u2192 Closed`);
+  logAudit(actor, "stage-advance", "record", id2, `${from} \u2192 Closed`);
   commit();
   return r;
 }
-function setDevotionalReadyForReview(actor, id, ready, expectedVersion) {
-  const r = loadForWrite(actor, id, expectedVersion);
+function setDevotionalReadyForReview(actor, id2, ready, expectedVersion) {
+  const r = loadForWrite(actor, id2, expectedVersion);
   if (r.category !== "devotional") throw new RuleError("Only a Devotional has this checkbox.");
   if (r.pipelineStage !== "Editing") throw new RuleError("This project is not at the Editing stage.");
   r.readyForReview = ready;
   r.stageOutputs.Editing = ready;
   r.version += 1;
-  logAudit(actor, "update", "record", id, ready ? "Ready for review" : "Not ready for review");
+  logAudit(actor, "update", "record", id2, ready ? "Ready for review" : "Not ready for review");
   commit();
   return r;
 }
-function approveDevotionalReview(actor, id, expectedVersion) {
-  const r = loadForWrite(actor, id, expectedVersion);
+function approveDevotionalReview(actor, id2, expectedVersion) {
+  const r = loadForWrite(actor, id2, expectedVersion);
   if (r.category !== "devotional") throw new RuleError("Only a Devotional is approved this way.");
   if (r.pipelineStage !== "Review") throw new RuleError("This project is not at the Review stage.");
   if (!r.readyForReview) throw new RuleError("Editing has not marked this ready for review.");
@@ -3958,8 +4032,8 @@ function approveDevotionalReview(actor, id, expectedVersion) {
   commit();
   return r;
 }
-function sendBackDevotionalToEditing(actor, id, reason, expectedVersion) {
-  const r = loadForWrite(actor, id, expectedVersion);
+function sendBackDevotionalToEditing(actor, id2, reason, expectedVersion) {
+  const r = loadForWrite(actor, id2, expectedVersion);
   if (r.category !== "devotional") throw new RuleError("Only a Devotional sends back this way.");
   if (r.pipelineStage !== "Review") throw new RuleError("This project is not at the Review stage.");
   if (!reason.trim()) throw new RuleError("Say why it is going back to Editing.");
@@ -3969,13 +4043,13 @@ function sendBackDevotionalToEditing(actor, id, reason, expectedVersion) {
   commit();
   return r;
 }
-function devotionalsOnRecordingDate(actor, date) {
-  return visibleRecords(actor).filter((r) => r.category === "devotional" && r.scheduledDate === date).sort((a, b) => a.contentId.localeCompare(b.contentId));
+function devotionalsOnRecordingDate(actor, date2) {
+  return visibleRecords(actor).filter((r) => r.category === "devotional" && r.scheduledDate === date2).sort((a, b) => a.contentId.localeCompare(b.contentId));
 }
-function ownerTarget(actor, id, stage, personId, expectedVersion) {
+function ownerTarget(actor, id2, stage, personId, expectedVersion) {
   const mine = personId === actor.personId;
-  const existing = getRecord(id);
-  const r = existing && mine && !canWrite(actor, existing) && canJoin(actor, existing) ? existing : loadForWrite(actor, id, expectedVersion);
+  const existing = getRecord(id2);
+  const r = existing && mine && !canWrite(actor, existing) && canJoin(actor, existing) ? existing : loadForWrite(actor, id2, expectedVersion);
   if (stage !== PROJECT_STAGE) {
     if (!usesPipeline(r)) throw new RuleError("Stages belong to episodes, tracks, days and single projects. Use the project team row for the whole project.");
     if (!categoryOf(r.category).stages.some((s2) => s2.name === stage)) throw new RuleError("That stage does not exist for this category.");
@@ -3983,37 +4057,37 @@ function ownerTarget(actor, id, stage, personId, expectedVersion) {
   if (!mine && !can(actor, "pipeline.assign")) throw new RuleError(`Only the Head of Production, or someone given "Assign other people's work", can change other people's work. You can change your own.`);
   return r;
 }
-function addStageOwner(actor, id, stage, personId, roles, expectedVersion) {
-  const r = ownerTarget(actor, id, stage, personId, expectedVersion);
+function addStageOwner(actor, id2, stage, personId, roles2, expectedVersion) {
+  const r = ownerTarget(actor, id2, stage, personId, expectedVersion);
   const p = getPerson(personId);
   if (!p || p.status !== "active" || p.category !== "CRW" && p.category !== "HOP") throw new RuleError("Only active crew can own a stage.");
   const list = ownersOf(r, stage);
   if (list.some((o) => o.personId === personId)) throw new RuleError(`${p.name} is already on ${stage}. Change their roles instead.`);
-  r.stageAssignees[stage] = [...list, { personId, roles: cleanRoles(roles) }];
+  r.stageAssignees[stage] = [...list, { personId, roles: cleanRoles(roles2) }];
   syncResponsible(r);
   ensureMember(actor, personId, r);
   r.version += 1;
-  logAudit(actor, "owner-add", "record", id, `${stage}: ${p.name}`);
+  logAudit(actor, "owner-add", "record", id2, `${stage}: ${p.name}`);
   commit();
   return r;
 }
-function setOwnerRoles(actor, id, stage, personId, roles) {
-  const r = ownerTarget(actor, id, stage, personId);
+function setOwnerRoles(actor, id2, stage, personId, roles2) {
+  const r = ownerTarget(actor, id2, stage, personId);
   const o = ownersOf(r, stage).find((x) => x.personId === personId);
   if (!o) throw new RuleError("That person is not on this stage.");
-  o.roles = cleanRoles(roles);
+  o.roles = cleanRoles(roles2);
   r.version += 1;
-  logAudit(actor, "owner-roles", "record", id, `${stage}: ${personId}`);
+  logAudit(actor, "owner-roles", "record", id2, `${stage}: ${personId}`);
   commit();
   return r;
 }
-function removeStageOwner(actor, id, stage, personId) {
-  const r = ownerTarget(actor, id, stage, personId);
+function removeStageOwner(actor, id2, stage, personId) {
+  const r = ownerTarget(actor, id2, stage, personId);
   if (!ownersOf(r, stage).some((x) => x.personId === personId)) throw new RuleError("That person is not on this stage.");
   r.stageAssignees[stage] = ownersOf(r, stage).filter((x) => x.personId !== personId);
   syncResponsible(r);
   r.version += 1;
-  logAudit(actor, "owner-remove", "record", id, `${stage}: ${personId}`);
+  logAudit(actor, "owner-remove", "record", id2, `${stage}: ${personId}`);
   commit();
   return r;
 }
@@ -4022,8 +4096,8 @@ function checkAssignee(personId) {
   const p = getPerson(personId);
   if (!p || p.status !== "active" || p.category !== "CRW" && p.category !== "HOP") throw new RuleError("Only active crew can be given a task.");
 }
-function addTask(actor, id, input) {
-  const r = loadForWrite(actor, id);
+function addTask(actor, id2, input) {
+  const r = loadForWrite(actor, id2);
   if (!usesPipeline(r)) throw new RuleError("Checklists belong to episodes, tracks and single projects.");
   const stage = input.stage ?? r.pipelineStage;
   if (!categoryOf(r.category).stages.some((s2) => s2.name === stage)) throw new RuleError("That stage does not exist for this category.");
@@ -4034,12 +4108,12 @@ function addTask(actor, id, input) {
   r.tasks.push(t2);
   if (t2.assigneePersonId) ensureMember(actor, t2.assigneePersonId, r);
   r.version += 1;
-  logAudit(actor, "task-add", "record", id, `${stage}: ${t2.label}`);
+  logAudit(actor, "task-add", "record", id2, `${stage}: ${t2.label}`);
   commit();
   return t2;
 }
-function updateTask(actor, id, taskId, patch) {
-  const r = loadForWrite(actor, id);
+function updateTask(actor, id2, taskId, patch) {
+  const r = loadForWrite(actor, id2);
   const t2 = r.tasks.find((x) => x.id === taskId);
   if (!t2) throw new RuleError("Task not found.");
   if (patch.label !== void 0) {
@@ -4058,57 +4132,57 @@ function updateTask(actor, id, taskId, patch) {
     t2.doneBy = patch.done ? actor.personId : null;
   }
   r.version += 1;
-  logAudit(actor, "task-update", "record", id, `${t2.stage}: ${t2.label}${patch.done !== void 0 ? t2.done ? " done" : " reopened" : ""}`);
+  logAudit(actor, "task-update", "record", id2, `${t2.stage}: ${t2.label}${patch.done !== void 0 ? t2.done ? " done" : " reopened" : ""}`);
   commit();
   return t2;
 }
-function removeTask(actor, id, taskId) {
-  const r = loadForWrite(actor, id);
+function removeTask(actor, id2, taskId) {
+  const r = loadForWrite(actor, id2);
   const t2 = r.tasks.find((x) => x.id === taskId);
   if (!t2) throw new RuleError("Task not found.");
   r.tasks = r.tasks.filter((x) => x.id !== taskId);
   r.version += 1;
-  logAudit(actor, "task-remove", "record", id, `${t2.stage}: ${t2.label}`);
+  logAudit(actor, "task-remove", "record", id2, `${t2.stage}: ${t2.label}`);
   commit();
 }
-function addFeatured(actor, id, input) {
-  const r = loadForWrite(actor, id);
+function addFeatured(actor, id2, input) {
+  const r = loadForWrite(actor, id2);
   const name = input.name.trim();
   if (!name) throw new RuleError(input.kind === "host" ? "Enter the host's name." : "Enter the guest's name.");
   if (r.featured.some((f2) => f2.kind === input.kind && f2.name.toLowerCase() === name.toLowerCase())) throw new RuleError(`${name} is already listed as a ${input.kind}.`);
   const f = { id: `F-${pad(nextCounter("featured"), 4)}`, kind: input.kind, name, note: (input.note ?? "").trim() };
   r.featured.push(f);
   r.version += 1;
-  logAudit(actor, "featured-add", "record", id, `${input.kind}: ${name}`);
+  logAudit(actor, "featured-add", "record", id2, `${input.kind}: ${name}`);
   commit();
   return f;
 }
-function updateFeatured(actor, id, featuredId, patch) {
-  const r = loadForWrite(actor, id);
+function updateFeatured(actor, id2, featuredId, patch) {
+  const r = loadForWrite(actor, id2);
   const f = r.featured.find((x) => x.id === featuredId);
   if (!f) throw new RuleError("That person is no longer listed.");
   if (patch.name !== void 0 && !patch.name.trim()) throw new RuleError("Enter a name.");
   Object.assign(f, { ...patch.kind ? { kind: patch.kind } : {}, ...patch.name !== void 0 ? { name: patch.name.trim() } : {}, ...patch.note !== void 0 ? { note: patch.note.trim() } : {} });
   r.version += 1;
-  logAudit(actor, "featured-update", "record", id, f.name);
+  logAudit(actor, "featured-update", "record", id2, f.name);
   commit();
   return f;
 }
-function removeFeatured(actor, id, featuredId) {
-  const r = loadForWrite(actor, id);
+function removeFeatured(actor, id2, featuredId) {
+  const r = loadForWrite(actor, id2);
   const f = r.featured.find((x) => x.id === featuredId);
   if (!f) throw new RuleError("That person is no longer listed.");
   r.featured = r.featured.filter((x) => x.id !== featuredId);
   r.version += 1;
-  logAudit(actor, "featured-remove", "record", id, f.name);
+  logAudit(actor, "featured-remove", "record", id2, f.name);
   commit();
 }
 function featuredFor(r) {
   const inherited = selfAndAncestors(r).slice(1).flatMap((a) => a.featured.filter((f) => f.kind === "host").map((person2) => ({ person: person2, from: a })));
   return { own: r.featured, inherited };
 }
-function addLinks(actor, id, input) {
-  const r = loadForWrite(actor, id);
+function addLinks(actor, id2, input) {
+  const r = loadForWrite(actor, id2);
   if (!usesPipeline(r)) throw new RuleError("Links belong to episodes, tracks, days and single projects.");
   const stages = categoryOf(r.category).stages;
   const stage = input.stage ?? r.pipelineStage;
@@ -4123,43 +4197,43 @@ function addLinks(actor, id, input) {
   const made = rows.map((row) => ({ id: `L-${pad(nextCounter("link"), 4)}`, stage, kind: input.kind, url: row.url, note: row.note, byPersonId: actor.personId, at: (/* @__PURE__ */ new Date()).toISOString() }));
   r.links.push(...made);
   r.version += 1;
-  logAudit(actor, "link-add", "record", id, `${stage}: ${input.kind} x ${made.length}`);
+  logAudit(actor, "link-add", "record", id2, `${stage}: ${input.kind} x ${made.length}`);
   commit();
   return made;
 }
-function addLink(actor, id, input) {
-  return addLinks(actor, id, { stage: input.stage, kind: input.kind, links: [{ url: input.url, note: input.note }] })[0];
+function addLink(actor, id2, input) {
+  return addLinks(actor, id2, { stage: input.stage, kind: input.kind, links: [{ url: input.url, note: input.note }] })[0];
 }
-function removeLink(actor, id, linkId) {
-  const r = loadForWrite(actor, id);
+function removeLink(actor, id2, linkId) {
+  const r = loadForWrite(actor, id2);
   const l = r.links.find((x) => x.id === linkId);
   if (!l) throw new RuleError("Link not found.");
   if (!isHop(actor) && l.byPersonId !== actor.personId) throw new RuleError("Only the person who posted a link, or the Head of Production, can remove it.");
   r.links = r.links.filter((x) => x.id !== linkId);
   r.version += 1;
-  logAudit(actor, "link-remove", "record", id, `${l.stage}: ${l.kind}`);
+  logAudit(actor, "link-remove", "record", id2, `${l.stage}: ${l.kind}`);
   commit();
 }
-function canDelete(id) {
-  const active = getChildren(id);
+function canDelete(id2) {
+  const active = getChildren(id2);
   if (active.length) {
-    const kind = childKindFor(getRecord(id)) ?? "item";
+    const kind = childKindFor(getRecord(id2)) ?? "item";
     return { ok: false, reason: `This still has ${active.length} active ${kind.toLowerCase()}${active.length > 1 ? "s" : ""}. Remove those first.` };
   }
   return { ok: true, reason: "" };
 }
-function deletionImpact(actor, id) {
-  const r = getRecord(id);
+function deletionImpact(actor, id2) {
+  const r = getRecord(id2);
   if (!r) throw new RuleError("Record not found.");
   const db2 = getDb();
   const blockers = [];
-  const gate = canDelete(id);
+  const gate = canDelete(id2);
   if (!gate.ok) blockers.push(gate.reason);
-  const allocs = db2.allocations.filter((a) => a.contentId === id);
+  const allocs = db2.allocations.filter((a) => a.contentId === id2);
   if (allocs.some((a) => a.kind === "raw") && !isHop(actor) && leavesUnder(r).some((l) => !isComplete(l))) {
     blockers.push(`Raw footage for ${r.title} is still on a drive and it is not Delivered. Deliver it first, or ask the Head of Production to delete it.`);
   }
-  const out = checkedOutFor(id);
+  const out = checkedOutFor(id2);
   if (out.length) blockers.push(`Gear is checked out for ${r.title} (${out.map((m) => m.id).join(", ")}). Check it back in first.`);
   const byDrive = /* @__PURE__ */ new Map();
   for (const a of allocs) {
@@ -4170,9 +4244,9 @@ function deletionImpact(actor, id) {
     blockers,
     drives: [...byDrive].map(([driveName, sizeGB]) => ({ driveName, sizeGB })),
     totalGB: allocs.reduce((n, a) => n + a.sizeGB, 0),
-    docs: db2.docs.filter((d) => d.contentId === id && !d.archived).length,
-    sheets: db2.callSheets.filter((c) => c.contentId === id).length,
-    gearLists: reservedFor(id).length
+    docs: db2.docs.filter((d) => d.contentId === id2 && !d.archived).length,
+    sheets: db2.callSheets.filter((c) => c.contentId === id2).length,
+    gearLists: reservedFor(id2).length
   };
 }
 function deletionSummary(impact) {
@@ -4185,21 +4259,21 @@ function deletionSummary(impact) {
   const files = impact.drives.length ? " This updates the records here. The files on the drives are not touched, so remove them from the disk yourself." : "";
   return `It moves to the archive. Its Content ID is kept and never reused.${also}${files}`;
 }
-function deleteRecord(actor, id) {
-  const r = loadForWrite(actor, id);
-  const impact = deletionImpact(actor, id);
+function deleteRecord(actor, id2) {
+  const r = loadForWrite(actor, id2);
+  const impact = deletionImpact(actor, id2);
   if (impact.blockers.length) throw new RuleError(impact.blockers[0]);
   const db2 = getDb();
-  for (const a of db2.allocations.filter((x) => x.contentId === id)) logAudit(actor, "deallocate", "drive", a.driveId, `${id} ${fmtSize(a.sizeGB)} (project deleted)`);
-  db2.allocations = db2.allocations.filter((a) => a.contentId !== id);
-  archiveDocsFor(actor, id);
-  releaseReservedFor(actor, id);
-  for (const cs of db2.callSheets.filter((c) => c.contentId === id)) logAudit(actor, "delete", "callsheet", cs.id, "project deleted");
-  db2.callSheets = db2.callSheets.filter((c) => c.contentId !== id);
+  for (const a of db2.allocations.filter((x) => x.contentId === id2)) logAudit(actor, "deallocate", "drive", a.driveId, `${id2} ${fmtSize(a.sizeGB)} (project deleted)`);
+  db2.allocations = db2.allocations.filter((a) => a.contentId !== id2);
+  archiveDocsFor(actor, id2);
+  releaseReservedFor(actor, id2);
+  for (const cs of db2.callSheets.filter((c) => c.contentId === id2)) logAudit(actor, "delete", "callsheet", cs.id, "project deleted");
+  db2.callSheets = db2.callSheets.filter((c) => c.contentId !== id2);
   r.archived = true;
   r.version += 1;
   recordSnapshot();
-  logAudit(actor, "archive", "record", id, r.title);
+  logAudit(actor, "archive", "record", id2, r.title);
   commit();
 }
 function getRollupStatus(parentId) {
@@ -4217,8 +4291,8 @@ function getRollupStatus(parentId) {
   }
   return out;
 }
-var getBreadcrumb = (id) => {
-  const r = getRecord(id);
+var getBreadcrumb = (id2) => {
+  const r = getRecord(id2);
   return r ? selfAndAncestors(r).reverse() : [];
 };
 function getReminders(actor) {
@@ -4231,31 +4305,31 @@ function getBlockedOnUser(actor) {
 function getComments(contentId, callSheetId = null) {
   return getDb().comments.filter((c) => c.contentId === contentId && c.callSheetId === callSheetId).sort((a, b) => a.at.localeCompare(b.at));
 }
-function addComment(actor, contentId, text, callSheetId = null) {
+function addComment(actor, contentId, text2, callSheetId = null) {
   const r = getRecord(contentId);
   if (!r || !canView(actor, r)) throw new RuleError("Record not found.");
   if (!canComment(actor, r)) throw new RuleError("You can view this project but not comment on it.");
-  if (!text.trim()) throw new RuleError("Write a comment first.");
+  if (!text2.trim()) throw new RuleError("Write a comment first.");
   const c = {
     id: `C-${pad(nextCounter("comment"))}`,
     contentId,
     callSheetId,
     byPersonId: actor.personId,
-    text: text.trim(),
+    text: text2.trim(),
     at: (/* @__PURE__ */ new Date()).toISOString()
   };
   getDb().comments.push(c);
-  logAudit(actor, "comment", "record", contentId, text.slice(0, 60));
+  logAudit(actor, "comment", "record", contentId, text2.slice(0, 60));
   commit();
   return c;
 }
 
 // src/services/callsheets.ts
-var getCallSheet = (id) => getDb().callSheets.find((c) => c.id === id);
-function episodesOnDate(projectId, date) {
+var getCallSheet = (id2) => getDb().callSheets.find((c) => c.id === id2);
+function episodesOnDate(projectId, date2) {
   const root = getRecord(projectId);
   if (!root) return [];
-  return leavesUnder(root).filter((r) => r.scheduledDate === date);
+  return leavesUnder(root).filter((r) => r.scheduledDate === date2);
 }
 function callSheetForRecord(record2) {
   const rootId = rootOf(record2).contentId;
@@ -4300,8 +4374,8 @@ function openOrCreateForRecord(actor, recordId) {
   const root = rootOf(rec2);
   return { sheet: createCallSheet(actor, { contentId: root.contentId, date: rec2.scheduledDate }), created: true };
 }
-function duplicateCallSheet(actor, id, newDate) {
-  const src = getCallSheet(id);
+function duplicateCallSheet(actor, id2, newDate) {
+  const src = getCallSheet(id2);
   if (!src) throw new RuleError("Call sheet not found.");
   const copy = createCallSheet(actor, {
     contentId: src.contentId,
@@ -4320,29 +4394,31 @@ function duplicateCallSheet(actor, id, newDate) {
   return { sheet: copy, gear };
 }
 function getMismatches(cs) {
-  const linked = cs.linkedEpisodeIds.map((id) => getRecord(id)).filter((r) => !!r);
+  const linked = cs.linkedEpisodeIds.map((id2) => getRecord(id2)).filter((r) => !!r);
   const moved = linked.filter((r) => r.scheduledDate !== cs.date || r.archived);
   const unlinked = episodesOnDate(cs.contentId, cs.date).filter((r) => !cs.linkedEpisodeIds.includes(r.contentId));
   return { moved, unlinked };
 }
-function resolveMismatches(actor, id, expectedVersion) {
-  const cs = loadSheet(actor, id, expectedVersion);
+function resolveMismatches(actor, id2, expectedVersion) {
+  const cs = loadSheet(actor, id2, expectedVersion);
   cs.linkedEpisodeIds = episodesOnDate(cs.contentId, cs.date).map((r) => r.contentId);
   cs.version += 1;
-  logAudit(actor, "resolve-mismatch", "callsheet", id, `${cs.linkedEpisodeIds.length} linked`);
+  logAudit(actor, "resolve-mismatch", "callsheet", id2, `${cs.linkedEpisodeIds.length} linked`);
   commit();
   return cs;
 }
-function loadSheet(actor, id, expectedVersion) {
-  const cs = getCallSheet(id);
+function loadSheet(actor, id2, expectedVersion) {
+  const cs = getCallSheet(id2);
   if (!cs) throw new RuleError("Call sheet not found.");
   const root = getRecord(cs.contentId);
   if (!root || !canWrite(actor, root)) throw new RuleError("You have view-only access to this project.");
   if (expectedVersion !== void 0 && cs.version !== expectedVersion) throw new ConflictError();
   return cs;
 }
-function updateCallSheet(actor, id, patch, expectedVersion) {
-  const cs = loadSheet(actor, id, expectedVersion);
+var SHEET_EDITABLE = ["title", "location", "callTime", "crewPersonIds", "format", "notes", "date"];
+function updateCallSheet(actor, id2, input, expectedVersion) {
+  const patch = pickKeys(input, SHEET_EDITABLE);
+  const cs = loadSheet(actor, id2, expectedVersion);
   if (cs.status === "final") throw new RuleError("This call sheet is final. Reopen it to make changes.");
   if (patch.date !== void 0 && patch.date !== cs.date) {
     if (!patch.date) throw new RuleError("Pick a date for the call sheet.");
@@ -4350,12 +4426,12 @@ function updateCallSheet(actor, id, patch, expectedVersion) {
   }
   Object.assign(cs, patch);
   cs.version += 1;
-  logAudit(actor, "update", "callsheet", id, Object.keys(patch).join(", "));
+  logAudit(actor, "update", "callsheet", id2, Object.keys(patch).join(", "));
   commit();
   return cs;
 }
-function attachCallSheet(actor, id, contentId, expectedVersion) {
-  const cs = loadSheet(actor, id, expectedVersion);
+function attachCallSheet(actor, id2, contentId, expectedVersion) {
+  const cs = loadSheet(actor, id2, expectedVersion);
   if (cs.contentId === contentId) throw new RuleError("This call sheet is already attached here.");
   const target = getRecord(contentId);
   if (!target) throw new RuleError("Project not found.");
@@ -4365,7 +4441,7 @@ function attachCallSheet(actor, id, contentId, expectedVersion) {
   cs.version += 1;
   const gear = manifestForSheet(cs.id);
   if (gear) gear.contentId = contentId;
-  logAudit(actor, "attach", "callsheet", id, `${from} to ${contentId}`);
+  logAudit(actor, "attach", "callsheet", id2, `${from} to ${contentId}`);
   commit();
   return cs;
 }
@@ -4377,8 +4453,8 @@ function crewConflicts(cs) {
   }
   return out;
 }
-function finalizeCallSheet(actor, id, expectedVersion) {
-  const cs = loadSheet(actor, id, expectedVersion);
+function finalizeCallSheet(actor, id2, expectedVersion) {
+  const cs = loadSheet(actor, id2, expectedVersion);
   const conflicts = crewConflicts(cs);
   if (conflicts.length) {
     const names = conflicts.map((c) => getDb().people.find((p) => p.personId === c.personId)?.name ?? c.personId);
@@ -4391,30 +4467,30 @@ function finalizeCallSheet(actor, id, expectedVersion) {
   if (gear.length) throw new RuleError(`Gear needs attention before finalizing: ${gear[0]}${gear.length > 1 ? ` (and ${gear.length - 1} more)` : ""}`);
   cs.status = "final";
   cs.version += 1;
-  logAudit(actor, "finalize", "callsheet", id);
+  logAudit(actor, "finalize", "callsheet", id2);
   commit();
   return cs;
 }
-function reopenCallSheet(actor, id) {
-  const cs = loadSheet(actor, id);
+function reopenCallSheet(actor, id2) {
+  const cs = loadSheet(actor, id2);
   cs.status = "draft";
   cs.version += 1;
-  logAudit(actor, "reopen", "callsheet", id);
+  logAudit(actor, "reopen", "callsheet", id2);
   commit();
   return cs;
 }
 function duplicateOf(cs) {
   return getDb().callSheets.filter((c) => c.contentId === cs.contentId && c.id !== cs.id);
 }
-function deleteCallSheet(actor, id) {
-  const cs = loadSheet(actor, id);
-  releaseSheetGear(actor, id);
-  getDb().callSheets = getDb().callSheets.filter((c) => c.id !== id);
+function deleteCallSheet(actor, id2) {
+  const cs = loadSheet(actor, id2);
+  releaseSheetGear(actor, id2);
+  getDb().callSheets = getDb().callSheets.filter((c) => c.id !== id2);
   logAudit(actor, "delete", "callsheet", cs.id, cs.title);
   commit();
 }
 function daysOf(cs) {
-  return cs.linkedEpisodeIds.map((id) => getRecord(id)).filter((r) => !!r && !r.archived);
+  return cs.linkedEpisodeIds.map((id2) => getRecord(id2)).filter((r) => !!r && !r.archived);
 }
 function sheetLevel(cs) {
   const order = ["small", "medium", "large"];
@@ -4434,8 +4510,8 @@ function checkRunItem(input) {
     if (!p || p.status !== "active") throw new RuleError("Choose an active person.");
   }
 }
-function editableSheet(actor, id) {
-  const cs = loadSheet(actor, id);
+function editableSheet(actor, id2) {
+  const cs = loadSheet(actor, id2);
   if (cs.status === "final") throw new RuleError("This call sheet is final. Reopen it to make changes.");
   if (!runOfShowRequired(cs) && cs.runOfShow.length === 0) throw new RuleError("A run of show is for large productions. Set the level of production to Large on the day first.");
   return cs;
@@ -4525,7 +4601,7 @@ function dueSoon(personId, leadHours = getDb().settings.stageReminderHours, asOf
 }
 function messageFor(person2, rems) {
   const first = person2.name.split(" ")[0];
-  const line = (r) => `${r.overdue ? "LATE, was " : ""}${fmtShort(r.date)}${r.time ? ` ${r.time}` : ""}: ${r.title}`;
+  const line2 = (r) => `${r.overdue ? "LATE, was " : ""}${fmtShort(r.date)}${r.time ? ` ${r.time}` : ""}: ${r.title}`;
   const n = rems.length;
   return {
     subject: `Dawn of Faith: ${n} thing${n === 1 ? "" : "s"} coming up`,
@@ -4533,12 +4609,12 @@ function messageFor(person2, rems) {
 
 These are coming up for you:
 
-${rems.map((r) => `- ${line(r)}`).join("\n")}
+${rems.map((r) => `- ${line2(r)}`).join("\n")}
 
 Open the Production Hub for the details.
 
 Dawn of Faith Production Hub`,
-    text: `Dawn of Faith: ${rems.slice(0, 4).map(line).join("; ")}${n > 4 ? `; and ${n - 4} more` : ""}. Details in the Production Hub.`
+    text: `Dawn of Faith: ${rems.slice(0, 4).map(line2).join("; ")}${n > 4 ? `; and ${n - 4} more` : ""}. Details in the Production Hub.`
   };
 }
 var mailtoLink = (person2, m) => `mailto:${encodeURIComponent(person2.email)}?subject=${encodeURIComponent(m.subject)}&body=${encodeURIComponent(m.email)}`;
@@ -4562,6 +4638,7 @@ function alreadySent(personId, rems) {
 // src/services/settings.ts
 var settings_exports = {};
 __export(settings_exports, {
+  SETTINGS_EDITABLE: () => SETTINGS_EDITABLE,
   changePassword: () => changePassword2,
   updateSettings: () => updateSettings,
   updateWorkspaceAppearance: () => updateWorkspaceAppearance
@@ -4583,8 +4660,10 @@ var FONT_PAIRINGS = [
 ];
 
 // src/services/settings.ts
-function updateSettings(actor, patch) {
+var SETTINGS_EDITABLE = ["stageReminderHours", "storageWarningThreshold", "checkoutReturnDays", "workDays", "effortOverrides"];
+function updateSettings(actor, input) {
   requireCan(actor, "backend.settings", "change system settings");
+  const patch = pickKeys(input, SETTINGS_EDITABLE);
   if (patch.stageReminderHours !== void 0 && !(patch.stageReminderHours >= 1 && patch.stageReminderHours <= 240)) {
     throw new RuleError("Reminder window must be between 1 and 240 hours.");
   }
@@ -4598,6 +4677,7 @@ function updateSettings(actor, patch) {
     throw new RuleError("Choose at least one working day.");
   }
   if (patch.effortOverrides !== void 0) {
+    if (!patch.effortOverrides || typeof patch.effortOverrides !== "object" || Array.isArray(patch.effortOverrides)) throw new RuleError("Those stage estimates are not valid.");
     for (const [key2, v] of Object.entries(patch.effortOverrides)) {
       if (!Number.isFinite(v) || v < 0 || v > 30 || Math.round(v * 4) !== v * 4) throw new RuleError(`${key2.split(":")[1] ?? key2}: use a number of days from 0 to 30, in steps of a quarter day.`);
     }
@@ -4606,8 +4686,9 @@ function updateSettings(actor, patch) {
   logAudit(actor, "settings", "settings", "system", Object.keys(patch).join(", "));
   commit();
 }
-function updateWorkspaceAppearance(actor, patch) {
+function updateWorkspaceAppearance(actor, input) {
   if (!isHop(actor)) throw new RuleError("Only the Head of Production can change the workspace's accent colour and font.");
+  const patch = pickKeys(input, ["accent", "fontPairing"]);
   if (patch.accent !== void 0 && !ACCENTS.some((a) => a.key === patch.accent)) throw new RuleError("Choose one of the accent colours offered.");
   if (patch.fontPairing !== void 0 && !FONT_PAIRINGS.some((f) => f.key === patch.fontPairing)) throw new RuleError("Choose one of the font pairings offered.");
   const db2 = getDb();
@@ -4669,29 +4750,29 @@ function createDrive(actor, input) {
   commit();
   return d;
 }
-function updateDrive(actor, id, patch) {
+function updateDrive(actor, id2, patch) {
   requireStorageAccess(actor);
-  const d = getDrive(id);
+  const d = getDrive(id2);
   if (!d) throw new RuleError("Drive not found.");
   const structural = patch.name !== void 0 || patch.capacityGB !== void 0;
   if (structural) requireCan(actor, "storage.admin", "rename a drive or change its capacity");
   const next = { name: patch.name ?? d.name, capacityGB: patch.capacityGB ?? d.capacityGB, otherUsedGB: patch.otherUsedGB ?? d.otherUsedGB, notes: patch.notes ?? d.notes };
-  validateDrive(next, id);
-  const allocated = getDb().allocations.filter((a) => a.driveId === id).reduce((n, a) => n + a.sizeGB, 0);
+  validateDrive(next, id2);
+  const allocated = getDb().allocations.filter((a) => a.driveId === id2).reduce((n, a) => n + a.sizeGB, 0);
   if (allocated + next.otherUsedGB > next.capacityGB) throw new RuleError(`That would put ${fmtSize(allocated + next.otherUsedGB)} on a ${fmtSize(next.capacityGB)} drive.`);
   Object.assign(d, { name: next.name.trim(), capacityGB: next.capacityGB, otherUsedGB: next.otherUsedGB, notes: next.notes });
-  logAudit(actor, "update", "drive", id, Object.keys(patch).join(", "));
+  logAudit(actor, "update", "drive", id2, Object.keys(patch).join(", "));
   recordSnapshot();
   commit();
   return d;
 }
-function deleteDrive(actor, id) {
+function deleteDrive(actor, id2) {
   requireCan(actor, "storage.admin", "remove drives");
-  const d = getDrive(id);
+  const d = getDrive(id2);
   if (!d) throw new RuleError("Drive not found.");
-  if (getDb().allocations.some((a) => a.driveId === id)) throw new RuleError("Projects are still recorded on this drive. Remove them first.");
-  getDb().drives = getDb().drives.filter((x) => x.id !== id);
-  logAudit(actor, "delete", "drive", id, d.name);
+  if (getDb().allocations.some((a) => a.driveId === id2)) throw new RuleError("Projects are still recorded on this drive. Remove them first.");
+  getDb().drives = getDb().drives.filter((x) => x.id !== id2);
+  logAudit(actor, "delete", "drive", id2, d.name);
   recordSnapshot();
   commit();
 }
@@ -4722,11 +4803,18 @@ function addAllocation(actor, input) {
   commit();
   return a;
 }
-function updateAllocation(actor, id, patch) {
+var ALLOCATION_EDITABLE = ["sizeGB", "kind", "note", "label", "driveId"];
+var ALLOCATION_KINDS = ["raw", "project", "delivered", "other"];
+function updateAllocation(actor, id2, input) {
   requireStorageAccess(actor);
-  const a = getDb().allocations.find((x) => x.id === id);
+  const patch = pickKeys(input, ALLOCATION_EDITABLE);
+  const a = getDb().allocations.find((x) => x.id === id2);
   if (!a) throw new RuleError("Entry not found.");
-  if (a.contentId !== null) requireProjectWrite(actor, a.contentId);
+  if (patch.kind !== void 0 && !ALLOCATION_KINDS.includes(patch.kind)) throw new RuleError("Choose raw, project, delivered or other.");
+  const rec2 = a.contentId !== null ? requireProjectWrite(actor, a.contentId) : null;
+  if (rec2 && a.kind === "raw" && patch.kind && patch.kind !== "raw" && !isHop(actor) && leavesUnder(rec2).some((l) => !isComplete(l))) {
+    throw new RuleError(`Raw footage for ${rec2.title} stays marked as raw until everything under it is Delivered.`);
+  }
   const label = a.contentId === null ? requireLabel(patch.label ?? a.label) : patch.label ?? a.label;
   const target = getDrive(patch.driveId ?? a.driveId);
   if (!target) throw new RuleError("Drive not found.");
@@ -4736,14 +4824,14 @@ function updateAllocation(actor, id, patch) {
   const alreadyThere = target.id === a.driveId ? a.sizeGB : 0;
   if (newSize - alreadyThere > u.freeGB + 1e-6) throw new RuleError(`${target.name} has only ${fmtSize(u.freeGB + alreadyThere)} free.`);
   Object.assign(a, patch, { label, updatedAt: todayIso() });
-  logAudit(actor, "update", "allocation", id, Object.keys(patch).join(", "));
+  logAudit(actor, "update", "allocation", id2, Object.keys(patch).join(", "));
   recordSnapshot();
   commit();
   return a;
 }
-function moveAllocation(actor, id, contentId) {
+function moveAllocation(actor, id2, contentId) {
   requireStorageAccess(actor);
-  const a = getDb().allocations.find((x) => x.id === id);
+  const a = getDb().allocations.find((x) => x.id === id2);
   if (!a) throw new RuleError("Entry not found.");
   if (a.contentId === contentId) throw new RuleError("This entry is already attached here.");
   const target = getRecord(contentId);
@@ -4753,13 +4841,13 @@ function moveAllocation(actor, id, contentId) {
   const from = a.contentId ?? a.label;
   a.contentId = contentId;
   a.updatedAt = todayIso();
-  logAudit(actor, "update", "allocation", id, `moved from ${from} to ${contentId}`);
+  logAudit(actor, "update", "allocation", id2, `moved from ${from} to ${contentId}`);
   commit();
   return a;
 }
-function removeAllocation(actor, id) {
+function removeAllocation(actor, id2) {
   requireStorageAccess(actor);
-  const a = getDb().allocations.find((x) => x.id === id);
+  const a = getDb().allocations.find((x) => x.id === id2);
   if (!a) throw new RuleError("Entry not found.");
   if (a.contentId !== null) {
     const rec2 = requireProjectWrite(actor, a.contentId);
@@ -4768,7 +4856,7 @@ function removeAllocation(actor, id) {
       if (leaves.some((l) => !isComplete(l))) throw new RuleError(`Raw footage for ${rec2.title} cannot be removed until everything under it is Delivered.`);
     }
   }
-  getDb().allocations = getDb().allocations.filter((x) => x.id !== id);
+  getDb().allocations = getDb().allocations.filter((x) => x.id !== id2);
   logAudit(actor, "deallocate", "drive", a.driveId, `${a.contentId ?? a.label} ${fmtSize(a.sizeGB)}`);
   recordSnapshot();
   commit();
@@ -4794,8 +4882,8 @@ function descendantIds2(r) {
   return [r.contentId, ...getChildren(r.contentId, true).flatMap(descendantIds2)];
 }
 function allocationsForRecord(record2) {
-  const ids = /* @__PURE__ */ new Set([...descendantIds2(record2), ...selfAndAncestors(record2).map((r) => r.contentId)]);
-  return getDb().allocations.filter((a) => a.contentId !== null && ids.has(a.contentId));
+  const ids2 = /* @__PURE__ */ new Set([...descendantIds2(record2), ...selfAndAncestors(record2).map((r) => r.contentId)]);
+  return getDb().allocations.filter((a) => a.contentId !== null && ids2.has(a.contentId));
 }
 function forecast(horizonDays = 90) {
   const t2 = fleetTotals();
@@ -4873,13 +4961,13 @@ function rolesOnProject(personId, rec2) {
   return out;
 }
 function teamOf(rec2) {
-  const ids = new Set(selfAndAncestors(rec2).map((r) => r.contentId));
-  return getDb().members.filter((m) => ids.has(m.projectContentId)).map((member) => ({ member, person: getPerson(member.personId), roles: rolesOnProject(member.personId, rec2) })).filter((x) => !!x.person).sort((a, b) => a.person.name.localeCompare(b.person.name));
+  const ids2 = new Set(selfAndAncestors(rec2).map((r) => r.contentId));
+  return getDb().members.filter((m) => ids2.has(m.projectContentId)).map((member) => ({ member, person: getPerson(member.personId), roles: rolesOnProject(member.personId, rec2) })).filter((x) => !!x.person).sort((a, b) => a.person.name.localeCompare(b.person.name));
 }
 function roleOn(personId, rec2) {
   if (!personId) return null;
-  const roles = rolesOnProject(personId, rec2);
-  if (roles.length) return roles.join(", ");
+  const roles2 = rolesOnProject(personId, rec2);
+  if (roles2.length) return roles2.join(", ");
   return getPerson(personId)?.category === "HOP" ? "Head of Production" : null;
 }
 function nameWithRole(personId, rec2, fallback = "Unassigned") {
@@ -4900,24 +4988,24 @@ function rootFor(contentId) {
   if (!rec2) throw new RuleError("Project not found.");
   return rootOf(rec2);
 }
-function addTeamMember(actor, contentId, personId, roles, canComment2) {
+function addTeamMember(actor, contentId, personId, roles2, canComment2) {
   requireHop3(actor);
   const root = rootFor(contentId);
   const person2 = getPerson(personId);
   if (!person2 || person2.status !== "active") throw new RuleError("Choose an active person.");
   if (person2.category === "HOP") throw new RuleError("The Head of Production already has access to every project.");
   if (getDb().members.some((m) => m.personId === personId && m.projectContentId === root.contentId)) throw new RuleError(`${person2.name} is already on this project. Change their roles instead.`);
-  const cleaned = cleanRoles(roles);
+  const cleaned = cleanRoles(roles2);
   getDb().members.push({ personId, projectContentId: root.contentId, roleOnProject: cleaned.join(", ") || "Team member", canComment: person2.category === "CRW" ? true : canComment2 });
   logAudit(actor, "assign", "person", personId, `${root.contentId}: ${cleaned.join(", ")}`);
   commit();
 }
-function setMemberRoles(actor, contentId, personId, roles, canComment2) {
+function setMemberRoles(actor, contentId, personId, roles2, canComment2) {
   requireHop3(actor);
   const root = rootFor(contentId);
   const m = getDb().members.find((x) => x.personId === personId && x.projectContentId === root.contentId);
   if (!m) throw new RuleError("That person is not on this project.");
-  const cleaned = cleanRoles(roles);
+  const cleaned = cleanRoles(roles2);
   m.roleOnProject = cleaned.join(", ") || "Team member";
   if (canComment2 !== void 0 && getPerson(personId)?.category !== "CRW") m.canComment = canComment2;
   logAudit(actor, "update-role", "person", personId, `${root.contentId}: ${m.roleOnProject}`);
@@ -5032,8 +5120,10 @@ var RPC_NAMES = {
   ],
   "permissions": [
     "can",
+    "capabilitiesBeyond",
     "modulesFor",
     "requireCan",
+    "requireNotBeyond",
     "resetPermissions",
     "setPersonGrant",
     "setRoleGrant"
@@ -5063,10 +5153,291 @@ var RPC_NAMES = {
   ]
 };
 
+// server/schemas.ts
+import { z } from "zod";
+var enumOf = (values) => z.enum(values);
+var id = z.string().min(1).max(120);
+var ref = z.string().max(120);
+var ids = (max = 500) => z.array(id).max(max);
+var short = (max = 300) => z.string().max(max);
+var text = (max = 2e4) => z.string().max(max);
+var date = z.string().regex(/^(\d{4}-\d{2}-\d{2}(T[\d:.]+Z?)?)?$/, "Expected a date.");
+var time = z.string().max(20);
+var version = z.number().int().min(0);
+var count = (max = 1e6) => z.number().int().min(0).max(max);
+var amount = (max = 1e9) => z.number().min(0).max(max);
+var roles = z.array(short(100)).max(30);
+var url = z.string().max(45e4);
+var category = enumOf(CATEGORIES.map((c) => c.key));
+var level = z.enum(["small", "medium", "large"]);
+var equipCategory2 = enumOf(EQUIP_CATEGORIES.map((c) => c.key));
+var condition = enumOf(CONDITIONS);
+var capability = enumOf(ALL_CAPABILITIES);
+var staffCategory = z.enum(["CRW", "VOL", "PTR"]);
+var photo = z.object({ url, caption: short(500).optional() });
+var line = z.object({ equipmentId: id, quantity: count(1e5) });
+var args = (required, optional = []) => ({ required, optional });
+var InvalidArgs = class extends Error {
+};
+function parseArgs(spec, raw) {
+  const max = spec.required.length + spec.optional.length;
+  let n = raw.length;
+  while (n > spec.required.length && (raw[n - 1] === null || raw[n - 1] === void 0)) n--;
+  if (n < spec.required.length) throw new InvalidArgs(`expected at least ${spec.required.length} arguments, got ${raw.length}`);
+  if (n > max) throw new InvalidArgs(`expected at most ${max} arguments, got ${raw.length}`);
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const schema = i < spec.required.length ? spec.required[i] : spec.optional[i - spec.required.length];
+    const value = raw[i];
+    if (i >= spec.required.length && (value === null || value === void 0)) {
+      out.push(void 0);
+      continue;
+    }
+    const r = schema.safeParse(value);
+    if (!r.success) {
+      const issue = r.error.issues[0];
+      const where = [`argument ${i + 1}`, ...issue.path.map(String)].join(".");
+      throw new InvalidArgs(`${where}: ${issue.message}`);
+    }
+    out.push(r.data);
+  }
+  return out;
+}
+var recordFields = {
+  title: short(),
+  scheduledDate: date.nullable(),
+  deadline: date.nullable(),
+  assigneePersonId: ref.nullable(),
+  notes: text(),
+  productionLevel: level.nullable(),
+  showStart: date.nullable(),
+  showEnd: date.nullable()
+};
+var ACTIONS = {
+  // Call sheets
+  "callsheets.createCallSheet": args([z.object({ contentId: id, date, title: short().optional(), location: short(500).optional(), callTime: time.optional(), crewPersonIds: ids(200).optional(), format: short().optional(), notes: text().optional() })]),
+  "callsheets.openOrCreateForRecord": args([id]),
+  "callsheets.duplicateCallSheet": args([id, date]),
+  "callsheets.resolveMismatches": args([id], [version]),
+  "callsheets.updateCallSheet": args([id, z.object({ title: short().optional(), location: short(500).optional(), callTime: time.optional(), crewPersonIds: ids(200).optional(), format: short().optional(), notes: text().optional(), date: date.optional() })], [version]),
+  "callsheets.attachCallSheet": args([id, id], [version]),
+  "callsheets.finalizeCallSheet": args([id], [version]),
+  "callsheets.reopenCallSheet": args([id]),
+  "callsheets.deleteCallSheet": args([id]),
+  "callsheets.addRunItem": args([id, z.object({ time, title: short(), durationMin: count(600), ownerPersonId: ref.nullable().optional(), notes: text(2e3).optional() })]),
+  "callsheets.updateRunItem": args([id, id, z.object({ time: time.optional(), title: short().optional(), durationMin: count(600).optional(), ownerPersonId: ref.nullable().optional(), notes: text(2e3).optional() })]),
+  "callsheets.removeRunItem": args([id, id]),
+  // Projects and their pipeline
+  "content.createRecord": args([z.object({ category, ...recordFields }).partial().required({ category: true, title: true })]),
+  "content.createChildRecord": args([id, z.object(recordFields).partial().required({ title: true })]),
+  "content.splitRecording": args([id, z.object({ destCategory: z.enum(["music", "series"]), parentId: id, title: short() })]),
+  "content.setStrikePlan": args([id, z.enum(["daily", "continuous"]), z.array(short(500)).max(200), z.array(short(500)).max(200)], [version]),
+  "content.updateRecord": args(
+    [
+      id,
+      z.object({
+        ...recordFields,
+        guestName: short(),
+        guestContact: short(500),
+        cardStorage: short(500),
+        publishDate: date.nullable(),
+        recordingDurationMin: amount(1e5).nullable(),
+        recordingNotes: text(),
+        editorNotes: text()
+      }).partial()
+    ],
+    [version]
+  ),
+  "content.setStageDeadline": args([id, short(100), date], [version]),
+  "content.setPostProductionNeeded": args([id, z.boolean()], [version]),
+  "content.setStageOutput": args([id, z.boolean()], [version]),
+  "content.advanceStage": args([id], [version]),
+  "content.sendBackStage": args([id], [version]),
+  "content.approveGuestReview": args([id, short()], [version]),
+  "content.closeDevotional": args([id, text(5e3)], [version]),
+  "content.setDevotionalReadyForReview": args([id, z.boolean()], [version]),
+  "content.approveDevotionalReview": args([id], [version]),
+  "content.sendBackDevotionalToEditing": args([id, text(5e3)], [version]),
+  "content.addStageOwner": args([id, short(100), id, roles], [version]),
+  "content.setOwnerRoles": args([id, short(100), id, roles]),
+  "content.removeStageOwner": args([id, short(100), id]),
+  "content.addTask": args([id, z.object({ stage: short(100).optional(), label: short(), dueDate: date.nullable().optional(), assigneePersonId: ref.nullable().optional() })]),
+  "content.updateTask": args([id, id, z.object({ label: short().optional(), dueDate: date.nullable().optional(), assigneePersonId: ref.nullable().optional(), done: z.boolean().optional() })]),
+  "content.removeTask": args([id, id]),
+  "content.addFeatured": args([id, z.object({ kind: z.enum(["host", "guest"]), name: short(), note: short(500).optional() })]),
+  "content.updateFeatured": args([id, id, z.object({ kind: z.enum(["host", "guest"]).optional(), name: short().optional(), note: short(500).optional() })]),
+  "content.removeFeatured": args([id, id]),
+  "content.addLinks": args([id, z.object({ stage: short(100).optional(), kind: z.enum(["review", "final", "analysis", "reference"]), links: z.array(z.object({ url: short(2e3).optional(), note: text(5e3).optional() })).max(50) })]),
+  "content.removeLink": args([id, id]),
+  "content.deleteRecord": args([id]),
+  "content.addComment": args([id, text(5e3)], [ref.nullable()]),
+  // Documents
+  "docs.createDoc": args([z.object({ contentId: id, title: short().optional(), templateKey: ref.nullable().optional(), body: text(25e4).optional() })]),
+  "docs.attachDoc": args([id, id]),
+  "docs.saveDoc": args([id, z.object({ title: short().optional(), body: text(25e4).optional() }), version]),
+  "docs.restoreRevision": args([id, id]),
+  "docs.archiveDoc": args([id]),
+  // Equipment
+  "equipment.createItem": args([
+    z.object({
+      trackingType: z.enum(["serialized", "aggregate"]),
+      name: short(),
+      make: short(),
+      model: short(),
+      category: equipCategory2,
+      itemFamily: short(100).optional(),
+      serialNumber: short(200).optional(),
+      unitLabel: short(100).optional(),
+      quantity: count(1e5).optional(),
+      unitCost: amount(),
+      purchaseDate: date.nullable().optional(),
+      vendor: short(),
+      condition,
+      packaging: short(2e3),
+      accessories: short(2e3),
+      info: text(5e3)
+    })
+  ]),
+  "equipment.createSerializedUnits": args([
+    z.object({
+      name: short(),
+      make: short(),
+      model: short(),
+      category: equipCategory2,
+      unitCost: amount(),
+      purchaseDate: date.nullable().optional(),
+      vendor: short(),
+      condition,
+      packaging: short(2e3),
+      accessories: short(2e3),
+      info: text(5e3),
+      units: z.array(z.object({ serialNumber: short(200), label: short(100).optional() })).min(1).max(200)
+    })
+  ]),
+  "equipment.updateItem": args([
+    id,
+    z.object({
+      name: short(),
+      make: short(),
+      model: short(),
+      vendor: short(),
+      packaging: short(2e3),
+      accessories: short(2e3),
+      info: text(5e3),
+      unitCost: amount(),
+      purchaseDate: date.nullable(),
+      serialNumber: short(200).nullable(),
+      unitLabel: short(100).nullable(),
+      condition,
+      quantityTotal: count(1e5),
+      category: equipCategory2
+    }).partial()
+  ]),
+  "equipment.setConditionBreakdown": args([id, z.object({ New: count(1e5), Good: count(1e5), Fair: count(1e5), Poor: count(1e5) }).partial()]),
+  "equipment.addAttachment": args([id, z.enum(["photo", "receipt"]), photo]),
+  "equipment.removeAttachment": args([id, id]),
+  "equipment.startRepair": args([id, text(5e3)]),
+  "equipment.finishRepair": args([id, condition, text(5e3)]),
+  "equipment.retireItem": args([id, z.enum(["retired", "lost"]), text(5e3)]),
+  "equipment.reinstateItem": args([id]),
+  "equipment.deleteItem": args([id]),
+  "equipment.createManifest": args([
+    z.object({
+      contentId: id,
+      date,
+      expectedReturn: date.nullable().optional(),
+      destination: z.enum(["studio", "outside"]),
+      status: z.enum(["assigned", "checked-out"]),
+      responsiblePersonId: ref.optional(),
+      lines: z.array(line).max(500),
+      notes: text(5e3).optional(),
+      callSheetId: ref.nullable().optional()
+    })
+  ]),
+  "equipment.addLines": args([id, z.array(line).max(500)]),
+  "equipment.removeLine": args([id, id]),
+  "equipment.markGoneOut": args([id], [z.object({ expectedReturn: date.optional(), responsiblePersonId: ref.optional(), photos: z.record(id, z.array(photo).max(20)).optional() })]),
+  "equipment.checkIn": args([
+    id,
+    z.array(
+      z.object({
+        equipmentId: id,
+        returnedGood: count(1e5),
+        damaged: count(1e5),
+        lost: count(1e5),
+        conditionIn: condition.optional(),
+        description: text(5e3).optional(),
+        sendToRepair: z.boolean().optional(),
+        photos: z.array(photo).max(20).optional()
+      })
+    ).max(500)
+  ]),
+  "equipment.attachManifest": args([id, id]),
+  "equipment.releaseManifest": args([id]),
+  "equipment.addGearToSheet": args([z.object({ id, contentId: id, date }), z.array(line).max(500)]),
+  "equipment.removeGearFromSheet": args([id, id]),
+  // People
+  "people.createPerson": args([z.object({ category: staffCategory, name: short(), email: short(), phone: short(100), skills: z.array(short(100)).max(100), equipmentFamiliarity: z.array(short(100)).max(200) })]),
+  "people.updatePerson": args([id, z.object({ name: short(), email: short(), phone: short(100), skills: z.array(short(100)).max(100), equipmentFamiliarity: z.array(short(100)).max(200) }).partial()]),
+  "people.updateOwnProfile": args([
+    z.object({
+      name: short(),
+      email: short(),
+      phone: short(100),
+      notifyEmail: z.boolean(),
+      notifySms: z.boolean(),
+      photoUrl: url.nullable(),
+      fontSize: z.enum(["small", "default", "large", "xl"]),
+      density: z.enum(["comfortable", "compact"])
+    }).partial()
+  ]),
+  "people.updatePersonCategory": args([id, staffCategory]),
+  "people.deactivatePerson": args([id]),
+  "people.reactivatePerson": args([id]),
+  "people.assignToProject": args([id, id, short(500), z.boolean()]),
+  "people.removeFromProject": args([id, id]),
+  // Access (the services allow these for the Head of Production only)
+  "permissions.setRoleGrant": args([staffCategory, capability, z.boolean().nullable()]),
+  "permissions.setPersonGrant": args([id, capability, z.boolean().nullable()]),
+  "permissions.resetPermissions": args([]),
+  // Reminders
+  "reminders.logSent": args([id, z.enum(["email", "calendar", "text"]), short(500), text(2e4), z.array(short(300)).max(500)]),
+  // Settings
+  "settings.updateSettings": args([
+    z.object({
+      stageReminderHours: z.number().min(0).max(1e4),
+      storageWarningThreshold: z.number().min(0).max(100),
+      checkoutReturnDays: count(1e3),
+      workDays: z.array(z.number().int().min(0).max(6)).max(7),
+      effortOverrides: z.record(short(200), z.number().min(0).max(1e3))
+    }).partial()
+  ]),
+  "settings.updateWorkspaceAppearance": args([z.object({ accent: enumOf(ACCENTS.map((a) => a.key)), fontPairing: enumOf(FONT_PAIRINGS.map((f) => f.key)) }).partial()]),
+  // Storage
+  "storage.createDrive": args([z.object({ name: short(), capacityGB: amount(1e8), otherUsedGB: amount(1e8).optional(), notes: text(5e3).optional() })]),
+  "storage.updateDrive": args([id, z.object({ name: short(), capacityGB: amount(1e8), otherUsedGB: amount(1e8), notes: text(5e3) }).partial()]),
+  "storage.deleteDrive": args([id]),
+  "storage.addAllocation": args([z.object({ driveId: id, contentId: ref.nullable(), sizeGB: amount(1e8), kind: z.enum(["raw", "project", "delivered", "other"]), note: text(5e3).optional(), label: short().optional() })]),
+  "storage.updateAllocation": args([id, z.object({ sizeGB: amount(1e8), kind: z.enum(["raw", "project", "delivered", "other"]), note: text(5e3), label: short(), driveId: id }).partial()]),
+  "storage.moveAllocation": args([id, id]),
+  "storage.removeAllocation": args([id]),
+  "storage.clearRecordFromDrives": args([id])
+};
+
 // server/registry.ts
 var modules = { callsheets: callsheets_exports, content: content_exports, docs: docs_exports, equipment: equipment_exports, people: people_exports, permissions: permissions_exports, reminders: reminders_exports, settings: settings_exports, storage: storage_exports, team: team_exports };
-var REGISTRY = {};
-for (const [m, names] of Object.entries(RPC_NAMES)) for (const n of names) REGISTRY[`${m}.${n}`] = modules[m][n];
+var REGISTRY = (() => {
+  const out = /* @__PURE__ */ new Map();
+  for (const [name, spec] of Object.entries(ACTIONS)) {
+    const [m, n] = name.split(".");
+    const mod = Object.hasOwn(modules, m) ? modules[m] : void 0;
+    const fn = mod && Object.hasOwn(mod, n) ? mod[n] : void 0;
+    if (typeof fn !== "function") throw new Error(`server/schemas.ts lists ${name}, but src/services/${m}.ts does not export it.`);
+    if (!RPC_NAMES[m]?.includes(n)) throw new Error(`server/schemas.ts lists ${name}, but it is not a generated wrapper. Run npm run gen.`);
+    out.set(name, { fn, spec });
+  }
+  return out;
+})();
 
 // server/actions.ts
 var FORBIDDEN_KEYS = /* @__PURE__ */ new Set(["__proto__", "constructor", "prototype"]);
@@ -5084,16 +5455,26 @@ function checkShape(value, depth = 0) {
     }
   }
 }
-async function runAction(store2, who, name, args) {
-  const fn = typeof name === "string" ? REGISTRY[name] : void 0;
-  if (!fn) throw new HttpError(400, "That action does not exist.");
-  if (!Array.isArray(args)) throw new HttpError(400, "That request is not valid.");
-  checkShape(args);
-  const rest = args.slice(1);
+async function runAction(store2, who, name, args2) {
+  const action = typeof name === "string" ? REGISTRY.get(name) : void 0;
+  if (!action) throw new HttpError(400, "That action does not exist.");
+  if (!Array.isArray(args2)) throw new HttpError(400, "That request is not valid.");
+  checkShape(args2);
+  const rest = args2.slice(1);
   if (name === "people.createPerson") rest.length = Math.min(rest.length, 1);
+  let parsed;
   try {
-    const { result } = await mutateState(store2, () => fn(who.actor, ...rest));
-    if (name === "people.deactivatePerson" && typeof rest[0] === "string") await afterPeopleChange(store2, rest[0]);
+    parsed = parseArgs(action.spec, rest);
+  } catch (e) {
+    if (e instanceof InvalidArgs) {
+      console.warn(`Refused ${name}: ${e.message}`);
+      throw new HttpError(400, "That request is not valid.", "invalid");
+    }
+    throw e;
+  }
+  try {
+    const { result } = await mutateState(store2, () => action.fn(who.actor, ...parsed));
+    if (name === "people.deactivatePerson" && typeof parsed[0] === "string") await afterPeopleChange(store2, parsed[0]);
     return result;
   } catch (e) {
     if (e instanceof RuleError) throw new HttpError(400, e.message, "rule");
@@ -5239,7 +5620,7 @@ function readStream(req) {
 async function readRequest(req) {
   const host = header(req.headers["x-forwarded-host"]) || header(req.headers.host);
   const proto = header(req.headers["x-forwarded-proto"]).split(",")[0] || "http";
-  const url = new URL(req.url ?? "/", `${proto}://${host}`);
+  const url2 = new URL(req.url ?? "/", `${proto}://${host}`);
   const method = (req.method ?? "GET").toUpperCase();
   const cookies = {};
   for (const part of header(req.headers.cookie).split(";")) {
@@ -5255,7 +5636,7 @@ async function readRequest(req) {
     else if (parsed !== void 0 && parsed !== null) throw new HttpError(400, "That request is not valid.");
   }
   const ip = header(req.headers["x-forwarded-for"]).split(",")[0].trim() || header(req.headers["x-real-ip"]) || req.socket?.remoteAddress || "";
-  return { method, path: url.pathname.replace(/\/+$/, "") || "/", query: url.searchParams, headers: req.headers, ip, agent: header(req.headers["user-agent"]), origin: `${proto}://${host}`, secure: proto === "https", cookies, body };
+  return { method, path: url2.pathname.replace(/\/+$/, "") || "/", query: url2.searchParams, headers: req.headers, ip, agent: header(req.headers["user-agent"]), origin: `${proto}://${host}`, secure: proto === "https", cookies, body };
 }
 function assertSameSite(req) {
   if (req.method === "GET" || req.method === "HEAD") return;
@@ -5390,8 +5771,8 @@ function createHandler(getStore2) {
 // server/stores.ts
 var MemCol = class {
   m = /* @__PURE__ */ new Map();
-  async get(id) {
-    const d = this.m.get(id);
+  async get(id2) {
+    const d = this.m.get(id2);
     return d ? structuredClone(d) : null;
   }
   async all() {
@@ -5408,8 +5789,8 @@ var MemCol = class {
   async put(doc) {
     this.m.set(doc._id, structuredClone(doc));
   }
-  async remove(id) {
-    this.m.delete(id);
+  async remove(id2) {
+    this.m.delete(id2);
   }
 };
 var MemState = class {

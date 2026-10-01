@@ -3,6 +3,7 @@ import type { Authed } from "./accounts";
 import { afterPeopleChange } from "./accounts";
 import { HttpError } from "./errors";
 import { REGISTRY } from "./registry";
+import { InvalidArgs, parseArgs } from "./schemas";
 import { mutateState } from "./state";
 import type { Store } from "./stores";
 
@@ -19,19 +20,32 @@ export function checkShape(value: unknown, depth = 0): void {
 
 /**
  * Runs one change for a signed-in person. The person is taken from the session, never from the request,
- * so nobody can act as anyone else. The same rules that run in the browser run here, and here they are final.
+ * so nobody can act as anyone else. Only actions listed in server/schemas.ts exist, and their arguments
+ * are checked against the schema there before the service runs. The same rules that run in the browser
+ * run here, and here they are final.
  */
 export async function runAction(store: Store, who: Authed, name: unknown, args: unknown): Promise<unknown> {
-  const fn = typeof name === "string" ? REGISTRY[name] : undefined;
-  if (!fn) throw new HttpError(400, "That action does not exist.");
+  const action = typeof name === "string" ? REGISTRY.get(name) : undefined;
+  if (!action) throw new HttpError(400, "That action does not exist.");
   if (!Array.isArray(args)) throw new HttpError(400, "That request is not valid.");
   checkShape(args);
+  // args[0] is the actor the browser used. It is ignored: the actor always comes from the session.
   const rest = args.slice(1);
   // Logins are made by the account endpoints. A person is added here without one.
   if (name === "people.createPerson") rest.length = Math.min(rest.length, 1);
+  let parsed: unknown[];
   try {
-    const { result } = await mutateState(store, () => fn(who.actor, ...rest));
-    if (name === "people.deactivatePerson" && typeof rest[0] === "string") await afterPeopleChange(store, rest[0]);
+    parsed = parseArgs(action.spec, rest);
+  } catch (e) {
+    if (e instanceof InvalidArgs) {
+      console.warn(`Refused ${name}: ${e.message}`); // in the Vercel logs, to help whoever is debugging
+      throw new HttpError(400, "That request is not valid.", "invalid");
+    }
+    throw e;
+  }
+  try {
+    const { result } = await mutateState(store, () => action.fn(who.actor, ...parsed));
+    if (name === "people.deactivatePerson" && typeof parsed[0] === "string") await afterPeopleChange(store, parsed[0]);
     return result;
   } catch (e) {
     if (e instanceof RuleError) throw new HttpError(400, e.message, "rule");

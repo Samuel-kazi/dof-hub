@@ -10,5 +10,5 @@ export const updateOwnProfile = rpc("people.updateOwnProfile", core.updateOwnPro
 export const updatePerson = rpc("people.updatePerson", core.updatePerson);
 export const updatePersonCategory = rpc("people.updatePersonCategory", core.updatePersonCategory);
 export const createLoginForPerson = serverOnly("people.createLoginForPerson", core.createLoginForPerson);
-export { crewAvailableOn, generatePersonId, getPerson, nameOf, projectHistory, workOwnedOn } from "../people";
+export { PERSON_EDITABLE, STAFF_CATEGORIES, crewAvailableOn, generatePersonId, getPerson, nameOf, projectHistory, workOwnedOn } from "../people";
 export type { PersonInput } from "../people";

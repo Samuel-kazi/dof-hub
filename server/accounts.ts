@@ -1,7 +1,7 @@
 import type { Actor, Person } from "../src/types";
 import { RuleError } from "../src/types";
 import { logAudit } from "../src/services/audit";
-import { can } from "../src/services/permissions";
+import { can, requireNotBeyond } from "../src/services/permissions";
 import { dummyHash, hashPassword, randomToken, safeEqual, sha256, temporaryPassword, verifyPassword } from "./crypto";
 import { HttpError } from "./errors";
 import { checkPassword, checkUsername, normalizeUsername } from "./rules";
@@ -160,14 +160,30 @@ export async function changePassword(store: Store, who: Authed, current: string,
 
 // ── Logins for other people (the Head of Production, or anyone given the right) ──
 
-function allowed(store: Store, actor: Actor): Promise<void> {
-  return loadDb(store, ["settings", "people"]).then((l) => {
-    if (!l || !withDb(l.db, () => can(actor, "people.manage"))) throw new HttpError(403, "Only the Head of Production, or someone given \"Add and change people\", can manage logins.");
+/**
+ * Managing a login needs "Add and change people", and only ever for someone with no more access than the
+ * person doing it. A reset password is handed to the caller, so without that second rule anyone given
+ * "Add and change people" could take over the Head of Production's login, or anyone else's.
+ */
+async function allowed(store: Store, actor: Actor, personId: string, what: string): Promise<Person> {
+  const l = await loadDb(store, ["settings", "people"]);
+  if (!l) throw new HttpError(503, "The app has not been set up yet.");
+  return withDb(l.db, () => {
+    if (!can(actor, "people.manage")) throw new HttpError(403, "Only the Head of Production, or someone given \"Add and change people\", can manage logins.");
+    const person = l.db.people.find((p) => p.personId === personId);
+    if (!person) throw new HttpError(404, "Choose a person.");
+    try {
+      requireNotBeyond(actor, person.category, person.personId, what);
+    } catch (e) {
+      if (e instanceof RuleError) throw new HttpError(403, e.message);
+      throw e;
+    }
+    return person;
   });
 }
 
 export async function createAccount(store: Store, who: Authed, input: { personId: string; username: string; password?: string }): Promise<{ username: string; temporaryPassword: string }> {
-  await allowed(store, who.actor);
+  await allowed(store, who.actor, String(input.personId ?? ""), "create a login");
   const username = normalizeUsername(String(input.username ?? ""));
   const badName = checkUsername(username);
   if (badName) throw new HttpError(400, badName);
@@ -201,9 +217,9 @@ async function userOf(store: Store, personId: string): Promise<UserDoc> {
 }
 
 export async function resetPassword(store: Store, who: Authed, personId: string): Promise<{ username: string; temporaryPassword: string }> {
-  await allowed(store, who.actor);
+  if (personId === who.person.personId) throw new HttpError(400, "Change your own password from Settings.");
+  await allowed(store, who.actor, personId, "reset the password");
   const u = await userOf(store, personId);
-  if (u._id === who.user._id) throw new HttpError(400, "Change your own password from Settings.");
   const temp = temporaryPassword();
   await store.users.put({ ...u, passwordHash: await hashPassword(temp), mustChange: true, passwordChangedAt: new Date().toISOString() });
   await revokeSessions(store, u._id);
@@ -212,9 +228,9 @@ export async function resetPassword(store: Store, who: Authed, personId: string)
 }
 
 export async function setDisabled(store: Store, who: Authed, personId: string, disabled: boolean): Promise<void> {
-  await allowed(store, who.actor);
+  if (personId === who.person.personId) throw new HttpError(400, "You cannot switch off your own login.");
+  await allowed(store, who.actor, personId, "switch a login on or off");
   const u = await userOf(store, personId);
-  if (u._id === who.user._id) throw new HttpError(400, "You cannot switch off your own login.");
   await store.users.put({ ...u, disabled });
   if (disabled) await revokeSessions(store, u._id);
   await mutateState(store, (db) => {
@@ -225,7 +241,7 @@ export async function setDisabled(store: Store, who: Authed, personId: string, d
 }
 
 export async function signOutEverywhere(store: Store, who: Authed, personId: string): Promise<void> {
-  if (personId !== who.person.personId) await allowed(store, who.actor);
+  if (personId !== who.person.personId) await allowed(store, who.actor, personId, "sign out a login");
   const u = await userOf(store, personId);
   await revokeSessions(store, u._id);
   await mutateState(store, () => logAudit(who.actor, "sign-out-everywhere", "person", personId, u._id));

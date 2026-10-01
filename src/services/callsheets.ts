@@ -6,7 +6,7 @@ import { leavesUnder } from "./content";
 import { logAudit } from "./audit";
 import { copyGearBetweenSheets, gearIssues, manifestForSheet, rebookSheetGear, releaseSheetGear } from "./equipment";
 import { getPerson } from "./people";
-import { pad } from "./utils";
+import { pad, pickKeys } from "./utils";
 
 export const getCallSheet = (id: string): CallSheet | undefined => getDb().callSheets.find((c) => c.id === id);
 
@@ -128,12 +128,11 @@ function loadSheet(actor: Actor, id: string, expectedVersion?: number): CallShee
   return cs;
 }
 
-export function updateCallSheet(
-  actor: Actor,
-  id: string,
-  patch: Partial<Pick<CallSheet, "title" | "location" | "callTime" | "crewPersonIds" | "format" | "notes" | "date">>,
-  expectedVersion?: number,
-): CallSheet {
+/** The fields the call sheet form changes. Status, project, gear and run of show have their own actions and checks. */
+export const SHEET_EDITABLE = ["title", "location", "callTime", "crewPersonIds", "format", "notes", "date"] as const;
+
+export function updateCallSheet(actor: Actor, id: string, input: Partial<Pick<CallSheet, (typeof SHEET_EDITABLE)[number]>>, expectedVersion?: number): CallSheet {
+  const patch = pickKeys(input, SHEET_EDITABLE);
   const cs = loadSheet(actor, id, expectedVersion);
   if (cs.status === "final") throw new RuleError("This call sheet is final. Reopen it to make changes.");
   // Gear bookings follow the shoot date, or the change is refused.

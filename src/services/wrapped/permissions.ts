@@ -2,8 +2,10 @@
 import * as core from "../permissions";
 import { rpc, serverOnly } from "../../data/rpc";
 export const can = rpc("permissions.can", core.can);
+export const capabilitiesBeyond = rpc("permissions.capabilitiesBeyond", core.capabilitiesBeyond);
 export const modulesFor = rpc("permissions.modulesFor", core.modulesFor);
 export const requireCan = rpc("permissions.requireCan", core.requireCan);
+export const requireNotBeyond = rpc("permissions.requireNotBeyond", core.requireNotBeyond);
 export const resetPermissions = rpc("permissions.resetPermissions", core.resetPermissions);
 export const setPersonGrant = rpc("permissions.setPersonGrant", core.setPersonGrant);
 export const setRoleGrant = rpc("permissions.setRoleGrant", core.setRoleGrant);
