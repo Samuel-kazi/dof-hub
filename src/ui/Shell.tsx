@@ -1,3 +1,4 @@
+import { ErrorBoundary } from "./ErrorBoundary";
 import { useEffect, useRef, useState } from "react";
 import { useApp, type Route } from "./AppContext";
 import { didSaveFail, useDb } from "../data/store";
@@ -197,6 +198,7 @@ export function Shell() {
         <main className="content" ref={contentRef}>
           <div className="print-brand" aria-hidden="true"><Logo width={112} /><span>Dawn of Faith Production Hub</span></div>
           {didSaveFail() && <div className="banner bad no-print" role="alert" style={{ marginBottom: 16 }}><span className="grow"><b>Changes are not being saved.</b> This device is out of storage for the app, usually because of photos. Remove some photos or use links instead. Recent changes will be lost if you close the app.</span></div>}
+          <ErrorBoundary resetKey={JSON.stringify(route)} onHome={() => go({ n: "dashboard" })}>
           {route.n === "dashboard" && <Dashboard />}
           {route.n === "pipeline" && <Pipeline category={route.category} />}
           {route.n === "record" && <RecordPage id={route.id} />}
@@ -216,6 +218,7 @@ export function Shell() {
           {route.n === "documents" && <Documents />}
           {route.n === "doc" && <DocPage id={route.id} />}
           {route.n === "soon" && <Soon module={route.module} />}
+          </ErrorBoundary>
         </main>
       </div>
     </div>
