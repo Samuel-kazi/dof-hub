@@ -1,0 +1,136 @@
+# Changelog
+
+What changed in each version, newest first. How to deploy is in GO-LIVE.md.
+
+## v20: security and reliability fixes from the October 2026 code review
+
+Everything here is behind the scenes: screens look and work as before, with a few clearer messages.
+
+**Security**
+- The server now checks every change against a list of what each action may receive (`server/schemas.ts`). Anything else is refused or dropped, so nobody can change a field a screen does not offer, such as a project's stage, or call a function no screen uses.
+- "Add and change people" and "Change system settings" can no longer be used to become Head of Production or to give yourself more access. Someone managing people can only manage logins for people with no more access than their own, and nobody but the Head of Production can touch the Head of Production's login or details.
+- Wrong-password limits now hold when guesses arrive all at once, and a stranger can no longer lock the Head of Production out: the lock is on the username and address together.
+- Contact details a person may not see are no longer sent as the word "Hidden", which an edit could save back over the real details.
+- Gear added to a call sheet is booked against that sheet's real project and date.
+
+**Reliability**
+- The live site never turns into the demo when the server is slow or down; it says it cannot reach its data.
+- New items get the same ID on screen and on the server. Archived projects no longer make the next project's number differ, and if two people create something at the same moment, the second is asked to do it again instead of being saved under a different ID.
+- Data is stored one record per document, so no part can outgrow MongoDB's 16 MB limit, and saves only write what changed. People saving at the same moment all get saved.
+- Photos are stored as files instead of inside the data. The download each person gets carries the newest 500 activity log entries and the newest 5 revisions of each document with their text; older revisions load when the history is opened.
+- A page that fails shows a message instead of blanking the app.
+
+**For whoever looks after the code**
+- `npm test` runs every test file, with the clock fixed, and reports them all. New: security, actions, storage, and storage against a real MongoDB (in CI).
+- `npm run lint` (ESLint) and `npm run format` (Prettier) are part of CI.
+- The desktop build works again: `npm run tauri build`.
+- See GO-LIVE.md, "Updating a site that is already live", before deploying this to a live site.
+
+
+## v19: move equipment between categories, split condition by unit, share a link, and record storage ahead of a project
+
+**1. Move an item to a different category.** Editing an item (single unit or batch) now lets you change its category, for example moving something from Camera into Studio & Set. Its asset code never changes, so its checkout history stays intact — only the category it is grouped and filtered under changes.
+
+**2. A real "Copy link" button.** Every screen has a real, working address now, shown in the little link icon in the top bar. Click it to copy a link straight to whatever you're looking at — a project, a checkout list, an equipment item, a drive, anything. Send it to someone and, if they have access, opening it takes them straight there after they sign in. Before this update the app never changed its address at all, so there was nothing a right-click or "copy link" could actually capture — that's now fixed.
+
+**3. Split a batch's condition by unit.** A batch of equipment (cables, and anything else added as "batch of identical items") can now have some units in one condition and others in another — for example 10 Good cables and 2 Fair ones — instead of one condition standing in for the whole batch. Open the item and use **Split condition by unit…** to set the counts directly, or just check equipment back in with a different condition than it went out in and the split updates on its own. The equipment list and reports still show one condition per item, now automatically the worst one present, so a batch with anything faulty in it is easy to spot at a glance.
+
+**4. Record storage ahead of a project.** On the Storage and media module, assigning space to a drive now offers **No project yet** as well as **Tie to a project**. Use it for footage or files that exist before the production is set up in this system yet — it gets its own entry and its own id, counts toward the drive and the company-wide totals immediately, and needs only a short label (for example "Youth Camp 2025 raw footage") instead of a Content ID. Once the project is ready to be worked on, open the drive page and use **Attach to a project** to tie it to a real Content ID for the first time — its process can then continue from Recording. This is separate from General Use (v15): a General Use project is a real, if placeholder, project; this has no project at all until you attach one.
+
+
+## v18: confirmed and tested — the checkout list and its printed report already show everything asked for
+
+Checking a checkout list, on screen or printed, already shows equipment ID, item name, make/model, quantity, condition out, photos, accessories, and additional info for every line, grouped under a heading per equipment category (Camera, Audio, Cabling & Connectivity, and so on). This existed in the code already but had no test coverage and one broken test (a missing import, unrelated to the feature itself) — both fixed, and five new tests lock the behaviour in going forward, including a rendered PDF check.
+
+If your checkout lists still look plain after installing this, it is almost certainly the browser cache from before — see the earlier note about hard-refreshing or checking in a private window.
+
+
+## v17: fixed "Add at least one serial number" when adding a single item with no serial
+
+Real bug, caught live: leaving both Serial number and Label blank on a single-item add silently dropped that row before it ever reached the server, so the form submitted nothing and showed a confusing "Add at least one serial number" error — for a field that had just been made optional. A blank row is now only dropped when there's more than one row (an unfilled extra row you added by mistake); a single blank row is always kept, since one item with no serial is exactly what "optional" is supposed to allow.
+
+
+## v16: equipment updates — optional serial numbers, a fuller checkout picker, grouped by category
+
+- **Serial number is no longer required** when adding equipment, one at a time or in a batch, or when editing an existing item. Leave it blank for gear that doesn't carry a serial. Duplicate-checking still runs whenever one is actually entered.
+- **Checking out equipment now shows more**: condition is shown on every serialized item, and a **Details** toggle expands to show accessories, notes, and a photo when there is one. Make, model, and the equipment ID were already shown.
+- **The picker is grouped by category** — Camera, Audio, Lighting, and so on each get their own heading, instead of one long flat list.
+
+
+## v15: equipment, storage, call sheets and documents no longer need a real project up front
+
+A new **General Use** project type: create one with its own ID when gear, storage, a call sheet, or a document needs somewhere to live before you know (or before it matters) which real production it belongs to — gear lent out for something that was never going to become a tracked production, for instance. It never shows up on the Calendar, in reminders, in anyone's workload, or with a risk badge, since there's no production to track.
+
+**Attach existing** buttons on a project's Storage and Documents panels, and an **Attach to a different project** action on call sheets, move something from a General Use placeholder onto the real project once you know it (or move it between two real projects). Equipment checkouts already had this. A call sheet's gear now moves with it automatically when the call sheet itself is reattached.
+
+
+## v14: fixed the blank-page crash
+
+The site going blank was a real crash, not a build problem: the Devotional stage rename shipped without a data migration, so any Devotional saved under its old stage names (Idea, Scripting, Editorial, Delivered) had a stage name that matched nothing in the current pipeline. Workload's crew-schedule calculation, running on every Dashboard load, tried to read the previous stage's name off that and crashed — and with nothing catching it, React unmounted the whole page.
+
+Two fixes: the crash itself can no longer happen anywhere a stage name goes unmatched (checked and hardened every place that indexes into a stage list), and there's now a proper migration that renames any old Devotional record to its current stage names on load, rather than just working around a record stuck with the wrong name forever.
+
+If you already applied the one-line patch to `workload.ts` yourself, this update replaces it with the same fix plus the real one underneath it.
+
+
+## v13: the Devotional pipeline is wired in
+
+Kanban and Calendar now show the new Devotional flow (Creation → Guest → Prep/Scripting → Recording → Editing → Review → Published):
+
+- **Guest** shows a reviewer-name field and an Approve button, plus a "Guest is non-compliant" action that requires a reason and closes the project. The ordinary advance button is turned off here on purpose — those two are the only ways forward.
+- **Closed** projects vanish from the Pipeline board and the Calendar by default. A **Closed (N)** filter next to the category chips brings them back into view, each showing its reason.
+- **Editing** shows the ready-for-review checkbox; **Review** shows Approve (only once that checkbox is ticked) and Send back, which requires a reason and resets the checkbox.
+- No deadlines, overdue badges, staleness, or reminders anywhere in this pipeline, as asked — checked through the Dashboard, the reminders bell, the Calendar's deadline bars, and workload scheduling, not just the obvious places.
+
+
+## v12: fixed a live show cluttering the calendar with a bar for every day
+
+A live show with several days was showing a separate stage bar for each of its days ("Medical Missionary Movement, Day 2: Prep", "Day 3: Prep"...), stacking into a wall of near-duplicate bars. Now, same as the Dashboard, a multi-day live show shows as one bar with just the show's name — its days no longer add bars of their own. A show with only one day is unaffected.
+
+
+## v11: Gantt-style bars on the Calendar
+
+Multi-day items now draw as horizontal bars across the days they cover, instead of a dot on every day. Single-day items — a shoot day, a published call sheet, a gear booking — stay as small dots, exactly as before.
+
+- **Production windows:** a live show running more than one day shows as one bar across its whole run, with its title readable right on the bar.
+- **Stages in progress:** whatever stage an item is in now shows as a bar from when it entered that stage to its deadline, so you can see how long something has actually been sitting there, not just when it's due. A stage that hasn't started yet still shows as a plain dot on its deadline, since there's no start to draw a bar from.
+- **Overlapping bars stack** into separate lanes automatically, so two things happening at once never collide.
+- A bar that runs into the next week shows a small `‹`/`›` instead of a rounded end, so it reads as "still going".
+- Bar label color (light or dark text) is chosen automatically per category color, so it stays readable whichever of the five category colors it is, in both light and dark mode.
+
+
+## v10: CI, a self-checking codegen step, the equipment file split, and stage staleness
+
+- **Continuous integration**: every push and pull request now runs automatically on GitHub (`.github/workflows/ci.yml`) — install, type-check, confirm the generated server-replay code is current, then the full test suite. A failing step blocks the run (and blocks merging, if branch protection is turned on for the repo).
+- **`npm run gen:check`**: catches a service function that was added or renamed without running `npm run gen` afterwards, before it reaches GitHub. Run it yourself any time with `npm run gen:check`.
+- **`src/services/equipment.ts`** is now three files under the hood (`equipment-items.ts`, `equipment-manifests.ts`, `equipment-reports.ts`), with `equipment.ts` kept as a plain pass-through so nothing elsewhere in the app needed to change. Behaviour is identical — this was purely a file-organisation change, checked against the original file's full export list to confirm nothing moved or went missing.
+- **Stalled work is now flagged on its own**, separately from missed deadlines: a project that has sat in one stage for a long time — 2.5× longer than that stage normally takes — now shows a **Stalled** badge on the Pipeline board and on its own page, and nudges whoever is responsible for it with a reminder that says "no update in X days" rather than "due", since the cause is different. This catches stalls even when nobody set a deadline in the first place. Advancing or sending back a stage resets the clock. A longer effort estimate (Settings) raises the bar before something counts as stalled.
+
+### To set up branch protection (optional, on GitHub)
+Repo Settings → Branches → add a rule for `main` → **Require status checks to pass before merging** → select the `test` check once it has run at least once.
+
+
+## v9: merged with the Calendar and personalisation work
+
+This brings your `main` branch's Calendar module and personalisation (workspace accent colour, font pairing, per-person font size, density and profile photo) together with everything built in this update batch (the live-show workflow rebuild, equipment units, branding, dashboard and report changes). Nothing from either side was dropped.
+
+One thing worth knowing: both sets of changes had separately used "version 9" for a database migration, for two different things. This update keeps your appearance migration at version 9 and moves the live-show migration to version 10, layered on top, so real saved data upgrades correctly either way.
+
+
+## v8: the live-show workflow rebuilt
+
+- **New stages**: a live day now goes Prep → Build → Rehearse → Show → Wrap → Review → Post Production, in place of the old Idea/Scripting/Streaming/Review/Post Production. Existing saved data upgrades automatically; nothing needs doing by hand.
+- **Strike plan**: on the show itself (not each day), set whether the rig is struck down every day or built once and struck only on the last day, and list what comes down nightly versus what stays up until the end. Each day's Wrap checklist is built from this automatically.
+- **Post-production fork**: each day's Post Production stage now asks whether anything was recorded. If yes, split the recording into a Music track or a Series episode before the day can be marked done — it starts already past the stages that assume there's no footage yet. If no, the day can be marked done straight away.
+
+
+## v7: dashboard, call sheets, equipment reports
+
+- **Production metric**: a live show with several days now counts as one production on the Dashboard, not one per day.
+- **Call sheets**: each call sheet has its own **Download…** button (on the sheet itself, and on the list's right-click menu), producing a PDF with shoot details, crew, gear and run of show. This no longer goes through Documents.
+- **Equipment reports**: downloading the equipment list now offers optional columns — Vendor, Purchase date, Cost, and Packaging & accessories — so you can include only what you need.
+
+
+## Several identical units at once (v6)
+
+Adding equipment now supports several units of the same model in one go — for example three Sony FX6 bodies with different serial numbers. Pick **One or more units**, type the shared details once, then list a serial number for each (type them one by one, or paste a list, one per line). Units that share a make and model group together in the inventory list and on each other's page, so opening one FX6 shows the other two. **Add another** on a group, or **Add another unit** on a single item's page, adds more later with the shared details already filled in.
