@@ -9,6 +9,21 @@ import type { Commit, FileDoc, Head, Item, Store } from "./stores";
 
 setPersist(false); // the server never writes to a browser's storage
 
+/**
+ * On the server, services see the data only inside withDb, for the length of one request. Outside it, reading
+ * the data is a mistake, and this makes it fail loudly. Without it, such a read would quietly see the demo data
+ * the shared data module starts with, and a permission check could pass or fail on the wrong people.
+ */
+const OUTSIDE_A_REQUEST = new Proxy({} as Database, {
+  get(_target, prop) {
+    throw new Error(`The data was read outside a request (${String(prop)}). Read it through loadDb, or change it through mutateState.`);
+  },
+  set() {
+    throw new Error("The data was changed outside a request. Change it through mutateState.");
+  },
+});
+setDb(OUTSIDE_A_REQUEST);
+
 export { KEYS };
 
 /** The database for a brand-new installation: nobody but the Head of Production, and no sample data. */
