@@ -1,6 +1,7 @@
 import type { Actor, Attachment, EquipCategoryKey, EquipCondition, EquipmentHistory, EquipmentItem, Manifest, TrackingType } from "../types";
 import { RuleError } from "../types";
 import { commit, getDb, nextCounter } from "../data/store";
+import { claimId, localId } from "../data/ids";
 import { CONDITIONS, equipCategory } from "../config/equipment";
 import { canView, getRecord } from "./access";
 import { logAudit } from "./audit";
@@ -111,7 +112,7 @@ function makeAttachment(actor: Actor, input: { url: string; caption?: string }):
   } else if (!/^https?:\/\//i.test(url)) {
     throw new RuleError("Links must start with http:// or https://.");
   }
-  return { id: `ATT-${pad(nextCounter("attachment"), 5)}`, url, caption: (input.caption ?? "").trim(), at: new Date().toISOString(), byPersonId: actor.personId };
+  return { id: localId("ATT"), url, caption: (input.caption ?? "").trim(), at: new Date().toISOString(), byPersonId: actor.personId };
 }
 
 // ── Quantities, status and availability (all computed, never stored) ──
@@ -212,7 +213,7 @@ export interface ItemInput {
 function nextAssetCode(cat: EquipCategoryKey): string {
   const prefix = `DOF-EQ-${equipCategory(cat).code}-`;
   const nums = getDb().equipment.filter((e) => e.trackingType === "serialized" && e.id.startsWith(prefix)).map((e) => parseInt(e.id.slice(prefix.length), 10)).filter((n) => !Number.isNaN(n));
-  return `${prefix}${pad((nums.length ? Math.max(...nums) : 0) + 1)}`;
+  return claimId(`${prefix}${pad((nums.length ? Math.max(...nums) : 0) + 1)}`);
 }
 
 /** The next `count` asset codes for this category, in order, as if reserved one after another. */
@@ -220,13 +221,13 @@ function nextAssetCodes(cat: EquipCategoryKey, count: number): string[] {
   const prefix = `DOF-EQ-${equipCategory(cat).code}-`;
   const nums = getDb().equipment.filter((e) => e.trackingType === "serialized" && e.id.startsWith(prefix)).map((e) => parseInt(e.id.slice(prefix.length), 10)).filter((n) => !Number.isNaN(n));
   const start = (nums.length ? Math.max(...nums) : 0) + 1;
-  return Array.from({ length: count }, (_, i) => `${prefix}${pad(start + i)}`);
+  return Array.from({ length: count }, (_, i) => claimId(`${prefix}${pad(start + i)}`));
 }
 function nextBatchCode(cat: EquipCategoryKey, family: string): string {
   const token = family.toUpperCase().replace(/[^A-Z0-9]/g, "");
   const prefix = `DOF-EQ-${equipCategory(cat).code}-${token}-B`;
   const nums = getDb().equipment.filter((e) => e.trackingType === "aggregate" && e.id.startsWith(prefix)).map((e) => parseInt(e.id.slice(prefix.length), 10)).filter((n) => !Number.isNaN(n));
-  return `${prefix}${pad((nums.length ? Math.max(...nums) : 0) + 1, 2)}`;
+  return claimId(`${prefix}${pad((nums.length ? Math.max(...nums) : 0) + 1, 2)}`);
 }
 
 export function createItem(actor: Actor, input: ItemInput): EquipmentItem {

@@ -54,7 +54,7 @@ async function dispatch(store: Store, req: Req, res: ServerResponse): Promise<vo
     }
     case "POST /action": {
       const who = await signedIn();
-      const result = await runAction(store, who, req.body.name, req.body.args);
+      const result = await runAction(store, who, req.body.name, req.body.args, req.body.ids);
       return ok({ result: result ?? null });
     }
     case "POST /account/password": {

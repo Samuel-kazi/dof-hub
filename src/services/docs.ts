@@ -1,6 +1,7 @@
 import type { Actor, ContentRecord, DocRecord, DocRevision } from "../types";
 import { ConflictError, RuleError } from "../types";
 import { commit, getDb, nextCounter } from "../data/store";
+import { claimId } from "../data/ids";
 import { categoryOf } from "../config/categories";
 import { templateOf } from "../config/docTemplates";
 import { canView, canWrite, getRecord, selfAndAncestors } from "./access";
@@ -56,7 +57,7 @@ function pushRevision(d: DocRecord, byPersonId: string, note: string): DocRevisi
 /** Creates a document without saving to storage. The caller commits. Used for automatic attachment. */
 function makeDoc(actor: Actor, contentId: string, title: string, body: string, templateKey: string | null, stage: string | null): DocRecord {
   const now = new Date().toISOString();
-  const d: DocRecord = { id: `DOF-DCS-${pad(nextCounter("doc"))}`, contentId, title, body, templateKey, stage, version: 1, createdBy: actor.personId, createdAt: now, updatedAt: now, updatedBy: actor.personId, archived: false };
+  const d: DocRecord = { id: claimId(`DOF-DCS-${pad(nextCounter("doc"))}`), contentId, title, body, templateKey, stage, version: 1, createdBy: actor.personId, createdAt: now, updatedAt: now, updatedBy: actor.personId, archived: false };
   getDb().docs.push(d);
   pushRevision(d, actor.personId, templateKey ? "Created from template" : "Created");
   logAudit(actor, "create", "document", d.id, title);

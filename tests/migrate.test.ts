@@ -126,7 +126,7 @@ const { categoryOf } = await import("../src/config/categories");
 const W = await import("../src/services/workload");
 
 const db = getDb();
-assert.equal(db.schemaVersion, 13);
+assert.equal(db.schemaVersion, 14);
 assert.deepEqual(db.outbox, [], "the record of sent reminders exists");
 assert.ok(db.equipment.every((e) => e.unitLabel === null || typeof e.unitLabel === "string"), "every unit has a label field, even if blank");
 assert.ok(db.equipment.every((e) => (e.trackingType === "aggregate" ? e.conditionBreakdown !== null : e.conditionBreakdown === null)), "every batch has a condition breakdown, every single unit has none");

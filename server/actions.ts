@@ -1,4 +1,5 @@
-import { RuleError } from "../src/types";
+import { ConflictError, RuleError } from "../src/types";
+import { expectIds } from "../src/data/ids";
 import type { Authed } from "./accounts";
 import { afterPeopleChange } from "./accounts";
 import { HttpError } from "./errors";
@@ -24,11 +25,14 @@ export function checkShape(value: unknown, depth = 0): void {
  * are checked against the schema there before the service runs. The same rules that run in the browser
  * run here, and here they are final.
  */
-export async function runAction(store: Store, who: Authed, name: unknown, args: unknown): Promise<unknown> {
+export async function runAction(store: Store, who: Authed, name: unknown, args: unknown, ids?: unknown): Promise<unknown> {
   const action = typeof name === "string" ? REGISTRY.get(name) : undefined;
   if (!action) throw new HttpError(400, "That action does not exist.");
   if (!Array.isArray(args)) throw new HttpError(400, "That request is not valid.");
   checkShape(args);
+  // The IDs the browser gave anything new (src/data/ids.ts). A page from before this check sends none.
+  if (ids !== undefined && !(Array.isArray(ids) && ids.length <= 2000 && ids.every((x) => typeof x === "string" && x.length <= 200))) throw new HttpError(400, "That request is not valid.");
+  const expected = ids as string[] | undefined;
   // args[0] is the actor the browser used. It is ignored: the actor always comes from the session.
   const rest = args.slice(1);
   // Logins are made by the account endpoints. A person is added here without one.
@@ -44,10 +48,11 @@ export async function runAction(store: Store, who: Authed, name: unknown, args: 
     throw e;
   }
   try {
-    const { result } = await mutateState(store, () => action.fn(who.actor, ...parsed));
+    const { result } = await mutateState(store, () => expectIds(expected, () => action.fn(who.actor, ...parsed)));
     if (name === "people.deactivatePerson" && typeof parsed[0] === "string") await afterPeopleChange(store, parsed[0]);
     return result;
   } catch (e) {
+    if (e instanceof ConflictError) throw new HttpError(409, e.message, "conflict");
     if (e instanceof RuleError) throw new HttpError(400, e.message, "rule");
     throw e;
   }

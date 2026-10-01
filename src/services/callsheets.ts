@@ -1,6 +1,7 @@
 import type { Actor, CallSheet, ContentRecord, ProductionLevel, RunItem } from "../types";
 import { ConflictError, RuleError } from "../types";
 import { commit, getDb, nextCounter } from "../data/store";
+import { claimId, localId } from "../data/ids";
 import { canWrite, getRecord, rootOf } from "./access";
 import { leavesUnder } from "./content";
 import { logAudit } from "./audit";
@@ -42,7 +43,7 @@ export function createCallSheet(actor: Actor, input: CallSheetInput): CallSheet 
   if (!canWrite(actor, root)) throw new RuleError("You are not assigned to this project.");
   if (!input.date) throw new RuleError("Pick a date for the call sheet.");
   const cs: CallSheet = {
-    id: `DOF-CS-${pad(nextCounter("callsheet"))}`,
+    id: claimId(`DOF-CS-${pad(nextCounter("callsheet"))}`),
     contentId: root.contentId,
     title: input.title?.trim() || `${root.title}: ${input.date}`,
     date: input.date,
@@ -89,7 +90,7 @@ export function duplicateCallSheet(actor: Actor, id: string, newDate: string): {
     format: src.format,
     notes: src.notes,
   });
-  copy.runOfShow = src.runOfShow.map((x) => ({ ...x, id: `RS-${pad(nextCounter("runitem"), 4)}` }));
+  copy.runOfShow = src.runOfShow.map((x) => ({ ...x, id: localId("RS") }));
   // Gear that is already booked on the new date is skipped and reported, never double-booked.
   const gear = copyGearBetweenSheets(actor, src.id, { id: copy.id, contentId: copy.contentId, date: copy.date });
   logAudit(actor, "duplicate", "callsheet", copy.id, `from ${src.id}`);
@@ -257,7 +258,7 @@ function editableSheet(actor: Actor, id: string): CallSheet {
 export function addRunItem(actor: Actor, sheetId: string, input: RunItemInput): RunItem {
   const cs = editableSheet(actor, sheetId);
   checkRunItem(input);
-  const item: RunItem = { id: `RS-${pad(nextCounter("runitem"), 4)}`, time: input.time, title: input.title.trim(), durationMin: input.durationMin, ownerPersonId: input.ownerPersonId || null, notes: (input.notes ?? "").trim() };
+  const item: RunItem = { id: localId("RS", (x) => cs.runOfShow.some((i) => i.id === x)), time: input.time, title: input.title.trim(), durationMin: input.durationMin, ownerPersonId: input.ownerPersonId || null, notes: (input.notes ?? "").trim() };
   cs.runOfShow.push(item);
   cs.version += 1;
   logAudit(actor, "run-add", "callsheet", sheetId, `${item.time} ${item.title}`);

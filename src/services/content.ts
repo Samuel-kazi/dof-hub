@@ -3,6 +3,7 @@ import { cleanRoles } from "../config/projectRoles";
 import { can, requireCan } from "./permissions";
 import { ConflictError, RuleError } from "../types";
 import { commit, getDb, nextCounter } from "../data/store";
+import { childCounter, childNumber, childToken, claimId, localId, topLevelCounter, topLevelNumber } from "../data/ids";
 import { categoryOf, finalStageOf } from "../config/categories";
 import { effortFor } from "../config/capacity";
 import { archiveDocsFor, attachStageDocs, docSubject } from "./docs";
@@ -158,22 +159,27 @@ export function canAdvance(r: ContentRecord): { ok: boolean; reason: string } {
 
 // ── Content ID generation ────────────────────────────────────
 
+// Numbers come from counters (see src/data/ids.ts), never from the highest number in view: the browser is
+// not sent archived projects, so it would reuse their numbers. The highest existing number is still checked,
+// so data from before the counters existed can never be given a number twice.
+
 function nextTopLevelId(category: CategoryKey): string {
-  const code = categoryOf(category).code;
-  const nums = getDb()
-    .records.filter((r) => r.category === category && r.hierarchyLevel === 0)
-    .map((r) => parseInt(r.contentId.split("-")[2], 10))
-    .filter((n) => !Number.isNaN(n));
-  return `DOF-${code}-${pad((nums.length ? Math.max(...nums) : 0) + 1)}`;
+  const db = getDb();
+  const key = topLevelCounter(category);
+  const nums = db.records.filter((r) => r.category === category && r.hierarchyLevel === 0).map((r) => topLevelNumber(r.contentId)).filter((n) => !Number.isNaN(n));
+  const n = Math.max(db.counters[key] ?? 0, ...nums) + 1;
+  db.counters[key] = n;
+  return claimId(`DOF-${categoryOf(category).code}-${pad(n)}`);
 }
 
 function nextChildId(parent: ContentRecord): string {
-  const cfg = categoryOf(parent.category);
-  const token = parent.hierarchyLevel === 0 ? cfg.childToken! : cfg.grandchildToken!;
+  const db = getDb();
+  const key = childCounter(parent.contentId);
   const width = parent.hierarchyLevel === 0 ? 1 : 2;
-  const nums = getChildren(parent.contentId, true).map((c) => parseInt(c.contentId.slice(parent.contentId.length + 1 + token.length), 10));
-  const n = (nums.length ? Math.max(...nums.filter((x) => !Number.isNaN(x))) : 0) + 1;
-  return `${parent.contentId}-${token}${pad(n, width)}`;
+  const nums = getChildren(parent.contentId, true).map((c) => childNumber(c.contentId, parent)).filter((n) => !Number.isNaN(n));
+  const n = Math.max(db.counters[key] ?? 0, ...nums) + 1;
+  db.counters[key] = n;
+  return claimId(`${parent.contentId}-${childToken(parent)}${pad(n, width)}`);
 }
 
 // ── Create / update / delete ─────────────────────────────────
@@ -279,7 +285,7 @@ export function ensureStageTasks(r: ContentRecord, stage: string): void {
   const def = categoryOf(r.category).stages.find((x) => x.name === stage);
   const labels = stage === "Wrap" ? wrapTasksFor(r) : (def?.tasks ?? []);
   for (const label of labels) {
-    r.tasks.push({ id: `T-${pad(nextCounter("task"), 4)}`, stage, label, done: false, dueDate: r.stageDeadlines[stage] ?? null, assigneePersonId: null, doneAt: null, doneBy: null });
+    r.tasks.push({ id: localId("T", (id) => r.tasks.some((t) => t.id === id)), stage, label, done: false, dueDate: r.stageDeadlines[stage] ?? null, assigneePersonId: null, doneAt: null, doneBy: null });
   }
 }
 
@@ -713,7 +719,7 @@ export function addTask(actor: Actor, id: string, input: TaskInput): StageTask {
   if (!input.label.trim()) throw new RuleError("Give the task a name.");
   if (r.tasks.some((t) => t.stage === stage && t.label.toLowerCase() === input.label.trim().toLowerCase())) throw new RuleError(`${stage} already has a task called ${input.label.trim()}.`);
   checkAssignee(input.assigneePersonId);
-  const t: StageTask = { id: `T-${pad(nextCounter("task"), 4)}`, stage, label: input.label.trim(), done: false, dueDate: input.dueDate || r.stageDeadlines[stage] || null, assigneePersonId: input.assigneePersonId || null, doneAt: null, doneBy: null };
+  const t: StageTask = { id: localId("T", (x) => r.tasks.some((t) => t.id === x)), stage, label: input.label.trim(), done: false, dueDate: input.dueDate || r.stageDeadlines[stage] || null, assigneePersonId: input.assigneePersonId || null, doneAt: null, doneBy: null };
   r.tasks.push(t);
   if (t.assigneePersonId) ensureMember(actor, t.assigneePersonId, r);
   r.version += 1;
@@ -766,7 +772,7 @@ export function addFeatured(actor: Actor, id: string, input: FeaturedInput): Fea
   const name = input.name.trim();
   if (!name) throw new RuleError(input.kind === "host" ? "Enter the host's name." : "Enter the guest's name.");
   if (r.featured.some((f) => f.kind === input.kind && f.name.toLowerCase() === name.toLowerCase())) throw new RuleError(`${name} is already listed as a ${input.kind}.`);
-  const f: Featured = { id: `F-${pad(nextCounter("featured"), 4)}`, kind: input.kind, name, note: (input.note ?? "").trim() };
+  const f: Featured = { id: localId("F", (x) => r.featured.some((f) => f.id === x)), kind: input.kind, name, note: (input.note ?? "").trim() };
   r.featured.push(f);
   r.version += 1;
   logAudit(actor, "featured-add", "record", id, `${input.kind}: ${name}`);
@@ -821,7 +827,7 @@ export function addLinks(actor: Actor, id: string, input: LinkBatchInput): Stage
     if (input.kind !== "analysis" && !row.url) throw new RuleError("Every row needs a link. Remove the empty ones.");
     if (row.url && !/^https?:\/\//i.test(row.url)) throw new RuleError(`"${row.url}" is not a link. Links must start with http:// or https://.`);
   }
-  const made = rows.map((row): StageLink => ({ id: `L-${pad(nextCounter("link"), 4)}`, stage, kind: input.kind, url: row.url, note: row.note, byPersonId: actor.personId, at: new Date().toISOString() }));
+  const made = rows.map((row): StageLink => ({ id: localId("L", (x) => r.links.some((l) => l.id === x)), stage, kind: input.kind, url: row.url, note: row.note, byPersonId: actor.personId, at: new Date().toISOString() }));
   r.links.push(...made);
   r.version += 1;
   logAudit(actor, "link-add", "record", id, `${stage}: ${input.kind} x ${made.length}`);

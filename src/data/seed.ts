@@ -1,6 +1,7 @@
 import type { CategoryKey, ContentRecord, Database, DocRecord, DocRevision, Featured, Person, ProductionLevel, RoleCode, StageTask } from "../types";
 import { categoryOf } from "../config/categories";
 import { buildGearSeed } from "./seedGear";
+import { syncRecordCounters } from "./ids";
 import { fillTemplate, templateOf } from "../config/docTemplates";
 
 // Demo data. Dates are relative to "today" at the moment the demo data is created,
@@ -257,7 +258,7 @@ export function buildSeed(): Database {
   mkDoc("DOF-DEV-001", "script", "Prep/Scripting", []);
   mkDoc("DOF-DOC-001", "research", "Research", [{ daysAgo: 12, by: "DOF-P-CRW-002" }]);
 
-  return {
+  const db: Database = {
     schemaVersion: 10,
     people,
     users,
@@ -336,4 +337,6 @@ export function buildSeed(): Database {
     settings: { stageReminderHours: 24, storageWarningThreshold: 85, checkoutReturnDays: 3, workDays: [1, 2, 3, 4, 5], effortOverrides: {}, appearance: { accent: "terracotta", fontPairing: "modern" } },
     counters: { audit: 0, comment: 1, callsheet: 2, task: 6, link: 1, featured: 5, runitem: 5, doc: docN, docrev: revN, ...gear.counters },
   };
+  syncRecordCounters(db); // project numbers continue from the sample projects (src/data/ids.ts)
+  return db;
 }

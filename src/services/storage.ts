@@ -1,6 +1,7 @@
 import type { Actor, Drive, DriveAllocation, ContentRecord } from "../types";
 import { RuleError } from "../types";
 import { commit, getDb, nextCounter } from "../data/store";
+import { claimId } from "../data/ids";
 import { canWrite, getRecord, isHop, selfAndAncestors } from "./access";
 import { getChildren, isComplete, leavesUnder } from "./content";
 import { logAudit } from "./audit";
@@ -30,7 +31,7 @@ function validateDrive(input: DriveInput, selfId?: string): void {
 export function createDrive(actor: Actor, input: DriveInput): Drive {
   requireCan(actor, "storage.admin", "add drives");
   validateDrive(input);
-  const d: Drive = { id: `DRV-${pad(nextCounter("drive"))}`, name: input.name.trim(), capacityGB: input.capacityGB, otherUsedGB: input.otherUsedGB ?? 0, notes: input.notes ?? "" };
+  const d: Drive = { id: claimId(`DRV-${pad(nextCounter("drive"))}`), name: input.name.trim(), capacityGB: input.capacityGB, otherUsedGB: input.otherUsedGB ?? 0, notes: input.notes ?? "" };
   if (d.otherUsedGB > d.capacityGB) throw new RuleError("Used space is larger than the drive.");
   getDb().drives.push(d);
   logAudit(actor, "create", "drive", d.id, d.name);
@@ -94,7 +95,7 @@ export function addAllocation(actor: Actor, input: AllocationInput): DriveAlloca
   if (!Number.isFinite(input.sizeGB) || input.sizeGB <= 0) throw new RuleError("Enter the size in GB.");
   const u = driveUsage(drive);
   if (input.sizeGB > u.freeGB + 1e-6) throw new RuleError(`${drive.name} has only ${fmtSize(u.freeGB)} free.`);
-  const a: DriveAllocation = { id: `ALC-${pad(nextCounter("allocation"), 4)}`, driveId: drive.id, contentId: input.contentId, label, sizeGB: input.sizeGB, kind: input.kind, note: input.note ?? "", updatedAt: todayIso() };
+  const a: DriveAllocation = { id: claimId(`ALC-${pad(nextCounter("allocation"), 4)}`), driveId: drive.id, contentId: input.contentId, label, sizeGB: input.sizeGB, kind: input.kind, note: input.note ?? "", updatedAt: todayIso() };
   getDb().allocations.push(a);
   logAudit(actor, "allocate", "drive", drive.id, `${input.contentId ?? label} ${fmtSize(a.sizeGB)}`);
   recordSnapshot();

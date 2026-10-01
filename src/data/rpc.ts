@@ -1,11 +1,12 @@
+import { recordIds } from "./ids";
 import { getTick } from "./store";
 
 // When the app is signed in to the server, every change a person makes is also sent there as a call:
-// the name of the function and what it was given. The server runs the same function with the same
-// rules, checks who is asking, and saves the result. The person sees the change straight away, and
-// the server has the final say.
+// the name of the function, what it was given, and the IDs it gave anything new. The server runs the same
+// function with the same rules, checks who is asking, and saves the result under those same IDs, or refuses
+// (see src/data/ids.ts). The person sees the change straight away, and the server has the final say.
 
-export interface Call { name: string; args: unknown[] }
+export interface Call { name: string; args: unknown[]; ids: string[] }
 
 let sink: ((c: Call) => void) | null = null;
 let blockedMessage: string | null = null;
@@ -28,8 +29,8 @@ export function rpc<F extends (...a: never[]) => unknown>(name: string, fn: F): 
     const before = getTick();
     depth++;
     try {
-      const out = (fn as unknown as AnyFn)(...args);
-      if (getTick() !== before) sink({ name, args: snapshot });
+      const { out, ids } = recordIds(() => (fn as unknown as AnyFn)(...args));
+      if (getTick() !== before) sink({ name, args: snapshot, ids });
       return out;
     } finally {
       depth--;

@@ -214,5 +214,77 @@ await t("C3: setup codes and password changes are limited the same way", async (
   assert.ok(changes.some((r) => r.status === 429));
 });
 
+// ── H1: the browser and the server must agree on new IDs ──
+
+const { setDb } = await import("../src/data/store");
+const { setRpcSink } = await import("../src/data/rpc");
+const W = await import("../src/services/wrapped/content");
+type Call = { name: string; args: unknown[]; ids: string[] };
+const actorOf = async (c: Client) => { const u = (await c.get("/api/session")).json.user; return { personId: u.personId, role: u.role }; };
+
+/** Does what a signed-in page does: works on the snapshot it was sent, and records the calls it would send. */
+async function asBrowser<T>(c: Client, fn: (actor: { personId: string; role: string }) => T, snapshot?: Json): Promise<{ out: T; calls: Call[] }> {
+  setDb(structuredClone(snapshot ?? (await db(c))));
+  const actor = await actorOf(c);
+  const calls: Call[] = [];
+  setRpcSink((call) => calls.push(call as Call));
+  try {
+    return { out: fn(actor), calls };
+  } finally {
+    setRpcSink(null);
+  }
+}
+const send = (c: Client, call: Call) => c.post("/api/action", call);
+
+await t("H1: after a project is archived, the next project gets the same number on screen and on the server", async () => {
+  const hop = await setupHop();
+  const first = await hop.act("content.createRecord", { category: "documentary", title: "Doc A" });
+  await hop.act("content.deleteRecord", first.json.result.contentId); // archived projects are not sent to the browser
+  const { out, calls } = await asBrowser(hop, (actor) => W.createRecord(actor as never, { category: "documentary", title: "Doc B" }));
+  const saved = await send(hop, calls[0]);
+  assert.equal(saved.status, 200, JSON.stringify(saved.json));
+  assert.equal(saved.json.result.contentId, out.contentId);
+  assert.notEqual(out.contentId, first.json.result.contentId, "an archived project's number is never reused");
+  await hop.act("content.updateRecord", out.contentId, { notes: "edited from the screen" });
+  const records = (await db(hop)).records as Json[];
+  assert.equal(records.find((r) => r.contentId === out.contentId)?.notes, "edited from the screen");
+});
+
+await t("H1: two people creating at the same moment: the second is refused, not saved under a number their screen never showed", async () => {
+  const hop = await setupHop();
+  const snapshot = await db(hop);
+  const a = await asBrowser(hop, (actor) => W.createRecord(actor as never, { category: "series", title: "From screen A" }), snapshot);
+  const b = await asBrowser(hop, (actor) => W.createRecord(actor as never, { category: "series", title: "From screen B" }), snapshot);
+  assert.equal(a.out.contentId, b.out.contentId, "both screens showed the same next number");
+  assert.equal((await send(hop, a.calls[0])).status, 200);
+  const second = await send(hop, b.calls[0]);
+  assert.equal(second.status, 409);
+  assert.equal(second.json.code, "conflict");
+  assert.match(second.json.error, /at the same moment/);
+  const titles = ((await db(hop)).records as Json[]).filter((r) => r.contentId === a.out.contentId).map((r) => r.title);
+  assert.deepEqual(titles, ["From screen A"]);
+});
+
+await t("H1: checklist items made on screen keep their ID on the server, so the next edit finds them", async () => {
+  const hop = await setupHop();
+  const { out, calls } = await asBrowser(hop, (actor) => W.addTask(actor as never, "DOF-SER-001-S1-E01", { label: "Check the B-roll" }));
+  assert.match(out.id, /^T-[a-z0-9]{8,24}$/);
+  assert.equal((await send(hop, calls[0])).status, 200);
+  const done = await hop.act("content.updateTask", "DOF-SER-001-S1-E01", out.id, { done: true });
+  assert.equal(done.status, 200, JSON.stringify(done.json));
+  assert.equal(done.json.result.id, out.id);
+});
+
+await t("H1: a page cannot choose a malformed ID, or one already used", async () => {
+  const hop = await setupHop();
+  const existing = ((await db(hop)).records as Json[]).find((r) => r.contentId === "DOF-SER-001-S1-E01")!.tasks[0].id;
+  for (const id of ["T-x", "DOF-SER-001", "T-<script>alert(1)</script>", existing]) {
+    const r = await hop.post("/api/action", { name: "content.addTask", args: [{}, "DOF-SER-001-S1-E01", { label: `Task ${Math.random()}` }], ids: [id] });
+    assert.equal(r.status, 409, `${id}: ${JSON.stringify(r.json)}`);
+  }
+  const wrongCount = await hop.post("/api/action", { name: "content.addTask", args: [{}, "DOF-SER-001-S1-E01", { label: "Two IDs" }], ids: ["T-aaaaaaaaaaaa", "T-bbbbbbbbbbbb"] });
+  assert.equal(wrongCount.status, 409);
+});
+
 server?.close();
 console.log(`\n${passed} passed`);

@@ -1,6 +1,7 @@
 import type { Actor, Person, ProjectMember, RoleCode, User, ContentRecord } from "../types";
 import { RuleError } from "../types";
 import { commit, getDb } from "../data/store";
+import { claimId } from "../data/ids";
 import { ROLES } from "../config/roles";
 import { cleanRoles } from "../config/projectRoles";
 import { requireCan, requireNotBeyond } from "./permissions";
@@ -22,7 +23,7 @@ export function generatePersonId(category: RoleCode): string {
     .people.filter((p) => p.personId.startsWith(prefix + "-"))
     .map((p) => parseInt(p.personId.slice(prefix.length + 1), 10))
     .filter((n) => !Number.isNaN(n));
-  return `${prefix}-${pad((nums.length ? Math.max(...nums) : 0) + 1)}`;
+  return claimId(`${prefix}-${pad((nums.length ? Math.max(...nums) : 0) + 1)}`);
 }
 
 function requireHop(actor: Actor, what: string) {

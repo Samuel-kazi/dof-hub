@@ -247,9 +247,6 @@ var ConflictError = class extends RuleError {
   }
 };
 
-// src/data/store.ts
-import { useSyncExternalStore } from "react";
-
 // src/config/categories.ts
 var s = (name, requiredOutput, extra = {}) => ({ name, requiredOutput, ...extra });
 var EDIT_TASKS = ["Story lock", "Picture lock", "Sound check", "Color"];
@@ -411,6 +408,79 @@ var MUSIC_STAGE_MAP = {
   Mastering: "Audio post-production",
   Delivered: "Publish"
 };
+
+// src/data/ids.ts
+var IdMismatch = class extends ConflictError {
+  constructor() {
+    super("Someone else added something at the same moment, so this change was not saved. Your screen now shows the latest. Please do it again.");
+    this.name = "IdMismatch";
+  }
+};
+var recording = null;
+var expecting = null;
+function expectIds(ids2, fn) {
+  if (!ids2) return fn();
+  const prev = expecting;
+  const run = { ids: ids2, at: 0 };
+  expecting = run;
+  try {
+    const out = fn();
+    if (run.at !== ids2.length) throw new IdMismatch();
+    return out;
+  } finally {
+    expecting = prev;
+  }
+}
+function claimId(id2) {
+  if (expecting) {
+    const want = expecting.ids[expecting.at++];
+    if (want !== id2) throw new IdMismatch();
+  }
+  recording?.push(id2);
+  return id2;
+}
+var ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyz";
+function randomPart(n) {
+  const bytes = new Uint8Array(n);
+  globalThis.crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => ALPHABET[b % 36]).join("");
+}
+function localId(prefix, taken = () => false) {
+  let id2;
+  if (expecting) {
+    const want = expecting.ids[expecting.at++];
+    if (typeof want !== "string" || !new RegExp(`^${prefix}-[a-z0-9]{8,24}$`).test(want) || taken(want)) throw new IdMismatch();
+    id2 = want;
+  } else {
+    do
+      id2 = `${prefix}-${Date.now().toString(36)}${randomPart(6)}`;
+    while (taken(id2));
+  }
+  recording?.push(id2);
+  return id2;
+}
+var topLevelCounter = (category2) => `record:${categoryOf(category2).code}`;
+var childCounter = (parentId) => `record:${parentId}`;
+var childToken = (parent) => {
+  const cfg2 = categoryOf(parent.category);
+  return (parent.hierarchyLevel === 0 ? cfg2.childToken : cfg2.grandchildToken) ?? "";
+};
+var topLevelNumber = (contentId) => parseInt(contentId.split("-")[2], 10);
+var childNumber = (contentId, parent) => parseInt(contentId.slice(parent.contentId.length + 1 + childToken(parent).length), 10);
+function syncRecordCounters(db2) {
+  const byId = new Map(db2.records.map((r) => [r.contentId, r]));
+  const raise = (key2, n) => {
+    if (!Number.isNaN(n) && n > (db2.counters[key2] ?? 0)) db2.counters[key2] = n;
+  };
+  for (const r of db2.records) {
+    if (r.hierarchyLevel === 0) raise(topLevelCounter(r.category), topLevelNumber(r.contentId));
+    const parent = r.parentId ? byId.get(r.parentId) : void 0;
+    if (parent) raise(childCounter(parent.contentId), childNumber(r.contentId, parent));
+  }
+}
+
+// src/data/store.ts
+import { useSyncExternalStore } from "react";
 
 // src/services/utils.ts
 var todayIso = () => {
@@ -1028,7 +1098,7 @@ function buildSeed() {
   mkDoc("DOF-DEV-001", "concept", "Creation", []);
   mkDoc("DOF-DEV-001", "script", "Prep/Scripting", []);
   mkDoc("DOF-DOC-001", "research", "Research", [{ daysAgo: 12, by: "DOF-P-CRW-002" }]);
-  return {
+  const db2 = {
     schemaVersion: 10,
     people,
     users,
@@ -1107,6 +1177,8 @@ function buildSeed() {
     settings: { stageReminderHours: 24, storageWarningThreshold: 85, checkoutReturnDays: 3, workDays: [1, 2, 3, 4, 5], effortOverrides: {}, appearance: { accent: "terracotta", fontPairing: "modern" } },
     counters: { audit: 0, comment: 1, callsheet: 2, task: 6, link: 1, featured: 5, runitem: 5, doc: docN, docrev: revN, ...gear.counters }
   };
+  syncRecordCounters(db2);
+  return db2;
 }
 
 // src/data/migrate.ts
@@ -1335,10 +1407,16 @@ function upgradeToV13(db2) {
   db2.schemaVersion = 13;
   return db2;
 }
+function upgradeToV14(db2) {
+  db2.counters ??= {};
+  syncRecordCounters(db2);
+  db2.schemaVersion = 14;
+  return db2;
+}
 
 // src/data/store.ts
 var KEY = "dof-hub-db";
-var SCHEMA_VERSION = 13;
+var SCHEMA_VERSION = 14;
 function migrate(old) {
   const gear = buildGearSeed();
   const next = {
@@ -1368,29 +1446,31 @@ function upgradeDb(parsed) {
     case SCHEMA_VERSION:
       return parsed;
     case 1:
-      return upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(migrate(parsed))))))))))));
+      return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(migrate(parsed)))))))))))));
     case 2:
-      return upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(parsed)))))))))));
+      return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(upgradeToV3(parsed))))))))))));
     case 3:
-      return upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(parsed))))))))));
+      return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(upgradeToV4(parsed)))))))))));
     case 4:
-      return upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(parsed)))))))));
+      return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(upgradeToV5(parsed))))))))));
     case 5:
-      return upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(parsed))))))));
+      return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(upgradeToV6(parsed)))))))));
     case 6:
-      return upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(parsed)))))));
+      return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(upgradeToV7(parsed))))))));
     case 7:
-      return upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(parsed))))));
+      return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(upgradeToV8(parsed)))))));
     case 8:
-      return upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(parsed)))));
+      return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(upgradeToV9(parsed))))));
     case 9:
-      return upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(parsed))));
+      return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(upgradeToV10(parsed)))));
     case 10:
-      return upgradeToV13(upgradeToV12(upgradeToV11(parsed)));
+      return upgradeToV14(upgradeToV13(upgradeToV12(upgradeToV11(parsed))));
     case 11:
-      return upgradeToV13(upgradeToV12(parsed));
+      return upgradeToV14(upgradeToV13(upgradeToV12(parsed)));
     case 12:
-      return upgradeToV13(parsed);
+      return upgradeToV14(upgradeToV13(parsed));
+    case 13:
+      return upgradeToV14(parsed);
     default:
       return null;
   }
@@ -1662,9 +1742,9 @@ var sha256 = (s2) => createHash("sha256").update(s2).digest("hex");
 function safeEqual(a, b) {
   return timingSafeEqual(createHash("sha256").update(a).digest(), createHash("sha256").update(b).digest());
 }
-var ALPHABET = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+var ALPHABET2 = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 function temporaryPassword() {
-  return Array.from({ length: 14 }, () => ALPHABET[randomInt(ALPHABET.length)]).join("");
+  return Array.from({ length: 14 }, () => ALPHABET2[randomInt(ALPHABET2.length)]).join("");
 }
 var key = () => {
   const raw = process.env.TOKEN_ENCRYPTION_KEY;
@@ -1843,7 +1923,7 @@ function pushRevision(d, byPersonId, note) {
 }
 function makeDoc(actor, contentId, title, body, templateKey, stage) {
   const now = (/* @__PURE__ */ new Date()).toISOString();
-  const d = { id: `DOF-DCS-${pad(nextCounter("doc"))}`, contentId, title, body, templateKey, stage, version: 1, createdBy: actor.personId, createdAt: now, updatedAt: now, updatedBy: actor.personId, archived: false };
+  const d = { id: claimId(`DOF-DCS-${pad(nextCounter("doc"))}`), contentId, title, body, templateKey, stage, version: 1, createdBy: actor.personId, createdAt: now, updatedAt: now, updatedBy: actor.personId, archived: false };
   getDb().docs.push(d);
   pushRevision(d, actor.personId, templateKey ? "Created from template" : "Created");
   logAudit(actor, "create", "document", d.id, title);
@@ -2580,7 +2660,7 @@ function makeAttachment(actor, input) {
   } else if (!/^https?:\/\//i.test(url2)) {
     throw new RuleError("Links must start with http:// or https://.");
   }
-  return { id: `ATT-${pad(nextCounter("attachment"), 5)}`, url: url2, caption: (input.caption ?? "").trim(), at: (/* @__PURE__ */ new Date()).toISOString(), byPersonId: actor.personId };
+  return { id: localId("ATT"), url: url2, caption: (input.caption ?? "").trim(), at: (/* @__PURE__ */ new Date()).toISOString(), byPersonId: actor.personId };
 }
 function qtyIn(item, status2) {
   let n = 0;
@@ -2638,19 +2718,19 @@ function displayStatus(item) {
 function nextAssetCode(cat) {
   const prefix = `DOF-EQ-${equipCategory(cat).code}-`;
   const nums = getDb().equipment.filter((e) => e.trackingType === "serialized" && e.id.startsWith(prefix)).map((e) => parseInt(e.id.slice(prefix.length), 10)).filter((n) => !Number.isNaN(n));
-  return `${prefix}${pad((nums.length ? Math.max(...nums) : 0) + 1)}`;
+  return claimId(`${prefix}${pad((nums.length ? Math.max(...nums) : 0) + 1)}`);
 }
 function nextAssetCodes(cat, count2) {
   const prefix = `DOF-EQ-${equipCategory(cat).code}-`;
   const nums = getDb().equipment.filter((e) => e.trackingType === "serialized" && e.id.startsWith(prefix)).map((e) => parseInt(e.id.slice(prefix.length), 10)).filter((n) => !Number.isNaN(n));
   const start = (nums.length ? Math.max(...nums) : 0) + 1;
-  return Array.from({ length: count2 }, (_, i) => `${prefix}${pad(start + i)}`);
+  return Array.from({ length: count2 }, (_, i) => claimId(`${prefix}${pad(start + i)}`));
 }
 function nextBatchCode(cat, family) {
   const token = family.toUpperCase().replace(/[^A-Z0-9]/g, "");
   const prefix = `DOF-EQ-${equipCategory(cat).code}-${token}-B`;
   const nums = getDb().equipment.filter((e) => e.trackingType === "aggregate" && e.id.startsWith(prefix)).map((e) => parseInt(e.id.slice(prefix.length), 10)).filter((n) => !Number.isNaN(n));
-  return `${prefix}${pad((nums.length ? Math.max(...nums) : 0) + 1, 2)}`;
+  return claimId(`${prefix}${pad((nums.length ? Math.max(...nums) : 0) + 1, 2)}`);
 }
 function createItem(actor, input) {
   requireGearAccess(actor);
@@ -2925,7 +3005,7 @@ function requireStaffCategory(category2) {
 function generatePersonId(category2) {
   const prefix = ROLES[category2].idPrefix;
   const nums = getDb().people.filter((p) => p.personId.startsWith(prefix + "-")).map((p) => parseInt(p.personId.slice(prefix.length + 1), 10)).filter((n) => !Number.isNaN(n));
-  return `${prefix}-${pad((nums.length ? Math.max(...nums) : 0) + 1)}`;
+  return claimId(`${prefix}-${pad((nums.length ? Math.max(...nums) : 0) + 1)}`);
 }
 function requireHop2(actor, what) {
   requireCan(actor, "people.manage", what);
@@ -3172,7 +3252,7 @@ function makeAttachment2(actor, input) {
   } else if (!/^https?:\/\//i.test(url2)) {
     throw new RuleError("Links must start with http:// or https://.");
   }
-  return { id: `ATT-${pad(nextCounter("attachment"), 5)}`, url: url2, caption: (input.caption ?? "").trim(), at: (/* @__PURE__ */ new Date()).toISOString(), byPersonId: actor.personId };
+  return { id: localId("ATT"), url: url2, caption: (input.caption ?? "").trim(), at: (/* @__PURE__ */ new Date()).toISOString(), byPersonId: actor.personId };
 }
 var getManifest = (id2) => getDb().manifests.find((m) => m.id === id2);
 function addDays(iso, n) {
@@ -3230,7 +3310,7 @@ function createManifest(actor, input) {
   if (!person2 || person2.status !== "active" || person2.category !== "CRW" && person2.category !== "HOP") throw new RuleError("The person responsible must be active crew.");
   const items = lines.map((l) => checkLine(getItem(l.equipmentId), l.quantity, input.date, to));
   const m = {
-    id: `DOF-MF-${pad(nextCounter("manifest"))}`,
+    id: claimId(`DOF-MF-${pad(nextCounter("manifest"))}`),
     contentId: input.contentId,
     callSheetId: input.callSheetId ?? null,
     destination: outside ? "outside" : "studio",
@@ -3702,17 +3782,21 @@ function canAdvance(r) {
   return { ok: true, reason: "" };
 }
 function nextTopLevelId(category2) {
-  const code = categoryOf(category2).code;
-  const nums = getDb().records.filter((r) => r.category === category2 && r.hierarchyLevel === 0).map((r) => parseInt(r.contentId.split("-")[2], 10)).filter((n) => !Number.isNaN(n));
-  return `DOF-${code}-${pad((nums.length ? Math.max(...nums) : 0) + 1)}`;
+  const db2 = getDb();
+  const key2 = topLevelCounter(category2);
+  const nums = db2.records.filter((r) => r.category === category2 && r.hierarchyLevel === 0).map((r) => topLevelNumber(r.contentId)).filter((n2) => !Number.isNaN(n2));
+  const n = Math.max(db2.counters[key2] ?? 0, ...nums) + 1;
+  db2.counters[key2] = n;
+  return claimId(`DOF-${categoryOf(category2).code}-${pad(n)}`);
 }
 function nextChildId(parent) {
-  const cfg2 = categoryOf(parent.category);
-  const token = parent.hierarchyLevel === 0 ? cfg2.childToken : cfg2.grandchildToken;
+  const db2 = getDb();
+  const key2 = childCounter(parent.contentId);
   const width = parent.hierarchyLevel === 0 ? 1 : 2;
-  const nums = getChildren(parent.contentId, true).map((c) => parseInt(c.contentId.slice(parent.contentId.length + 1 + token.length), 10));
-  const n = (nums.length ? Math.max(...nums.filter((x) => !Number.isNaN(x))) : 0) + 1;
-  return `${parent.contentId}-${token}${pad(n, width)}`;
+  const nums = getChildren(parent.contentId, true).map((c) => childNumber(c.contentId, parent)).filter((n2) => !Number.isNaN(n2));
+  const n = Math.max(db2.counters[key2] ?? 0, ...nums) + 1;
+  db2.counters[key2] = n;
+  return claimId(`${parent.contentId}-${childToken(parent)}${pad(n, width)}`);
 }
 function ensureMember(actor, personId, r) {
   if (!personId) return;
@@ -3796,7 +3880,7 @@ function ensureStageTasks(r, stage) {
   const def = categoryOf(r.category).stages.find((x) => x.name === stage);
   const labels = stage === "Wrap" ? wrapTasksFor(r) : def?.tasks ?? [];
   for (const label of labels) {
-    r.tasks.push({ id: `T-${pad(nextCounter("task"), 4)}`, stage, label, done: false, dueDate: r.stageDeadlines[stage] ?? null, assigneePersonId: null, doneAt: null, doneBy: null });
+    r.tasks.push({ id: localId("T", (id2) => r.tasks.some((t2) => t2.id === id2)), stage, label, done: false, dueDate: r.stageDeadlines[stage] ?? null, assigneePersonId: null, doneAt: null, doneBy: null });
   }
 }
 function checkShowDates(category2, start, end) {
@@ -4154,7 +4238,7 @@ function addTask(actor, id2, input) {
   if (!input.label.trim()) throw new RuleError("Give the task a name.");
   if (r.tasks.some((t3) => t3.stage === stage && t3.label.toLowerCase() === input.label.trim().toLowerCase())) throw new RuleError(`${stage} already has a task called ${input.label.trim()}.`);
   checkAssignee(input.assigneePersonId);
-  const t2 = { id: `T-${pad(nextCounter("task"), 4)}`, stage, label: input.label.trim(), done: false, dueDate: input.dueDate || r.stageDeadlines[stage] || null, assigneePersonId: input.assigneePersonId || null, doneAt: null, doneBy: null };
+  const t2 = { id: localId("T", (x) => r.tasks.some((t3) => t3.id === x)), stage, label: input.label.trim(), done: false, dueDate: input.dueDate || r.stageDeadlines[stage] || null, assigneePersonId: input.assigneePersonId || null, doneAt: null, doneBy: null };
   r.tasks.push(t2);
   if (t2.assigneePersonId) ensureMember(actor, t2.assigneePersonId, r);
   r.version += 1;
@@ -4200,7 +4284,7 @@ function addFeatured(actor, id2, input) {
   const name = input.name.trim();
   if (!name) throw new RuleError(input.kind === "host" ? "Enter the host's name." : "Enter the guest's name.");
   if (r.featured.some((f2) => f2.kind === input.kind && f2.name.toLowerCase() === name.toLowerCase())) throw new RuleError(`${name} is already listed as a ${input.kind}.`);
-  const f = { id: `F-${pad(nextCounter("featured"), 4)}`, kind: input.kind, name, note: (input.note ?? "").trim() };
+  const f = { id: localId("F", (x) => r.featured.some((f2) => f2.id === x)), kind: input.kind, name, note: (input.note ?? "").trim() };
   r.featured.push(f);
   r.version += 1;
   logAudit(actor, "featured-add", "record", id2, `${input.kind}: ${name}`);
@@ -4244,7 +4328,7 @@ function addLinks(actor, id2, input) {
     if (input.kind !== "analysis" && !row.url) throw new RuleError("Every row needs a link. Remove the empty ones.");
     if (row.url && !/^https?:\/\//i.test(row.url)) throw new RuleError(`"${row.url}" is not a link. Links must start with http:// or https://.`);
   }
-  const made = rows.map((row) => ({ id: `L-${pad(nextCounter("link"), 4)}`, stage, kind: input.kind, url: row.url, note: row.note, byPersonId: actor.personId, at: (/* @__PURE__ */ new Date()).toISOString() }));
+  const made = rows.map((row) => ({ id: localId("L", (x) => r.links.some((l) => l.id === x)), stage, kind: input.kind, url: row.url, note: row.note, byPersonId: actor.personId, at: (/* @__PURE__ */ new Date()).toISOString() }));
   r.links.push(...made);
   r.version += 1;
   logAudit(actor, "link-add", "record", id2, `${stage}: ${input.kind} x ${made.length}`);
@@ -4393,7 +4477,7 @@ function createCallSheet(actor, input) {
   if (!canWrite(actor, root)) throw new RuleError("You are not assigned to this project.");
   if (!input.date) throw new RuleError("Pick a date for the call sheet.");
   const cs = {
-    id: `DOF-CS-${pad(nextCounter("callsheet"))}`,
+    id: claimId(`DOF-CS-${pad(nextCounter("callsheet"))}`),
     contentId: root.contentId,
     title: input.title?.trim() || `${root.title}: ${input.date}`,
     date: input.date,
@@ -4437,7 +4521,7 @@ function duplicateCallSheet(actor, id2, newDate) {
     format: src.format,
     notes: src.notes
   });
-  copy.runOfShow = src.runOfShow.map((x) => ({ ...x, id: `RS-${pad(nextCounter("runitem"), 4)}` }));
+  copy.runOfShow = src.runOfShow.map((x) => ({ ...x, id: localId("RS") }));
   const gear = copyGearBetweenSheets(actor, src.id, { id: copy.id, contentId: copy.contentId, date: copy.date });
   logAudit(actor, "duplicate", "callsheet", copy.id, `from ${src.id}`);
   commit();
@@ -4569,7 +4653,7 @@ function editableSheet(actor, id2) {
 function addRunItem(actor, sheetId, input) {
   const cs = editableSheet(actor, sheetId);
   checkRunItem(input);
-  const item = { id: `RS-${pad(nextCounter("runitem"), 4)}`, time: input.time, title: input.title.trim(), durationMin: input.durationMin, ownerPersonId: input.ownerPersonId || null, notes: (input.notes ?? "").trim() };
+  const item = { id: localId("RS", (x) => cs.runOfShow.some((i) => i.id === x)), time: input.time, title: input.title.trim(), durationMin: input.durationMin, ownerPersonId: input.ownerPersonId || null, notes: (input.notes ?? "").trim() };
   cs.runOfShow.push(item);
   cs.version += 1;
   logAudit(actor, "run-add", "callsheet", sheetId, `${item.time} ${item.title}`);
@@ -4792,7 +4876,7 @@ function validateDrive(input, selfId) {
 function createDrive(actor, input) {
   requireCan(actor, "storage.admin", "add drives");
   validateDrive(input);
-  const d = { id: `DRV-${pad(nextCounter("drive"))}`, name: input.name.trim(), capacityGB: input.capacityGB, otherUsedGB: input.otherUsedGB ?? 0, notes: input.notes ?? "" };
+  const d = { id: claimId(`DRV-${pad(nextCounter("drive"))}`), name: input.name.trim(), capacityGB: input.capacityGB, otherUsedGB: input.otherUsedGB ?? 0, notes: input.notes ?? "" };
   if (d.otherUsedGB > d.capacityGB) throw new RuleError("Used space is larger than the drive.");
   getDb().drives.push(d);
   logAudit(actor, "create", "drive", d.id, d.name);
@@ -4846,7 +4930,7 @@ function addAllocation(actor, input) {
   if (!Number.isFinite(input.sizeGB) || input.sizeGB <= 0) throw new RuleError("Enter the size in GB.");
   const u = driveUsage(drive);
   if (input.sizeGB > u.freeGB + 1e-6) throw new RuleError(`${drive.name} has only ${fmtSize(u.freeGB)} free.`);
-  const a = { id: `ALC-${pad(nextCounter("allocation"), 4)}`, driveId: drive.id, contentId: input.contentId, label, sizeGB: input.sizeGB, kind: input.kind, note: input.note ?? "", updatedAt: todayIso() };
+  const a = { id: claimId(`ALC-${pad(nextCounter("allocation"), 4)}`), driveId: drive.id, contentId: input.contentId, label, sizeGB: input.sizeGB, kind: input.kind, note: input.note ?? "", updatedAt: todayIso() };
   getDb().allocations.push(a);
   logAudit(actor, "allocate", "drive", drive.id, `${input.contentId ?? label} ${fmtSize(a.sizeGB)}`);
   recordSnapshot();
@@ -5505,11 +5589,13 @@ function checkShape(value, depth = 0) {
     }
   }
 }
-async function runAction(store2, who, name, args2) {
+async function runAction(store2, who, name, args2, ids2) {
   const action = typeof name === "string" ? REGISTRY.get(name) : void 0;
   if (!action) throw new HttpError(400, "That action does not exist.");
   if (!Array.isArray(args2)) throw new HttpError(400, "That request is not valid.");
   checkShape(args2);
+  if (ids2 !== void 0 && !(Array.isArray(ids2) && ids2.length <= 2e3 && ids2.every((x) => typeof x === "string" && x.length <= 200))) throw new HttpError(400, "That request is not valid.");
+  const expected = ids2;
   const rest = args2.slice(1);
   if (name === "people.createPerson") rest.length = Math.min(rest.length, 1);
   let parsed;
@@ -5523,10 +5609,11 @@ async function runAction(store2, who, name, args2) {
     throw e;
   }
   try {
-    const { result } = await mutateState(store2, () => action.fn(who.actor, ...parsed));
+    const { result } = await mutateState(store2, () => expectIds(expected, () => action.fn(who.actor, ...parsed)));
     if (name === "people.deactivatePerson" && typeof parsed[0] === "string") await afterPeopleChange(store2, parsed[0]);
     return result;
   } catch (e) {
+    if (e instanceof ConflictError) throw new HttpError(409, e.message, "conflict");
     if (e instanceof RuleError) throw new HttpError(400, e.message, "rule");
     throw e;
   }
@@ -5756,7 +5843,7 @@ async function dispatch(store2, req, res) {
     }
     case "POST /action": {
       const who = await signedIn();
-      const result = await runAction(store2, who, req.body.name, req.body.args);
+      const result = await runAction(store2, who, req.body.name, req.body.args, req.body.ids);
       return ok({ result: result ?? null });
     }
     case "POST /account/password": {

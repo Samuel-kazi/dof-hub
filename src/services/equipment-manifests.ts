@@ -1,6 +1,7 @@
 import type { Actor, Attachment, EquipCondition, EquipmentHistory, EquipmentItem, Incident, Manifest, ManifestLine } from "../types";
 import { RuleError } from "../types";
 import { commit, getDb, nextCounter } from "../data/store";
+import { claimId, localId } from "../data/ids";
 import { conditionRank } from "../config/equipment";
 import { canView, canWrite, getRecord, isHop } from "./access";
 import { logAudit } from "./audit";
@@ -37,7 +38,7 @@ function makeAttachment(actor: Actor, input: { url: string; caption?: string }):
   } else if (!/^https?:\/\//i.test(url)) {
     throw new RuleError("Links must start with http:// or https://.");
   }
-  return { id: `ATT-${pad(nextCounter("attachment"), 5)}`, url, caption: (input.caption ?? "").trim(), at: new Date().toISOString(), byPersonId: actor.personId };
+  return { id: localId("ATT"), url, caption: (input.caption ?? "").trim(), at: new Date().toISOString(), byPersonId: actor.personId };
 }
 
 export const getManifest = (id: string): Manifest | undefined => getDb().manifests.find((m) => m.id === id);
@@ -119,7 +120,7 @@ export function createManifest(actor: Actor, input: ManifestInput): Manifest {
   if (!person || person.status !== "active" || (person.category !== "CRW" && person.category !== "HOP")) throw new RuleError("The person responsible must be active crew.");
   const items = lines.map((l) => checkLine(getItem(l.equipmentId), l.quantity, input.date, to));
   const m: Manifest = {
-    id: `DOF-MF-${pad(nextCounter("manifest"))}`,
+    id: claimId(`DOF-MF-${pad(nextCounter("manifest"))}`),
     contentId: input.contentId,
     callSheetId: input.callSheetId ?? null,
     destination: outside ? "outside" : "studio",

@@ -1,6 +1,7 @@
 import type { ContentRecord, Database, DocRecord, DocRevision, DriveAllocation, EquipCondition, EquipmentItem } from "../types";
 import { MUSIC_STAGE_MAP, categoryOf } from "../config/categories";
 import { templateOf } from "../config/docTemplates";
+import { syncRecordCounters } from "./ids";
 
 // Upgrades saved data from version 2 to 3. It only touches plain data, so it can run while the
 // store is loading. It is safe to run twice: anything already present is left alone.
@@ -270,5 +271,17 @@ export function upgradeToV13(db: Database): Database {
   }
   for (const a of db.allocations) (a as DriveAllocation & { label?: string }).label ??= "";
   db.schemaVersion = 13;
+  return db;
+}
+
+/**
+ * Version 14: project numbers come from counters, so the browser and the server always agree on the number
+ * a new project gets (src/data/ids.ts). Each counter starts at the highest number already used, archived
+ * projects included, so no Content ID is ever given out twice.
+ */
+export function upgradeToV14(db: Database): Database {
+  db.counters ??= {};
+  syncRecordCounters(db);
+  db.schemaVersion = 14;
   return db;
 }
