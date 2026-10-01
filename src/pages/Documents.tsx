@@ -266,8 +266,10 @@ export function DocPage({ id }: { id: string }) {
     () => () => {
       persist();
     },
+    // Saves once, on leaving the page, with whatever is newest then.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
-  ); // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   // Signed in, older revisions arrive without their text. Opening the history fetches it.
   const someTrimmed = revisionsOf(id).some((v) => v.trimmed);
