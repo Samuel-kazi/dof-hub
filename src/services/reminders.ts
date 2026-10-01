@@ -1,6 +1,7 @@
 import type { Actor, CategoryKey, OutboxEntry, Person } from "../types";
 import { RuleError } from "../types";
-import { commit, getDb, nextCounter } from "../data/store";
+import { commit, getDb } from "../data/store";
+import { logId } from "../data/ids";
 import { categoryOf } from "../config/categories";
 import { logAudit } from "./audit";
 import { daysInStage, displayTitle, isComplete, isOwnerNow, isStale, ownersOf, usesPipeline } from "./content";
@@ -85,7 +86,7 @@ export function logSent(actor: Actor, personId: string, channel: OutboxEntry["ch
   if (personId !== actor.personId) requireCan(actor, "reminders.sendOthers", "send reminders to other people");
   else if (!can(actor, "reminders.use")) throw new RuleError("You do not have access to reminders.");
   if (!getPerson(personId)) throw new RuleError("Person not found.");
-  const e: OutboxEntry = { id: `MSG-${pad(nextCounter("outbox"), 5)}`, personId, channel, subject, body, keys, at: new Date().toISOString(), byPersonId: actor.personId };
+  const e: OutboxEntry = { id: logId("MSG"), personId, channel, subject, body, keys, at: new Date().toISOString(), byPersonId: actor.personId };
   getDb().outbox.push(e);
   logAudit(actor, `reminder-${channel}`, "person", personId, `${keys.length} item${keys.length === 1 ? "" : "s"}`);
   commit();

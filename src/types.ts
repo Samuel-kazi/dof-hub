@@ -337,6 +337,7 @@ export interface DocRevision {
   title: string;
   body: string;
   note: string;
+  trimmed?: boolean; // signed in to the server: an older revision sent without its text, which is fetched when the history is opened
 }
 
 export interface Settings {

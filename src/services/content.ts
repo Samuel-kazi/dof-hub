@@ -3,7 +3,7 @@ import { cleanRoles } from "../config/projectRoles";
 import { can, requireCan } from "./permissions";
 import { ConflictError, RuleError } from "../types";
 import { commit, getDb, nextCounter } from "../data/store";
-import { childCounter, childNumber, childToken, claimId, localId, topLevelCounter, topLevelNumber } from "../data/ids";
+import { childCounter, childNumber, childToken, claimId, logId, localId, topLevelCounter, topLevelNumber } from "../data/ids";
 import { categoryOf, finalStageOf } from "../config/categories";
 import { effortFor } from "../config/capacity";
 import { archiveDocsFor, attachStageDocs, docSubject } from "./docs";
@@ -1004,7 +1004,7 @@ export function addComment(actor: Actor, contentId: string, text: string, callSh
   if (!canComment(actor, r)) throw new RuleError("You can view this project but not comment on it.");
   if (!text.trim()) throw new RuleError("Write a comment first.");
   const c: Comment = {
-    id: `C-${pad(nextCounter("comment"))}`,
+    id: logId("C"),
     contentId,
     callSheetId,
     byPersonId: actor.personId,

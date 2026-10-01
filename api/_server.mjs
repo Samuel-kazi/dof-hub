@@ -36,6 +36,78 @@ var HttpError = class extends Error {
 
 // server/mongo.ts
 import { MongoClient } from "mongodb";
+
+// server/layout.ts
+import { createHash } from "node:crypto";
+var KEYS = ["people", "members", "records", "callSheets", "comments", "audit", "equipment", "manifests", "incidents", "equipmentHistory", "drives", "allocations", "snapshots", "docs", "docRevisions", "outbox", "settings", "counters"];
+var SINGLE = /* @__PURE__ */ new Set(["settings", "counters"]);
+var LOG_KEYS = /* @__PURE__ */ new Set(["audit", "comments", "equipmentHistory", "docRevisions", "outbox", "snapshots"]);
+var APPEND_ONLY = /* @__PURE__ */ new Set(["audit"]);
+var versionedKeys = () => KEYS.filter((k) => !LOG_KEYS.has(k));
+var loadedKeys = () => KEYS.filter((k) => !APPEND_ONLY.has(k));
+function idOf(key2, el) {
+  const x = el ?? {};
+  switch (key2) {
+    case "people":
+      return String(x.personId);
+    case "members":
+      return `${x.personId}|${x.projectContentId}`;
+    case "records":
+      return String(x.contentId);
+    case "snapshots":
+      return String(x.date);
+    default:
+      return String(x.id);
+  }
+}
+function elementsOf(key2, value) {
+  if (SINGLE.has(key2)) return [{ i: "_", d: value ?? {} }];
+  const seen = /* @__PURE__ */ new Map();
+  return (Array.isArray(value) ? value : []).map((d) => {
+    const base = idOf(key2, d);
+    const n = (seen.get(base) ?? 0) + 1;
+    seen.set(base, n);
+    return { i: n > 1 ? `${base}#${n}` : base, d };
+  });
+}
+function assemble(items) {
+  const out = {};
+  for (const k of KEYS) out[k] = SINGLE.has(k) ? {} : [];
+  for (const it of items) {
+    if (SINGLE.has(it.k)) out[it.k] = it.d;
+    else if (Array.isArray(out[it.k])) out[it.k].push(it.d);
+  }
+  return out;
+}
+function toItems(data) {
+  return KEYS.flatMap((k) => k in data ? elementsOf(k, data[k]).map((e, o) => ({ k, i: e.i, o, d: e.d })) : []);
+}
+var DATA_URL = /^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/]+={0,2})$/;
+function fileFromDataUrl(url2) {
+  const m = DATA_URL.exec(url2);
+  if (!m) return null;
+  const id2 = createHash("sha256").update(url2).digest("hex").slice(0, 32);
+  return { doc: { _id: id2, type: m[1], data: m[2], size: Math.floor(m[2].length * 3 / 4), at: (/* @__PURE__ */ new Date()).toISOString() }, url: `/api/file?id=${id2}` };
+}
+function extractFiles(value, files) {
+  if (typeof value === "string") {
+    if (!value.startsWith("data:image/")) return value;
+    const f = fileFromDataUrl(value);
+    if (!f) return value;
+    files.push(f.doc);
+    return f.url;
+  }
+  if (Array.isArray(value)) return value.map((v) => extractFiles(v, files));
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, extractFiles(v, files)]));
+  return value;
+}
+function layout1ToItems(data) {
+  const files = [];
+  const items = toItems(extractFiles(data, files));
+  return { items, files };
+}
+
+// server/mongo.ts
 var MongoCol = class {
   constructor(col, expiry) {
     this.col = col;
@@ -112,6 +184,10 @@ var MongoAttempts = class {
     await this.col.deleteOne({ _id: key2 });
   }
 };
+var META = "meta";
+var LOCK = "upgrading";
+var LOCK_STALE_MS = 5 * 60 * 1e3;
+var BATCH = 500;
 var MongoState = class {
   constructor(client, db2) {
     this.client = client;
@@ -119,63 +195,65 @@ var MongoState = class {
   }
   client;
   db;
+  get meta() {
+    return this.db.collection("hub_meta");
+  }
   get col() {
-    return this.db.collection("state");
+    return this.db.collection("hub_items");
   }
-  async load(keys) {
-    const meta = await this.col.findOne({ _id: "meta" });
-    if (!meta) return null;
-    const docs = await this.col.find(keys ? { _id: { $in: keys } } : { _id: { $ne: "meta" } }).toArray();
-    const data = {};
-    const versions = {};
-    for (const d of docs) {
-      data[String(d._id)] = d.data;
-      versions[String(d._id)] = d.v;
-    }
-    return { data, versions, revision: meta.revision, schemaVersion: meta.schemaVersion };
+  toItem(d) {
+    return { k: String(d.k), i: String(d.i), o: Number(d.o), d: d.d };
   }
-  async save(changes, expected, schemaVersion) {
+  toDoc(it) {
+    return { _id: `${it.k}/${it.i}`, k: it.k, i: it.i, o: it.o, d: it.d };
+  }
+  async head() {
+    let m = await this.meta.findOne({ _id: META });
+    if (!m && await this.upgradeLayout()) m = await this.meta.findOne({ _id: META });
+    return m ? { revision: Number(m.revision), schemaVersion: Number(m.schemaVersion), versions: { ...m.versions } } : null;
+  }
+  async items(keys) {
+    return (await this.col.find({ k: { $in: keys } }).sort({ k: 1, o: 1 }).toArray()).map((d) => this.toItem(d));
+  }
+  async newest(key2, limit) {
+    return (await this.col.find({ k: key2 }).sort({ o: -1 }).limit(limit).toArray()).map((d) => this.toItem(d));
+  }
+  async commit(c) {
     const session = this.client.startSession();
-    let ok = true;
+    let revision = null;
     try {
       await session.withTransaction(async () => {
-        ok = true;
-        for (const [key2, data] of Object.entries(changes)) {
-          if (expected[key2] === void 0) {
-            try {
-              await this.col.insertOne({ _id: key2, v: 1, data }, { session });
-            } catch (e) {
-              if (e.code === 11e3) {
-                ok = false;
-                await session.abortTransaction();
-                return;
-              }
-              throw e;
-            }
-          } else {
-            const r = await this.col.updateOne({ _id: key2, v: expected[key2] }, { $set: { data }, $inc: { v: 1 } }, { session });
-            if (r.matchedCount === 0) {
-              ok = false;
-              await session.abortTransaction();
-              return;
-            }
-          }
+        revision = null;
+        const filter = { _id: META };
+        for (const [k, v] of Object.entries(c.expect)) filter[`versions.${k}`] = v === 0 ? { $in: [0, null] } : v;
+        const inc = { revision: 1 };
+        for (const k of Object.keys(c.expect)) inc[`versions.${k}`] = 1;
+        const m = await this.meta.findOneAndUpdate(filter, { $inc: inc, $set: { schemaVersion: c.schemaVersion } }, { session, returnDocument: "after" });
+        if (!m) {
+          await session.abortTransaction();
+          return;
         }
-        await this.col.updateOne({ _id: "meta" }, { $inc: { revision: 1 }, $set: { schemaVersion } }, { session, upsert: true });
+        const ops = [
+          ...c.remove.map((r) => ({ deleteOne: { filter: { _id: `${r.k}/${r.i}` } } })),
+          ...c.put.map((it) => ({ replaceOne: { filter: { _id: `${it.k}/${it.i}` }, replacement: this.toDoc(it), upsert: true } }))
+        ];
+        for (let i = 0; i < ops.length; i += BATCH) await this.col.bulkWrite(ops.slice(i, i + BATCH), { session, ordered: true });
+        revision = Number(m.revision);
       });
     } finally {
       await session.endSession();
     }
-    return ok;
+    return revision;
   }
-  async init(data, schemaVersion) {
+  async init(items, schemaVersion) {
+    if (await this.head()) return false;
     const session = this.client.startSession();
     let created = true;
     try {
       await session.withTransaction(async () => {
         created = true;
         try {
-          await this.col.insertOne({ _id: "meta", revision: 1, schemaVersion }, { session });
+          await this.meta.insertOne({ _id: META, revision: 1, schemaVersion, versions: Object.fromEntries(versionedKeys().map((k) => [k, 1])) }, { session });
         } catch (e) {
           if (e.code === 11e3) {
             created = false;
@@ -184,49 +262,87 @@ var MongoState = class {
           }
           throw e;
         }
-        await this.col.insertMany(Object.entries(data).map(([k, v]) => ({ _id: k, v: 1, data: v })), { session });
+        for (let i = 0; i < items.length; i += BATCH) await this.col.insertMany(items.slice(i, i + BATCH).map((it) => this.toDoc(it)), { session });
       });
     } finally {
       await session.endSession();
     }
     return created;
   }
+  /**
+   * Data saved by the earlier version of the app lives in the `state` collection, one document per part, with
+   * photos inside. The first server to start copies it into the new layout and moves the photos into `files`.
+   * The `state` collection is left exactly as it was, as a backup. Returns true once the new layout exists.
+   */
+  async upgradeLayout() {
+    const old = this.db.collection("state");
+    const oldMeta = await old.findOne({ _id: META });
+    if (!oldMeta) return false;
+    try {
+      await this.meta.insertOne({ _id: LOCK, at: /* @__PURE__ */ new Date() });
+    } catch (e) {
+      if (e.code !== 11e3) throw e;
+      const lock = await this.meta.findOne({ _id: LOCK });
+      if (lock && Date.now() - new Date(lock.at).getTime() < LOCK_STALE_MS) throw new HttpError(503, "The data is being moved to its new layout. This takes a minute, once. Try again shortly.", "upgrading");
+      await this.meta.deleteOne({ _id: LOCK, at: lock?.at });
+      return this.upgradeLayout();
+    }
+    try {
+      if (await this.meta.findOne({ _id: META })) return true;
+      const parts = await old.find({ _id: { $ne: META } }).toArray();
+      const { items, files } = layout1ToItems(Object.fromEntries(parts.map((d) => [String(d._id), d.data])));
+      const fileOps = files.map(({ _id, ...f }) => ({ updateOne: { filter: { _id }, update: { $setOnInsert: f }, upsert: true } }));
+      for (let i = 0; i < fileOps.length; i += BATCH) await this.db.collection("files").bulkWrite(fileOps.slice(i, i + BATCH), { ordered: false });
+      const itemOps = items.map((it) => ({ replaceOne: { filter: { _id: `${it.k}/${it.i}` }, replacement: this.toDoc(it), upsert: true } }));
+      for (let i = 0; i < itemOps.length; i += BATCH) await this.col.bulkWrite(itemOps.slice(i, i + BATCH), { ordered: false });
+      await this.meta.updateOne({ _id: META }, { $setOnInsert: { revision: Number(oldMeta.revision ?? 1), schemaVersion: Number(oldMeta.schemaVersion ?? 0), versions: Object.fromEntries(versionedKeys().map((k) => [k, 1])), upgradedFrom: "state", upgradedAt: /* @__PURE__ */ new Date() } }, { upsert: true });
+      return true;
+    } finally {
+      await this.meta.deleteOne({ _id: LOCK });
+    }
+  }
 };
+async function storeOn(client, dbName) {
+  const db2 = client.db(dbName);
+  const ttl = (name) => db2.collection(name).createIndex({ _exp: 1 }, { expireAfterSeconds: 0 }).catch(() => void 0);
+  await Promise.all([ttl("sessions"), ttl("attempts"), ttl("oauth"), db2.collection("users").createIndex({ personId: 1 }).catch(() => void 0), db2.collection("hub_items").createIndex({ k: 1, o: 1 }).catch(() => void 0)]);
+  return {
+    /** Checks that saves can be made all-or-nothing, which the app relies on. */
+    diagnose: async () => {
+      const s2 = client.startSession();
+      try {
+        await s2.withTransaction(async () => {
+          await db2.collection("diagnostics").insertOne({ _id: "probe", at: /* @__PURE__ */ new Date() }, { session: s2 });
+          await db2.collection("diagnostics").deleteOne({ _id: "probe" }, { session: s2 });
+        });
+        return { transactions: true };
+      } catch (e) {
+        console.error("Transaction check failed", e);
+        return { transactions: false, hint: e instanceof Error ? e.name : "unknown" };
+      } finally {
+        await s2.endSession();
+      }
+    },
+    state: new MongoState(client, db2),
+    files: new MongoCol(db2.collection("files")),
+    users: new MongoCol(db2.collection("users")),
+    sessions: new MongoCol(db2.collection("sessions"), (d) => d.expiresAt),
+    attempts: new MongoAttempts(db2.collection("attempts")),
+    google: new MongoCol(db2.collection("google")),
+    oauth: new MongoCol(db2.collection("oauth"), (d) => d.expiresAt)
+  };
+}
 var cached;
 function mongoStore(uri, dbName) {
-  if (cached?.uri === uri) return cached.store;
+  const key2 = `${uri}
+${dbName}`;
+  if (cached?.key === key2) return cached.store;
   const store2 = (async () => {
     const client = new MongoClient(uri, { serverSelectionTimeoutMS: 8e3, maxPoolSize: 5 });
     await client.connect();
-    const db2 = client.db(dbName);
-    const ttl = (name) => db2.collection(name).createIndex({ _exp: 1 }, { expireAfterSeconds: 0 }).catch(() => void 0);
-    await Promise.all([ttl("sessions"), ttl("attempts"), ttl("oauth"), db2.collection("users").createIndex({ personId: 1 }).catch(() => void 0)]);
-    return {
-      /** Checks that saves can be made all-or-nothing, which the app relies on. */
-      diagnose: async () => {
-        const s2 = client.startSession();
-        try {
-          await s2.withTransaction(async () => {
-            await db2.collection("diagnostics").insertOne({ _id: "probe", at: /* @__PURE__ */ new Date() }, { session: s2 });
-            await db2.collection("diagnostics").deleteOne({ _id: "probe" }, { session: s2 });
-          });
-          return { transactions: true };
-        } catch (e) {
-          console.error("Transaction check failed", e);
-          return { transactions: false, hint: e instanceof Error ? e.name : "unknown" };
-        } finally {
-          await s2.endSession();
-        }
-      },
-      state: new MongoState(client, db2),
-      users: new MongoCol(db2.collection("users")),
-      sessions: new MongoCol(db2.collection("sessions"), (d) => d.expiresAt),
-      attempts: new MongoAttempts(db2.collection("attempts")),
-      google: new MongoCol(db2.collection("google")),
-      oauth: new MongoCol(db2.collection("oauth"), (d) => d.expiresAt)
-    };
+    return storeOn(client, dbName);
   })();
-  cached = { uri, store: store2 };
+  cached = { key: key2, store: store2 };
   store2.catch(() => {
     cached = void 0;
   });
@@ -459,6 +575,7 @@ function localId(prefix, taken = () => false) {
   recording?.push(id2);
   return id2;
 }
+var logId = (prefix) => `${prefix}-${Date.now().toString(36)}${randomPart(6)}`;
 var topLevelCounter = (category2) => `record:${categoryOf(category2).code}`;
 var childCounter = (parentId) => `record:${parentId}`;
 var childToken = (parent) => {
@@ -517,6 +634,7 @@ function pickKeys(patch, keys) {
   for (const k of keys) if (Object.prototype.hasOwnProperty.call(patch, k) && patch[k] !== void 0) out[k] = patch[k];
   return out;
 }
+var STORED_FILE = /^\/api\/file\?id=[a-f0-9]{32}$/;
 
 // src/data/seedGear.ts
 var stamp = (daysAgo, hour = 10) => {
@@ -529,7 +647,7 @@ function buildGearSeed() {
   const equipment = [];
   const history = [];
   let h = 0;
-  const hist3 = (equipmentId, daysAgo, kind, detail, contentId = null, manifestId = null, by = "DOF-P-HOP-001") => history.push({ id: `H-${String(++h).padStart(5, "0")}`, equipmentId, at: stamp(daysAgo), byPersonId: by, kind, detail, contentId, manifestId });
+  const hist2 = (equipmentId, daysAgo, kind, detail, contentId = null, manifestId = null, by = "DOF-P-HOP-001") => history.push({ id: `H-${String(++h).padStart(5, "0")}`, equipmentId, at: stamp(daysAgo), byPersonId: by, kind, detail, contentId, manifestId });
   const serial = (id2, cat, name, make, model, sn, cost2, condition2, ageDays, extra = {}) => {
     equipment.push({
       id: id2,
@@ -558,7 +676,7 @@ function buildGearSeed() {
       createdAt: stamp(ageDays),
       ...extra
     });
-    hist3(id2, ageDays, "created", "Added to inventory");
+    hist2(id2, ageDays, "created", "Added to inventory");
   };
   const batch = (id2, cat, family, name, make, qty, unitCost, ageDays, vendor) => {
     equipment.push({
@@ -587,7 +705,7 @@ function buildGearSeed() {
       baseStatus: "active",
       createdAt: stamp(ageDays)
     });
-    hist3(id2, ageDays, "created", `New batch of ${qty}`);
+    hist2(id2, ageDays, "created", `New batch of ${qty}`);
   };
   serial("DOF-EQ-CAM-001", "camera", "Sony FX3 camera body", "Sony", "FX3", "S-FX3-0412", 3900, "Good", 400, { unitLabel: "A-cam", accessories: "2 batteries, cage, top handle", packaging: "Pelican 1620" });
   serial("DOF-EQ-CAM-002", "camera", "Sony FX3 camera body", "Sony", "FX3", "S-FX3-0433", 3900, "Good", 380, { unitLabel: "B-cam", accessories: "2 batteries, cage" });
@@ -606,8 +724,8 @@ function buildGearSeed() {
   batch("DOF-EQ-CAB-XLR10M-B02", "cabling", "XLR-10M", "XLR cable 10 m", "Generic", 8, 20, 60, "Nairobi Pro Audio");
   batch("DOF-EQ-CAB-HDMI3M-B01", "cabling", "HDMI-3M", "HDMI cable 3 m", "Generic", 10, 9, 200, "Online");
   batch("DOF-EQ-PWR-SANDBAG-B01", "power", "SANDBAG", "Sandbag 7 kg", "Generic", 6, 12, 350, "Local");
-  hist3("DOF-EQ-LGT-002", 5, "repair-start", "Fan noise. Sent to the vendor for service");
-  hist3("DOF-EQ-AUD-004", 120, "retired", "Channel 3 faulty. Retired from inventory");
+  hist2("DOF-EQ-LGT-002", 5, "repair-start", "Fan noise. Sent to the vendor for service");
+  hist2("DOF-EQ-AUD-004", 120, "retired", "Channel 3 faulty. Retired from inventory");
   const line2 = (equipmentId, quantity, conditionOut, extra = {}) => ({
     equipmentId,
     quantity,
@@ -692,18 +810,18 @@ function buildGearSeed() {
   ];
   const inc = (n, equipmentId, daysAgo, description, contentId, manifestId) => {
     incidents.push({ id: `DOF-INC-${String(n).padStart(3, "0")}`, equipmentId, at: stamp(daysAgo), type: "damage", quantity: 1, description, personId: "DOF-P-CRW-002", contentId, manifestId });
-    hist3(equipmentId, daysAgo, "incident", `Damaged: ${description}`, contentId, manifestId, "DOF-P-CRW-002");
+    hist2(equipmentId, daysAgo, "incident", `Damaged: ${description}`, contentId, manifestId, "DOF-P-CRW-002");
   };
-  hist3("DOF-EQ-CAM-003", 73, "assigned", "DOF-DOC-001", "DOF-DOC-001", "DOF-MF-003", "DOF-P-CRW-002");
-  hist3("DOF-EQ-CAM-003", 72, "checked-out", `DOF-DOC-001, back by ${fmtShort(isoDay(-69))}`, "DOF-DOC-001", "DOF-MF-003", "DOF-P-CRW-002");
+  hist2("DOF-EQ-CAM-003", 73, "assigned", "DOF-DOC-001", "DOF-DOC-001", "DOF-MF-003", "DOF-P-CRW-002");
+  hist2("DOF-EQ-CAM-003", 72, "checked-out", `DOF-DOC-001, back by ${fmtShort(isoDay(-69))}`, "DOF-DOC-001", "DOF-MF-003", "DOF-P-CRW-002");
   inc(1, "DOF-EQ-CAM-003", 69, "Light scratch on the front element from dust at the shoot.", "DOF-DOC-001", "DOF-MF-003");
-  hist3("DOF-EQ-CAM-003", 69, "checked-in", "DOF-DOC-001, back in Good condition", "DOF-DOC-001", "DOF-MF-003", "DOF-P-CRW-002");
-  hist3("DOF-EQ-CAM-003", 36, "assigned", "DOF-DOC-001", "DOF-DOC-001", "DOF-MF-004", "DOF-P-CRW-002");
-  hist3("DOF-EQ-CAM-003", 35, "checked-out", `DOF-DOC-001, back by ${fmtShort(isoDay(-32))}`, "DOF-DOC-001", "DOF-MF-004", "DOF-P-CRW-002");
+  hist2("DOF-EQ-CAM-003", 69, "checked-in", "DOF-DOC-001, back in Good condition", "DOF-DOC-001", "DOF-MF-003", "DOF-P-CRW-002");
+  hist2("DOF-EQ-CAM-003", 36, "assigned", "DOF-DOC-001", "DOF-DOC-001", "DOF-MF-004", "DOF-P-CRW-002");
+  hist2("DOF-EQ-CAM-003", 35, "checked-out", `DOF-DOC-001, back by ${fmtShort(isoDay(-32))}`, "DOF-DOC-001", "DOF-MF-004", "DOF-P-CRW-002");
   inc(2, "DOF-EQ-CAM-003", 32, "Second scratch near the edge of the front element.", "DOF-DOC-001", "DOF-MF-004");
-  hist3("DOF-EQ-CAM-003", 32, "checked-in", "DOF-DOC-001, back in Fair condition", "DOF-DOC-001", "DOF-MF-004", "DOF-P-CRW-002");
-  for (const id2 of ["DOF-EQ-CAM-002", "DOF-EQ-CAM-004", "DOF-EQ-AUD-003"]) hist3(id2, 8, "checked-out", `DOF-DOC-001, back by ${fmtShort(isoDay(-2))}`, "DOF-DOC-001", "DOF-MF-002", "DOF-P-CRW-002");
-  for (const id2 of ["DOF-EQ-CAM-001", "DOF-EQ-CAM-003", "DOF-EQ-AUD-001", "DOF-EQ-CAB-XLR10M-B01"]) hist3(id2, 1, "assigned", `${id2.includes("XLR") ? "4 units, " : ""}DOF-SER-001, ${fmtShort(isoDay(2))}`, "DOF-SER-001", "DOF-MF-001", "DOF-P-CRW-002");
+  hist2("DOF-EQ-CAM-003", 32, "checked-in", "DOF-DOC-001, back in Fair condition", "DOF-DOC-001", "DOF-MF-004", "DOF-P-CRW-002");
+  for (const id2 of ["DOF-EQ-CAM-002", "DOF-EQ-CAM-004", "DOF-EQ-AUD-003"]) hist2(id2, 8, "checked-out", `DOF-DOC-001, back by ${fmtShort(isoDay(-2))}`, "DOF-DOC-001", "DOF-MF-002", "DOF-P-CRW-002");
+  for (const id2 of ["DOF-EQ-CAM-001", "DOF-EQ-CAM-003", "DOF-EQ-AUD-001", "DOF-EQ-CAB-XLR10M-B01"]) hist2(id2, 1, "assigned", `${id2.includes("XLR") ? "4 units, " : ""}DOF-SER-001, ${fmtShort(isoDay(2))}`, "DOF-SER-001", "DOF-MF-001", "DOF-P-CRW-002");
   const drives = [
     { id: "DRV-001", name: "Added", capacityGB: 4e3, otherUsedGB: 120, notes: "" },
     { id: "DRV-002", name: "Taji", capacityGB: 4e3, otherUsedGB: 0, notes: "" },
@@ -876,16 +994,16 @@ var person = (personId, category2, name, skills, hasLogin) => ({
   notifyEmail: category2 === "CRW" || category2 === "HOP",
   notifySms: personId === "DOF-P-CRW-001"
 });
-var deadlinesFor = (cat, current, currentOffset, stepDays = 4) => {
+var deadlinesFor = (cat, current2, currentOffset, stepDays = 4) => {
   const stages = categoryOf(cat).stages;
-  const idx = stages.findIndex((s2) => s2.name === current);
+  const idx = stages.findIndex((s2) => s2.name === current2);
   const out = {};
   stages.forEach((s2, i) => out[s2.name] = isoDay(currentOffset + (i - idx) * stepDays));
   return out;
 };
-var outputsBefore = (cat, current) => {
+var outputsBefore = (cat, current2) => {
   const stages = categoryOf(cat).stages;
-  const idx = stages.findIndex((s2) => s2.name === current);
+  const idx = stages.findIndex((s2) => s2.name === current2);
   const out = {};
   stages.forEach((s2, i) => out[s2.name] = i < idx);
   return out;
@@ -1522,7 +1640,7 @@ function nextCounter(name) {
 function logAudit(actor, action, entity, entityId, detail = "") {
   const db2 = getDb();
   db2.audit.push({
-    id: `A-${String(nextCounter("audit")).padStart(5, "0")}`,
+    id: logId("A"),
     at: (/* @__PURE__ */ new Date()).toISOString(),
     byPersonId: actor.personId,
     action,
@@ -1715,7 +1833,7 @@ function modulesFor(actor) {
 }
 
 // server/crypto.ts
-import { createCipheriv, createDecipheriv, createHash, randomBytes, randomInt, scrypt as scryptCb, timingSafeEqual } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash as createHash2, randomBytes, randomInt, scrypt as scryptCb, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 var scrypt = promisify(scryptCb);
 var cost = () => Number(process.env.DOF_SCRYPT_N ?? 65536);
@@ -1738,9 +1856,9 @@ async function verifyPassword(password, stored) {
 var dummy;
 var dummyHash = () => dummy ??= hashPassword("not-a-real-password");
 var randomToken = (bytes = 32) => randomBytes(bytes).toString("base64url");
-var sha256 = (s2) => createHash("sha256").update(s2).digest("hex");
+var sha256 = (s2) => createHash2("sha256").update(s2).digest("hex");
 function safeEqual(a, b) {
-  return timingSafeEqual(createHash("sha256").update(a).digest(), createHash("sha256").update(b).digest());
+  return timingSafeEqual(createHash2("sha256").update(a).digest(), createHash2("sha256").update(b).digest());
 }
 var ALPHABET2 = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 function temporaryPassword() {
@@ -1917,7 +2035,7 @@ function docsForRecord(actor, r) {
 }
 var revisionsOf = (docId) => getDb().docRevisions.filter((v) => v.docId === docId).sort((a, b) => b.at.localeCompare(a.at) || b.version - a.version);
 function pushRevision(d, byPersonId, note) {
-  const rev = { id: `REV-${pad(nextCounter("docrev"), 5)}`, docId: d.id, version: d.version, at: (/* @__PURE__ */ new Date()).toISOString(), byPersonId, title: d.title, body: d.body, note };
+  const rev = { id: logId("REV"), docId: d.id, version: d.version, at: (/* @__PURE__ */ new Date()).toISOString(), byPersonId, title: d.title, body: d.body, note };
   getDb().docRevisions.push(rev);
   return rev;
 }
@@ -1996,6 +2114,7 @@ function restoreRevision(actor, docId, revisionId) {
   const rev = getDb().docRevisions.find((v) => v.id === revisionId && v.docId === docId);
   if (!d || !rev) throw new RuleError("That version no longer exists.");
   if (!canEditDoc(actor, d)) throw new RuleError("You can read this document but not edit it.");
+  if (rev.trimmed) throw new RuleError("That version is still loading. Try again in a moment.");
   d.title = rev.title;
   d.body = rev.body;
   d.version += 1;
@@ -2045,9 +2164,6 @@ function diffLines(before, after) {
 
 // server/state.ts
 setPersist(false);
-var KEYS = ["people", "members", "records", "callSheets", "comments", "audit", "equipment", "manifests", "incidents", "equipmentHistory", "drives", "allocations", "snapshots", "docs", "docRevisions", "outbox", "settings", "counters"];
-var assemble = (l) => ({ ...l.data, users: [], schemaVersion: l.schemaVersion });
-var pick = (db2, keys) => Object.fromEntries(keys.map((k) => [k, db2[k]]));
 function newDatabase(hop, withSamples) {
   const seed = buildSeed();
   const hopSeed = seed.people.find((p) => p.category === "HOP");
@@ -2060,43 +2176,150 @@ function newDatabase(hop, withSamples) {
   return { db: db2, hop: person2 };
 }
 async function initDatabase(store2, db2) {
-  return store2.state.init(pick(db2, KEYS), CURRENT_SCHEMA);
+  const files = [];
+  const data = extractFiles(Object.fromEntries(KEYS.map((k) => [k, db2[k]])), files);
+  for (const f of files) await store2.files.insert(f);
+  return store2.state.init(toItems(data), CURRENT_SCHEMA);
 }
-async function loadDb(store2, keys) {
-  const l = await store2.state.load(keys ? [...keys] : void 0);
-  if (!l) return null;
-  if (l.schemaVersion !== CURRENT_SCHEMA && !keys) {
-    const up = upgradeDb(assemble(l));
-    if (!up) throw new Error("The saved data is from a version this app does not know.");
-    await store2.state.save(pick(up, KEYS), l.versions, CURRENT_SCHEMA);
-    return loadDb(store2, keys);
+var kept = /* @__PURE__ */ new WeakMap();
+function build(head, items) {
+  const db2 = { ...assemble(items), audit: [], users: [], schemaVersion: head.schemaVersion };
+  const base = { head, db: db2, order: /* @__PURE__ */ new Map(), json: /* @__PURE__ */ new Map(), o: /* @__PURE__ */ new Map(), maxO: /* @__PURE__ */ new Map() };
+  for (const it of items) {
+    const key2 = `${it.k}/${it.i}`;
+    if (!base.order.has(it.k)) base.order.set(it.k, []);
+    base.order.get(it.k).push(it.i);
+    base.json.set(key2, JSON.stringify(it.d));
+    base.o.set(key2, it.o);
+    base.maxO.set(it.k, Math.max(base.maxO.get(it.k) ?? -Infinity, it.o));
   }
-  return { db: assemble(l), versions: l.versions, revision: l.revision };
+  return base;
+}
+async function current(store2) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const head = await store2.state.head();
+    if (!head) return null;
+    const hit = kept.get(store2);
+    if (hit && hit.head.revision === head.revision) return hit;
+    const base = build(head, await store2.state.items(loadedKeys()));
+    if (head.schemaVersion === CURRENT_SCHEMA) {
+      kept.set(store2, base);
+      return base;
+    }
+    const up = upgradeDb(structuredClone(base.db));
+    if (!up) throw new Error("The saved data is from a version this app does not know.");
+    const change = diff(base, up);
+    change.expect = Object.fromEntries(versionedKeys().map((k) => [k, base.head.versions[k] ?? 0]));
+    await store2.state.commit(change);
+    kept.delete(store2);
+  }
+  throw new Error("The data could not be brought up to date. Try again.");
+}
+async function loadDb(store2, _keys) {
+  const base = await current(store2);
+  return base ? { db: base.db, revision: base.head.revision } : null;
+}
+async function headOf(store2) {
+  return store2.state.head();
 }
 function withDb(db2, fn) {
   const prev = getDb();
   setDb(db2);
   try {
-    return fn();
+    const out = fn();
+    if (out && typeof out.then === "function") throw new Error("Service functions must be synchronous: the data they see is only theirs until they return.");
+    return out;
   } finally {
     setDb(prev);
   }
 }
+function diff(base, db2) {
+  const put = [];
+  const remove = [];
+  const expect = {};
+  const keys = [];
+  const now = Date.now() * 1e3;
+  for (const k of KEYS) {
+    const els = elementsOf(k, db2[k]);
+    let changed = false;
+    if (APPEND_ONLY.has(k)) {
+      els.forEach((e, j) => put.push({ k, i: e.i, o: now + j, d: e.d }));
+      changed = els.length > 0;
+    } else {
+      const before = base.order.get(k) ?? [];
+      const was = new Set(before);
+      const is = new Set(els.map((e) => e.i));
+      for (const i of before) if (!is.has(i)) {
+        remove.push({ k, i });
+        changed = true;
+      }
+      const keptNow = els.filter((e) => was.has(e.i)).map((e) => e.i);
+      const keptBefore = before.filter((i) => is.has(i));
+      const lastKept = els.reduce((at, e, j) => was.has(e.i) ? j : at, -1);
+      const appendOnly = keptNow.every((i, j) => i === keptBefore[j]) && els.every((e, j) => was.has(e.i) || j > lastKept);
+      if (appendOnly) {
+        let next = Math.max((base.maxO.get(k) ?? -1) + 1, now);
+        for (const e of els) {
+          const key2 = `${k}/${e.i}`;
+          if (!was.has(e.i)) {
+            put.push({ k, i: e.i, o: next++, d: e.d });
+            changed = true;
+          } else if (base.json.get(key2) !== JSON.stringify(e.d)) {
+            put.push({ k, i: e.i, o: base.o.get(key2), d: e.d });
+            changed = true;
+          }
+        }
+      } else {
+        els.forEach((e, j) => put.push({ k, i: e.i, o: now + j, d: e.d }));
+        changed = true;
+      }
+    }
+    if (changed) {
+      keys.push(k);
+      if (!LOG_KEYS.has(k)) expect[k] = base.head.versions[k] ?? 0;
+    }
+  }
+  return { put, remove, expect, schemaVersion: CURRENT_SCHEMA, keys };
+}
+var ATTEMPTS = 10;
+var pause = (attempt) => new Promise((r) => setTimeout(r, Math.random() * Math.min(400, 15 * 2 ** attempt)));
 async function mutateState(store2, fn) {
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const loaded = await loadDb(store2);
-    if (!loaded) throw new Error("The app has not been set up yet.");
-    const { db: db2, versions } = loaded;
-    const before = Object.fromEntries(KEYS.map((k) => [k, JSON.stringify(db2[k])]));
+  for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
+    const base = await current(store2);
+    if (!base) throw new Error("The app has not been set up yet.");
+    const db2 = structuredClone(base.db);
     const result = withDb(db2, () => fn(db2));
-    const changed = KEYS.filter((k) => JSON.stringify(db2[k]) !== before[k]);
-    if (changed.length === 0) return { result, changed };
-    if (await store2.state.save(pick(db2, changed), versions, CURRENT_SCHEMA)) return { result, changed };
+    const change = diff(base, db2);
+    if (!change.put.length && !change.remove.length) return { result, changed: [] };
+    const revision = await store2.state.commit(change);
+    kept.delete(store2);
+    if (revision !== null) return { result, changed: change.keys };
+    await pause(attempt);
   }
   throw new Error("The data is being changed by too many people at once. Try again.");
 }
-function snapshotFor(db2, actor) {
-  return withDb(db2, () => {
+var AUDIT_SENT = 500;
+var REVISIONS_WITH_TEXT = 5;
+async function newestAudit(store2, base) {
+  base.audit ??= (await store2.state.newest("audit", AUDIT_SENT)).map((it) => it.d).reverse();
+  return base.audit;
+}
+function revisionsSent(all, docIds) {
+  const byDoc = /* @__PURE__ */ new Map();
+  for (const r of all) if (docIds.has(r.docId)) byDoc.set(r.docId, [...byDoc.get(r.docId) ?? [], r]);
+  const full = /* @__PURE__ */ new Set();
+  for (const revs of byDoc.values()) {
+    const newest = [...revs].sort((a, b) => b.at.localeCompare(a.at) || b.version - a.version).slice(0, REVISIONS_WITH_TEXT);
+    for (const r of newest) full.add(r.id);
+  }
+  return all.filter((r) => docIds.has(r.docId)).map((r) => full.has(r.id) ? r : { ...r, body: "", trimmed: true });
+}
+async function snapshotFor(store2, actor) {
+  const base = await current(store2);
+  if (!base) return null;
+  const db2 = base.db;
+  const audit = withDb(db2, () => can(actor, "backend.audit")) ? await newestAudit(store2, base) : [];
+  const out = withDb(db2, () => {
     const recs = visibleRecords(actor);
     const ids2 = new Set(recs.map((r) => r.contentId));
     const hop = actor.role === "HOP";
@@ -2112,7 +2335,7 @@ function snapshotFor(db2, actor) {
       records: recs,
       callSheets: visibleCallSheets(actor),
       comments: db2.comments.filter((c) => ids2.has(c.contentId)),
-      audit: can(actor, "backend.audit") ? db2.audit : [],
+      audit,
       equipment: can(actor, "equipment.use") ? db2.equipment : [],
       manifests: can(actor, "equipment.use") ? db2.manifests : [],
       incidents: can(actor, "equipment.use") ? db2.incidents : [],
@@ -2121,12 +2344,20 @@ function snapshotFor(db2, actor) {
       allocations: can(actor, "storage.use") ? db2.allocations : [],
       snapshots: can(actor, "storage.use") ? db2.snapshots : [],
       docs,
-      docRevisions: db2.docRevisions.filter((r) => docIds.has(r.docId)),
+      docRevisions: revisionsSent(db2.docRevisions, docIds),
       outbox: can(actor, "reminders.sendOthers") ? db2.outbox : db2.outbox.filter((o) => o.personId === actor.personId),
       settings,
       counters: db2.counters
     };
   });
+  return { revision: base.head.revision, db: out };
+}
+async function docHistory(store2, actor, docId) {
+  const base = await current(store2);
+  if (!base) return null;
+  const doc = base.db.docs.find((d) => d.id === docId);
+  if (!doc || !withDb(base.db, () => canViewDoc(actor, doc))) return null;
+  return base.db.docRevisions.filter((r) => r.docId === docId);
 }
 
 // server/accounts.ts
@@ -2202,7 +2433,7 @@ async function logout(store2, token) {
   if (token) await store2.sessions.remove(sha256(token));
 }
 async function needsSetup(store2) {
-  return (await store2.users.all()).length === 0 && !await store2.state.load(["settings"]);
+  return (await store2.users.all()).length === 0 && !await store2.state.head();
 }
 async function setup(store2, input, ip, agent) {
   const expected = process.env.SETUP_TOKEN;
@@ -2253,14 +2484,14 @@ async function login(store2, input, ip, agent) {
   const a = await authenticate(store2, token);
   return { token, user: publicUser(a) };
 }
-async function changePassword(store2, who, current, next) {
+async function changePassword(store2, who, current2, next) {
   const key2 = `pw:${who.user._id}`;
   await chargeAttempt(store2, [{ key: key2, max: LIMIT_PASSWORD_CHANGE }]);
-  if (!await verifyPassword(String(current ?? ""), who.user.passwordHash)) throw new HttpError(403, "Your current password is not right.");
+  if (!await verifyPassword(String(current2 ?? ""), who.user.passwordHash)) throw new HttpError(403, "Your current password is not right.");
   await store2.attempts.clear(key2);
   const bad = checkPassword(String(next ?? ""), { username: who.user._id, name: who.person.name });
   if (bad) throw new HttpError(400, bad);
-  if (next === current) throw new HttpError(400, "Choose a password you have not used just now.");
+  if (next === current2) throw new HttpError(400, "Choose a password you have not used just now.");
   const now = (/* @__PURE__ */ new Date()).toISOString();
   await store2.users.put({ ...who.user, passwordHash: await hashPassword(next), mustChange: false, passwordChangedAt: now });
   await revokeSessions(store2, who.user._id, who.session._id);
@@ -2566,6 +2797,31 @@ __export(equipment_exports, {
   worstCondition: () => worstCondition
 });
 
+// src/services/equipment-log.ts
+function hist(by, equipmentId, kind, detail, extra = {}) {
+  getDb().equipmentHistory.push({
+    id: logId("H"),
+    equipmentId,
+    at: (/* @__PURE__ */ new Date()).toISOString(),
+    byPersonId: by.personId,
+    kind,
+    detail,
+    contentId: extra.contentId ?? null,
+    manifestId: extra.manifestId ?? null
+  });
+}
+function makeAttachment(by, input) {
+  const url2 = input.url.trim();
+  if (!url2) throw new RuleError("Add a photo or paste a link.");
+  if (url2.startsWith("data:")) {
+    if (!url2.startsWith("data:image/")) throw new RuleError("Only images can be attached.");
+    if (url2.length > 42e4) throw new RuleError("That image is too large. Try a smaller photo.");
+  } else if (!STORED_FILE.test(url2) && !/^https?:\/\//i.test(url2)) {
+    throw new RuleError("Links must start with http:// or https://.");
+  }
+  return { id: localId("ATT"), url: url2, caption: (input.caption ?? "").trim(), at: (/* @__PURE__ */ new Date()).toISOString(), byPersonId: by.personId };
+}
+
 // src/config/equipment.ts
 var EQUIP_CATEGORIES = [
   { key: "camera", label: "Camera", code: "CAM", defaultTracking: "serialized", covers: "Bodies, lenses, support, batteries, memory cards, filters, rigs" },
@@ -2639,29 +2895,6 @@ function applyConditionBreakdown(item, bd) {
   item.condition = worstCondition(bd) ?? item.condition;
 }
 var familyOf = (i) => i.itemFamily ? i.itemFamily.toUpperCase() : i.id;
-function hist(actor, equipmentId, kind, detail, extra = {}) {
-  getDb().equipmentHistory.push({
-    id: `H-${pad(nextCounter("history"), 5)}`,
-    equipmentId,
-    at: (/* @__PURE__ */ new Date()).toISOString(),
-    byPersonId: actor.personId,
-    kind,
-    detail,
-    contentId: extra.contentId ?? null,
-    manifestId: extra.manifestId ?? null
-  });
-}
-function makeAttachment(actor, input) {
-  const url2 = input.url.trim();
-  if (!url2) throw new RuleError("Add a photo or paste a link.");
-  if (url2.startsWith("data:")) {
-    if (!url2.startsWith("data:image/")) throw new RuleError("Only images can be attached.");
-    if (url2.length > 42e4) throw new RuleError("That image is too large. Try a smaller photo.");
-  } else if (!/^https?:\/\//i.test(url2)) {
-    throw new RuleError("Links must start with http:// or https://.");
-  }
-  return { id: localId("ATT"), url: url2, caption: (input.caption ?? "").trim(), at: (/* @__PURE__ */ new Date()).toISOString(), byPersonId: actor.personId };
-}
 function qtyIn(item, status2) {
   let n = 0;
   for (const m of getDb().manifests) {
@@ -3083,6 +3316,7 @@ function updateOwnProfile(actor, patch) {
   if (!p) throw new RuleError("Person not found.");
   if (patch.name !== void 0 && !patch.name.trim()) throw new RuleError("Enter your name.");
   if (patch.photoUrl && patch.photoUrl.length > 4e5) throw new RuleError("That photo is too large. Choose a smaller image.");
+  if (patch.photoUrl && !patch.photoUrl.startsWith("data:image/") && !STORED_FILE.test(patch.photoUrl)) throw new RuleError("Choose a photo from your device.");
   Object.assign(p, {
     ...patch.name !== void 0 ? { name: patch.name.trim() } : {},
     ...patch.email !== void 0 ? { email: patch.email.trim() } : {},
@@ -3231,29 +3465,6 @@ var itemIncidents = (id2) => getDb().incidents.filter((i) => i.equipmentId === i
 var allIncidents = () => [...getDb().incidents].sort((a, b) => b.at.localeCompare(a.at));
 
 // src/services/equipment-manifests.ts
-function hist2(actor, equipmentId, kind, detail, extra = {}) {
-  getDb().equipmentHistory.push({
-    id: `H-${pad(nextCounter("history"), 5)}`,
-    equipmentId,
-    at: (/* @__PURE__ */ new Date()).toISOString(),
-    byPersonId: actor.personId,
-    kind,
-    detail,
-    contentId: extra.contentId ?? null,
-    manifestId: extra.manifestId ?? null
-  });
-}
-function makeAttachment2(actor, input) {
-  const url2 = input.url.trim();
-  if (!url2) throw new RuleError("Add a photo or paste a link.");
-  if (url2.startsWith("data:")) {
-    if (!url2.startsWith("data:image/")) throw new RuleError("Only images can be attached.");
-    if (url2.length > 42e4) throw new RuleError("That image is too large. Try a smaller photo.");
-  } else if (!/^https?:\/\//i.test(url2)) {
-    throw new RuleError("Links must start with http:// or https://.");
-  }
-  return { id: localId("ATT"), url: url2, caption: (input.caption ?? "").trim(), at: (/* @__PURE__ */ new Date()).toISOString(), byPersonId: actor.personId };
-}
 var getManifest = (id2) => getDb().manifests.find((m) => m.id === id2);
 function addDays(iso, n) {
   const [y, m, d] = iso.split("-").map(Number);
@@ -3326,7 +3537,7 @@ function createManifest(actor, input) {
     returnedAt: null
   };
   getDb().manifests.push(m);
-  for (const l of m.lines) hist2(actor, l.equipmentId, m.status === "checked-out" ? "checked-out" : "assigned", `${l.quantity > 1 ? `${l.quantity} units, ` : ""}${m.contentId}, ${fmtShort(m.date)}`, { contentId: m.contentId, manifestId: m.id });
+  for (const l of m.lines) hist(actor, l.equipmentId, m.status === "checked-out" ? "checked-out" : "assigned", `${l.quantity > 1 ? `${l.quantity} units, ` : ""}${m.contentId}, ${fmtShort(m.date)}`, { contentId: m.contentId, manifestId: m.id });
   logAudit(actor, "create", "manifest", m.id, `${m.status}, ${m.lines.length} lines`);
   syncSheetEquipment(m.callSheetId);
   commit();
@@ -3339,7 +3550,7 @@ function addLine(actor, manifestId, equipmentId, quantity) {
   const item = checkLine(getItem(equipmentId), (existing?.quantity ?? 0) + quantity, m.date, m.expectedReturn ?? m.date, m.id);
   if (existing) existing.quantity += quantity;
   else m.lines.push(newLine(item, quantity));
-  hist2(actor, equipmentId, "assigned", `${quantity > 1 ? `${quantity} units, ` : ""}${m.contentId}, ${fmtShort(m.date)}`, { contentId: m.contentId, manifestId: m.id });
+  hist(actor, equipmentId, "assigned", `${quantity > 1 ? `${quantity} units, ` : ""}${m.contentId}, ${fmtShort(m.date)}`, { contentId: m.contentId, manifestId: m.id });
   syncSheetEquipment(m.callSheetId);
   commit();
   return m;
@@ -3359,7 +3570,7 @@ function removeLine(actor, manifestId, equipmentId) {
   const m = loadManifest(actor, manifestId);
   if (m.status !== "assigned") throw new RuleError("Items can only be removed before the gear goes out.");
   m.lines = m.lines.filter((l) => l.equipmentId !== equipmentId);
-  hist2(actor, equipmentId, "released", `Taken off ${m.id}`, { contentId: m.contentId, manifestId: m.id });
+  hist(actor, equipmentId, "released", `Taken off ${m.id}`, { contentId: m.contentId, manifestId: m.id });
   if (!m.lines.length) m.status = "released";
   syncSheetEquipment(m.callSheetId);
   commit();
@@ -3377,11 +3588,11 @@ function markGoneOut(actor, manifestId, opts = {}) {
   const person2 = getPerson(responsible);
   if (!person2 || person2.status !== "active") throw new RuleError("The person responsible must be active crew.");
   const items = m.lines.map((l) => checkLine(getItem(l.equipmentId), l.quantity, m.date, expectedReturn, m.id));
-  const photoAtts = m.lines.map((l) => (opts.photos?.[l.equipmentId] ?? []).map((p) => makeAttachment2(actor, p)));
+  const photoAtts = m.lines.map((l) => (opts.photos?.[l.equipmentId] ?? []).map((p) => makeAttachment(actor, p)));
   m.lines.forEach((l, i) => {
     l.conditionOut = items[i].condition;
     l.photosOut.push(...photoAtts[i]);
-    hist2(actor, l.equipmentId, "checked-out", `${m.contentId}, back by ${fmtShort(expectedReturn)}`, { contentId: m.contentId, manifestId: m.id });
+    hist(actor, l.equipmentId, "checked-out", `${m.contentId}, back by ${fmtShort(expectedReturn)}`, { contentId: m.contentId, manifestId: m.id });
   });
   m.status = "checked-out";
   m.destination = "outside";
@@ -3422,7 +3633,7 @@ function checkIn(actor, manifestId, returns) {
     const desc = (r.description ?? "").trim();
     if (damaged + lost > 0 && !desc) throw new RuleError(`Describe what happened to ${item.name}.`);
     if (damaged + lost > item.quantityTotal) throw new RuleError(`${item.name}: more units damaged or lost than the batch holds.`);
-    return { line: line2, item, good, damaged, lost, cond, desc, repair: !!r.sendToRepair && item.trackingType === "serialized" && damaged === 1, photos: (r.photos ?? []).map((p) => makeAttachment2(actor, p)) };
+    return { line: line2, item, good, damaged, lost, cond, desc, repair: !!r.sendToRepair && item.trackingType === "serialized" && damaged === 1, photos: (r.photos ?? []).map((p) => makeAttachment(actor, p)) };
   });
   const now = (/* @__PURE__ */ new Date()).toISOString();
   for (const p of plans) {
@@ -3446,7 +3657,7 @@ function checkIn(actor, manifestId, returns) {
     const addIncident = (type, qty) => {
       const inc = { id: `DOF-INC-${pad(nextCounter("incident"))}`, equipmentId: p.item.id, at: now, type, quantity: qty, description: p.desc, personId: m.responsiblePersonId, contentId: m.contentId, manifestId: m.id };
       getDb().incidents.push(inc);
-      hist2(actor, p.item.id, "incident", `${type === "damage" ? "Damaged" : "Lost"}${qty > 1 ? ` (${qty} units)` : ""}: ${p.desc}`, { contentId: m.contentId, manifestId: m.id });
+      hist(actor, p.item.id, "incident", `${type === "damage" ? "Damaged" : "Lost"}${qty > 1 ? ` (${qty} units)` : ""}: ${p.desc}`, { contentId: m.contentId, manifestId: m.id });
     };
     if (p.damaged) addIncident("damage", p.damaged);
     if (p.lost) {
@@ -3455,9 +3666,9 @@ function checkIn(actor, manifestId, returns) {
     }
     if (p.repair) {
       p.item.baseStatus = "in-repair";
-      hist2(actor, p.item.id, "repair-start", `Sent for repair after ${m.contentId}`, { contentId: m.contentId, manifestId: m.id });
+      hist(actor, p.item.id, "repair-start", `Sent for repair after ${m.contentId}`, { contentId: m.contentId, manifestId: m.id });
     }
-    hist2(actor, p.item.id, "checked-in", `${m.contentId}${p.cond ? `, back in ${p.cond} condition` : ""}${p.good && p.item.trackingType === "aggregate" ? `, ${p.good} returned` : ""}`, { contentId: m.contentId, manifestId: m.id });
+    hist(actor, p.item.id, "checked-in", `${m.contentId}${p.cond ? `, back in ${p.cond} condition` : ""}${p.good && p.item.trackingType === "aggregate" ? `, ${p.good} returned` : ""}`, { contentId: m.contentId, manifestId: m.id });
   }
   m.status = "returned";
   m.returnedAt = now;
@@ -3472,14 +3683,14 @@ function attachManifest(actor, manifestId, contentId) {
   if (!m) throw new RuleError("Checkout list not found.");
   const target = getRecord(contentId);
   if (!target) throw new RuleError("Project not found.");
-  const current = getRecord(m.contentId);
-  if (!canWrite(actor, target) || (current ? !canWrite(actor, current) : !isHop(actor))) throw new RuleError("You are not attached to both projects.");
+  const current2 = getRecord(m.contentId);
+  if (!canWrite(actor, target) || (current2 ? !canWrite(actor, current2) : !isHop(actor))) throw new RuleError("You are not attached to both projects.");
   if (m.callSheetId) throw new RuleError("This list belongs to a call sheet. It moves with that sheet.");
   if (m.status === "released") throw new RuleError("This list was released, so it cannot be attached.");
   if (m.contentId === contentId) throw new RuleError("This list is already attached here.");
   const from = m.contentId;
   m.contentId = contentId;
-  for (const l of m.lines) hist2(actor, l.equipmentId, "edited", `${m.id} moved from ${from} to ${contentId}`, { contentId, manifestId: m.id });
+  for (const l of m.lines) hist(actor, l.equipmentId, "edited", `${m.id} moved from ${from} to ${contentId}`, { contentId, manifestId: m.id });
   logAudit(actor, "attach", "manifest", m.id, `${from} to ${contentId}`);
   commit();
   return m;
@@ -3490,7 +3701,7 @@ function releaseReservedFor(actor, contentId) {
   const lists = reservedFor(contentId);
   for (const m of lists) {
     m.status = "released";
-    for (const l of m.lines) hist2(actor, l.equipmentId, "released", `Released: ${contentId} was deleted`, { contentId, manifestId: m.id });
+    for (const l of m.lines) hist(actor, l.equipmentId, "released", `Released: ${contentId} was deleted`, { contentId, manifestId: m.id });
     logAudit(actor, "release", "manifest", m.id, "project deleted");
     syncSheetEquipment(m.callSheetId);
   }
@@ -3500,7 +3711,7 @@ function releaseManifest(actor, manifestId) {
   const m = loadManifest(actor, manifestId);
   if (m.status !== "assigned") throw new RuleError("Only assigned gear can be released. Checked-out gear is checked in.");
   m.status = "released";
-  for (const l of m.lines) hist2(actor, l.equipmentId, "released", `Released from ${m.contentId}`, { contentId: m.contentId, manifestId: m.id });
+  for (const l of m.lines) hist(actor, l.equipmentId, "released", `Released from ${m.contentId}`, { contentId: m.contentId, manifestId: m.id });
   logAudit(actor, "release", "manifest", m.id);
   syncSheetEquipment(m.callSheetId);
   commit();
@@ -3511,7 +3722,7 @@ function addLinePhoto(actor, manifestId, equipmentId, input) {
   if (m.status !== "assigned" && m.status !== "checked-out") throw new RuleError("Photos are added while the gear is out.");
   const line2 = m.lines.find((l) => l.equipmentId === equipmentId);
   if (!line2) throw new RuleError("That item is not on this list.");
-  line2.photosOut.push(makeAttachment2(actor, input));
+  line2.photosOut.push(makeAttachment(actor, input));
   commit();
 }
 function listManifests(actor) {
@@ -4027,8 +4238,8 @@ function updateRecord(actor, id2, input, expectedVersion) {
   Object.assign(r, patch);
   if (patch.assigneePersonId !== void 0 && r.pipelineStage) {
     const rest = ownersOf(r, r.pipelineStage);
-    const kept = rest.find((o) => o.personId === patch.assigneePersonId);
-    if (patch.assigneePersonId) r.stageAssignees[r.pipelineStage] = [kept ?? { personId: patch.assigneePersonId, roles: [] }, ...rest.filter((o) => o.personId !== patch.assigneePersonId)];
+    const kept2 = rest.find((o) => o.personId === patch.assigneePersonId);
+    if (patch.assigneePersonId) r.stageAssignees[r.pipelineStage] = [kept2 ?? { personId: patch.assigneePersonId, roles: [] }, ...rest.filter((o) => o.personId !== patch.assigneePersonId)];
     else r.stageAssignees[r.pipelineStage] = rest.slice(1);
   }
   if (patch.assigneePersonId) ensureMember(actor, patch.assigneePersonId, r);
@@ -4445,7 +4656,7 @@ function addComment(actor, contentId, text2, callSheetId = null) {
   if (!canComment(actor, r)) throw new RuleError("You can view this project but not comment on it.");
   if (!text2.trim()) throw new RuleError("Write a comment first.");
   const c = {
-    id: `C-${pad(nextCounter("comment"))}`,
+    id: logId("C"),
     contentId,
     callSheetId,
     byPersonId: actor.personId,
@@ -4685,8 +4896,8 @@ function runOfShowTotals(cs) {
   const toMin = (t2) => Number(t2.slice(0, 2)) * 60 + Number(t2.slice(3));
   const end = Math.max(...items.map((i) => toMin(i.time) + i.durationMin));
   const first = toMin(items[0].time);
-  const pad2 = (n) => String(n).padStart(2, "0");
-  return { minutes: end - first, ends: `${pad2(Math.floor(end / 60) % 24)}:${pad2(end % 60)}` };
+  const pad22 = (n) => String(n).padStart(2, "0");
+  return { minutes: end - first, ends: `${pad22(Math.floor(end / 60) % 24)}:${pad22(end % 60)}` };
 }
 
 // src/services/reminders.ts
@@ -4757,7 +4968,7 @@ function logSent(actor, personId, channel, subject, body, keys) {
   if (personId !== actor.personId) requireCan(actor, "reminders.sendOthers", "send reminders to other people");
   else if (!can(actor, "reminders.use")) throw new RuleError("You do not have access to reminders.");
   if (!getPerson(personId)) throw new RuleError("Person not found.");
-  const e = { id: `MSG-${pad(nextCounter("outbox"), 5)}`, personId, channel, subject, body, keys, at: (/* @__PURE__ */ new Date()).toISOString(), byPersonId: actor.personId };
+  const e = { id: logId("MSG"), personId, channel, subject, body, keys, at: (/* @__PURE__ */ new Date()).toISOString(), byPersonId: actor.personId };
   getDb().outbox.push(e);
   logAudit(actor, `reminder-${channel}`, "person", personId, `${keys.length} item${keys.length === 1 ? "" : "s"}`);
   commit();
@@ -4830,9 +5041,9 @@ function updateWorkspaceAppearance(actor, input) {
   logAudit(actor, "settings", "settings", "appearance", Object.keys(patch).join(", "));
   commit();
 }
-function changePassword2(actor, current, next) {
+function changePassword2(actor, current2, next) {
   const u = getDb().users.find((x) => x.personId === actor.personId);
-  if (!u || u.password !== current) throw new RuleError("Your current password is not correct.");
+  if (!u || u.password !== current2) throw new RuleError("Your current password is not correct.");
   if (next.length < 4) throw new RuleError("New password must be at least 4 characters.");
   u.password = next;
   logAudit(actor, "change-password", "person", actor.personId);
@@ -4970,8 +5181,8 @@ function moveAllocation(actor, id2, contentId) {
   if (a.contentId === contentId) throw new RuleError("This entry is already attached here.");
   const target = getRecord(contentId);
   if (!target) throw new RuleError("Project not found.");
-  const current = a.contentId ? getRecord(a.contentId) : null;
-  if (!canWrite(actor, target) || (current ? !canWrite(actor, current) : !isHop(actor))) throw new RuleError("You are not attached to both projects.");
+  const current2 = a.contentId ? getRecord(a.contentId) : null;
+  if (!canWrite(actor, target) || (current2 ? !canWrite(actor, current2) : !isHop(actor))) throw new RuleError("You are not attached to both projects.");
   const from = a.contentId ?? a.label;
   a.contentId = contentId;
   a.updatedAt = todayIso();
@@ -5608,6 +5819,9 @@ async function runAction(store2, who, name, args2, ids2) {
     }
     throw e;
   }
+  const files = [];
+  parsed = extractFiles(parsed, files);
+  for (const f of files) await store2.files.insert(f);
   try {
     const { result } = await mutateState(store2, () => expectIds(expected, () => action.fn(who.actor, ...parsed)));
     if (name === "people.deactivatePerson" && typeof parsed[0] === "string") await afterPeopleChange(store2, parsed[0]);
@@ -5620,7 +5834,7 @@ async function runAction(store2, who, name, args2, ids2) {
 }
 
 // server/google.ts
-import { createHash as createHash2 } from "node:crypto";
+import { createHash as createHash3 } from "node:crypto";
 var AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 var TOKEN_URL = "https://oauth2.googleapis.com/token";
 var REVOKE_URL = "https://oauth2.googleapis.com/revoke";
@@ -5647,7 +5861,7 @@ async function startLink(store2, who, origin, choose) {
     response_type: "code",
     state,
     scope: ["openid", "email", ...choose.calendar ? [CALENDAR_SCOPE] : [], ...choose.gmail ? [GMAIL_SCOPE] : []].join(" "),
-    code_challenge: createHash2("sha256").update(verifier).digest("base64url"),
+    code_challenge: createHash3("sha256").update(verifier).digest("base64url"),
     code_challenge_method: "S256",
     access_type: "offline",
     prompt: "consent"
@@ -5705,7 +5919,7 @@ async function addToCalendar(store2, who) {
     const res = await web()("https://www.googleapis.com/calendar/v3/calendars/primary/events", {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ id: createHash2("sha1").update(r.key).digest("hex"), summary: r.title, description: `${r.detail}
+      body: JSON.stringify({ id: createHash3("sha1").update(r.key).digest("hex"), summary: r.title, description: `${r.detail}
 
 From the Dawn of Faith Production Hub.`, start, end, reminders: { useDefault: false, overrides: [{ method: "popup", minutes: Math.min(40320, lead * 60) }] } })
     });
@@ -5736,6 +5950,7 @@ async function sendReminderEmail(store2, who, personId) {
 }
 
 // server/http.ts
+import { gzipSync } from "node:zlib";
 var COOKIE = "dof_session";
 var MAX_BODY2 = 4 * 1024 * 1024;
 var header = (v) => (Array.isArray(v) ? v[0] : v) ?? "";
@@ -5790,6 +6005,31 @@ function send(res, status2, body, extra = {}) {
   for (const [k, v] of Object.entries(extra)) res.setHeader(k, v);
   res.end(JSON.stringify(body));
 }
+function sendLarge(req, res, body) {
+  let out = Buffer.from(JSON.stringify(body), "utf8");
+  res.statusCode = 200;
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Vary", "Accept-Encoding");
+  if (/\bgzip\b/.test(header(req.headers["accept-encoding"]))) {
+    out = gzipSync(out);
+    res.setHeader("Content-Encoding", "gzip");
+  }
+  const PIECE = 256 * 1024;
+  for (let i = 0; i < out.length; i += PIECE) res.write(out.subarray(i, i + PIECE));
+  res.end();
+}
+var IMAGE_TYPES = /* @__PURE__ */ new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+function sendFile(res, type, data) {
+  res.statusCode = 200;
+  res.setHeader("Content-Type", IMAGE_TYPES.has(type) ? type : "application/octet-stream");
+  res.setHeader("Content-Length", String(data.length));
+  res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Content-Security-Policy", "default-src 'none'; sandbox");
+  res.end(data);
+}
 function redirect(res, to) {
   res.statusCode = 302;
   res.setHeader("Location", to);
@@ -5815,7 +6055,7 @@ async function dispatch(store2, req, res) {
   };
   switch (route) {
     case "GET /health": {
-      await store2.state.load(["settings"]);
+      await headOf(store2);
       return ok({ message: "Connected to MongoDB.", ...store2.diagnose ? await store2.diagnose() : {}, setUp: !await needsSetup(store2) });
     }
     case "GET /session": {
@@ -5836,10 +6076,24 @@ async function dispatch(store2, req, res) {
     }
     case "GET /state": {
       const who = await signedIn();
-      const loaded = await loadDb(store2);
-      if (!loaded) throw new HttpError(503, "The app has not been set up yet.");
-      if (req.query.get("rev") === String(loaded.revision)) return ok({ unchanged: true, revision: loaded.revision });
-      return ok({ revision: loaded.revision, db: snapshotFor(loaded.db, who.actor) });
+      const head = await headOf(store2);
+      if (!head) throw new HttpError(503, "The app has not been set up yet.");
+      if (req.query.get("rev") === String(head.revision)) return ok({ unchanged: true, revision: head.revision });
+      const snap = await snapshotFor(store2, who.actor);
+      if (!snap) throw new HttpError(503, "The app has not been set up yet.");
+      return sendLarge(req, res, { ok: true, revision: snap.revision, db: snap.db });
+    }
+    case "GET /doc-history": {
+      const revisions = await docHistory(store2, (await signedIn()).actor, str(req.query.get("docId")));
+      if (!revisions) throw new HttpError(404, "Not found.");
+      return ok({ revisions });
+    }
+    case "GET /file": {
+      await signedIn();
+      const id2 = str(req.query.get("id"));
+      const file = /^[a-f0-9]{32}$/.test(id2) ? await store2.files.get(id2) : null;
+      if (!file) throw new HttpError(404, "Not found.");
+      return sendFile(res, file.type, Buffer.from(file.data, "base64"));
     }
     case "POST /action": {
       const who = await signedIn();
@@ -5931,33 +6185,37 @@ var MemCol = class {
   }
 };
 var MemState = class {
-  docs = /* @__PURE__ */ new Map();
-  revision = 0;
-  schema = 0;
-  ready = false;
-  async load(keys) {
-    if (!this.ready) return null;
-    const data = {};
-    const versions = {};
-    for (const [k, d] of this.docs) if (!keys || keys.includes(k)) {
-      data[k] = structuredClone(d.data);
-      versions[k] = d.v;
-    }
-    return { data, versions, revision: this.revision, schemaVersion: this.schema };
+  items_ = /* @__PURE__ */ new Map();
+  // by `${k}/${i}`
+  head_ = null;
+  constructor(seed) {
+    if (!seed) return;
+    for (const it of seed.items) this.items_.set(`${it.k}/${it.i}`, structuredClone(it));
+    this.head_ = structuredClone(seed.head);
   }
-  async save(changes, expected, schemaVersion) {
-    for (const k of Object.keys(changes)) if ((this.docs.get(k)?.v ?? 0) !== (expected[k] ?? 0)) return false;
-    for (const [k, data] of Object.entries(changes)) this.docs.set(k, { v: (this.docs.get(k)?.v ?? 0) + 1, data: structuredClone(data) });
-    this.revision++;
-    this.schema = schemaVersion;
-    return true;
+  async head() {
+    return this.head_ ? structuredClone(this.head_) : null;
   }
-  async init(data, schemaVersion) {
-    if (this.ready) return false;
-    for (const [k, v] of Object.entries(data)) this.docs.set(k, { v: 1, data: structuredClone(v) });
-    this.ready = true;
-    this.revision = 1;
-    this.schema = schemaVersion;
+  async items(keys) {
+    return [...this.items_.values()].filter((it) => keys.includes(it.k)).sort((a, b) => a.k < b.k ? -1 : a.k > b.k ? 1 : a.o - b.o).map((it) => structuredClone(it));
+  }
+  async newest(key2, limit) {
+    return [...this.items_.values()].filter((it) => it.k === key2).sort((a, b) => b.o - a.o).slice(0, limit).map((it) => structuredClone(it));
+  }
+  async commit(c) {
+    if (!this.head_) return null;
+    for (const [k, v] of Object.entries(c.expect)) if ((this.head_.versions[k] ?? 0) !== v) return null;
+    for (const r of c.remove) this.items_.delete(`${r.k}/${r.i}`);
+    for (const it of c.put) this.items_.set(`${it.k}/${it.i}`, structuredClone(it));
+    for (const k of Object.keys(c.expect)) this.head_.versions[k] = (this.head_.versions[k] ?? 0) + 1;
+    this.head_.revision++;
+    this.head_.schemaVersion = c.schemaVersion;
+    return this.head_.revision;
+  }
+  async init(items, schemaVersion) {
+    if (this.head_) return false;
+    for (const it of items) this.items_.set(`${it.k}/${it.i}`, structuredClone(it));
+    this.head_ = { revision: 1, schemaVersion, versions: Object.fromEntries(versionedKeys().map((k) => [k, 1])) };
     return true;
   }
 };
@@ -5986,8 +6244,15 @@ var MemAttempts = class {
     this.m.delete(key2);
   }
 };
-function memoryStore() {
-  return { state: new MemState(), users: new MemCol(), sessions: new MemCol(), attempts: new MemAttempts(), google: new MemCol(), oauth: new MemCol() };
+function memoryStore(legacy) {
+  const files = new MemCol();
+  let state = new MemState();
+  if (legacy) {
+    const up = layout1ToItems(legacy.data);
+    for (const f of up.files) void files.put(f);
+    state = new MemState({ items: up.items, head: { revision: legacy.revision, schemaVersion: legacy.schemaVersion, versions: Object.fromEntries(versionedKeys().map((k) => [k, 1])) } });
+  }
+  return { state, files, users: new MemCol(), sessions: new MemCol(), attempts: new MemAttempts(), google: new MemCol(), oauth: new MemCol() };
 }
 
 // server/index.ts

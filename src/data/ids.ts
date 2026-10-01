@@ -85,6 +85,13 @@ export function localId(prefix: string, taken: (id: string) => boolean = () => f
   return id;
 }
 
+/**
+ * An ID for a log entry: the activity log, an item's history, a comment, a document revision, a sent message.
+ * Random, and not compared with the browser's, because no change refers to these by ID. Being random rather
+ * than numbered means writing a log entry never touches the shared counters, so it never conflicts.
+ */
+export const logId = (prefix: string): string => `${prefix}-${Date.now().toString(36)}${randomPart(6)}`;
+
 // ── Content IDs ──────────────────────────────────────────────
 // A project's number comes from a counter rather than from the highest number on screen, because the
 // browser is not sent archived projects, or projects the person cannot see. Counters are sent to everyone.

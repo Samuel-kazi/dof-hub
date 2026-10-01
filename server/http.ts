@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { gzipSync } from "node:zlib";
 import { HttpError } from "./errors";
 
 export const COOKIE = "dof_session";
@@ -67,6 +68,39 @@ export function send(res: ServerResponse, status: number, body: unknown, extra: 
   res.setHeader("X-Content-Type-Options", "nosniff");
   for (const [k, v] of Object.entries(extra)) res.setHeader(k, v);
   res.end(JSON.stringify(body));
+}
+
+/**
+ * A large JSON answer, such as the data a person is sent at sign-in: compressed when the browser accepts it
+ * (all do), and written in pieces, which Vercel streams rather than holding the whole answer at once.
+ */
+export function sendLarge(req: Req, res: ServerResponse, body: unknown): void {
+  let out = Buffer.from(JSON.stringify(body), "utf8");
+  res.statusCode = 200;
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Vary", "Accept-Encoding");
+  if (/\bgzip\b/.test(header(req.headers["accept-encoding"]))) {
+    out = gzipSync(out);
+    res.setHeader("Content-Encoding", "gzip");
+  }
+  const PIECE = 256 * 1024;
+  for (let i = 0; i < out.length; i += PIECE) res.write(out.subarray(i, i + PIECE));
+  res.end();
+}
+
+const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+
+/** A stored photo. Only raster images are ever served, and never as anything a browser would run. */
+export function sendFile(res: ServerResponse, type: string, data: Buffer): void {
+  res.statusCode = 200;
+  res.setHeader("Content-Type", IMAGE_TYPES.has(type) ? type : "application/octet-stream");
+  res.setHeader("Content-Length", String(data.length));
+  res.setHeader("Cache-Control", "private, max-age=31536000, immutable"); // a file's name is its content, so it never changes
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Content-Security-Policy", "default-src 'none'; sandbox");
+  res.end(data);
 }
 
 export function redirect(res: ServerResponse, to: string): void {

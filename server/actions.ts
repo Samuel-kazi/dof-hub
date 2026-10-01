@@ -4,9 +4,10 @@ import type { Authed } from "./accounts";
 import { afterPeopleChange } from "./accounts";
 import { HttpError } from "./errors";
 import { REGISTRY } from "./registry";
+import { extractFiles } from "./layout";
 import { InvalidArgs, parseArgs } from "./schemas";
 import { mutateState } from "./state";
-import type { Store } from "./stores";
+import type { FileDoc, Store } from "./stores";
 
 const FORBIDDEN_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
@@ -47,6 +48,11 @@ export async function runAction(store: Store, who: Authed, name: unknown, args: 
     }
     throw e;
   }
+  // Photos arrive as data: URLs. Each is stored as a file and the change keeps only a link to it, so photos
+  // never weigh down the data that every page downloads.
+  const files: FileDoc[] = [];
+  parsed = extractFiles(parsed, files);
+  for (const f of files) await store.files.insert(f); // false if the same photo is already stored
   try {
     const { result } = await mutateState(store, () => expectIds(expected, () => action.fn(who.actor, ...parsed)));
     if (name === "people.deactivatePerson" && typeof parsed[0] === "string") await afterPeopleChange(store, parsed[0]);

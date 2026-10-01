@@ -1,7 +1,8 @@
 import type { Actor, Attachment, EquipCondition, EquipmentHistory, EquipmentItem, Incident, Manifest, ManifestLine } from "../types";
 import { RuleError } from "../types";
 import { commit, getDb, nextCounter } from "../data/store";
-import { claimId, localId } from "../data/ids";
+import { claimId } from "../data/ids";
+import { hist, makeAttachment } from "./equipment-log";
 import { conditionRank } from "../config/equipment";
 import { canView, canWrite, getRecord, isHop } from "./access";
 import { logAudit } from "./audit";
@@ -12,34 +13,6 @@ import {
   type Availability,
 } from "./equipment-items";
 import { groupByFamily } from "./equipment-reports";
-
-// Private copies of two small equipment-items.ts helpers: history logging and attachment validation.
-// Kept as plain (unexported) duplicates rather than shared across files, so neither takes an actor
-// first as a publicly importable symbol here and neither risks being picked up as its own server action.
-function hist(actor: Actor, equipmentId: string, kind: EquipmentHistory["kind"], detail: string, extra: { contentId?: string; manifestId?: string } = {}): void {
-  getDb().equipmentHistory.push({
-    id: `H-${pad(nextCounter("history"), 5)}`,
-    equipmentId,
-    at: new Date().toISOString(),
-    byPersonId: actor.personId,
-    kind,
-    detail,
-    contentId: extra.contentId ?? null,
-    manifestId: extra.manifestId ?? null,
-  });
-}
-
-function makeAttachment(actor: Actor, input: { url: string; caption?: string }): Attachment {
-  const url = input.url.trim();
-  if (!url) throw new RuleError("Add a photo or paste a link.");
-  if (url.startsWith("data:")) {
-    if (!url.startsWith("data:image/")) throw new RuleError("Only images can be attached.");
-    if (url.length > 420_000) throw new RuleError("That image is too large. Try a smaller photo.");
-  } else if (!/^https?:\/\//i.test(url)) {
-    throw new RuleError("Links must start with http:// or https://.");
-  }
-  return { id: localId("ATT"), url, caption: (input.caption ?? "").trim(), at: new Date().toISOString(), byPersonId: actor.personId };
-}
 
 export const getManifest = (id: string): Manifest | undefined => getDb().manifests.find((m) => m.id === id);
 

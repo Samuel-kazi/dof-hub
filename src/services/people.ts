@@ -7,7 +7,7 @@ import { cleanRoles } from "../config/projectRoles";
 import { requireCan, requireNotBeyond } from "./permissions";
 import { getRecord, isHop } from "./access";
 import { logAudit } from "./audit";
-import { pad, pickKeys, todayIso } from "./utils";
+import { pad, pickKeys, STORED_FILE, todayIso } from "./utils";
 
 /** The categories a person can be given here. There is one Head of Production, made when the app is set up. */
 export const STAFF_CATEGORIES = ["CRW", "VOL", "PTR"] as const;
@@ -121,6 +121,7 @@ export function updateOwnProfile(actor: Actor, patch: Partial<Pick<Person, "name
   if (patch.name !== undefined && !patch.name.trim()) throw new RuleError("Enter your name.");
   // A data: URL photo, kept small so it does not blow the local-storage budget other people share.
   if (patch.photoUrl && patch.photoUrl.length > 400_000) throw new RuleError("That photo is too large. Choose a smaller image.");
+  if (patch.photoUrl && !patch.photoUrl.startsWith("data:image/") && !STORED_FILE.test(patch.photoUrl)) throw new RuleError("Choose a photo from your device.");
   Object.assign(p, {
     ...(patch.name !== undefined ? { name: patch.name.trim() } : {}),
     ...(patch.email !== undefined ? { email: patch.email.trim() } : {}),

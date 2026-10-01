@@ -116,7 +116,7 @@ export async function logout(store: Store, token: string | undefined): Promise<v
 // ── Setting up, and signing in ───────────────────────────────
 
 export async function needsSetup(store: Store): Promise<boolean> {
-  return (await store.users.all()).length === 0 && !(await store.state.load(["settings"]));
+  return (await store.users.all()).length === 0 && !(await store.state.head());
 }
 
 export async function setup(store: Store, input: { token: string; name: string; username: string; password: string; samples: boolean }, ip: string, agent: string): Promise<{ token: string; user: PublicUser }> {

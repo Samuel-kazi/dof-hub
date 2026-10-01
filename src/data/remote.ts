@@ -1,6 +1,6 @@
-import type { Actor, Database, RoleCode } from "../types";
+import type { Actor, Database, DocRevision, RoleCode } from "../types";
 import { RuleError } from "../types";
-import { setDb, setPersist } from "./store";
+import { commit, getDb, setDb, setPersist } from "./store";
 import { setRpcSink, type Call } from "./rpc";
 
 // The app has two ways to run. On your computer with nothing behind it, it is a demo that keeps sample
@@ -105,9 +105,13 @@ async function pump(): Promise<void> {
         await api.post("/api/action", queue[0]);
         queue.shift();
       } catch (e) {
+        // Changes made after this one were made on top of it, so they cannot be saved without it either.
+        // The screen goes back to what the server has, and the person is told how much did not save.
+        const later = queue.length - 1;
         queue = [];
         if (e instanceof ApiError && e.code === "signed-out") { syncEvents.onSignedOut(); return; }
-        syncEvents.onError(e instanceof Error ? e.message : "That change could not be saved.");
+        const why = e instanceof Error ? e.message : "That change could not be saved.";
+        syncEvents.onError(later > 0 ? `${why} The ${later === 1 ? "change" : `${later} changes`} you made right after it ${later === 1 ? "was" : "were"} not saved either.` : why);
         await refresh(true);
         return;
       }
@@ -123,6 +127,17 @@ const poll = (): void => { if (!running && !queue.length && document.visibilityS
 /** Resolves once every change made on this screen has been sent to the server (or has failed and been undone). */
 export async function whenSynced(): Promise<void> {
   while (running || queue.length) await new Promise((r) => setTimeout(r, 40));
+}
+
+/**
+ * Older revisions of a document are sent without their text, to keep the download small. This fetches every
+ * revision of one document, with its text, into this page's copy of the data. Nothing is sent back.
+ */
+export async function loadDocHistory(docId: string): Promise<void> {
+  const r = await api.get<{ revisions: DocRevision[] }>(`/api/doc-history?docId=${encodeURIComponent(docId)}`);
+  const db = getDb();
+  db.docRevisions = [...db.docRevisions.filter((x) => x.docId !== docId), ...r.revisions];
+  commit(); // shows them; outside an action, so nothing is sent to the server
 }
 
 export async function hydrate(): Promise<void> {

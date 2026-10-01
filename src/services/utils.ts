@@ -59,3 +59,6 @@ export function pickKeys<T extends object, K extends keyof T>(patch: T, keys: re
   for (const k of keys) if (Object.prototype.hasOwnProperty.call(patch, k) && patch[k] !== undefined) out[k] = patch[k];
   return out;
 }
+
+/** A photo stored on the server (see server/layout.ts). Signed in to the server, photos are links of this form. */
+export const STORED_FILE = /^\/api\/file\?id=[a-f0-9]{32}$/;

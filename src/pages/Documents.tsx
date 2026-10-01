@@ -16,6 +16,7 @@ import { canWrite, getRecord } from "../services/access";
 import { archiveDoc, canEditDoc, canViewDoc, createDoc, diffLines, getDoc, listDocs, restoreRevision, revisionsOf, saveDoc } from "../services/wrapped/docs";
 import { nameOf } from "../services/wrapped/people";
 import { fmtDateTime, relativeDays } from "../services/utils";
+import { isRemote, loadDocHistory } from "../data/remote";
 
 export function NewDocModal({ contentId, onClose, onCreated }: { contentId?: string; onClose: () => void; onCreated: (id: string) => void }) {
   const { actor, attempt } = useApp();
@@ -159,6 +160,11 @@ export function DocPage({ id }: { id: string }) {
   });
   useEffect(() => () => { persist(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Signed in, older revisions arrive without their text. Opening the history fetches it.
+  const someTrimmed = revisionsOf(id).some((v) => v.trimmed);
+  useEffect(() => {
+    if (history && someTrimmed && isRemote()) loadDocHistory(id).catch(() => toast("Older versions could not be loaded. Try again.", "error"));
+  }, [history, someTrimmed, id]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!doc || !canViewDoc(actor, doc)) return <div className="page"><Empty>This document does not exist or is not part of a project you are attached to.</Empty></div>;
   const rec = getRecord(doc.contentId);
 
@@ -300,8 +306,9 @@ export function DocPage({ id }: { id: string }) {
                       <div>{fmtDateTime(v.at)}{i === 0 && <span className="badge ok" style={{ marginLeft: 8 }}>Current</span>}</div>
                       <div className="muted" style={{ fontSize: ".84rem" }}>{nameOf(v.byPersonId)}, {v.note}</div>
                     </div>
-                    {prev && <button className="btn small ghost" onClick={() => setDiffFor(diffFor === v.id ? null : v.id)}>{diffFor === v.id ? "Hide changes" : "What changed"}</button>}
-                    {editable && i > 0 && <button className="btn small" onClick={async () => { if (await confirm({ title: "Restore this version?", body: "It becomes the current text. The versions after it stay in the history.", confirmLabel: "Restore" })) { latest.current.dirty = false; const d = attempt(() => restoreRevision(actor, id, v.id), "Version restored"); if (d) { version.current = d.version; setTitle(d.title); setBody(d.body); latest.current = { title: d.title, body: d.body, dirty: false }; setStatus("saved"); setHistory(false); } } }}>Restore</button>}
+                    {(v.trimmed || prev?.trimmed) && <span className="muted" style={{ fontSize: ".84rem" }}>Loading…</span>}
+                    {prev && !v.trimmed && !prev.trimmed && <button className="btn small ghost" onClick={() => setDiffFor(diffFor === v.id ? null : v.id)}>{diffFor === v.id ? "Hide changes" : "What changed"}</button>}
+                    {editable && i > 0 && !v.trimmed && <button className="btn small" onClick={async () => { if (await confirm({ title: "Restore this version?", body: "It becomes the current text. The versions after it stay in the history.", confirmLabel: "Restore" })) { latest.current.dirty = false; const d = attempt(() => restoreRevision(actor, id, v.id), "Version restored"); if (d) { version.current = d.version; setTitle(d.title); setBody(d.body); latest.current = { title: d.title, body: d.body, dirty: false }; setStatus("saved"); setHistory(false); } } }}>Restore</button>}
                   </div>
                   {diffFor === v.id && prev && (
                     <div className="diff">

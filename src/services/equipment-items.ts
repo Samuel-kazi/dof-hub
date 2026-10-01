@@ -1,7 +1,8 @@
 import type { Actor, Attachment, EquipCategoryKey, EquipCondition, EquipmentHistory, EquipmentItem, Manifest, TrackingType } from "../types";
 import { RuleError } from "../types";
 import { commit, getDb, nextCounter } from "../data/store";
-import { claimId, localId } from "../data/ids";
+import { claimId } from "../data/ids";
+import { hist, makeAttachment } from "./equipment-log";
 import { CONDITIONS, equipCategory } from "../config/equipment";
 import { canView, getRecord } from "./access";
 import { logAudit } from "./audit";
@@ -89,31 +90,6 @@ export function applyConditionBreakdown(item: EquipmentItem, bd: ConditionBreakd
   item.condition = worstCondition(bd) ?? item.condition;
 }
 export const familyOf = (i: EquipmentItem): string => (i.itemFamily ? i.itemFamily.toUpperCase() : i.id);
-
-function hist(actor: Actor, equipmentId: string, kind: EquipmentHistory["kind"], detail: string, extra: { contentId?: string; manifestId?: string } = {}): void {
-  getDb().equipmentHistory.push({
-    id: `H-${pad(nextCounter("history"), 5)}`,
-    equipmentId,
-    at: new Date().toISOString(),
-    byPersonId: actor.personId,
-    kind,
-    detail,
-    contentId: extra.contentId ?? null,
-    manifestId: extra.manifestId ?? null,
-  });
-}
-
-function makeAttachment(actor: Actor, input: { url: string; caption?: string }): Attachment {
-  const url = input.url.trim();
-  if (!url) throw new RuleError("Add a photo or paste a link.");
-  if (url.startsWith("data:")) {
-    if (!url.startsWith("data:image/")) throw new RuleError("Only images can be attached.");
-    if (url.length > 420_000) throw new RuleError("That image is too large. Try a smaller photo.");
-  } else if (!/^https?:\/\//i.test(url)) {
-    throw new RuleError("Links must start with http:// or https://.");
-  }
-  return { id: localId("ATT"), url, caption: (input.caption ?? "").trim(), at: new Date().toISOString(), byPersonId: actor.personId };
-}
 
 // ── Quantities, status and availability (all computed, never stored) ──
 

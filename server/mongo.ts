@@ -1,9 +1,11 @@
-import { MongoClient, type Collection, type Db, type Document } from "mongodb";
-import type { AttemptDoc, AttemptStore, Col, GoogleDoc, Loaded, OAuthDoc, SessionDoc, StateStore, Store, UserDoc } from "./stores";
+import { MongoClient, type AnyBulkWriteOperation, type Collection, type Db, type Document } from "mongodb";
+import { HttpError } from "./errors";
+import { layout1ToItems, versionedKeys } from "./layout";
+import type { AttemptDoc, AttemptStore, Col, Commit, FileDoc, GoogleDoc, Head, Item, OAuthDoc, SessionDoc, StateStore, Store, UserDoc } from "./stores";
 
-// The MongoDB version of the stores. Each part of the app's data is one document in `state`, with a
-// version number. A save only goes through if nobody else saved that part in the meantime, and all the
-// parts of one save go through together or not at all.
+// The MongoDB version of the stores. Each element of the app's data is one document in `hub_items`, and
+// `hub_meta` holds the revision and each part's version. A save only goes through if nobody else saved the
+// same part in the meantime, and everything in one save goes through together or not at all.
 
 type Doc = { _id: string };
 
@@ -57,94 +59,159 @@ class MongoAttempts implements AttemptStore {
   async clear(key: string) { await this.col.deleteOne({ _id: key } as never); }
 }
 
+const META = "meta";
+const LOCK = "upgrading";
+const LOCK_STALE_MS = 5 * 60 * 1000;
+const BATCH = 500;
+
 class MongoState implements StateStore {
   constructor(private client: MongoClient, private db: Db) {}
-  private get col() { return this.db.collection<Document>("state"); }
+  private get meta() { return this.db.collection<Document>("hub_meta"); }
+  private get col() { return this.db.collection<Document>("hub_items"); }
 
-  async load(keys?: string[]): Promise<Loaded | null> {
-    const meta = await this.col.findOne({ _id: "meta" } as never);
-    if (!meta) return null;
-    const docs = await this.col.find(keys ? ({ _id: { $in: keys } } as never) : ({ _id: { $ne: "meta" } } as never)).toArray();
-    const data: Record<string, unknown> = {};
-    const versions: Record<string, number> = {};
-    for (const d of docs) { data[String(d._id)] = d.data; versions[String(d._id)] = d.v as number; }
-    return { data, versions, revision: meta.revision as number, schemaVersion: meta.schemaVersion as number };
+  private toItem(d: Document): Item { return { k: String(d.k), i: String(d.i), o: Number(d.o), d: d.d }; }
+  private toDoc(it: Item): Document { return { _id: `${it.k}/${it.i}`, k: it.k, i: it.i, o: it.o, d: it.d }; }
+
+  async head(): Promise<Head | null> {
+    let m = await this.meta.findOne({ _id: META } as never);
+    if (!m && (await this.upgradeLayout())) m = await this.meta.findOne({ _id: META } as never);
+    return m ? { revision: Number(m.revision), schemaVersion: Number(m.schemaVersion), versions: { ...(m.versions as Record<string, number>) } } : null;
   }
 
-  async save(changes: Record<string, unknown>, expected: Record<string, number>, schemaVersion: number): Promise<boolean> {
+  async items(keys: string[]): Promise<Item[]> {
+    return (await this.col.find({ k: { $in: keys } } as never).sort({ k: 1, o: 1 }).toArray()).map((d) => this.toItem(d));
+  }
+
+  async newest(key: string, limit: number): Promise<Item[]> {
+    return (await this.col.find({ k: key } as never).sort({ o: -1 }).limit(limit).toArray()).map((d) => this.toItem(d));
+  }
+
+  async commit(c: Commit): Promise<number | null> {
     const session = this.client.startSession();
-    let ok = true;
+    let revision: number | null = null;
     try {
       await session.withTransaction(async () => {
-        ok = true;
-        for (const [key, data] of Object.entries(changes)) {
-          if (expected[key] === undefined) {
-            try { await this.col.insertOne({ _id: key, v: 1, data } as never, { session }); } catch (e) { if ((e as { code?: number }).code === 11000) { ok = false; await session.abortTransaction(); return; } throw e; }
-          } else {
-            const r = await this.col.updateOne({ _id: key, v: expected[key] } as never, { $set: { data }, $inc: { v: 1 } }, { session });
-            if (r.matchedCount === 0) { ok = false; await session.abortTransaction(); return; }
-          }
-        }
-        await this.col.updateOne({ _id: "meta" } as never, { $inc: { revision: 1 }, $set: { schemaVersion } }, { session, upsert: true });
+        revision = null;
+        // Only if every part this change needs is still at the version it was loaded at.
+        const filter: Document = { _id: META };
+        for (const [k, v] of Object.entries(c.expect)) filter[`versions.${k}`] = v === 0 ? { $in: [0, null] } : v;
+        const inc: Document = { revision: 1 };
+        for (const k of Object.keys(c.expect)) inc[`versions.${k}`] = 1;
+        const m = await this.meta.findOneAndUpdate(filter as never, { $inc: inc, $set: { schemaVersion: c.schemaVersion } }, { session, returnDocument: "after" });
+        if (!m) { await session.abortTransaction(); return; }
+        const ops: AnyBulkWriteOperation<Document>[] = [
+          ...c.remove.map((r) => ({ deleteOne: { filter: { _id: `${r.k}/${r.i}` } as never } })),
+          ...c.put.map((it) => ({ replaceOne: { filter: { _id: `${it.k}/${it.i}` } as never, replacement: this.toDoc(it), upsert: true } })),
+        ];
+        for (let i = 0; i < ops.length; i += BATCH) await this.col.bulkWrite(ops.slice(i, i + BATCH), { session, ordered: true });
+        revision = Number(m.revision);
       });
     } finally {
       await session.endSession();
     }
-    return ok;
+    return revision;
   }
 
-  async init(data: Record<string, unknown>, schemaVersion: number): Promise<boolean> {
+  async init(items: Item[], schemaVersion: number): Promise<boolean> {
+    if (await this.head()) return false;
     const session = this.client.startSession();
     let created = true;
     try {
       await session.withTransaction(async () => {
         created = true;
-        try { await this.col.insertOne({ _id: "meta", revision: 1, schemaVersion } as never, { session }); } catch (e) { if ((e as { code?: number }).code === 11000) { created = false; await session.abortTransaction(); return; } throw e; }
-        await this.col.insertMany(Object.entries(data).map(([k, v]) => ({ _id: k, v: 1, data: v })) as never, { session });
+        try {
+          await this.meta.insertOne({ _id: META, revision: 1, schemaVersion, versions: Object.fromEntries(versionedKeys().map((k) => [k, 1])) } as never, { session });
+        } catch (e) {
+          if ((e as { code?: number }).code === 11000) { created = false; await session.abortTransaction(); return; }
+          throw e;
+        }
+        for (let i = 0; i < items.length; i += BATCH) await this.col.insertMany(items.slice(i, i + BATCH).map((it) => this.toDoc(it)) as never, { session });
       });
     } finally {
       await session.endSession();
     }
     return created;
   }
+
+  /**
+   * Data saved by the earlier version of the app lives in the `state` collection, one document per part, with
+   * photos inside. The first server to start copies it into the new layout and moves the photos into `files`.
+   * The `state` collection is left exactly as it was, as a backup. Returns true once the new layout exists.
+   */
+  private async upgradeLayout(): Promise<boolean> {
+    const old = this.db.collection<Document>("state");
+    const oldMeta = await old.findOne({ _id: META } as never);
+    if (!oldMeta) return false; // a brand-new installation: nothing to upgrade
+    try {
+      await this.meta.insertOne({ _id: LOCK, at: new Date() } as never);
+    } catch (e) {
+      if ((e as { code?: number }).code !== 11000) throw e;
+      const lock = await this.meta.findOne({ _id: LOCK } as never);
+      if (lock && Date.now() - new Date(lock.at as Date).getTime() < LOCK_STALE_MS) throw new HttpError(503, "The data is being moved to its new layout. This takes a minute, once. Try again shortly.", "upgrading");
+      await this.meta.deleteOne({ _id: LOCK, at: lock?.at } as never); // left behind by a server that stopped part way: start again
+      return this.upgradeLayout();
+    }
+    try {
+      if (await this.meta.findOne({ _id: META } as never)) return true; // another server finished while this one waited
+      const parts = await old.find({ _id: { $ne: META } } as never).toArray();
+      const { items, files } = layout1ToItems(Object.fromEntries(parts.map((d) => [String(d._id), d.data])));
+      // A file's _id comes from the filter; setting it again in the update is refused by MongoDB.
+      const fileOps = files.map(({ _id, ...f }) => ({ updateOne: { filter: { _id } as never, update: { $setOnInsert: f }, upsert: true } }));
+      for (let i = 0; i < fileOps.length; i += BATCH) await this.db.collection<Document>("files").bulkWrite(fileOps.slice(i, i + BATCH), { ordered: false });
+      const itemOps = items.map((it) => ({ replaceOne: { filter: { _id: `${it.k}/${it.i}` } as never, replacement: this.toDoc(it), upsert: true } }));
+      for (let i = 0; i < itemOps.length; i += BATCH) await this.col.bulkWrite(itemOps.slice(i, i + BATCH), { ordered: false });
+      // Written last: until this exists, nobody reads or writes the new layout.
+      await this.meta.updateOne({ _id: META } as never, { $setOnInsert: { revision: Number(oldMeta.revision ?? 1), schemaVersion: Number(oldMeta.schemaVersion ?? 0), versions: Object.fromEntries(versionedKeys().map((k) => [k, 1])), upgradedFrom: "state", upgradedAt: new Date() } }, { upsert: true });
+      return true;
+    } finally {
+      await this.meta.deleteOne({ _id: LOCK } as never);
+    }
+  }
 }
 
-let cached: { uri: string; store: Promise<Store> } | undefined;
+/** The stores for one database, on a client that is already connected. */
+export async function storeOn(client: MongoClient, dbName: string): Promise<Store> {
+  const db = client.db(dbName);
+  const ttl = (name: string) => db.collection(name).createIndex({ _exp: 1 }, { expireAfterSeconds: 0 }).catch(() => undefined);
+  await Promise.all([ttl("sessions"), ttl("attempts"), ttl("oauth"), db.collection("users").createIndex({ personId: 1 }).catch(() => undefined), db.collection("hub_items").createIndex({ k: 1, o: 1 }).catch(() => undefined)]);
+  return {
+    /** Checks that saves can be made all-or-nothing, which the app relies on. */
+    diagnose: async () => {
+      const s = client.startSession();
+      try {
+        await s.withTransaction(async () => {
+          await db.collection("diagnostics").insertOne({ _id: "probe", at: new Date() } as never, { session: s });
+          await db.collection("diagnostics").deleteOne({ _id: "probe" } as never, { session: s });
+        });
+        return { transactions: true };
+      } catch (e) {
+        console.error("Transaction check failed", e);
+        return { transactions: false, hint: e instanceof Error ? e.name : "unknown" };
+      } finally {
+        await s.endSession();
+      }
+    },
+    state: new MongoState(client, db),
+    files: new MongoCol<FileDoc>(db.collection("files")),
+    users: new MongoCol<UserDoc>(db.collection("users")),
+    sessions: new MongoCol<SessionDoc>(db.collection("sessions"), (d) => d.expiresAt),
+    attempts: new MongoAttempts(db.collection("attempts")),
+    google: new MongoCol<GoogleDoc>(db.collection("google")),
+    oauth: new MongoCol<OAuthDoc>(db.collection("oauth"), (d) => d.expiresAt),
+  };
+}
+
+let cached: { key: string; store: Promise<Store> } | undefined;
 
 export function mongoStore(uri: string, dbName: string): Promise<Store> {
-  if (cached?.uri === uri) return cached.store;
+  const key = `${uri}\n${dbName}`;
+  if (cached?.key === key) return cached.store;
   const store = (async (): Promise<Store> => {
     const client = new MongoClient(uri, { serverSelectionTimeoutMS: 8000, maxPoolSize: 5 });
     await client.connect();
-    const db = client.db(dbName);
-    const ttl = (name: string) => db.collection(name).createIndex({ _exp: 1 }, { expireAfterSeconds: 0 }).catch(() => undefined);
-    await Promise.all([ttl("sessions"), ttl("attempts"), ttl("oauth"), db.collection("users").createIndex({ personId: 1 }).catch(() => undefined)]);
-    return {
-      /** Checks that saves can be made all-or-nothing, which the app relies on. */
-      diagnose: async () => {
-        const s = client.startSession();
-        try {
-          await s.withTransaction(async () => {
-            await db.collection("diagnostics").insertOne({ _id: "probe", at: new Date() } as never, { session: s });
-            await db.collection("diagnostics").deleteOne({ _id: "probe" } as never, { session: s });
-          });
-          return { transactions: true };
-        } catch (e) {
-          console.error("Transaction check failed", e);
-          return { transactions: false, hint: e instanceof Error ? e.name : "unknown" };
-        } finally {
-          await s.endSession();
-        }
-      },
-      state: new MongoState(client, db),
-      users: new MongoCol<UserDoc>(db.collection("users")),
-      sessions: new MongoCol<SessionDoc>(db.collection("sessions"), (d) => d.expiresAt),
-      attempts: new MongoAttempts(db.collection("attempts")),
-      google: new MongoCol<GoogleDoc>(db.collection("google")),
-      oauth: new MongoCol<OAuthDoc>(db.collection("oauth"), (d) => d.expiresAt),
-    };
+    return storeOn(client, dbName);
   })();
-  cached = { uri, store };
+  cached = { key, store };
   store.catch(() => { cached = undefined; }); // try again next time if the connection failed
   return store;
 }

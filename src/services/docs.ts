@@ -1,7 +1,7 @@
 import type { Actor, ContentRecord, DocRecord, DocRevision } from "../types";
 import { ConflictError, RuleError } from "../types";
 import { commit, getDb, nextCounter } from "../data/store";
-import { claimId } from "../data/ids";
+import { claimId, logId } from "../data/ids";
 import { categoryOf } from "../config/categories";
 import { templateOf } from "../config/docTemplates";
 import { canView, canWrite, getRecord, selfAndAncestors } from "./access";
@@ -49,7 +49,7 @@ export const revisionsOf = (docId: string): DocRevision[] =>
   getDb().docRevisions.filter((v) => v.docId === docId).sort((a, b) => b.at.localeCompare(a.at) || b.version - a.version);
 
 function pushRevision(d: DocRecord, byPersonId: string, note: string): DocRevision {
-  const rev: DocRevision = { id: `REV-${pad(nextCounter("docrev"), 5)}`, docId: d.id, version: d.version, at: new Date().toISOString(), byPersonId, title: d.title, body: d.body, note };
+  const rev: DocRevision = { id: logId("REV"), docId: d.id, version: d.version, at: new Date().toISOString(), byPersonId, title: d.title, body: d.body, note };
   getDb().docRevisions.push(rev);
   return rev;
 }
@@ -144,6 +144,7 @@ export function restoreRevision(actor: Actor, docId: string, revisionId: string)
   const rev = getDb().docRevisions.find((v) => v.id === revisionId && v.docId === docId);
   if (!d || !rev) throw new RuleError("That version no longer exists.");
   if (!canEditDoc(actor, d)) throw new RuleError("You can read this document but not edit it.");
+  if (rev.trimmed) throw new RuleError("That version is still loading. Try again in a moment.");
   d.title = rev.title;
   d.body = rev.body;
   d.version += 1;

@@ -3,7 +3,7 @@ import type { Attachment } from "../types";
 import { useApp } from "./AppContext";
 import { Modal } from "./Modal";
 import type { PhotoInput } from "../services/wrapped/equipment";
-import { fmtDateTime } from "../services/utils";
+import { fmtDateTime, STORED_FILE } from "../services/utils";
 
 /** Shrinks a photo to a small JPEG so it fits comfortably in local storage. */
 export function fileToDataUrl(file: File, maxSide = 640, quality = 0.6): Promise<string> {
@@ -81,7 +81,7 @@ export function PhotoList({ value, onChange, label }: { value: PhotoInput[]; onC
 
 function Thumb({ url, onClick }: { url: string; onClick?: () => void }) {
   const [broken, setBroken] = useState(false);
-  if (broken || !url.startsWith("data:")) {
+  if (broken || !(url.startsWith("data:") || STORED_FILE.test(url))) {
     return <a className="thumb link" href={url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>Open link</a>;
   }
   return <img className="thumb" src={url} alt="" onError={() => setBroken(true)} onClick={onClick} />;
