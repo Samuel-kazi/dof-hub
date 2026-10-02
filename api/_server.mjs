@@ -84,6 +84,13 @@ var UNIQUE_RULES = [
     message: "That checklist item already exists."
   },
   {
+    name: "planned_reserved_id",
+    part: "plannedEpisodes",
+    fields: ["reservedId"],
+    when: { field: "reservedId", is: "string" },
+    message: "That earlier episode is already waiting as another planned episode."
+  },
+  {
     name: "session_number",
     part: "recordingSessions",
     fields: ["contentId", "sessionNumber"],
@@ -166,7 +173,16 @@ function integrityProblems(db2) {
     if (id2 !== null && id2 !== "system" && !people.has(id2)) missing("person", id2, from);
   };
   for (const f2 of db2.developmentForms ?? []) project(f2.contentId, `Development form ${f2.id}`);
-  for (const p of db2.plannedEpisodes ?? []) project(p.contentId, `Planned episode ${p.id}`);
+  const byId = new Map(db2.records.map((r) => [r.contentId, r]));
+  for (const p of db2.plannedEpisodes ?? []) {
+    project(p.contentId, `Planned episode ${p.id}`);
+    if (p.reservedId) {
+      const kept2 = byId.get(p.reservedId);
+      if (!kept2) missing("episode", p.reservedId, `Planned episode ${p.id}`);
+      else if (kept2.parentId !== p.contentId)
+        out.push(`Planned episode ${p.id} keeps ${p.reservedId}, which belongs to a different project.`);
+    }
+  }
   for (const r of db2.projectRoles ?? []) {
     project(r.contentId, `Role ${r.id}`);
     person2(r.crewId, `Role ${r.id}`);
@@ -1104,6 +1120,14 @@ var codeNumber = (code, projectId, token) => {
   const prefix = `${projectId}-${token}`;
   return code.startsWith(prefix) && /^\d+$/.test(code.slice(prefix.length)) ? parseInt(code.slice(prefix.length), 10) : NaN;
 };
+function syncWorkflowCounters(db2) {
+  const raise = (key2, n) => {
+    if (!Number.isNaN(n) && n > (db2.counters[key2] ?? 0)) db2.counters[key2] = n;
+  };
+  for (const s2 of db2.recordingSessions ?? []) raise(sessionCounter(s2.contentId), s2.sessionNumber);
+  for (const p of db2.plannedEpisodes ?? []) raise(plannedCounter(p.contentId), p.episodeNumber);
+  for (const r of db2.records) if (r.episode && r.parentId) raise(episodeCounter(r.parentId), r.episode.episodeNumber);
+}
 
 // src/data/store.ts
 import { useSyncExternalStore } from "react";
@@ -3468,6 +3492,48 @@ async function upgradeStore(store2, apply) {
   for (const p of report.parts) p.after = after[p.part];
   return report;
 }
+async function changeAllData(store2, apply, backupLabel, fn) {
+  for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
+    const base = await current(store2);
+    if (!base) return null;
+    const before = await countsOf(store2);
+    const db2 = structuredClone(base.db);
+    const result2 = withDb(db2, () => fn(db2));
+    assertIntegrity(db2);
+    const change = diff(base, db2);
+    change.expect = Object.fromEntries(versionedKeys().map((k) => [k, base.head.versions[k] ?? 0]));
+    const report = {
+      applied: false,
+      backup: null,
+      result: result2,
+      changed: change.put.length > 0 || change.remove.length > 0,
+      parts: KEYS.map((k) => {
+        const puts = change.put.filter((it) => it.k === k);
+        const removed = change.remove.filter((r) => r.k === k).length;
+        return {
+          part: k,
+          before: before[k],
+          after: before[k] + puts.filter((it) => !base.json.has(`${it.k}/${it.i}`)).length - removed,
+          written: puts.length,
+          removed
+        };
+      })
+    };
+    if (!apply || !report.changed) return report;
+    report.backup = await store2.state.backup(backupLabel);
+    const revision = await store2.state.commit(change);
+    kept.delete(store2);
+    if (revision === null) {
+      await pause(attempt);
+      continue;
+    }
+    report.applied = true;
+    const after = await countsOf(store2);
+    for (const p of report.parts) p.after = after[p.part];
+    return report;
+  }
+  throw new Error("The data is being changed by too many people at once. Try again.");
+}
 function describeUpgrade(r) {
   const head = r.from === r.to ? `The data is already at version ${r.to}. Nothing to do.` : `${r.applied ? "Upgraded" : "Would upgrade"} the data from version ${r.from} to ${r.to}.`;
   const rows = r.parts.map(
@@ -3588,7 +3654,8 @@ async function snapshotFor(store2, actor) {
   const db2 = base.db;
   const audit = withDb(db2, () => can(actor, "backend.audit")) ? await newestAudit(store2, base) : [];
   const out = withDb(db2, () => {
-    const recs = visibleRecords(actor);
+    const waiting2 = new Set(db2.plannedEpisodes.map((p) => p.reservedId).filter((x) => !!x));
+    const recs = visibleRecords(actor, true).filter((r) => !r.archived || !!r.workflow || !!r.episode || waiting2.has(r.contentId));
     const ids2 = new Set(recs.map((r) => r.contentId));
     const hop = actor.role === "HOP";
     const docs = db2.docs.filter((d) => canViewDoc(actor, d));
@@ -5534,6 +5601,16 @@ function formOf(projectId) {
 var rowsOf = (sessionId) => getDb().sessionLogEntries.filter((e) => e.sessionId === sessionId);
 var sessionsOf = (projectId) => getDb().recordingSessions.filter((s2) => s2.contentId === projectId).sort((a, b) => a.sessionNumber - b.sessionNumber);
 var episodesOf = (projectId, includeArchived = false) => getDb().records.filter((r) => !!r.episode && r.parentId === projectId && (includeArchived || !r.archived)).sort((a, b) => a.episode.episodeNumber - b.episode.episodeNumber);
+var isDocumentary = (p) => p.workflow.formType === "documentary_dof" || p.workflow.formType === "documentary_pitched";
+function unscheduledPlanned(projectId) {
+  const db2 = getDb();
+  const upcoming = new Set(
+    db2.recordingSessions.filter((s2) => s2.contentId === projectId && !s2.archivedAt && s2.status !== "Closed").map((s2) => s2.id)
+  );
+  const onLog = new Set(db2.sessionLogEntries.filter((e) => upcoming.has(e.sessionId)).map((e) => e.plannedEpisodeId));
+  const made = new Set(episodesOf(projectId).map((e) => e.episode.plannedEpisodeId));
+  return db2.plannedEpisodes.filter((x) => x.contentId === projectId && !x.archivedAt && !made.has(x.id) && !onLog.has(x.id)).length;
+}
 var checkpointsOf = (contentId, episodeId) => getDb().reviewCheckpoints.filter((c) => c.contentId === contentId && c.episodeId === episodeId);
 var checkpoint = (owner, key2) => getDb().reviewCheckpoints.find((c) => c.id === `${owner}|${key2}`);
 function requireCrew(personId, what) {
@@ -6322,7 +6399,9 @@ function projectSummary(p) {
   if (inPost) parts.push(`Post: ${inPost} episode${inPost === 1 ? "" : "s"}.`);
   if (inMd) parts.push(`Marketing and distribution: ${inMd} episode${inMd === 1 ? "" : "s"}.`);
   if (published) parts.push(`Published: ${published}.`);
-  const stage = p.workflow.status === "Completed" ? "Completed" : sessions.some((s2) => s2.status === "Open") ? "Production" : sessions.some((s2) => s2.status === "Planned") || sessions.length === 0 ? "Pre-production" : inPost ? "Post production" : inMd ? "Marketing and distribution" : "Pre-production";
+  const doc = isDocumentary(p);
+  const toPlan = sessions.some((s2) => s2.status === "Planned") || !doc && unscheduledPlanned(p.contentId) > 0;
+  const stage = p.workflow.status === "Completed" ? "Completed" : sessions.some((s2) => s2.status === "Open") ? "Production" : toPlan || sessions.length === 0 && eps.length === 0 ? "Pre-production" : doc && eps.length === 0 ? "Production" : inPost ? "Post production" : inMd ? "Marketing and distribution" : "Pre-production";
   return { stage, text: parts.length ? parts.join(" ") : "Pre-production: no sessions yet." };
 }
 
@@ -6535,9 +6614,23 @@ function refreshProjectStatus(p) {
 // src/services/workflow/episodes.ts
 var POST_DAYS = 14;
 var MARKETING_DAYS = 28;
-function makeEpisode(actor, project, input) {
-  const { id: id2, n } = nextEpisode(project.contentId);
-  const r = blankRecord(id2, project.category, input.title, project.contentId, project.hierarchyLevel + 1);
+function makeEpisode(actor, project, input, kept2) {
+  let id2;
+  let n;
+  let r;
+  if (kept2) {
+    id2 = kept2.contentId;
+    n = codeNumber(id2, project.contentId, EPISODE_TOKEN);
+    if (kept2.parentId !== project.contentId || kept2.episode && !kept2.archived || Number.isNaN(n))
+      throw new RuleError(`${id2} cannot become an episode of ${project.contentId}.`);
+    r = kept2;
+    r.archived = false;
+    r.closedReason = null;
+    r.version += 1;
+  } else {
+    ({ id: id2, n } = nextEpisode(project.contentId));
+    r = blankRecord(id2, project.category, input.title, project.contentId, project.hierarchyLevel + 1);
+  }
   const info = {
     episodeNumber: n,
     plannedEpisodeId: input.plannedEpisodeId,
@@ -6559,19 +6652,29 @@ function makeEpisode(actor, project, input) {
   r.episode = info;
   r.scheduledDate = input.scheduledDate;
   r.stageDeadlines = {
+    ...kept2 ? r.stageDeadlines : {},
     "Post production": addDaysIso(todayIso(), POST_DAYS),
     "Marketing and distribution": addDaysIso(todayIso(), MARKETING_DAYS)
   };
+  r.stageEnteredAt = todayIso();
   r.assigneePersonId = info.editorId;
   const db2 = getDb();
-  db2.records.push(r);
+  if (!kept2) db2.records.push(r);
   const reviewers = checkpoint(project.contentId, "outline_script")?.reviewerIds ?? [];
-  db2.reviewCheckpoints.push(
-    blankCheckpoint(project.contentId, id2, "rough_cut", reviewers),
-    blankCheckpoint(project.contentId, id2, "final", reviewers)
-  );
+  for (const key2 of ["rough_cut", "final"]) {
+    const earlier = checkpoint(id2, key2);
+    if (earlier)
+      Object.assign(earlier, { status: "Pending", note: "", decidedAt: null, decidedById: null, updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
+    else db2.reviewCheckpoints.push(blankCheckpoint(project.contentId, id2, key2, reviewers));
+  }
   ensureChecklist("post", "episode", id2);
-  logAudit(actor, "create", "record", id2, `Episode ${n}: ${input.title}`);
+  logAudit(
+    actor,
+    kept2 ? "recorded" : "create",
+    "record",
+    id2,
+    `Episode ${n}: ${kept2 ? `${r.title} (kept its Content ID from before the workflow)` : input.title}`
+  );
   return r;
 }
 function setEpisodeEditor(actor, episodeId, personId) {
@@ -7087,6 +7190,7 @@ function loadForWrite(actor, id2, expectedVersion) {
   const r = getRecord(id2);
   if (!r) throw new RuleError("Record not found.");
   if (!canWrite(actor, r)) throw new RuleError("You have view-only access to this project.");
+  if (r.archived) throw new RuleError(`This is archived and cannot be changed${r.closedReason ? `: ${r.closedReason}` : "."}`);
   if (expectedVersion !== void 0 && r.version !== expectedVersion) throw new ConflictError();
   return r;
 }
@@ -7895,7 +7999,6 @@ function projectName(p) {
   const parent = p.parentId ? getRecord(p.parentId) : void 0;
   return parent ? `${parent.title}: ${p.title}` : p.title;
 }
-var isDocumentary = (p) => p.workflow.formType === "documentary_dof" || p.workflow.formType === "documentary_pitched";
 var dateOf = (stamp2) => stamp2.slice(0, 10);
 var plural = (n, one) => `${n} ${one}${n === 1 ? "" : "s"}`;
 function developmentOwner(p) {
@@ -7913,15 +8016,6 @@ function pendingReviews(ownerId, keys) {
 var waiting = (ownerId, reviews, ownerToo = true) => [
   .../* @__PURE__ */ new Set([...ownerToo && ownerId ? [ownerId] : [], ...reviews.flatMap((r) => r.reviewerIds)])
 ];
-function unscheduled(p) {
-  const db2 = getDb();
-  const upcoming = new Set(
-    db2.recordingSessions.filter((s2) => s2.contentId === p.contentId && !s2.archivedAt && s2.status !== "Closed").map((s2) => s2.id)
-  );
-  const onLog = new Set(db2.sessionLogEntries.filter((e) => upcoming.has(e.sessionId)).map((e) => e.plannedEpisodeId));
-  const made = new Set(episodesOf(p.contentId).map((e) => e.episode.plannedEpisodeId));
-  return db2.plannedEpisodes.filter((x) => x.contentId === p.contentId && !x.archivedAt && !made.has(x.id) && !onLog.has(x.id)).length;
-}
 function projectItem(p, stage, step, ownerId, gate) {
   const reviews = stage === "Development" ? pendingReviews(p.contentId, [
     ["pitch", "Pitch review"],
@@ -8033,7 +8127,7 @@ function itemsOf(p, gates) {
       else if (!episodes.length && !open && !planned.length && sessions.some((s2) => s2.status === "Closed"))
         items.push(projectItem(p, "Production", "Sessions closed: send to post production", producer, null));
     } else {
-      const left = unscheduled(p);
+      const left = unscheduledPlanned(p.contentId);
       const label = (categoryOf(p.category).workflow?.episodeLabel ?? "Episode").toLowerCase();
       if (sessions.length === 0 || planned.length || left)
         items.push(
@@ -8818,7 +8912,8 @@ function addPlannedEpisode(actor, projectId, input) {
     createdAt: at,
     updatedAt: at,
     archivedAt: null,
-    archivedReason: null
+    archivedReason: null,
+    reservedId: null
   };
   getDb().plannedEpisodes.push(p);
   refreshProjectStatus(project);
@@ -9022,7 +9117,6 @@ function decideCheckpoint(actor, checkpointId, decision) {
 }
 
 // src/services/workflow/sessions.ts
-var isDocumentary2 = (p) => p.workflow.formType === "documentary_dof" || p.workflow.formType === "documentary_pitched";
 var RUN_SHEET_NOTE = "Real conversations often run long. If takes reach 65 to 70 minutes, expect the day to run 35 to 60 minutes over. Five long conversations in a row tire the host. Never skip the Episode 1 spot check.";
 var MAX_DAY = 24 * 60;
 var hhmm = (min) => `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
@@ -9246,7 +9340,7 @@ function addLogRow(actor, sessionId, input) {
   const plannedId = input.plannedEpisodeId || null;
   const label = (input.itemLabel ?? "").trim();
   let guest = (input.guest ?? "").trim();
-  if (isDocumentary2(project)) {
+  if (isDocumentary(project)) {
     if (!label) throw new RuleError("Name what was recorded: an interview set, a scene or a location.");
   } else if (!plannedId) throw new RuleError("Choose the planned episode this row is for.");
   if (plannedId) {
@@ -9331,7 +9425,7 @@ function closeSession(actor, sessionId) {
   const made = [];
   const kept2 = [];
   const archived = [];
-  if (!isDocumentary2(project)) {
+  if (!isDocumentary(project)) {
     const planned = new Map(db2.plannedEpisodes.map((p) => [p.id, p]));
     const rows = rowsOf(sessionId).filter((r) => r.plannedEpisodeId && planned.has(r.plannedEpisodeId)).sort((a, b) => planned.get(a.plannedEpisodeId).episodeNumber - planned.get(b.plannedEpisodeId).episodeNumber);
     const label = categoryOf(project.category).workflow?.episodeLabel ?? "Episode";
@@ -9343,13 +9437,19 @@ function closeSession(actor, sessionId) {
           continue;
         }
         const p = planned.get(row.plannedEpisodeId);
-        const ep = makeEpisode(actor, project, {
-          title: p.workingTitle || `${label} ${p.episodeNumber}`,
-          plannedEpisodeId: p.id,
-          sourceSessionId: sessionId,
-          productionNotes: row.notesForPost,
-          scheduledDate: row.logDate
-        });
+        const waiting2 = p.reservedId ? db2.records.find((r) => r.contentId === p.reservedId && (!r.episode || r.archived && r.episode.plannedEpisodeId === p.id)) : void 0;
+        const ep = makeEpisode(
+          actor,
+          project,
+          {
+            title: p.workingTitle || `${label} ${p.episodeNumber}`,
+            plannedEpisodeId: p.id,
+            sourceSessionId: sessionId,
+            productionNotes: row.notesForPost,
+            scheduledDate: row.logDate
+          },
+          waiting2
+        );
         made.push(ep.contentId);
       } else if (existing && existing.episode?.sourceSessionId === sessionId) {
         existing.archived = true;
@@ -9375,7 +9475,7 @@ function closeSession(actor, sessionId) {
 function reopenSession(actor, sessionId) {
   const { session, project } = sessionForWrite(actor, sessionId);
   if (session.status !== "Closed") throw new RuleError("This session is not closed.");
-  const eps = isDocumentary2(project) ? episodesOf(project.contentId) : episodesOf(project.contentId).filter((e) => e.episode.sourceSessionId === sessionId);
+  const eps = isDocumentary(project) ? episodesOf(project.contentId) : episodesOf(project.contentId).filter((e) => e.episode.sourceSessionId === sessionId);
   const started = eps.filter((e) => e.episode.stage !== "Post production" || e.episode.postStage !== "Not started");
   if (started.length)
     throw new RuleError(
@@ -9390,7 +9490,7 @@ function reopenSession(actor, sessionId) {
 }
 function sendToPostProduction(actor, projectId) {
   const p = projectForWrite(actor, projectId);
-  if (!isDocumentary2(p)) throw new RuleError("Series and devotions make their episodes when each session closes.");
+  if (!isDocumentary(p)) throw new RuleError("Series and devotions make their episodes when each session closes.");
   if (!canManageTeam(actor, p))
     throw new RuleError("Only the show producer or the Head of Production sends a documentary to post production.");
   const closed = sessionsOf(projectId).filter((s2) => s2.status === "Closed" && !s2.archivedAt);
@@ -10583,6 +10683,625 @@ async function dailyChecks(store2, force = false) {
   }
 }
 
+// server/migrateWorkflow.ts
+import { z as z3 } from "zod";
+
+// src/data/migrateWorkflow.ts
+var SCOPE = ["series", "devotional", "documentary"];
+var NOT_RECORDED = ["Idea", "Scripting", "Pre-production", "Recording"];
+var POST = ["Ingest", "Editorial", "Review"];
+var MIGRATED_NOTE = "Migrated before session logging.";
+var MOVED_NOTE = "Moved across from the earlier pipeline.";
+var EDIT_TASK_TO_POST = {
+  "Story lock": "story_lock",
+  "Picture lock": "picture_lock",
+  "Sound check": "sound_mix",
+  Color: "color"
+};
+var plural2 = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+var byNumber = (a, b) => a.contentId.localeCompare(b.contentId, void 0, { numeric: true });
+function countParts(db2) {
+  const out = /* @__PURE__ */ new Map();
+  for (const [k, v] of Object.entries(db2)) if (Array.isArray(v)) out.set(k, v.length);
+  return out;
+}
+function migrateToWorkflow(db2, options) {
+  const { today, at } = options;
+  const before = countParts(db2);
+  const scope = db2.records.filter((r) => SCOPE.includes(r.category));
+  const byId = new Map(db2.records.map((r) => [r.contentId, r]));
+  const people = new Map(db2.people.map((p) => [p.personId, p]));
+  const lines = [];
+  const followUps = [];
+  const listed = /* @__PURE__ */ new Set();
+  let changed = false;
+  const report = { lines, followUps, unexplained: [], counts: [], changed: false, series: [], documentaries: [] };
+  const line2 = (r, outcome2, beforeText, after2, note = "") => {
+    if (listed.has(r.contentId)) return;
+    listed.add(r.contentId);
+    lines.push({ contentId: r.contentId, title: r.title, category: r.category, outcome: outcome2, before: beforeText, after: after2, note });
+  };
+  const childrenOf = (id2) => db2.records.filter((r) => r.parentId === id2).sort(byNumber);
+  const reserved = new Map(db2.plannedEpisodes.filter((p) => p.reservedId).map((p) => [p.reservedId, p]));
+  const isCrew = (id2) => {
+    const p = id2 ? people.get(id2) : void 0;
+    return !!p && p.status === "active" && (p.category === "CRW" || p.category === "HOP");
+  };
+  const ownerOf = (r, stage, role) => {
+    const owners = r.stageAssignees[stage] ?? [];
+    const pick = role && owners.find((o) => o.roles.some((x) => x.toLowerCase() === role.toLowerCase()) && isCrew(o.personId)) || owners.find((o) => isCrew(o.personId));
+    return pick ? pick.personId : null;
+  };
+  const latestLink = (r, kind) => r.links.filter((l) => l.kind === kind).map((l) => asWebUrl(l.url)).filter((u) => !!u).pop() ?? "";
+  const checklist = (key2, ownerType, ownerId, done) => {
+    const def = CHECKLISTS[key2];
+    for (const item2 of def.items) {
+      if (item2.auto) continue;
+      const id2 = `${ownerId}|${def.stage}|${item2.key}`;
+      if (db2.workflowChecklistItems.some((c) => c.id === id2)) continue;
+      const isDone = done(item2.key);
+      const row = {
+        id: id2,
+        ownerType,
+        ownerId,
+        stage: def.stage,
+        itemKey: item2.key,
+        label: item2.label,
+        required: item2.required,
+        done: isDone,
+        note: isDone ? MOVED_NOTE : "",
+        doneAt: isDone ? at : null,
+        doneById: isDone ? "system" : null,
+        createdAt: at,
+        updatedAt: at
+      };
+      db2.workflowChecklistItems.push(row);
+    }
+  };
+  const checkpoint2 = (contentId, episodeId, key2, approved, reviewerIds, note = "") => {
+    const c = {
+      id: `${episodeId ?? contentId}|${key2}`,
+      contentId,
+      episodeId,
+      checkpoint: key2,
+      reviewerIds,
+      status: approved ? "Approved" : "Pending",
+      note: approved ? note || "Approved before the new workflow." : "",
+      decidedAt: approved ? at : null,
+      decidedById: approved ? "system" : null,
+      createdAt: at,
+      updatedAt: at
+    };
+    db2.reviewCheckpoints.push(c);
+  };
+  const form = (p, formType2, greenlit, sections = {}) => {
+    const dof = formType2 === "documentary_dof";
+    const notes = `Greenlit before the new workflow (moved across on ${fmtShort(today)}).`;
+    const f2 = {
+      id: p.contentId,
+      contentId: p.contentId,
+      formType: formType2,
+      sections,
+      greenlightStage: dof ? greenlit >= 1 ? 2 : 1 : null,
+      criteria: Object.fromEntries(CRITERIA.map((c) => [c.key, { met: null, note: "" }])),
+      outcome: greenlit && (!dof || greenlit === 2) ? "Greenlight" : null,
+      reviewNotes: greenlit ? notes : "",
+      decisionDate: greenlit ? today : null,
+      reviewWindowDate: null,
+      decisions: [1, 2].filter((stage) => stage <= greenlit && (dof || stage === 1)).map((stage) => ({ stage, outcome: "Greenlight", notes, date: today, byPersonId: "system", at })),
+      createdAt: at,
+      updatedAt: at
+    };
+    db2.developmentForms.push(f2);
+  };
+  const planned = (p, n, title2, reservedId, notes, guest = "") => {
+    const x = {
+      id: plannedEpisodeId(p.contentId, n),
+      contentId: p.contentId,
+      episodeNumber: n,
+      workingTitle: title2,
+      question: "",
+      guest,
+      notes,
+      details: {},
+      reservedId,
+      createdAt: at,
+      updatedAt: at,
+      archivedAt: null,
+      archivedReason: null
+    };
+    db2.plannedEpisodes.push(x);
+    return x;
+  };
+  const project = (p, formType2, stage, producer) => {
+    p.workflow = {
+      formType: formType2,
+      status: stage === "Development" ? "Development" : "Active",
+      stage,
+      showProducerId: producer,
+      producerAssignedById: producer ? "system" : null,
+      producerAssignedAt: producer ? at : null,
+      sermonFormat: null,
+      migrated: true
+    };
+    p.version += 1;
+    changed = true;
+  };
+  const episode = (r, projectId, n, plannedId, oldStage, src) => {
+    const review = latestLink(src, "review");
+    const delivered = oldStage === "Delivered";
+    const inReview = oldStage === "Review" && !!review;
+    const info = {
+      episodeNumber: n,
+      plannedEpisodeId: plannedId,
+      sourceSessionId: null,
+      productionNotes: [MIGRATED_NOTE, src.recordingNotes, src.notes].filter(Boolean).join("\n"),
+      stage: delivered ? "Marketing and distribution" : "Post production",
+      postStage: delivered ? "Approved" : inReview ? "Rough cut review" : "Editing",
+      roughCutStatus: delivered ? "Done" : "Pending",
+      finalReviewStatus: delivered ? "Done" : "Pending",
+      editorId: ownerOf(src, "Editorial", "Editor"),
+      readyForReview: oldStage === "Review",
+      reviewLink: review,
+      finalFileLink: latestLink(src, "final"),
+      sendBackReason: null,
+      mdStage: delivered && src.stageOutputs.Delivered ? "Published" : "Release plan",
+      distribution: [],
+      learningNotes: ""
+    };
+    r.episode = info;
+    const postDue = src.stageDeadlines.Review ?? src.stageDeadlines.Editorial ?? src.stageDeadlines.Ingest;
+    const mdDue = src.stageDeadlines.Delivered ?? src.deadline;
+    r.stageDeadlines = {
+      ...r.stageDeadlines,
+      ...postDue ? { "Post production": postDue } : {},
+      ...mdDue ? { "Marketing and distribution": mdDue } : {}
+    };
+    r.version += 1;
+    const reviewers = delivered ? [] : (src.stageAssignees.Review ?? []).map((o) => o.personId).filter(isCrew);
+    checkpoint2(projectId, r.contentId, "rough_cut", delivered, reviewers);
+    checkpoint2(projectId, r.contentId, "final", delivered, reviewers);
+    const tasks = new Set(
+      src.tasks.filter((t2) => t2.done).map((t2) => EDIT_TASK_TO_POST[t2.label]).filter(Boolean)
+    );
+    if (src.stageOutputs.Ingest) tasks.add("offload_check");
+    checklist("post", "episode", r.contentId, (k) => tasks.has(k));
+    if (delivered) checklist("release", "episode", r.contentId, () => info.mdStage === "Published");
+    changed = true;
+    const after2 = delivered ? `Episode in Marketing and distribution: ${info.mdStage}` : `Episode in Post production: ${info.postStage}`;
+    const note = [
+      oldStage === "Review" && !review ? "It had no web review link, so it waits in Editing, marked ready: attach the link and send it for review." : "",
+      delivered && info.mdStage === "Release plan" ? "Its delivery was not confirmed, so it is at its release plan." : ""
+    ].filter(Boolean).join(" ");
+    return { info, after: after2, note };
+  };
+  for (const series of scope.filter((r) => r.category === "series" && r.hierarchyLevel === 0).sort(byNumber)) {
+    const chosen = options.seriesTypes?.[series.contentId];
+    const type = series.seriesType ?? chosen ?? "podcast";
+    report.series.push({ contentId: series.contentId, title: series.title, type, chosen: !!chosen || !!series.seriesType });
+    const label = SERIES_TYPES.find((t2) => t2.key === type).label;
+    const all = [series, ...childrenOf(series.contentId).flatMap((s2) => [s2, ...childrenOf(s2.contentId)])];
+    if (series.archived) {
+      for (const r of all) line2(r, "unchanged", "Archived before the move", "Left as it is", "Archived records are not moved.");
+      continue;
+    }
+    if (series.seriesType) line2(series, "unchanged", `Series: ${label}`, "Already in the new workflow");
+    else {
+      series.seriesType = type;
+      series.version += 1;
+      changed = true;
+      line2(series, "moved", "Series", `Series: ${label}`, chosen ? "" : "Podcast, unless another type is chosen before moving.");
+    }
+    for (const season of childrenOf(series.contentId)) migrateSeason(season, type);
+  }
+  function migrateSeason(season, type) {
+    const kids = childrenOf(season.contentId);
+    if (season.archived) {
+      for (const r of [season, ...kids])
+        line2(r, "unchanged", "Archived before the move", "Left as it is", "Archived records are not moved.");
+      return;
+    }
+    if (season.workflow) {
+      line2(season, "unchanged", `Season: ${season.workflow.stage}`, "Already in the new workflow");
+      for (const e of kids) {
+        const waits = reserved.get(e.contentId);
+        if (e.episode) line2(e, "unchanged", "Episode", "Already in the new workflow");
+        else if (waits)
+          line2(e, "unchanged", "Waiting to be recorded", `Planned episode ${waits.id}`, `It keeps ${e.contentId} when recorded.`);
+        else if (e.archived) line2(e, "unchanged", "Archived before the move", "Left as it is", "Archived records are not moved.");
+        else
+          line2(
+            e,
+            "flagged",
+            `Episode at ${e.pipelineStage ?? "no stage"}`,
+            "Left in the earlier pipeline",
+            "Its season is already in the new workflow. Move it by hand."
+          );
+      }
+      return;
+    }
+    const live = kids.filter((e) => !e.archived);
+    for (const e of kids.filter((x) => x.archived))
+      line2(e, "unchanged", "Archived before the move", "Left as it is", "Archived records are not moved.");
+    const known = [...NOT_RECORDED, ...POST, "Delivered"];
+    const unknown = live.filter((e) => !e.pipelineStage || !known.includes(e.pipelineStage));
+    for (const e of unknown)
+      line2(
+        e,
+        "flagged",
+        `Episode at ${e.pipelineStage ?? "no stage"}`,
+        "Left in the earlier pipeline",
+        "Its stage is not one the move knows. Move it by hand."
+      );
+    const eps = live.filter((e) => !unknown.includes(e));
+    const pastDevelopment = eps.some((e) => e.pipelineStage !== "Idea" && e.pipelineStage !== "Scripting");
+    const recordedYet = eps.some(
+      (e) => e.pipelineStage === "Recording" || POST.includes(e.pipelineStage) || e.pipelineStage === "Delivered"
+    );
+    project(season, type, pastDevelopment ? "Pre-production" : "Development", null);
+    form(season, type, pastDevelopment ? 1 : 0);
+    checkpoint2(season.contentId, null, "pitch", pastDevelopment, []);
+    checkpoint2(season.contentId, null, "outline_script", pastDevelopment, []);
+    checklist("handoff", "project", season.contentId, () => pastDevelopment);
+    if (pastDevelopment) checklist("preProject", "project", season.contentId, () => recordedYet);
+    const numbers = /* @__PURE__ */ new Map();
+    let top = Math.max(0, ...eps.map((e) => codeNumber(e.contentId, season.contentId, EPISODE_TOKEN)).filter((n) => !Number.isNaN(n)));
+    for (const e of eps) {
+      const n = codeNumber(e.contentId, season.contentId, EPISODE_TOKEN);
+      numbers.set(e.contentId, Number.isNaN(n) ? ++top : n);
+    }
+    const recording2 = eps.filter((e) => e.pipelineStage === "Recording");
+    const dates = [...new Set(recording2.map((e) => e.scheduledDate ?? ""))].sort((a, b) => (a || "9999").localeCompare(b || "9999"));
+    const sessionFor = /* @__PURE__ */ new Map();
+    dates.forEach((date2, i) => {
+      const id2 = sessionCode(season.contentId, i + 1);
+      const rootId = season.parentId ?? season.contentId;
+      const onDate = recording2.filter((e) => (e.scheduledDate ?? "") === date2).map((e) => e.contentId);
+      const sheet = date2 ? db2.callSheets.find((c) => c.contentId === rootId && c.date === date2 && c.linkedEpisodeIds.some((x) => onDate.includes(x))) : void 0;
+      const s2 = {
+        id: id2,
+        contentId: season.contentId,
+        sessionNumber: i + 1,
+        scheduledDate: date2 || null,
+        venue: sheet?.location ?? "",
+        status: "Open",
+        closedAt: null,
+        callSheetId: sheet?.id ?? null,
+        runSheet: [],
+        dailyLog: "",
+        createdAt: at,
+        updatedAt: at,
+        archivedAt: null,
+        archivedReason: null
+      };
+      db2.recordingSessions.push(s2);
+      checklist("preSession", "session", id2, () => true);
+      checklist("wrap", "session", id2, () => false);
+      sessionFor.set(date2, s2);
+    });
+    let planNo = 0;
+    for (const e of eps) {
+      const stage = e.pipelineStage;
+      const guests = e.featured.filter((f2) => f2.kind === "guest").map((f2) => f2.name).join(", ");
+      if (NOT_RECORDED.includes(stage)) {
+        const notes = [
+          `${MOVED_NOTE} It was ${e.contentId}, at ${stage}.`,
+          e.scheduledDate ? `Shoot date then: ${fmtShort(e.scheduledDate)}.` : "",
+          e.notes
+        ].filter(Boolean).join(" ");
+        const p = planned(season, ++planNo, e.title, e.contentId, notes, guests);
+        e.archived = true;
+        e.closedReason = `Waiting to be recorded as planned episode ${p.id}. It keeps this Content ID when it is.`;
+        e.version += 1;
+        changed = true;
+        const s2 = stage === "Recording" ? sessionFor.get(e.scheduledDate ?? "") : void 0;
+        if (s2) {
+          const row = {
+            id: `${s2.id}|${p.id}`,
+            sessionId: s2.id,
+            plannedEpisodeId: p.id,
+            itemLabel: "",
+            logDate: s2.scheduledDate ?? today,
+            guest: guests,
+            status: null,
+            notesForPost: "",
+            createdAt: at,
+            updatedAt: at
+          };
+          db2.sessionLogEntries.push(row);
+        }
+        line2(
+          e,
+          "moved",
+          `Episode at ${stage}`,
+          s2 ? `Planned episode ${p.id}, on session ${s2.id} (Production${s2.scheduledDate ? `, ${fmtShort(s2.scheduledDate)}` : ", no date"})` : `Planned episode ${p.id}, waiting to be recorded`,
+          `It keeps ${e.contentId} when recorded${s2?.callSheetId ? `; call sheet ${s2.callSheetId} is linked` : ""}.`
+        );
+      } else {
+        const p = planned(season, ++planNo, e.title, null, `${MOVED_NOTE} Made as ${e.contentId}.`, guests);
+        const made2 = episode(e, season.contentId, numbers.get(e.contentId), p.id, stage, e);
+        line2(e, "moved", `Episode at ${stage}`, made2.after, made2.note);
+      }
+    }
+    const made = db2.records.filter((r) => r.parentId === season.contentId && r.episode && !r.archived);
+    const plans = db2.plannedEpisodes.filter((p) => p.contentId === season.contentId && !p.archivedAt);
+    if (pastDevelopment && plans.length && plans.every((p) => made.some((r) => r.episode.plannedEpisodeId === p.id && r.episode.mdStage === "Published")))
+      season.workflow.status = "Completed";
+    line2(
+      season,
+      "moved",
+      "Season",
+      `${formTypeOf(type).label} project in ${season.workflow.status === "Completed" ? "Completed" : season.workflow.stage}`,
+      [
+        plural2(plans.length, "planned episode"),
+        made.length ? plural2(made.length, "episode") : "",
+        sessionFor.size ? plural2(sessionFor.size, "open session") : "",
+        pastDevelopment ? "the gates it passed before count as met" : ""
+      ].filter(Boolean).join(", ") + "."
+    );
+    if (pastDevelopment) followUps.push(`${titleOf(season)}: name the show producer and assign the project roles.`);
+    else followUps.push(`${titleOf(season)}: fill in the development form, then greenlight it.`);
+  }
+  function titleOf(r) {
+    const parent = r.parentId ? byId.get(r.parentId) : void 0;
+    return parent ? `${parent.title}: ${r.title} (${r.contentId})` : `${r.title} (${r.contentId})`;
+  }
+  for (const d of scope.filter((r) => r.category === "devotional").sort(byNumber)) {
+    const stage = d.pipelineStage ?? "";
+    if (d.workflow) {
+      line2(d, "unchanged", `Devotion: ${d.workflow.stage}`, "Already in the new workflow");
+      continue;
+    }
+    if (d.archived) {
+      line2(d, "unchanged", "Archived before the move", "Left as it is", "Archived records are not moved.");
+      continue;
+    }
+    const reviewed = d.reviewApprovedAt ? `Theological review approved by ${d.reviewerName || "the reviewer"} on ${fmtShort(d.reviewApprovedAt.slice(0, 10))}, before the new workflow.` : "";
+    const sections = {
+      entry: { category: "devotional" },
+      guest: { ...d.guestName ? { name: d.guestName } : {}, ...d.guestContact ? { contact: d.guestContact } : {} },
+      ...reviewed ? { messageReview: { notes: reviewed } } : {}
+    };
+    const days = () => {
+      for (let n = 1; n <= 5; n++) planned(d, n, `Day ${n}`, null, n === 1 ? MOVED_NOTE : "");
+    };
+    if (stage === "Closed") {
+      const reason = d.closedReason?.trim() || "Closed before the new workflow; no reason was recorded.";
+      project(d, "devotion", "Development", null);
+      d.workflow.status = "Closed";
+      d.archived = true;
+      d.closedReason = reason;
+      form(d, "devotion", 0, sections);
+      checkpoint2(d.contentId, null, "pitch", false, []);
+      checkpoint2(d.contentId, null, "outline_script", false, []);
+      line2(d, "moved", "Devotional: Closed", "Devotion, closed and archived", `Reason kept: ${reason}`);
+    } else if (stage === "Creation" || stage === "Guest") {
+      project(d, "devotion", "Development", null);
+      form(d, "devotion", 0, sections);
+      checkpoint2(d.contentId, null, "pitch", !!d.reviewApprovedAt, [], reviewed);
+      checkpoint2(d.contentId, null, "outline_script", !!d.reviewApprovedAt, [], reviewed);
+      checklist("handoff", "project", d.contentId, () => false);
+      days();
+      line2(
+        d,
+        "moved",
+        `Devotional at ${stage}`,
+        "Devotion in Development",
+        `Five planned days.${reviewed ? " The pitch and outline checkpoints are approved from its theological review." : ""}`
+      );
+      followUps.push(`${titleOf(d)}: finish the development form and the five-day outline, then greenlight it.`);
+    } else if (stage === "Prep/Scripting") {
+      const producer = ownerOf(d, "Creation");
+      project(d, "devotion", "Pre-production", producer);
+      form(d, "devotion", 1, sections);
+      checkpoint2(d.contentId, null, "pitch", true, [], reviewed);
+      checkpoint2(d.contentId, null, "outline_script", true, [], reviewed);
+      checklist("handoff", "project", d.contentId, () => true);
+      checklist("preProject", "project", d.contentId, () => false);
+      days();
+      line2(
+        d,
+        "moved",
+        "Devotional at Prep/Scripting",
+        "Devotion in Pre-production",
+        "Five planned days; the gates it passed before count as met."
+      );
+      followUps.push(
+        `${titleOf(d)}: ${producer ? "" : "name the show producer, "}assign the roles, fill in the five days, and schedule its recording session.`
+      );
+    } else if (["Recording", "Editing", "Review", "Published"].includes(stage)) {
+      line2(
+        d,
+        "flagged",
+        `Devotional at ${stage}`,
+        "Left in the earlier pipeline",
+        "It was recorded as one item, so there is no per-day data to make its five episodes from. It keeps working as before; decide by hand."
+      );
+    } else
+      line2(
+        d,
+        "flagged",
+        `Devotional at ${stage || "no stage"}`,
+        "Left in the earlier pipeline",
+        "Its stage is not one the move knows. Move it by hand."
+      );
+  }
+  for (const doc of scope.filter((r) => r.category === "documentary" && r.hierarchyLevel === 0).sort(byNumber)) {
+    const chosen = options.documentaryForms?.[doc.contentId];
+    const formType2 = doc.workflow?.formType ?? chosen ?? "documentary_dof";
+    report.documentaries.push({ contentId: doc.contentId, title: doc.title, form: formType2, chosen: !!chosen || !!doc.workflow });
+    const kids = childrenOf(doc.contentId);
+    if (doc.workflow) {
+      line2(doc, "unchanged", `Documentary: ${doc.workflow.stage}`, "Already in the new workflow");
+      for (const k of kids) line2(k, "unchanged", "Episode", k.episode ? "Already in the new workflow" : "Left as it is");
+      continue;
+    }
+    if (doc.archived) {
+      for (const r of [doc, ...kids]) line2(r, "unchanged", "Archived before the move", "Left as it is", "Archived records are not moved.");
+      continue;
+    }
+    const stage = doc.pipelineStage ?? "";
+    const label = formTypeOf(formType2).label;
+    const dof = formType2 === "documentary_dof";
+    if (stage === "Idea" || stage === "Research") {
+      project(doc, formType2, "Development", null);
+      form(doc, formType2, 0);
+      checkpoint2(doc.contentId, null, "pitch", false, []);
+      checkpoint2(doc.contentId, null, "outline_script", false, []);
+      checklist("handoff", "project", doc.contentId, () => false);
+      line2(
+        doc,
+        "moved",
+        `Documentary at ${stage}`,
+        `${label} project in Development`,
+        chosen ? "" : "DOF-made, unless pitched by others is chosen before moving."
+      );
+      followUps.push(`${titleOf(doc)}: fill in the development form, then greenlight it.`);
+    } else if (stage === "Pre-production" || stage === "Shooting" || POST.includes(stage) || stage === "Delivered") {
+      const shot = stage !== "Pre-production";
+      project(doc, formType2, "Pre-production", null);
+      form(doc, formType2, dof ? shot ? 2 : 1 : 1);
+      checkpoint2(doc.contentId, null, "pitch", true, []);
+      checkpoint2(doc.contentId, null, "outline_script", true, []);
+      checklist("handoff", "project", doc.contentId, () => true);
+      checklist("preProject", "project", doc.contentId, () => shot);
+      let after2 = `${label} project in Pre-production`;
+      let note = dof && !shot ? "Its second greenlight (shoot budget, interview sets, shot list) is still to decide." : "";
+      if (stage === "Shooting") {
+        const id2 = sessionCode(doc.contentId, 1);
+        const sheet = doc.scheduledDate ? db2.callSheets.find((c) => c.contentId === doc.contentId && c.date === doc.scheduledDate) : void 0;
+        db2.recordingSessions.push({
+          id: id2,
+          contentId: doc.contentId,
+          sessionNumber: 1,
+          scheduledDate: doc.scheduledDate,
+          venue: sheet?.location ?? "",
+          status: "Open",
+          closedAt: null,
+          callSheetId: sheet?.id ?? null,
+          runSheet: [],
+          dailyLog: "",
+          createdAt: at,
+          updatedAt: at,
+          archivedAt: null,
+          archivedReason: null
+        });
+        checklist("preSession", "session", id2, () => true);
+        checklist("wrap", "session", id2, () => false);
+        after2 = `${label} project, recording on session ${id2} (Production)`;
+        note = "Add what was shot to its log, close it, then send the film to post production.";
+      } else if (stage !== "Pre-production") {
+        const id2 = episodeCode(doc.contentId, 1);
+        if (byId.has(id2)) {
+          line2(
+            doc,
+            "flagged",
+            `Documentary at ${stage}`,
+            "Left in the earlier pipeline",
+            `${id2} already exists, so its film cannot be made there. Move it by hand.`
+          );
+          continue;
+        }
+        const film = blankRecord(id2, "documentary", doc.title, doc.contentId, doc.hierarchyLevel + 1);
+        Object.assign(film, {
+          createdAt: at,
+          startDate: today,
+          stageEnteredAt: doc.stageEnteredAt,
+          scheduledDate: doc.scheduledDate,
+          deadline: doc.deadline
+        });
+        db2.records.push(film);
+        byId.set(id2, film);
+        const made = episode(film, doc.contentId, 1, null, stage, doc);
+        if (made.info.mdStage === "Published") doc.workflow.status = "Completed";
+        after2 = `${label} project; its film is ${id2}, ${made.after.charAt(0).toLowerCase()}${made.after.slice(1)}`;
+        note = made.note;
+      }
+      line2(
+        doc,
+        "moved",
+        `Documentary at ${stage}`,
+        after2,
+        [chosen ? "" : "DOF-made, unless pitched by others is chosen before moving.", note].filter(Boolean).join(" ")
+      );
+      followUps.push(`${titleOf(doc)}: name the show producer and assign the project roles.`);
+    } else
+      line2(
+        doc,
+        "flagged",
+        `Documentary at ${stage || "no stage"}`,
+        "Left in the earlier pipeline",
+        "Its stage is not one the move knows. Move it by hand."
+      );
+    for (const k of kids)
+      if (!listed.has(k.contentId))
+        line2(
+          k,
+          "flagged",
+          "A record under a documentary",
+          "Left as it is",
+          "Documentaries made before the workflow had no episodes. Look at it by hand."
+        );
+  }
+  for (const r of scope) if (!listed.has(r.contentId)) report.unexplained.push(`${r.contentId} (${r.title})`);
+  if (changed) {
+    syncRecordCounters(db2);
+    syncWorkflowCounters(db2);
+    const moved = lines.filter((l) => l.outcome === "moved").length;
+    const flagged = lines.filter((l) => l.outcome === "flagged").length;
+    db2.audit.push({
+      id: logId("A"),
+      at,
+      byPersonId: options.byPersonId,
+      action: "migrate-workflow",
+      entity: "system",
+      entityId: "workflow",
+      detail: `${plural2(moved, "record")} moved to the new workflow, ${plural2(flagged, "record")} left for a decision by hand.`
+    });
+  }
+  const after = countParts(db2);
+  report.counts = [...after.keys()].map((part) => ({ part, before: before.get(part) ?? 0, after: after.get(part) ?? 0 }));
+  report.changed = changed;
+  return report;
+}
+
+// server/migrateWorkflow.ts
+var choices = z3.object({
+  seriesTypes: z3.record(z3.string().max(120), z3.enum(["podcast", "testimonial", "sermon"])).optional(),
+  documentaryForms: z3.record(z3.string().max(120), z3.enum(["documentary_dof", "documentary_pitched"])).optional()
+}).strict();
+function parseChoices(body) {
+  const r = choices.safeParse(body ?? {});
+  if (!r.success) throw new HttpError(400, "Those choices are not valid.");
+  return r.data;
+}
+async function migrateWorkflowStore(store2, apply, byPersonId, picked = {}) {
+  const at = (/* @__PURE__ */ new Date()).toISOString();
+  const r = await changeAllData(
+    store2,
+    apply,
+    "before_workflow",
+    (db2) => migrateToWorkflow(db2, { ...picked, today: todayIso(), at, byPersonId })
+  );
+  if (!r) return null;
+  return {
+    ...r.result,
+    counts: r.parts.map((p) => ({ part: p.part, before: p.before, after: p.after })),
+    applied: r.applied,
+    backup: r.backup
+  };
+}
+async function migrateWorkflowRequest(store2, who, body) {
+  if (!isHop(who.actor)) throw new HttpError(403, "Only the Head of Production can move the existing projects into the new workflow.");
+  const { apply, ...rest } = body;
+  if (apply !== void 0 && typeof apply !== "boolean") throw new HttpError(400, "Those choices are not valid.");
+  const report = await migrateWorkflowStore(store2, apply === true, who.actor.personId, parseChoices(rest));
+  if (!report) throw new HttpError(503, "The app has not been set up yet.");
+  if (apply === true && report.changed && !report.applied)
+    throw new HttpError(409, "Someone saved a change at the same moment. Try again.");
+  return report;
+}
+
 // server/router.ts
 var str = (v) => typeof v === "string" ? v : "";
 async function dispatch(store2, req2, res) {
@@ -10671,6 +11390,10 @@ async function dispatch(store2, req2, res) {
           replaces: str(req2.body.replaces) || null
         })
       );
+    }
+    case "POST /migrate-workflow": {
+      const who = await signedIn();
+      return ok({ report: await migrateWorkflowRequest(store2, who, req2.body) });
     }
     case "GET /cron/daily": {
       const secret = process.env.CRON_SECRET;

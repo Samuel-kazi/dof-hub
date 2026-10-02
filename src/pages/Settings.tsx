@@ -17,6 +17,7 @@ import { nameOf } from "../services/wrapped/people";
 import { useTheme } from "../ui/theme";
 import { AvatarUpload, Field } from "../ui/parts";
 import { Empty } from "../ui/parts";
+import { MoveExistingPanel } from "./workflow/MoveExisting";
 
 export function Settings() {
   const { actor, me, attempt, confirm, go, toast } = useApp();
@@ -417,6 +418,8 @@ export function Settings() {
             </button>
           </section>
         )}
+
+        {hop && <MoveExistingPanel />}
 
         {hop && !isRemote() && (
           <section className="glass panel">

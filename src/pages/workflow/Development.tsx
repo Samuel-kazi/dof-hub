@@ -95,7 +95,18 @@ function PlannedRow({ id, section, write }: { id: string; section: SectionDef; w
   const recorded = getDb().records.some((r) => r.episode?.plannedEpisodeId === id && !r.archived);
   return (
     <tr>
-      <td className="cid">{p.id.slice(p.contentId.length + 1)}</td>
+      <td className="cid">
+        {p.id.slice(p.contentId.length + 1)}
+        {p.reservedId && !recorded && (
+          <div
+            className="muted"
+            style={{ fontSize: ".8rem" }}
+            title="Made before the new workflow: it keeps this Content ID when it is recorded"
+          >
+            Keeps {p.reservedId.slice(p.contentId.length + 1)}
+          </div>
+        )}
+      </td>
       <td>
         <input
           type="text"

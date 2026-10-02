@@ -516,6 +516,8 @@ function loadForWrite(actor: Actor, id: string, expectedVersion?: number): Conte
   const r = getRecord(id);
   if (!r) throw new RuleError("Record not found.");
   if (!canWrite(actor, r)) throw new RuleError("You have view-only access to this project.");
+  // An archived record is kept as it was: a deleted project, or an episode waiting to be recorded in the workflow.
+  if (r.archived) throw new RuleError(`This is archived and cannot be changed${r.closedReason ? `: ${r.closedReason}` : "."}`);
   if (expectedVersion !== undefined && r.version !== expectedVersion) throw new ConflictError();
   return r;
 }

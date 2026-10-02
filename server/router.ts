@@ -22,6 +22,7 @@ import { assertSameSite, clearCookie, COOKIE, readRequest, redirect, send, sendF
 import { docHistory, headOf, snapshotFor } from "./state";
 import type { Store } from "./stores";
 import { createShareLink, dailyChecks, followShareLink } from "./workflow";
+import { migrateWorkflowRequest } from "./migrateWorkflow";
 
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
 
@@ -119,6 +120,11 @@ async function dispatch(store: Store, req: Req, res: ServerResponse): Promise<vo
           replaces: str(req.body.replaces) || null,
         }),
       );
+    }
+    case "POST /migrate-workflow": {
+      // Moving the existing projects into the five-stage workflow: a dry run, or with apply, the move itself.
+      const who = await signedIn();
+      return ok({ report: await migrateWorkflowRequest(store, who, req.body) });
     }
     case "GET /cron/daily": {
       // Vercel's daily cron sends "Authorization: Bearer <CRON_SECRET>". Without the secret set, only app use runs the check.

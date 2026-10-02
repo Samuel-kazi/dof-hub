@@ -53,6 +53,13 @@ export const UNIQUE_RULES: UniqueRule[] = [
     message: "That checklist item already exists.",
   },
   {
+    name: "planned_reserved_id",
+    part: "plannedEpisodes",
+    fields: ["reservedId"],
+    when: { field: "reservedId", is: "string" },
+    message: "That earlier episode is already waiting as another planned episode.",
+  },
+  {
     name: "session_number",
     part: "recordingSessions",
     fields: ["contentId", "sessionNumber"],
@@ -147,7 +154,16 @@ export function integrityProblems(db: Database): string[] {
   };
 
   for (const f of db.developmentForms ?? []) project(f.contentId, `Development form ${f.id}`);
-  for (const p of db.plannedEpisodes ?? []) project(p.contentId, `Planned episode ${p.id}`);
+  const byId = new Map(db.records.map((r) => [r.contentId, r]));
+  for (const p of db.plannedEpisodes ?? []) {
+    project(p.contentId, `Planned episode ${p.id}`);
+    if (p.reservedId) {
+      const kept = byId.get(p.reservedId);
+      if (!kept) missing("episode", p.reservedId, `Planned episode ${p.id}`);
+      else if (kept.parentId !== p.contentId)
+        out.push(`Planned episode ${p.id} keeps ${p.reservedId}, which belongs to a different project.`);
+    }
+  }
   for (const r of db.projectRoles ?? []) {
     project(r.contentId, `Role ${r.id}`);
     person(r.crewId, `Role ${r.id}`);

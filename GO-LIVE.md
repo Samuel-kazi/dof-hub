@@ -134,6 +134,35 @@ every record. Nothing that exists is changed in any other way, moved or removed.
 - **Check** `https://YOUR-SITE.vercel.app/api/health` after deploying: `uniqueIndexes` should be `true`. Anything
   else names a rule MongoDB could not enforce.
 
+### Moving existing projects into the workflow (phase 5)
+
+Series, devotionals and documentaries made before the five-stage workflow keep their earlier stages until they are
+moved. Nothing moves by itself: the Head of Production does it, once, when ready.
+
+- **See what it will do.** In the app: Settings, "Move existing projects to the new workflow". It lists every
+  series, devotional and documentary record with what it is now and what it becomes, the ones left for a decision
+  by hand and why, each part's row count before and after, and what to do in the app afterwards. Choose each
+  series' type (podcast unless chosen) and whether each documentary was pitched by others (DOF-made unless chosen)
+  there. From a computer instead, this prints the same report and writes nothing:
+
+      MONGODB_URI="mongodb+srv://..." npm run migrate:workflow
+      MONGODB_URI="mongodb+srv://..." npm run migrate:workflow -- --series DOF-SER-002=sermon --documentary DOF-DOC-003=pitched
+
+- **Move them.** Press Move in Settings, or add `--apply` to the command. A copy of all the data is kept first, in
+  `hub_items_before_workflow` and `hub_meta_before_workflow`, and the move is one all-or-nothing change. Content IDs
+  never change. Running it again changes nothing. In the desktop app and the demo the same button keeps the copy on
+  that computer, as `dof-hub-db-before-workflow`.
+- **Old fields stay.** Each record keeps its earlier stage, checklist and devotional fields as they were. The
+  earlier pipeline's buttons refuse records that have moved, so those fields are read-only. Deleting them is a
+  later, separate step, once you are sure.
+- **To go back.** Put the copy back, as for version 15 above. Anything saved after the move is lost:
+
+      use dof
+      db.hub_items.renameCollection("hub_items_after_workflow")
+      db.hub_meta.renameCollection("hub_meta_after_workflow")
+      db.hub_items_before_workflow.renameCollection("hub_items")
+      db.hub_meta_before_workflow.renameCollection("hub_meta")
+
 ## What this does not do yet
 
 - The **desktop app** is the local demo. The hosted site is the real one.

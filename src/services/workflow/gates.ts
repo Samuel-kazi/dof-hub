@@ -6,7 +6,19 @@ import { getRecord } from "../access";
 import { gearIssues, manifestForSheet } from "../equipment";
 import { asWebUrl } from "../urls";
 import { todayIso } from "../utils";
-import { checkpoint, episodesOf, formOf, getSession, openRequired, rowsOf, sessionsOf, type Episode, type Project } from "./common";
+import {
+  checkpoint,
+  episodesOf,
+  formOf,
+  getSession,
+  isDocumentary,
+  openRequired,
+  rowsOf,
+  sessionsOf,
+  unscheduledPlanned,
+  type Episode,
+  type Project,
+} from "./common";
 import { formProblems, latestDecision } from "./forms";
 
 // One function decides whether anything may move on: evaluateGate. Every Done button calls it and moves only if
@@ -208,17 +220,23 @@ export function projectSummary(p: Project): ProjectSummary {
   if (inPost) parts.push(`Post: ${inPost} episode${inPost === 1 ? "" : "s"}.`);
   if (inMd) parts.push(`Marketing and distribution: ${inMd} episode${inMd === 1 ? "" : "s"}.`);
   if (published) parts.push(`Published: ${published}.`);
+  // Planned episodes with no session yet are Pre-production's work. A project moved across from the earlier pipeline
+  // may have episodes and no sessions; a documentary whose sessions are all closed waits to be sent to post production.
+  const doc = isDocumentary(p);
+  const toPlan = sessions.some((s) => s.status === "Planned") || (!doc && unscheduledPlanned(p.contentId) > 0);
   const stage =
     p.workflow.status === "Completed"
       ? "Completed"
       : sessions.some((s) => s.status === "Open")
         ? "Production"
-        : sessions.some((s) => s.status === "Planned") || sessions.length === 0
+        : toPlan || (sessions.length === 0 && eps.length === 0)
           ? "Pre-production"
-          : inPost
-            ? "Post production"
-            : inMd
-              ? "Marketing and distribution"
-              : "Pre-production";
+          : doc && eps.length === 0
+            ? "Production"
+            : inPost
+              ? "Post production"
+              : inMd
+                ? "Marketing and distribution"
+                : "Pre-production";
   return { stage, text: parts.length ? parts.join(" ") : "Pre-production: no sessions yet." };
 }

@@ -1,11 +1,12 @@
 import type { Actor, ContentRecord, DistributionEntry, DistributionStatus, EpisodeInfo } from "../../types";
 import { RuleError } from "../../types";
 import { commit, getDb } from "../../data/store";
-import { localId } from "../../data/ids";
+import { codeNumber, localId } from "../../data/ids";
 import { blankRecord } from "../content";
 import { logAudit } from "../audit";
 import { addDaysIso, isIsoDate, todayIso } from "../utils";
 import { requireWebUrl } from "../urls";
+import { EPISODE_TOKEN } from "../../config/workflow";
 import { checkpoint, ensureChecklist, episodeForWrite, openRequired, requireCrew, type Episode, type Project } from "./common";
 import { blankCheckpoint } from "./projects";
 import { evaluateGate, gateError } from "./gates";
@@ -27,10 +28,28 @@ export interface NewEpisode {
   scheduledDate: string | null;
 }
 
-/** Makes one episode under a project, with the next episode code, its two review checkpoints and its post checklist. The caller saves. */
-export function makeEpisode(actor: Actor, project: Project, input: NewEpisode): Episode {
-  const { id, n } = nextEpisode(project.contentId);
-  const r: ContentRecord = blankRecord(id, project.category, input.title, project.contentId, project.hierarchyLevel + 1);
+/**
+ * Makes one episode under a project, with the next episode code, its two review checkpoints and its post checklist.
+ * Given `kept`, an episode made before the workflow that was waiting to be recorded, it becomes that record instead,
+ * so its Content ID, documents and notes stay as they were. The caller saves.
+ */
+export function makeEpisode(actor: Actor, project: Project, input: NewEpisode, kept?: ContentRecord): Episode {
+  let id: string;
+  let n: number;
+  let r: ContentRecord;
+  if (kept) {
+    id = kept.contentId;
+    n = codeNumber(id, project.contentId, EPISODE_TOKEN);
+    if (kept.parentId !== project.contentId || (kept.episode && !kept.archived) || Number.isNaN(n))
+      throw new RuleError(`${id} cannot become an episode of ${project.contentId}.`);
+    r = kept;
+    r.archived = false;
+    r.closedReason = null;
+    r.version += 1;
+  } else {
+    ({ id, n } = nextEpisode(project.contentId));
+    r = blankRecord(id, project.category, input.title, project.contentId, project.hierarchyLevel + 1);
+  }
   const info: EpisodeInfo = {
     episodeNumber: n,
     plannedEpisodeId: input.plannedEpisodeId,
@@ -51,21 +70,33 @@ export function makeEpisode(actor: Actor, project: Project, input: NewEpisode): 
   };
   r.episode = info;
   r.scheduledDate = input.scheduledDate;
+  // A kept record's earlier stage deadlines stay alongside, unread by the workflow, as the rest of its old fields do.
   r.stageDeadlines = {
+    ...(kept ? r.stageDeadlines : {}),
     "Post production": addDaysIso(todayIso(), POST_DAYS),
     "Marketing and distribution": addDaysIso(todayIso(), MARKETING_DAYS),
   };
+  r.stageEnteredAt = todayIso();
   r.assigneePersonId = info.editorId;
   const db = getDb();
-  db.records.push(r);
+  if (!kept) db.records.push(r);
   // The episode's reviewers start as whoever reviewed the project's outline.
   const reviewers = checkpoint(project.contentId, "outline_script")?.reviewerIds ?? [];
-  db.reviewCheckpoints.push(
-    blankCheckpoint(project.contentId, id, "rough_cut", reviewers),
-    blankCheckpoint(project.contentId, id, "final", reviewers),
-  );
+  for (const key of ["rough_cut", "final"] as const) {
+    // A kept episode recorded a second time starts its reviews again.
+    const earlier = checkpoint(id, key);
+    if (earlier)
+      Object.assign(earlier, { status: "Pending", note: "", decidedAt: null, decidedById: null, updatedAt: new Date().toISOString() });
+    else db.reviewCheckpoints.push(blankCheckpoint(project.contentId, id, key, reviewers));
+  }
   ensureChecklist("post", "episode", id);
-  logAudit(actor, "create", "record", id, `Episode ${n}: ${input.title}`);
+  logAudit(
+    actor,
+    kept ? "recorded" : "create",
+    "record",
+    id,
+    `Episode ${n}: ${kept ? `${r.title} (kept its Content ID from before the workflow)` : input.title}`,
+  );
   return r as Episode;
 }
 

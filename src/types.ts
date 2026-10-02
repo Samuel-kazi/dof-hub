@@ -235,6 +235,9 @@ export interface PlannedEpisode {
   guest: string;
   notes: string;
   details: Record<string, string>; // per form type, for example a devotion day's scripture, key thought and application
+  // An episode made before the workflow and not recorded yet: the Content ID it keeps when it is recorded. Its old
+  // record waits, archived with that reason, and becomes the episode when a session that recorded it closes.
+  reservedId: string | null;
   createdAt: string;
   updatedAt: string;
   archivedAt: string | null;

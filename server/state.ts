@@ -194,6 +194,70 @@ export async function upgradeStore(store: Store, apply: boolean): Promise<Upgrad
   return report;
 }
 
+export interface DataChangeReport<T> {
+  applied: boolean;
+  backup: string | null;
+  parts: UpgradeReport["parts"];
+  result: T;
+  changed: boolean;
+}
+
+/**
+ * Works out a change to the whole of the data, such as moving existing projects into the five-stage workflow.
+ * Without `apply` it is a dry run: the change is made on a copy, reported part by part, and nothing is written. With
+ * `apply`, and something to change, it first keeps a copy of all the data (StateStore.backup, under `backupLabel`),
+ * then saves the change as one all-or-nothing write that only goes through if nobody saved anything after the data
+ * was read; if someone did, it reads the newest data and works the change out again. The data's own rules are
+ * checked before anything is written. Null before setup.
+ */
+export async function changeAllData<T>(
+  store: Store,
+  apply: boolean,
+  backupLabel: string,
+  fn: (db: Database) => T,
+): Promise<DataChangeReport<T> | null> {
+  for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
+    const base = await current(store);
+    if (!base) return null;
+    const before = await countsOf(store);
+    const db = structuredClone(base.db);
+    const result = withDb(db, () => fn(db));
+    assertIntegrity(db);
+    const change = diff(base, db);
+    change.expect = Object.fromEntries(versionedKeys().map((k) => [k, base.head.versions[k] ?? 0]));
+    const report: DataChangeReport<T> = {
+      applied: false,
+      backup: null,
+      result,
+      changed: change.put.length > 0 || change.remove.length > 0,
+      parts: KEYS.map((k) => {
+        const puts = change.put.filter((it) => it.k === k);
+        const removed = change.remove.filter((r) => r.k === k).length;
+        return {
+          part: k,
+          before: before[k],
+          after: before[k] + puts.filter((it) => !base.json.has(`${it.k}/${it.i}`)).length - removed,
+          written: puts.length,
+          removed,
+        };
+      }),
+    };
+    if (!apply || !report.changed) return report;
+    report.backup = await store.state.backup(backupLabel);
+    const revision = await store.state.commit(change);
+    kept.delete(store);
+    if (revision === null) {
+      await pause(attempt);
+      continue;
+    }
+    report.applied = true;
+    const after = await countsOf(store);
+    for (const p of report.parts) p.after = after[p.part];
+    return report;
+  }
+  throw new Error("The data is being changed by too many people at once. Try again.");
+}
+
 /** An upgrade report as lines of text, for the server's log and the command line. */
 export function describeUpgrade(r: UpgradeReport): string {
   const head =
@@ -344,7 +408,11 @@ export async function snapshotFor(store: Store, actor: Actor): Promise<{ revisio
   const db = base.db;
   const audit = withDb(db, () => can(actor, "backend.audit")) ? await newestAudit(store, base) : [];
   const out = withDb(db, () => {
-    const recs = visibleRecords(actor);
+    // Archived records are not sent, except those of the five-stage workflow: a closed project and its episodes,
+    // and an episode made before the workflow that waits to be recorded. A screen works on the same records as the
+    // server then, so a session closed there keeps a waiting episode's Content ID on both.
+    const waiting = new Set(db.plannedEpisodes.map((p) => p.reservedId).filter((x): x is string => !!x));
+    const recs = visibleRecords(actor, true).filter((r) => !r.archived || !!r.workflow || !!r.episode || waiting.has(r.contentId));
     const ids = new Set(recs.map((r) => r.contentId));
     const hop = actor.role === "HOP";
     const docs = db.docs.filter((d) => canViewDoc(actor, d));

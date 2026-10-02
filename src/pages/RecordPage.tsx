@@ -66,7 +66,7 @@ export function RecordPage({ id }: { id: string }) {
   }
 
   const cfg = categoryOf(rec.category);
-  const write = canWrite(actor, rec);
+  const write = canWrite(actor, rec) && !rec.archived;
   const leaf = usesPipeline(rec);
   const crumbs = getBreadcrumb(rec.contentId);
   const kind = childKindFor(rec);
@@ -162,10 +162,26 @@ export function RecordPage({ id }: { id: string }) {
         )}
       </div>
       {!del.ok && write && <p className="muted">{del.reason}</p>}
-      {!write && (
+      {rec.archived ? (
         <div className="banner">
-          <span className="grow">You have view-only access to this project.{canComment(actor, rec) ? " You can add comments." : ""}</span>
+          <span className="grow">
+            Archived{rec.closedReason ? `: ${rec.closedReason}` : "."} It is kept as it was.
+            {rec.parentId && getRecord(rec.parentId)?.workflow && (
+              <>
+                {" "}
+                <button className="link" onClick={() => go({ n: "record", id: rec.parentId! })}>
+                  Open its project
+                </button>
+              </>
+            )}
+          </span>
         </div>
+      ) : (
+        !write && (
+          <div className="banner">
+            <span className="grow">You have view-only access to this project.{canComment(actor, rec) ? " You can add comments." : ""}</span>
+          </div>
+        )
       )}
 
       {leaf && rec.category !== "general" && (stage || rec.pipelineStage === "Closed") && (

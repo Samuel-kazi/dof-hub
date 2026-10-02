@@ -98,6 +98,20 @@ export const episodesOf = (projectId: string, includeArchived = false): Episode[
   getDb()
     .records.filter((r): r is Episode => !!r.episode && r.parentId === projectId && (includeArchived || !r.archived))
     .sort((a, b) => a.episode.episodeNumber - b.episode.episodeNumber);
+export const isDocumentary = (p: Project): boolean =>
+  p.workflow.formType === "documentary_dof" || p.workflow.formType === "documentary_pitched";
+
+/** Planned episodes not made yet and not on the log of a session still to come: another session is needed for them. */
+export function unscheduledPlanned(projectId: string): number {
+  const db = getDb();
+  const upcoming = new Set(
+    db.recordingSessions.filter((s) => s.contentId === projectId && !s.archivedAt && s.status !== "Closed").map((s) => s.id),
+  );
+  const onLog = new Set(db.sessionLogEntries.filter((e) => upcoming.has(e.sessionId)).map((e) => e.plannedEpisodeId));
+  const made = new Set(episodesOf(projectId).map((e) => e.episode.plannedEpisodeId));
+  return db.plannedEpisodes.filter((x) => x.contentId === projectId && !x.archivedAt && !made.has(x.id) && !onLog.has(x.id)).length;
+}
+
 export const checkpointsOf = (contentId: string, episodeId: string | null): ReviewCheckpoint[] =>
   getDb().reviewCheckpoints.filter((c) => c.contentId === contentId && c.episodeId === episodeId);
 export const checkpoint = (owner: string, key: ReviewCheckpoint["checkpoint"]): ReviewCheckpoint | undefined =>

@@ -97,6 +97,20 @@ function keepCopy(raw: string, label: string): void {
   }
 }
 
+/**
+ * Keeps a copy of everything as it is now, next to the saved data, before a change that rewrites it (moving projects
+ * into the five-stage workflow). Unlike the copy before an upgrade, the change must not go ahead without it, so
+ * this gives where the copy is, or null if there was no room.
+ */
+export function keepCopyOfData(label: string): string | null {
+  try {
+    localStorage.setItem(`${KEY}-${label}`, JSON.stringify(db));
+    return `${KEY}-${label}`;
+  } catch {
+    return null;
+  }
+}
+
 function load(): Database {
   try {
     const raw = localStorage.getItem(KEY);

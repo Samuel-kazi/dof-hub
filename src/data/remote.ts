@@ -2,6 +2,7 @@ import type { Actor, Database, DocRevision, RoleCode, ShareLink } from "../types
 import { RuleError } from "../types";
 import { commit, getDb, setDb, setPersist } from "./store";
 import { setRpcSink, type Call } from "./rpc";
+import type { AppliedMigrationReport, MigrationChoices } from "./migrateWorkflow";
 
 // The app has two ways to run. On your computer with nothing behind it, it is a demo that keeps sample
 // data in the browser. On the real site it signs in to the server, which holds the data, decides who
@@ -199,6 +200,14 @@ export async function createShareLinkRemote(
   const r = await api.post<{ url: string; link: ShareLink }>("/api/share-links", { episodeId, note, replaces });
   await refresh(true);
   return r;
+}
+
+/** Moves the existing projects into the five-stage workflow on the server (the Head of Production only), or a dry run. */
+export async function migrateWorkflowRemote(apply: boolean, picked: MigrationChoices): Promise<AppliedMigrationReport> {
+  await whenSynced();
+  const r = await api.post<{ report: AppliedMigrationReport }>("/api/migrate-workflow", { apply, ...picked });
+  if (apply) await refresh(true);
+  return r.report;
 }
 
 export async function hydrate(): Promise<void> {

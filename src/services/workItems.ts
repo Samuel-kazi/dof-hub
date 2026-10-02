@@ -4,7 +4,15 @@ import { categoryOf } from "../config/categories";
 import { WORKFLOW_STAGES } from "../config/workflow";
 import { canView, getRecord } from "./access";
 import { episodeOverdue, evaluateGate, sessionOverdue, type GateResult } from "./workflow/gates";
-import { episodesOf, isWorkflowProject, sessionsOf, type Episode, type Project } from "./workflow/common";
+import {
+  episodesOf,
+  isDocumentary,
+  isWorkflowProject,
+  sessionsOf,
+  unscheduledPlanned,
+  type Episode,
+  type Project,
+} from "./workflow/common";
 import { fmtShort } from "./utils";
 import type { Route } from "../ui/AppContext";
 
@@ -66,7 +74,6 @@ export function projectName(p: Project): string {
   return parent ? `${parent.title}: ${p.title}` : p.title;
 }
 
-const isDocumentary = (p: Project): boolean => p.workflow.formType === "documentary_dof" || p.workflow.formType === "documentary_pitched";
 const dateOf = (stamp: string): string => stamp.slice(0, 10);
 const plural = (n: number, one: string): string => `${n} ${one}${n === 1 ? "" : "s"}`;
 
@@ -87,17 +94,6 @@ function pendingReviews(ownerId: string, keys: readonly [string, string][]): Pen
 const waiting = (ownerId: string | null, reviews: PendingReview[], ownerToo = true): string[] => [
   ...new Set([...(ownerToo && ownerId ? [ownerId] : []), ...reviews.flatMap((r) => r.reviewerIds)]),
 ];
-
-/** Planned episodes not made yet and not on the log of a session still to come: another session is needed for them. */
-function unscheduled(p: Project): number {
-  const db = getDb();
-  const upcoming = new Set(
-    db.recordingSessions.filter((s) => s.contentId === p.contentId && !s.archivedAt && s.status !== "Closed").map((s) => s.id),
-  );
-  const onLog = new Set(db.sessionLogEntries.filter((e) => upcoming.has(e.sessionId)).map((e) => e.plannedEpisodeId));
-  const made = new Set(episodesOf(p.contentId).map((e) => e.episode.plannedEpisodeId));
-  return db.plannedEpisodes.filter((x) => x.contentId === p.contentId && !x.archivedAt && !made.has(x.id) && !onLog.has(x.id)).length;
-}
 
 function projectItem(p: Project, stage: WorkflowStage, step: string, ownerId: string | null, gate: GateResult | null): WorkItem {
   const reviews =
@@ -220,7 +216,7 @@ function itemsOf(p: Project, gates: boolean): WorkItem[] {
       else if (!episodes.length && !open && !planned.length && sessions.some((s) => s.status === "Closed"))
         items.push(projectItem(p, "Production", "Sessions closed: send to post production", producer, null));
     } else {
-      const left = unscheduled(p);
+      const left = unscheduledPlanned(p.contentId);
       const label = (categoryOf(p.category).workflow?.episodeLabel ?? "Episode").toLowerCase();
       if (sessions.length === 0 || planned.length || left)
         items.push(

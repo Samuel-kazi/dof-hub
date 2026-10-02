@@ -14,13 +14,13 @@ import {
   canManageTeam,
   ensureChecklist,
   episodesOf,
+  isDocumentary,
   nowStamp,
   projectForWrite,
   rowsOf,
   sessionForWrite,
   sessionsOf,
   type Episode,
-  type Project,
 } from "./common";
 import { makeEpisode } from "./episodes";
 import { evaluateGate, gateError } from "./gates";
@@ -28,8 +28,6 @@ import { nextSession } from "./ids";
 
 // Recording sessions. A session is planned and prepared at Pre-production (status Planned), recorded at
 // Production (Open), and closed. Closing splits it: every row of its log that was recorded becomes an episode.
-
-const isDocumentary = (p: Project): boolean => p.workflow.formType === "documentary_dof" || p.workflow.formType === "documentary_pitched";
 
 // ── The recording-day run sheet ──────────────────────────────
 
@@ -455,13 +453,23 @@ export function closeSession(actor: Actor, sessionId: string): CloseResult {
           continue;
         }
         const p = planned.get(row.plannedEpisodeId!)!;
-        const ep = makeEpisode(actor, project, {
-          title: p.workingTitle || `${label} ${p.episodeNumber}`,
-          plannedEpisodeId: p.id,
-          sourceSessionId: sessionId,
-          productionNotes: row.notesForPost,
-          scheduledDate: row.logDate,
-        });
+        // An episode made before the workflow and waiting to be recorded becomes the episode, keeping its Content ID.
+        // (It may also be that episode, archived because a reopened session marked it Not recorded.)
+        const waiting = p.reservedId
+          ? db.records.find((r) => r.contentId === p.reservedId && (!r.episode || (r.archived && r.episode.plannedEpisodeId === p.id)))
+          : undefined;
+        const ep = makeEpisode(
+          actor,
+          project,
+          {
+            title: p.workingTitle || `${label} ${p.episodeNumber}`,
+            plannedEpisodeId: p.id,
+            sourceSessionId: sessionId,
+            productionNotes: row.notesForPost,
+            scheduledDate: row.logDate,
+          },
+          waiting,
+        );
         made.push(ep.contentId);
       } else if (existing && existing.episode?.sourceSessionId === sessionId) {
         // Closed before, reopened, and now marked Not recorded: the untouched episode is archived, not deleted.

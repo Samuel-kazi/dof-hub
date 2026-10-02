@@ -100,6 +100,26 @@ before the workflow keep their earlier stages until the existing data is moved o
   Marketing and distribution deadline. The per-episode estimates can be changed in Settings.
 - A workflow series' page and the tree no longer show an empty "0 of 0 complete" progress.
 
+**Phase 5: moving existing projects** (no change until the Head of Production moves them)
+- Series, devotionals and documentaries made before the workflow can be moved into it, from Settings (the Head of
+  Production only) or with `npm run migrate:workflow`. A dry run comes first: every record with its before and
+  after, those left for a decision by hand and why, each part's row count before and after, and what to do
+  afterwards. Moving keeps a copy of all the data first and is all or nothing; running it again changes nothing.
+  How, and how to go back: GO-LIVE.md.
+- The rules agreed in Phase 0: a series' season becomes the project; episodes not recorded yet become planned
+  episodes; those at Recording go on an open session on their shoot date, with their call sheet; Ingest and
+  Editorial become Post production, Review becomes Rough cut review, Delivered becomes Marketing and distribution.
+  A devotional at Creation or Guest is in Development, at Prep/Scripting in Pre-production; a closed one is
+  archived with its reason; a recorded one is left as it is, for a decision by hand. A documentary's film becomes
+  episode E01 from Ingest on. Projects past Development count the gates they passed as met.
+- Content IDs never change. An episode not recorded yet keeps its Content ID: its planned episode holds the ID,
+  and the record becomes the episode when a session that recorded it closes.
+- The hosted site now sends the workflow's archived records to those who may see them (a closed project, and an
+  episode waiting to be recorded), so the board's Closed column and a closed project's page work there as in the
+  desktop app. Other archived records are still not sent.
+- An archived record can no longer be changed by the earlier pipeline's buttons; its page says why it is archived.
+- A project with episodes and no sessions (one that was moved across) shows the stage its episodes are in.
+
 ## v20: security and reliability fixes from the October 2026 code review
 
 Everything here is behind the scenes: screens look and work as before, with a few clearer messages.
