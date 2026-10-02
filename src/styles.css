@@ -1135,6 +1135,11 @@ textarea {
   background: none;
   border: 1.5px solid var(--cat-color, var(--ink-3));
 }
+/* A recording session of the five-stage workflow: a pill, so it reads apart from a shoot day's block. */
+.cal-mark.session {
+  width: 13px;
+  border-radius: 999px;
+}
 .cal-mark.callsheet {
   width: 7px;
   height: 7px;

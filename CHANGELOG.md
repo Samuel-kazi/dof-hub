@@ -4,8 +4,8 @@ What changed in each version, newest first. How to deploy is in GO-LIVE.md.
 
 ## Unreleased: the five-stage workflow for series, devotions and documentaries
 
-Being built in phases. Nothing on screen changes yet: Live Shows and Music, and every existing project, work exactly
-as before.
+Being built in phases. Live Shows and Music work exactly as before. Series, devotionals and documentaries made
+before the workflow keep their earlier stages until the existing data is moved over, which is a later, separate step.
 
 **Phase 1: the data** (data version 15)
 - New lists for the workflow: development forms, planned episodes, project roles, workflow checklists, recording
@@ -73,6 +73,32 @@ as before.
   open in the person's own browser with no access back to the app (the desktop app uses Tauri's opener plugin).
 - A call sheet made for a session lists the session's episodes and guests.
 - On a phone, the top bar no longer pushes every page sideways.
+
+**Phase 4: the board, calendar, reminders and dashboard**
+- One list of the workflow's work, at the level each stage works at (`src/services/workItems.ts`), read by every view
+  below so they agree: a project in Development and Pre-production, a recording session in Production, an episode in
+  Post production and Marketing and distribution. Nothing is stored for it.
+- The board for Series, Devotionals and Documentaries has the five stages, with those cards. A project stays in
+  Pre-production while it has sessions to come or planned episodes still to schedule; a documentary whose sessions
+  are all closed waits in Production to be sent to post production. Each card says who moves it on, its date, and
+  what its next Done button still needs (or which review it waits for); the Done buttons stay on the pages, behind
+  their gates. Published episodes and closed projects are shown on request. Items made before the workflow keep
+  their own board underneath until the data is moved over. Live Shows, Music and General Use keep their boards.
+- Overdue is worked out for sessions (date passed, not closed) and episodes (the stage's deadline passed, not
+  published) only, never for a project. A project's card shows how many of its planned sessions are overdue.
+- The calendar adds each recording session's day (a new marker) and the projects' and episodes' stage deadlines, in
+  the category's colour, all worked out from the data. An episode no longer adds its session's day a second time.
+- Reminders, the bell and the reminder emails and calendar files add: a session's day to its producer (unless they
+  are on its call sheet, which already reminds them), a session not closed after its day, an episode's stage
+  deadline to its editor in Post production and its producer in Marketing and distribution, a project's stage
+  deadline to its owner until that day, and a waiting review to each reviewer named on it. The 24-hour lead time
+  applies to all of them.
+- The dashboard counts workflow projects in production, its late sessions and episodes, what is waiting on you
+  (including reviews), sessions and episodes in Nearest deadlines, and sessions this week with no call sheet yet.
+- Search finds recording sessions; the pipeline status report lists the workflow's work; crew workload counts a
+  session's day before its call sheet exists, editing up to the Post production deadline, and release work up to the
+  Marketing and distribution deadline. The per-episode estimates can be changed in Settings.
+- A workflow series' page and the tree no longer show an empty "0 of 0 complete" progress.
 
 ## v20: security and reliability fixes from the October 2026 code review
 

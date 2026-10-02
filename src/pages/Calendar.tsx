@@ -11,6 +11,7 @@ import { Empty } from "../ui/parts";
 
 const SUBTYPE_LABEL: Record<CalSubtype, string> = {
   shoot: "Shoot / show day",
+  session: "Recording session",
   deadline: "Stage deadline",
   callsheet: "Call sheet published",
   booking: "Gear booked",
@@ -68,8 +69,8 @@ export function CalendarPage() {
         <div className="grow">
           <h1>Calendar</h1>
           <p className="sub">
-            Shoot days, stage deadlines, published call sheets and gear bookings, worked out from the pipeline. Nothing here is entered by
-            hand, so changing a date on its own record is all it takes.
+            Shoot days, recording sessions, stage deadlines, published call sheets and gear bookings, worked out from the pipeline. Nothing
+            here is entered by hand, so changing a date on its own record is all it takes.
           </p>
         </div>
         <div className="seg" role="group" aria-label="Month">
@@ -153,6 +154,9 @@ export function CalendarPage() {
         <div className="cal-legend">
           <span>
             <i className="cal-mark shoot" /> Shoot / show day
+          </span>
+          <span>
+            <i className="cal-mark session" /> Recording session
           </span>
           <span>
             <i className="cal-mark deadline" /> Stage deadline

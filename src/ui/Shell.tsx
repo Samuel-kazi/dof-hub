@@ -6,6 +6,7 @@ import { modulesFor } from "../services/wrapped/permissions";
 import { CATEGORIES } from "../config/categories";
 import { MODULE_LABELS, ROLES, type ModuleKey } from "../config/roles";
 import { getReminders } from "../services/wrapped/content";
+import { workflowDueSoon } from "../services/wrapped/reminders";
 import { relativeDays } from "../services/utils";
 import {
   IconBack,
@@ -176,6 +177,7 @@ export function Shell() {
   const role = ROLES[actor.role];
   const active = moduleOfRoute(route);
   const reminders = getReminders(actor);
+  const workflowDue = workflowDueSoon(actor.personId);
   void db;
 
   const toggle = () => {
@@ -196,8 +198,11 @@ export function Shell() {
 
   // One heads-up on sign-in for stage deadlines inside the reminder window.
   useEffect(() => {
-    const n = getReminders(actor).length;
-    if (n) toast(`${n} stage deadline${n > 1 ? "s" : ""} need${n > 1 ? "" : "s"} your attention soon. Check the bell.`, "info");
+    const stages = getReminders(actor).length;
+    const n = stages + workflowDueSoon(actor.personId).length;
+    // A session's day or a waiting review is not a stage deadline, so the word is only used when that is all there is.
+    const what = n === stages ? "stage deadline" : "deadline";
+    if (n) toast(`${n} ${what}${n > 1 ? "s" : ""} need${n > 1 ? "" : "s"} your attention soon. Check the bell.`, "info");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -212,12 +217,15 @@ export function Shell() {
             { label: "", divider: true, onClick: () => {} },
           ]
         : []),
-      ...(reminders.length
-        ? reminders.map((x) => ({
-            label: `${x.record.title}: ${x.stage} due ${relativeDays(x.dueDate)}`,
-            onClick: () => go({ n: "record", id: x.record.contentId }),
-          }))
-        : [{ label: "No deadlines coming up for you", onClick: () => {}, disabled: true }]),
+      ...reminders.map((x) => ({
+        label: `${x.record.title}: ${x.stage} due ${relativeDays(x.dueDate)}`,
+        onClick: () => go({ n: "record", id: x.record.contentId }),
+      })),
+      ...workflowDue.map((x) => ({
+        label: `${x.title}, ${x.overdue ? "late" : relativeDays(x.date)}`,
+        onClick: () => go(x.sessionId ? { n: "session", id: x.sessionId } : { n: "record", id: x.contentId }),
+      })),
+      ...(reminders.length || workflowDue.length ? [] : [{ label: "No deadlines coming up for you", onClick: () => {}, disabled: true }]),
     ]);
   };
 

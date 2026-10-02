@@ -23,7 +23,15 @@ import { saveFile } from "../services/download";
 import { fmtDateTime, fmtShort, relativeDays } from "../services/utils";
 import { nameOf } from "../services/wrapped/people";
 
-const KIND: Record<Reminder["kind"], string> = { stage: "Stage", task: "Checklist", shoot: "Shoot", gear: "Gear", stale: "Stalled" };
+const KIND: Record<Reminder["kind"], string> = {
+  stage: "Stage",
+  task: "Checklist",
+  shoot: "Shoot",
+  gear: "Gear",
+  stale: "Stalled",
+  session: "Session",
+  review: "Review",
+};
 
 /** Opens a link the way a click would, so the mail or messages app takes over. */
 function openLink(url: string) {
@@ -110,7 +118,11 @@ function Mine() {
             </thead>
             <tbody>
               {rems.map((r) => (
-                <tr key={r.key} className="clickable" onClick={() => go({ n: "record", id: r.contentId })}>
+                <tr
+                  key={r.key}
+                  className="clickable"
+                  onClick={() => go(r.sessionId ? { n: "session", id: r.sessionId } : { n: "record", id: r.contentId })}
+                >
                   <td style={{ whiteSpace: "nowrap" }}>
                     {fmtShort(r.date)}
                     {r.time ? ` ${r.time}` : ""}

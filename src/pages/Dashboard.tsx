@@ -28,6 +28,22 @@ import { allDriveUsage, fleetTotals, forecast, hasStorageAccess, isNearlyFull } 
 import { crewWorkload } from "../services/workload";
 import { modulesFor } from "../services/wrapped/permissions";
 import { searchAll, type Hit } from "../services/search";
+import { onBoard, waitingOnPerson, workItems, type WorkItem } from "../services/workItems";
+import type { Route } from "../ui/AppContext";
+
+interface HorizonRow {
+  key: string;
+  title: string;
+  cid: string;
+  start: string;
+  due: string;
+  late: boolean;
+  lateDays: number;
+  open: Route;
+}
+
+/** A session or an episode is named with its project, so "Session 1" or "Day 3" of two projects stay apart. */
+const itemTitle = (i: WorkItem): string => (i.level === "project" ? i.title : `${i.context}, ${i.title}`);
 
 const greeting = (): string => {
   const h = new Date().getHours();
@@ -46,16 +62,25 @@ function HeroSearch() {
     go(
       h.kind === "project"
         ? { n: "record", id: h.id }
-        : h.kind === "doc"
-          ? { n: "doc", id: h.id }
-          : h.kind === "callsheet"
-            ? { n: "callsheet", id: h.id }
-            : h.kind === "gear"
-              ? { n: "item", id: h.id }
-              : { n: "drive", id: h.id },
+        : h.kind === "session"
+          ? { n: "session", id: h.id }
+          : h.kind === "doc"
+            ? { n: "doc", id: h.id }
+            : h.kind === "callsheet"
+              ? { n: "callsheet", id: h.id }
+              : h.kind === "gear"
+                ? { n: "item", id: h.id }
+                : { n: "drive", id: h.id },
     );
   };
-  const KIND: Record<Hit["kind"], string> = { project: "Project", doc: "Document", callsheet: "Call sheet", gear: "Gear", drive: "Drive" };
+  const KIND: Record<Hit["kind"], string> = {
+    project: "Project",
+    session: "Session",
+    doc: "Document",
+    callsheet: "Call sheet",
+    gear: "Gear",
+    drive: "Drive",
+  };
   return (
     <div className="hero-search" ref={box} role="search">
       <input
@@ -75,7 +100,7 @@ function HeroSearch() {
           } else if (e.key === "Enter" && hits[sel]) open(hits[sel]);
           else if (e.key === "Escape") setQ("");
         }}
-        placeholder="Search projects, documents, gear"
+        placeholder="Search projects, sessions, documents, gear"
         aria-label="Search everything"
         autoComplete="off"
       />
@@ -174,9 +199,23 @@ export function Dashboard() {
   const unitsInProgress = units.filter((u) => u.leaves.some((l) => !isComplete(l)));
   const unitsOverdue = units.filter((u) => u.leaves.some((l) => riskOf(l) === "overdue"));
   const unitsAtRisk = units.filter((u) => !unitsOverdue.includes(u) && u.leaves.some((l) => riskOf(l) === "at-risk"));
-  const onTrack = unitsInProgress.length
-    ? Math.round((100 * (unitsInProgress.length - unitsOverdue.length - unitsAtRisk.length)) / unitsInProgress.length)
-    : 100;
+  // The five-stage workflow counts a project as one production, and its sessions and episodes as the work that can
+  // run late (assumption A5: a project itself is never overdue).
+  const wfItems = workItems(actor, false);
+  const wfActive = records.filter((r) => r.workflow && r.workflow.status !== "Completed");
+  const wfTracked = wfItems.filter((i) => !i.done && (onBoard(i) || i.overdue));
+  const wfLate = wfTracked.filter((i) => i.overdue);
+  const wfWaiting = waitingOnPerson(wfItems, actor.personId);
+  const tracked = unitsInProgress.length + wfTracked.length;
+  const lateCount = unitsOverdue.length + wfLate.length;
+  const onTrack = tracked ? Math.round((100 * (tracked - lateCount - unitsAtRisk.length)) / tracked) : 100;
+  const inProduction = unitsInProgress.length + wfActive.length;
+  const activeCount = activeProjects.length + wfActive.length;
+  const waitingCount = blocked.length + wfWaiting.length;
+  // A session in the next week with no call sheet yet is a shoot nobody has been called to.
+  const sessionsSoon = wfItems.filter(
+    (i) => i.level === "session" && !i.done && !i.callSheetId && !!i.due && daysUntil(i.due) >= 0 && daysUntil(i.due) <= 7,
+  );
 
   const gearAccess = hasGearAccess(actor);
   const storageAccess = hasStorageAccess(actor);
@@ -196,14 +235,44 @@ export function Dashboard() {
   const week = crewAccess ? crewWorkload(actor, todayIso(), 7) : [];
   const stretched = week.filter((r) => r.workload.overDays.length > 0);
 
-  // Horizon: at most five, overdue first, then nearest deadline.
-  const horizon = inProgress
-    .filter((r) => r.deadline)
-    .sort((a, b) => {
-      const oa = riskOf(a) === "overdue" ? 0 : 1;
-      const ob = riskOf(b) === "overdue" ? 0 : 1;
-      return oa - ob || a.deadline!.localeCompare(b.deadline!);
-    })
+  // Horizon: at most five, overdue first, then nearest deadline. An earlier-pipeline item runs to its publish date;
+  // a session to its date and an episode to the deadline of the stage it is in.
+  const horizon: HorizonRow[] = [
+    ...inProgress
+      .filter((r) => r.deadline)
+      .map((r): HorizonRow => {
+        const late = riskOf(r) === "overdue";
+        const stageDue = currentStageDeadline(r);
+        return {
+          key: r.contentId,
+          title: displayTitle(r),
+          cid: r.contentId,
+          start: r.startDate,
+          due: r.deadline!,
+          late,
+          lateDays: late
+            ? Math.max(
+                daysUntil(r.deadline!) < 0 ? -daysUntil(r.deadline!) : 0,
+                stageDue && daysUntil(stageDue) < 0 ? -daysUntil(stageDue) : 0,
+              )
+            : 0,
+          open: { n: "record", id: r.contentId },
+        };
+      }),
+    ...wfItems
+      .filter((i) => !i.done && i.level !== "project" && !!i.due && (onBoard(i) || i.level === "session"))
+      .map((i): HorizonRow => ({
+        key: i.key,
+        title: itemTitle(i),
+        cid: i.id,
+        start: i.start,
+        due: i.due!,
+        late: i.overdue,
+        lateDays: i.overdue ? -daysUntil(i.due!) : 0,
+        open: i.open,
+      })),
+  ]
+    .sort((a, b) => Number(b.late) - Number(a.late) || a.due.localeCompare(b.due))
     .slice(0, 5);
   const elapsed = (start: string, end: string) => {
     const s = new Date(start).getTime();
@@ -234,15 +303,15 @@ export function Dashboard() {
         <StatCard
           icon={<IconFilm />}
           title="Production"
-          big={unitsInProgress.length}
+          big={inProduction}
           unit=" in production"
           share={onTrack}
           foot={
-            unitsOverdue.length || unitsAtRisk.length
-              ? `${unitsOverdue.length} overdue, ${unitsAtRisk.length} at risk, ${activeProjects.length} active project${activeProjects.length === 1 ? "" : "s"}`
-              : `${onTrack}% on track, ${activeProjects.length} active project${activeProjects.length === 1 ? "" : "s"}`
+            lateCount || unitsAtRisk.length
+              ? `${lateCount} overdue, ${unitsAtRisk.length} at risk, ${activeCount} active project${activeCount === 1 ? "" : "s"}`
+              : `${onTrack}% on track, ${activeCount} active project${activeCount === 1 ? "" : "s"}`
           }
-          bad={unitsOverdue.length > 0}
+          bad={lateCount > 0}
           onClick={() => go({ n: "pipeline" })}
         />
         {gearAccess && (
@@ -317,9 +386,11 @@ export function Dashboard() {
           <StatCard
             icon={<IconPulse />}
             title="Waiting on you"
-            big={blocked.length}
-            unit={blocked.length === 1 ? " item" : " items"}
-            foot={blocked[0] ? `Next: ${displayTitle(blocked[0])}` : "Nothing needs you"}
+            big={waitingCount}
+            unit={waitingCount === 1 ? " item" : " items"}
+            foot={
+              blocked[0] ? `Next: ${displayTitle(blocked[0])}` : wfWaiting[0] ? `Next: ${itemTitle(wfWaiting[0])}` : "Nothing needs you"
+            }
             onClick={() => go({ n: "pipeline" })}
           />
         )}
@@ -327,9 +398,9 @@ export function Dashboard() {
           <StatCard
             icon={<IconSheet />}
             title="Shoots"
-            big={soon.length}
-            unit={soon.length === 1 ? " this week" : " this week"}
-            foot={soon[0] ? `Next: ${soon[0].title}` : "None scheduled"}
+            big={soon.length + sessionsSoon.length}
+            unit=" this week"
+            foot={soon[0] ? `Next: ${soon[0].title}` : sessionsSoon[0] ? `Next: ${itemTitle(sessionsSoon[0])}` : "None scheduled"}
             onClick={() => go({ n: "callsheets" })}
           />
         )}
@@ -341,47 +412,37 @@ export function Dashboard() {
           <Empty>Nothing with a deadline is in production right now.</Empty>
         ) : (
           <div className="horizon">
-            {horizon.map((r) => {
-              const late = riskOf(r) === "overdue";
-              const stageDue = currentStageDeadline(r);
-              const lateDays = late
-                ? Math.max(
-                    daysUntil(r.deadline!) < 0 ? -daysUntil(r.deadline!) : 0,
-                    stageDue && daysUntil(stageDue) < 0 ? -daysUntil(stageDue) : 0,
-                  )
-                : 0;
-              return (
-                <div
-                  key={r.contentId}
-                  className="hz-row"
-                  onClick={() => go({ n: "record", id: r.contentId })}
-                  role="link"
-                  tabIndex={0}
-                  onKeyDown={(e) => e.key === "Enter" && go({ n: "record", id: r.contentId })}
-                >
-                  <div>
-                    <div className="hz-title">{displayTitle(r)}</div>
-                    <div className="cid">{r.contentId}</div>
-                  </div>
-                  <div className="hz-track" title={late ? "Overdue" : `Due ${fmtShort(r.deadline)}`}>
-                    <div
-                      className={`hz-fill ${late ? "late" : ""}`}
-                      style={{ width: `${late ? 100 : elapsed(r.startDate, r.deadline!) * 100}%` }}
-                    />
-                  </div>
-                  <div className="hz-when">
-                    {late ? (
-                      <span className="badge bad">{lateDays > 0 ? `${lateDays} days late` : "Overdue"}</span>
-                    ) : (
-                      <span>
-                        {fmtShort(r.deadline)}
-                        <span className="muted"> ({relativeDays(r.deadline!)})</span>
-                      </span>
-                    )}
-                  </div>
+            {horizon.map((r) => (
+              <div
+                key={r.key}
+                className="hz-row"
+                onClick={() => go(r.open)}
+                role="link"
+                tabIndex={0}
+                onKeyDown={(e) => e.key === "Enter" && go(r.open)}
+              >
+                <div>
+                  <div className="hz-title">{r.title}</div>
+                  <div className="cid">{r.cid}</div>
                 </div>
-              );
-            })}
+                <div className="hz-track" title={r.late ? "Overdue" : `Due ${fmtShort(r.due)}`}>
+                  <div
+                    className={`hz-fill ${r.late ? "late" : ""}`}
+                    style={{ width: `${r.late ? 100 : elapsed(r.start, r.due) * 100}%` }}
+                  />
+                </div>
+                <div className="hz-when">
+                  {r.late ? (
+                    <span className="badge bad">{r.lateDays > 0 ? `${r.lateDays} days late` : "Overdue"}</span>
+                  ) : (
+                    <span>
+                      {fmtShort(r.due)}
+                      <span className="muted"> ({relativeDays(r.due)})</span>
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </section>
@@ -389,10 +450,29 @@ export function Dashboard() {
       <div className="grid-2">
         <section className="glass panel" aria-label="Blocked on you">
           <h2>Waiting on you</h2>
-          {blocked.length === 0 ? (
+          {waitingCount === 0 ? (
             <Empty>Nothing is waiting on you.</Empty>
           ) : (
             <div className="list">
+              {wfWaiting.map((i) => (
+                <div key={i.key} className="list-item" onClick={() => go(i.open)}>
+                  <div className="grow">
+                    <div className="title">{itemTitle(i)}</div>
+                    <div className="muted" style={{ fontSize: ".84rem" }}>
+                      {i.stage}:{" "}
+                      {i.reviews
+                        .filter((r) => r.reviewerIds.includes(actor.personId))
+                        .map((r) => r.label)
+                        .join(", ") || i.step}
+                    </div>
+                  </div>
+                  {i.due && (
+                    <span className={`badge ${i.overdue ? "bad" : i.level !== "project" && daysUntil(i.due) <= 1 ? "warn" : ""}`}>
+                      {relativeDays(i.due)}
+                    </span>
+                  )}
+                </div>
+              ))}
               {blocked.map((r) => {
                 const due = currentStageDeadline(r);
                 const out = categoryOf(r.category).stages.find((s) => s.name === r.pipelineStage)?.requiredOutput;
@@ -416,10 +496,21 @@ export function Dashboard() {
 
         <section className="glass panel" aria-label="At risk">
           <h2>At risk</h2>
-          {overdue.length + atRisk.length === 0 ? (
+          {overdue.length + atRisk.length + wfLate.length === 0 ? (
             <Empty>Everything is on track.</Empty>
           ) : (
             <div className="list">
+              {wfLate.map((i) => (
+                <div key={i.key} className="list-item" onClick={() => go(i.open)}>
+                  <div className="grow">
+                    <div className="title">{itemTitle(i)}</div>
+                    <div className="muted" style={{ fontSize: ".84rem" }}>
+                      {i.stage}: {i.step}, {nameOf(i.ownerId)}
+                    </div>
+                  </div>
+                  <span className="badge bad">Overdue</span>
+                </div>
+              ))}
               {[...overdue, ...atRisk].map((r) => (
                 <div key={r.contentId} className="list-item" onClick={() => go({ n: "record", id: r.contentId })}>
                   <div className="grow">
@@ -499,10 +590,22 @@ export function Dashboard() {
 
       <section className="glass panel" aria-label="Upcoming call sheets">
         <h2>Shoots in the next 7 days</h2>
-        {soon.length === 0 ? (
+        {soon.length + sessionsSoon.length === 0 ? (
           <Empty>No call sheets are scheduled this week.</Empty>
         ) : (
           <div className="list">
+            {sessionsSoon.map((i) => (
+              <div key={i.key} className="list-item" onClick={() => go(i.open)}>
+                <div className="grow">
+                  <div className="title">{itemTitle(i)}</div>
+                  <div className="muted" style={{ fontSize: ".84rem" }}>
+                    Recording session {i.id}. It has no call sheet yet.
+                  </div>
+                </div>
+                <span className="badge accent">{relativeDays(i.due!)}</span>
+                <span className="badge warn">No call sheet</span>
+              </div>
+            ))}
             {soon.map((cs) => (
               <div key={cs.id} className="list-item" onClick={() => go({ n: "callsheet", id: cs.id })}>
                 <div className="grow">

@@ -4047,11 +4047,41 @@ function cleanRoles(roles2) {
 
 // src/config/capacity.ts
 var DEFAULT_STAGE_EFFORT = {
-  series: { Idea: 0.5, Scripting: 2, "Pre-production": 1.5, Ingest: 0.5, Editorial: 2, Review: 0.5, Delivered: 0.5 },
-  devotional: { Creation: 0.3, Guest: 1.5, "Prep/Scripting": 1, Recording: 0.5, Editing: 1, Review: 0.3, Published: 0.2 },
+  series: {
+    Idea: 0.5,
+    Scripting: 2,
+    "Pre-production": 1.5,
+    Ingest: 0.5,
+    Editorial: 2,
+    Review: 0.5,
+    Delivered: 0.5,
+    "Post production": 2,
+    "Marketing and distribution": 0.5
+  },
+  devotional: {
+    Creation: 0.3,
+    Guest: 1.5,
+    "Prep/Scripting": 1,
+    Recording: 0.5,
+    Editing: 1,
+    Review: 0.3,
+    Published: 0.2,
+    "Post production": 1,
+    "Marketing and distribution": 0.3
+  },
   general: { "In use": 0 },
   live: { Prep: 0.5, Build: 1.5, Rehearse: 0.5, Show: 1, Wrap: 0.5, Review: 0.5, "Post Production": 1 },
-  documentary: { Idea: 1, Research: 3, "Pre-production": 2, Ingest: 1, Editorial: 5, Review: 1, Delivered: 0.5 },
+  documentary: {
+    Idea: 1,
+    Research: 3,
+    "Pre-production": 2,
+    Ingest: 1,
+    Editorial: 5,
+    Review: 1,
+    Delivered: 0.5,
+    "Post production": 5,
+    "Marketing and distribution": 1
+  },
   music: { Idea: 0.5, "Pre-production": 1, "Audio post-production": 2, "Video editing": 2, Review: 0.5, Publish: 0.5 }
 };
 var effortKey = (category2, stage) => `${category2}:${stage}`;
@@ -7856,14 +7886,241 @@ __export(reminders_exports, {
   mailtoLink: () => mailtoLink,
   messageFor: () => messageFor,
   remindersFor: () => remindersFor,
-  smsLink: () => smsLink
+  smsLink: () => smsLink,
+  workflowDueSoon: () => workflowDueSoon
 });
+
+// src/services/workItems.ts
+function projectName(p) {
+  const parent = p.parentId ? getRecord(p.parentId) : void 0;
+  return parent ? `${parent.title}: ${p.title}` : p.title;
+}
+var isDocumentary = (p) => p.workflow.formType === "documentary_dof" || p.workflow.formType === "documentary_pitched";
+var dateOf = (stamp2) => stamp2.slice(0, 10);
+var plural = (n, one) => `${n} ${one}${n === 1 ? "" : "s"}`;
+function developmentOwner(p) {
+  const owner = getDb().developmentForms.find((f2) => f2.contentId === p.contentId)?.sections.entry?.ownerId;
+  return typeof owner === "string" && owner ? owner : p.workflow.showProducerId;
+}
+function pendingReviews(ownerId, keys) {
+  const out = [];
+  for (const [key2, label] of keys) {
+    const c = getDb().reviewCheckpoints.find((x) => x.id === `${ownerId}|${key2}`);
+    if (c && c.status === "Pending" && c.reviewerIds.length) out.push({ checkpointId: c.id, label, reviewerIds: c.reviewerIds });
+  }
+  return out;
+}
+var waiting = (ownerId, reviews, ownerToo = true) => [
+  .../* @__PURE__ */ new Set([...ownerToo && ownerId ? [ownerId] : [], ...reviews.flatMap((r) => r.reviewerIds)])
+];
+function unscheduled(p) {
+  const db2 = getDb();
+  const upcoming = new Set(
+    db2.recordingSessions.filter((s2) => s2.contentId === p.contentId && !s2.archivedAt && s2.status !== "Closed").map((s2) => s2.id)
+  );
+  const onLog = new Set(db2.sessionLogEntries.filter((e) => upcoming.has(e.sessionId)).map((e) => e.plannedEpisodeId));
+  const made = new Set(episodesOf(p.contentId).map((e) => e.episode.plannedEpisodeId));
+  return db2.plannedEpisodes.filter((x) => x.contentId === p.contentId && !x.archivedAt && !made.has(x.id) && !onLog.has(x.id)).length;
+}
+function projectItem(p, stage, step, ownerId, gate) {
+  const reviews = stage === "Development" ? pendingReviews(p.contentId, [
+    ["pitch", "Pitch review"],
+    ["outline_script", "Outline or script review"]
+  ]) : [];
+  return {
+    key: `project:${p.contentId}`,
+    level: "project",
+    id: p.contentId,
+    title: projectName(p),
+    context: categoryOf(p.category).workflow?.projectLabel ?? "Project",
+    project: p,
+    category: p.category,
+    stage,
+    step,
+    ownerId,
+    reviews,
+    waitingOn: waiting(ownerId, reviews),
+    due: stage === "Development" || stage === "Pre-production" ? p.stageDeadlines[stage] ?? null : null,
+    start: p.stageEnteredAt,
+    overdue: false,
+    done: false,
+    gate,
+    callSheetId: null,
+    lateSessions: 0,
+    open: { n: "record", id: p.contentId }
+  };
+}
+function sessionItem(p, s2, gates) {
+  const ownerId = p.workflow.showProducerId;
+  return {
+    key: `session:${s2.id}`,
+    level: "session",
+    id: s2.id,
+    title: `Session ${s2.sessionNumber}`,
+    context: projectName(p),
+    project: p,
+    category: p.category,
+    stage: s2.status === "Planned" ? "Pre-production" : "Production",
+    step: s2.status === "Planned" ? "Planned" : s2.status === "Open" ? "Recording" : "Closed",
+    ownerId,
+    reviews: [],
+    waitingOn: s2.status === "Closed" ? [] : waiting(ownerId, []),
+    due: s2.scheduledDate,
+    start: dateOf(s2.createdAt),
+    overdue: sessionOverdue(s2),
+    done: s2.status === "Closed",
+    gate: !gates || s2.status === "Closed" ? null : evaluateGate(s2.status === "Planned" ? "Pre-production" : "Production", "session", s2.id),
+    callSheetId: s2.callSheetId && getDb().callSheets.some((c) => c.id === s2.callSheetId) ? s2.callSheetId : null,
+    lateSessions: 0,
+    open: { n: "session", id: s2.id }
+  };
+}
+function episodeItem(p, ep, gates) {
+  const info = ep.episode;
+  const inPost = info.stage === "Post production";
+  const inReview = inPost && (info.postStage === "Rough cut review" || info.postStage === "Final review");
+  const reviews = inReview ? pendingReviews(ep.contentId, [info.postStage === "Rough cut review" ? ["rough_cut", "Rough cut review"] : ["final", "Final review"]]) : [];
+  const ownerId = inPost ? info.editorId ?? p.workflow.showProducerId : p.workflow.showProducerId;
+  const published = info.mdStage === "Published";
+  let gate = null;
+  if (gates && !published) {
+    if (inPost && info.postStage === "Editing") gate = evaluateGate("Editing", "episode", ep.contentId);
+    else if (inPost && info.postStage === "Approved") gate = evaluateGate("Post production", "episode", ep.contentId);
+    else if (!inPost) gate = evaluateGate("Marketing and distribution", "episode", ep.contentId);
+  }
+  return {
+    key: `episode:${ep.contentId}`,
+    level: "episode",
+    id: ep.contentId,
+    title: ep.title,
+    context: projectName(p),
+    project: p,
+    category: p.category,
+    stage: info.stage,
+    step: inPost ? info.postStage === "Editing" && info.sendBackReason ? "Editing (sent back)" : info.postStage : info.mdStage,
+    ownerId,
+    reviews,
+    waitingOn: published ? [] : waiting(ownerId, reviews, !inReview),
+    due: ep.stageDeadlines[info.stage] ?? null,
+    start: ep.stageEnteredAt,
+    overdue: episodeOverdue(ep),
+    done: published,
+    gate,
+    callSheetId: null,
+    lateSessions: 0,
+    open: { n: "record", id: ep.contentId }
+  };
+}
+function itemsOf(p, gates) {
+  if (p.workflow.stage === "Development") {
+    const outcome2 = getDb().developmentForms.find((f2) => f2.contentId === p.contentId)?.outcome;
+    const step = outcome2 === "Greenlight" ? "Greenlit: handoff" : outcome2 ? outcome2 : "Form and reviews";
+    return [projectItem(p, "Development", step, developmentOwner(p), gates ? evaluateGate("Development", "project", p.contentId) : null)];
+  }
+  const items = [];
+  const sessions = sessionsOf(p.contentId).filter((s2) => !s2.archivedAt);
+  const episodes = episodesOf(p.contentId);
+  const producer = p.workflow.showProducerId;
+  if (p.workflow.status === "Active") {
+    const planned = sessions.filter((s2) => s2.status === "Planned").sort((a, b) => (a.scheduledDate ?? "9999").localeCompare(b.scheduledDate ?? "9999"));
+    const open = sessions.some((s2) => s2.status === "Open");
+    const projectGate = () => gates ? evaluateGate("Pre-production", "project", p.contentId) : null;
+    if (isDocumentary(p)) {
+      if (!episodes.length && (sessions.length === 0 || planned.length))
+        items.push(
+          projectItem(p, "Pre-production", planned.length ? nextSession2(planned) : "No sessions scheduled yet", producer, projectGate())
+        );
+      else if (!episodes.length && !open && !planned.length && sessions.some((s2) => s2.status === "Closed"))
+        items.push(projectItem(p, "Production", "Sessions closed: send to post production", producer, null));
+    } else {
+      const left = unscheduled(p);
+      const label = (categoryOf(p.category).workflow?.episodeLabel ?? "Episode").toLowerCase();
+      if (sessions.length === 0 || planned.length || left)
+        items.push(
+          projectItem(
+            p,
+            "Pre-production",
+            planned.length ? nextSession2(planned) : sessions.length === 0 ? "No sessions scheduled yet" : `${plural(left, `planned ${label}`)} still to schedule`,
+            producer,
+            projectGate()
+          )
+        );
+    }
+  }
+  const late = sessions.filter((s2) => s2.status === "Planned" && sessionOverdue(s2)).length;
+  for (const i of items) i.lateSessions = late;
+  for (const s2 of sessions) items.push(sessionItem(p, s2, gates));
+  for (const ep of episodes) items.push(episodeItem(p, ep, gates));
+  return items;
+}
+var nextSession2 = (planned) => {
+  const s2 = planned[0];
+  const more = planned.length > 1 ? `, and ${planned.length - 1} more` : "";
+  const when = s2.scheduledDate ? ` on ${fmtShort(s2.scheduledDate)}${sessionOverdue(s2) ? ", now past" : ""}` : ", no date yet";
+  return `Next: session ${s2.sessionNumber}${when}${more}`;
+};
+var byDue = (a, b) => (a.due ?? "9999").localeCompare(b.due ?? "9999") || a.key.localeCompare(b.key);
+function allWorkItems(gates = false) {
+  return getDb().records.filter((r) => isWorkflowProject(r) && !r.archived).flatMap((p) => itemsOf(p, gates)).sort(byDue);
+}
+
+// src/services/reminders.ts
+function workflowReminders(personId, asOf, add) {
+  const sheets = getDb().callSheets;
+  for (const item2 of allWorkItems()) {
+    if (item2.done) continue;
+    const base = { contentId: item2.level === "session" ? item2.project.contentId : item2.id, category: item2.category, time: null };
+    for (const review of item2.reviews) {
+      if (!review.reviewerIds.includes(personId)) continue;
+      add({
+        ...base,
+        key: `review:${review.checkpointId}`,
+        kind: "review",
+        title: `${item2.level === "episode" ? `${item2.context}, ${item2.title}` : item2.title}: ${review.label} waiting for you`,
+        detail: `${item2.id}. Approve it, or send it back with what needs to change.`,
+        date: item2.level === "episode" && item2.due ? item2.due : asOf
+      });
+    }
+    if (item2.ownerId !== personId || !item2.due || !item2.waitingOn.includes(personId)) continue;
+    if (item2.level === "project" && item2.due >= asOf)
+      add({
+        ...base,
+        key: `stage:${item2.id}:${item2.stage}`,
+        kind: "stage",
+        title: `${item2.title}: ${item2.stage} due`,
+        detail: `${item2.id}. ${item2.step}.`,
+        date: item2.due
+      });
+    if (item2.level === "session") {
+      const sheet = sheets.find((c) => c.id === getDb().recordingSessions.find((s2) => s2.id === item2.id)?.callSheetId);
+      if (item2.due >= asOf && sheet?.crewPersonIds.includes(personId)) continue;
+      add({
+        ...base,
+        key: `session:${item2.id}`,
+        kind: "session",
+        title: `${item2.context}: ${item2.title.toLowerCase()} ${item2.overdue ? "not closed" : "recording"}`,
+        detail: `${item2.id}. ${item2.overdue ? "Its date has passed: close it, or move it to a new date." : item2.step}.`,
+        date: item2.due,
+        sessionId: item2.id
+      });
+    }
+    if (item2.level === "episode")
+      add({
+        ...base,
+        key: `stage:${item2.id}:${item2.stage}`,
+        kind: "stage",
+        title: `${item2.context}, ${item2.title}: ${item2.stage} due`,
+        detail: `${item2.id}. ${item2.step}.`,
+        date: item2.due
+      });
+  }
+}
 function remindersFor(personId, asOf = todayIso(), days = 21) {
   const db2 = getDb();
   const horizon = fromDayNumber(dayNumber(asOf) + days);
   const out = [];
   const add = (r) => {
-    if (r.date <= horizon) out.push({ ...r, overdue: r.date < asOf });
+    if (r.date <= horizon) out.push({ ...r, sessionId: r.sessionId ?? null, overdue: r.date < asOf });
   };
   for (const r of db2.records) {
     if (r.archived || !usesPipeline(r) || !r.pipelineStage || isComplete(r) || r.category === "devotional" || r.category === "general")
@@ -7936,12 +8193,20 @@ function remindersFor(personId, asOf = todayIso(), days = 21) {
         category: getRecord(m.contentId)?.category ?? "series"
       });
   }
+  workflowReminders(personId, asOf, add);
   return out.sort((a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title));
 }
+var insideLead = (r, leadHours, asOf) => r.overdue || (asOf === todayIso() ? hoursUntilEndOfDay(r.date) : (dayNumber(r.date) - dayNumber(asOf) + 1) * 24) <= leadHours;
 function dueSoon(personId, leadHours = getDb().settings.stageReminderHours, asOf = todayIso()) {
-  return remindersFor(personId, asOf, 30).filter(
-    (r) => r.overdue || (asOf === todayIso() ? hoursUntilEndOfDay(r.date) : (dayNumber(r.date) - dayNumber(asOf) + 1) * 24) <= leadHours
-  );
+  return remindersFor(personId, asOf, 30).filter((r) => insideLead(r, leadHours, asOf));
+}
+function workflowDueSoon(personId, leadHours = getDb().settings.stageReminderHours, asOf = todayIso()) {
+  const out = [];
+  const horizon = fromDayNumber(dayNumber(asOf) + 30);
+  workflowReminders(personId, asOf, (r) => {
+    if (r.date <= horizon) out.push({ ...r, sessionId: r.sessionId ?? null, overdue: r.date < asOf });
+  });
+  return out.filter((r) => insideLead(r, leadHours, asOf)).sort((a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title));
 }
 function messageFor(person2, rems) {
   const first = person2.name.split(" ")[0];
@@ -8757,7 +9022,7 @@ function decideCheckpoint(actor, checkpointId, decision) {
 }
 
 // src/services/workflow/sessions.ts
-var isDocumentary = (p) => p.workflow.formType === "documentary_dof" || p.workflow.formType === "documentary_pitched";
+var isDocumentary2 = (p) => p.workflow.formType === "documentary_dof" || p.workflow.formType === "documentary_pitched";
 var RUN_SHEET_NOTE = "Real conversations often run long. If takes reach 65 to 70 minutes, expect the day to run 35 to 60 minutes over. Five long conversations in a row tire the host. Never skip the Episode 1 spot check.";
 var MAX_DAY = 24 * 60;
 var hhmm = (min) => `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
@@ -8981,7 +9246,7 @@ function addLogRow(actor, sessionId, input) {
   const plannedId = input.plannedEpisodeId || null;
   const label = (input.itemLabel ?? "").trim();
   let guest = (input.guest ?? "").trim();
-  if (isDocumentary(project)) {
+  if (isDocumentary2(project)) {
     if (!label) throw new RuleError("Name what was recorded: an interview set, a scene or a location.");
   } else if (!plannedId) throw new RuleError("Choose the planned episode this row is for.");
   if (plannedId) {
@@ -9066,7 +9331,7 @@ function closeSession(actor, sessionId) {
   const made = [];
   const kept2 = [];
   const archived = [];
-  if (!isDocumentary(project)) {
+  if (!isDocumentary2(project)) {
     const planned = new Map(db2.plannedEpisodes.map((p) => [p.id, p]));
     const rows = rowsOf(sessionId).filter((r) => r.plannedEpisodeId && planned.has(r.plannedEpisodeId)).sort((a, b) => planned.get(a.plannedEpisodeId).episodeNumber - planned.get(b.plannedEpisodeId).episodeNumber);
     const label = categoryOf(project.category).workflow?.episodeLabel ?? "Episode";
@@ -9110,7 +9375,7 @@ function closeSession(actor, sessionId) {
 function reopenSession(actor, sessionId) {
   const { session, project } = sessionForWrite(actor, sessionId);
   if (session.status !== "Closed") throw new RuleError("This session is not closed.");
-  const eps = isDocumentary(project) ? episodesOf(project.contentId) : episodesOf(project.contentId).filter((e) => e.episode.sourceSessionId === sessionId);
+  const eps = isDocumentary2(project) ? episodesOf(project.contentId) : episodesOf(project.contentId).filter((e) => e.episode.sourceSessionId === sessionId);
   const started = eps.filter((e) => e.episode.stage !== "Post production" || e.episode.postStage !== "Not started");
   if (started.length)
     throw new RuleError(
@@ -9125,7 +9390,7 @@ function reopenSession(actor, sessionId) {
 }
 function sendToPostProduction(actor, projectId) {
   const p = projectForWrite(actor, projectId);
-  if (!isDocumentary(p)) throw new RuleError("Series and devotions make their episodes when each session closes.");
+  if (!isDocumentary2(p)) throw new RuleError("Series and devotions make their episodes when each session closes.");
   if (!canManageTeam(actor, p))
     throw new RuleError("Only the show producer or the Head of Production sends a documentary to post production.");
   const closed = sessionsOf(projectId).filter((s2) => s2.status === "Closed" && !s2.archivedAt);

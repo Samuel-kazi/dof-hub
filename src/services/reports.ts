@@ -22,6 +22,7 @@ import { docsForRecord, getDoc, canViewDoc } from "./docs";
 import { nameOf } from "./people";
 import { teamOf } from "./team";
 import { assignmentRisks, crewWorkload, fmtDays } from "./workload";
+import { onBoard, workItems } from "./workItems";
 import { fmtDate, fmtDateTime, fmtSize, fmtShort, todayIso } from "./utils";
 
 // A report is plain content: a title and some blocks. The same content becomes a PDF, a printed page
@@ -703,31 +704,54 @@ export const REPORT_KINDS: ReportKind[] = [
       },
     ],
     build: (actor, p) => {
+      const pick = (done: boolean) => (p.which === "done" ? done : p.which === "all" ? true : !done);
       const rows = visibleRecords(actor)
         .filter(usesPipeline)
-        .filter((r) => (p.which === "done" ? isComplete(r) : p.which === "all" ? true : !isComplete(r)))
+        .filter((r) => pick(isComplete(r)))
         .sort((a, b) => (a.deadline ?? "9999").localeCompare(b.deadline ?? "9999"));
-      return doc(
-        "Content pipeline status",
-        `${rows.length} item${rows.length === 1 ? "" : "s"}`,
-        "pipeline-status",
-        [
-          {
-            type: "table",
-            head: ["Content ID", "Title", "Stage", "Responsible", "Publish date", "State"],
-            weights: [2.8, 3.2, 1.8, 2.2, 1.6, 1.4],
-            rows: rows.map((r) => [
-              r.contentId,
-              displayTitle(r),
-              r.pipelineStage ?? "",
-              nameOf(r.assigneePersonId),
-              fmtShort(r.deadline),
-              isComplete(r) ? "Complete" : riskOf(r) === "overdue" ? "Overdue" : riskOf(r) === "at-risk" ? "At risk" : "On track",
+      // The five-stage workflow, at the level each stage works at: the same cards as the board, and published episodes
+      // when completed work is asked for. Only sessions and episodes can be overdue (assumption A5).
+      const work = workItems(actor, false)
+        .filter((i) => (onBoard(i) && !i.done) || (i.level === "episode" && i.done))
+        .filter((i) => pick(i.done));
+      const table = (cells: string[][]): Block => ({
+        type: "table",
+        head: ["Content ID", "Title", "Stage", "Responsible", "Publish date", "State"],
+        weights: [2.8, 3.2, 1.8, 2.2, 1.6, 1.4],
+        rows: cells,
+      });
+      // An earlier-pipeline table is left out only when there is nothing in it and the workflow's table has rows.
+      const blocks: Block[] =
+        rows.length || !work.length
+          ? [
+              table(
+                rows.map((r) => [
+                  r.contentId,
+                  displayTitle(r),
+                  r.pipelineStage ?? "",
+                  nameOf(r.assigneePersonId),
+                  fmtShort(r.deadline),
+                  isComplete(r) ? "Complete" : riskOf(r) === "overdue" ? "Overdue" : riskOf(r) === "at-risk" ? "At risk" : "On track",
+                ]),
+              ),
+            ]
+          : [];
+      if (work.length)
+        blocks.push(
+          { type: "heading", text: "Series, devotions and documentaries" },
+          table(
+            work.map((i) => [
+              i.id,
+              i.level === "project" ? i.title : `${i.context}, ${i.title}`,
+              `${i.stage}: ${i.step}`,
+              nameOf(i.ownerId),
+              fmtShort(i.project.deadline),
+              i.done ? "Published" : i.overdue ? "Overdue" : "On track",
             ]),
-          },
-        ],
-        true,
-      );
+          ),
+        );
+      const n = rows.length + work.length;
+      return doc("Content pipeline status", `${n} item${n === 1 ? "" : "s"}`, "pipeline-status", blocks, true);
     },
   },
   // Workload

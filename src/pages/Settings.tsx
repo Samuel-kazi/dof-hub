@@ -11,7 +11,7 @@ import { changePassword, updateSettings, updateWorkspaceAppearance } from "../se
 import { updateOwnProfile } from "../services/wrapped/people";
 import { CATEGORIES } from "../config/categories";
 import { ACCENTS, DENSITIES, FONT_PAIRINGS, FONT_SIZES } from "../config/appearance";
-import { DEFAULT_WORK_DAYS, effortFor, effortKey } from "../config/capacity";
+import { DEFAULT_WORK_DAYS, EPISODE_EFFORT_STAGES, effortFor, effortKey } from "../config/capacity";
 import type { AccentKey, CategoryKey, FontPairingKey } from "../types";
 import { nameOf } from "../services/wrapped/people";
 import { useTheme } from "../ui/theme";
@@ -329,22 +329,25 @@ export function Settings() {
                 {CATEGORIES.map((c) => (
                   <div key={c.key}>
                     <h3 style={{ marginBottom: 6 }}>{c.label}</h3>
-                    {c.stages
-                      .filter((st) => st.name !== c.footageStage)
-                      .map((st) => (
-                        <label key={st.name} className="effort-row">
-                          <span>{st.name}</span>
-                          <input
-                            type="number"
-                            min={0}
-                            max={30}
-                            step={0.25}
-                            value={effortValue(c.key, st.name)}
-                            onChange={(e) => setEffort({ ...effort, [effortKey(c.key, st.name)]: e.target.value })}
-                            aria-label={`${c.label} ${st.name} days`}
-                          />
-                        </label>
-                      ))}
+                    {[
+                      ...c.stages.filter((st) => st.name !== c.footageStage).map((st) => ({ name: st.name, label: st.name })),
+                      ...(c.workflow
+                        ? EPISODE_EFFORT_STAGES.map((name) => ({ name, label: `${name}, each ${c.workflow!.episodeLabel.toLowerCase()}` }))
+                        : []),
+                    ].map((st) => (
+                      <label key={st.name} className="effort-row">
+                        <span>{st.label}</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={30}
+                          step={0.25}
+                          value={effortValue(c.key, st.name)}
+                          onChange={(e) => setEffort({ ...effort, [effortKey(c.key, st.name)]: e.target.value })}
+                          aria-label={`${c.label} ${st.label} days`}
+                        />
+                      </label>
+                    ))}
                   </div>
                 ))}
               </div>

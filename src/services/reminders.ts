@@ -8,21 +8,84 @@ import { daysInStage, displayTitle, isComplete, isOwnerNow, isStale, ownersOf, u
 import { getRecord } from "./access";
 import { can, requireCan } from "./permissions";
 import { getPerson } from "./people";
+import { allWorkItems } from "./workItems";
 import { dayNumber, fmtShort, fromDayNumber, hoursUntilEndOfDay, todayIso } from "./utils";
 
 // Everything a person has coming up that they should not forget: stage deadlines, checklist items,
-// shoot days and gear to bring back. These feed the bell, the calendar file and the email and text messages.
+// shoot days, recording sessions, reviews and gear to bring back. These feed the bell, the calendar file and the
+// email and text messages.
 
 export interface Reminder {
   key: string; // stable, so a reminder that was already sent can be recognised
-  kind: "stage" | "task" | "shoot" | "gear" | "stale";
+  kind: "stage" | "task" | "shoot" | "gear" | "stale" | "session" | "review";
   title: string;
   detail: string;
   date: string; // YYYY-MM-DD
   time: string | null; // HH:MM for shoot days
   contentId: string;
+  sessionId: string | null; // a recording session's reminder opens the session rather than its project
   category: CategoryKey; // for colouring, matching the calendar's category colours
   overdue: boolean;
+}
+
+type NewReminder = Omit<Reminder, "overdue" | "sessionId"> & { sessionId?: string };
+
+/**
+ * The five-stage workflow's reminders (src/services/workItems.ts): a project's stage deadline to its owner, a
+ * session's date to its producer, an episode's stage deadline to whoever moves it on, and a waiting review to each
+ * reviewer named on it. Only sessions and episodes are ever overdue (assumption A5), so a project's deadline is
+ * shown until its day and then dropped, and a waiting review of a project is never late.
+ */
+function workflowReminders(personId: string, asOf: string, add: (r: NewReminder) => void): void {
+  const sheets = getDb().callSheets;
+  for (const item of allWorkItems()) {
+    if (item.done) continue;
+    const base = { contentId: item.level === "session" ? item.project.contentId : item.id, category: item.category, time: null };
+    for (const review of item.reviews) {
+      if (!review.reviewerIds.includes(personId)) continue;
+      add({
+        ...base,
+        key: `review:${review.checkpointId}`,
+        kind: "review",
+        title: `${item.level === "episode" ? `${item.context}, ${item.title}` : item.title}: ${review.label} waiting for you`,
+        detail: `${item.id}. Approve it, or send it back with what needs to change.`,
+        date: item.level === "episode" && item.due ? item.due : asOf,
+      });
+    }
+    if (item.ownerId !== personId || !item.due || !item.waitingOn.includes(personId)) continue;
+    if (item.level === "project" && item.due >= asOf)
+      add({
+        ...base,
+        key: `stage:${item.id}:${item.stage}`,
+        kind: "stage",
+        title: `${item.title}: ${item.stage} due`,
+        detail: `${item.id}. ${item.step}.`,
+        date: item.due,
+      });
+    if (item.level === "session") {
+      // Someone on the session's call sheet is already reminded of the day as a shoot, until the day has passed.
+      const sheet = sheets.find((c) => c.id === getDb().recordingSessions.find((s) => s.id === item.id)?.callSheetId);
+      if (item.due >= asOf && sheet?.crewPersonIds.includes(personId)) continue;
+      add({
+        ...base,
+        key: `session:${item.id}`,
+        kind: "session",
+        title: `${item.context}: ${item.title.toLowerCase()} ${item.overdue ? "not closed" : "recording"}`,
+        detail: `${item.id}. ${item.overdue ? "Its date has passed: close it, or move it to a new date." : item.step}.`,
+        date: item.due,
+        sessionId: item.id,
+      });
+    }
+    if (item.level === "episode")
+      add({
+        ...base,
+        key: `stage:${item.id}:${item.stage}`,
+        kind: "stage",
+        title: `${item.context}, ${item.title}: ${item.stage} due`,
+        detail: `${item.id}. ${item.step}.`,
+        date: item.due,
+      });
+  }
 }
 
 /** What is coming up for a person, from `asOf` for the next `days` days, plus anything already overdue. */
@@ -30,8 +93,8 @@ export function remindersFor(personId: string, asOf: string = todayIso(), days =
   const db = getDb();
   const horizon = fromDayNumber(dayNumber(asOf) + days);
   const out: Reminder[] = [];
-  const add = (r: Omit<Reminder, "overdue">) => {
-    if (r.date <= horizon) out.push({ ...r, overdue: r.date < asOf });
+  const add = (r: NewReminder) => {
+    if (r.date <= horizon) out.push({ ...r, sessionId: r.sessionId ?? null, overdue: r.date < asOf });
   };
 
   for (const r of db.records) {
@@ -107,14 +170,33 @@ export function remindersFor(personId: string, asOf: string = todayIso(), days =
         category: getRecord(m.contentId)?.category ?? "series",
       });
   }
+  workflowReminders(personId, asOf, add);
   return out.sort((a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title));
 }
 
+const insideLead = (r: Reminder, leadHours: number, asOf: string): boolean =>
+  r.overdue || (asOf === todayIso() ? hoursUntilEndOfDay(r.date) : (dayNumber(r.date) - dayNumber(asOf) + 1) * 24) <= leadHours;
+
 /** The ones inside the lead time, or already late. These are what a message should mention. */
 export function dueSoon(personId: string, leadHours: number = getDb().settings.stageReminderHours, asOf: string = todayIso()): Reminder[] {
-  return remindersFor(personId, asOf, 30).filter(
-    (r) => r.overdue || (asOf === todayIso() ? hoursUntilEndOfDay(r.date) : (dayNumber(r.date) - dayNumber(asOf) + 1) * 24) <= leadHours,
-  );
+  return remindersFor(personId, asOf, 30).filter((r) => insideLead(r, leadHours, asOf));
+}
+
+/**
+ * The five-stage workflow's reminders inside the lead time (24 hours unless changed in Settings), or late. The bell
+ * shows these next to its stage deadlines, which come from getReminders in content.ts.
+ */
+export function workflowDueSoon(
+  personId: string,
+  leadHours: number = getDb().settings.stageReminderHours,
+  asOf: string = todayIso(),
+): Reminder[] {
+  const out: Reminder[] = [];
+  const horizon = fromDayNumber(dayNumber(asOf) + 30);
+  workflowReminders(personId, asOf, (r) => {
+    if (r.date <= horizon) out.push({ ...r, sessionId: r.sessionId ?? null, overdue: r.date < asOf });
+  });
+  return out.filter((r) => insideLead(r, leadHours, asOf)).sort((a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title));
 }
 
 export interface Message {

@@ -5,6 +5,8 @@ import { DEFAULT_WORK_DAYS, HORIZON_DAYS, LOAD_BANDS, effortFor } from "../confi
 import { can } from "./permissions";
 import { docSubject } from "./docs";
 import { isComplete, ownersOf, usesPipeline } from "./content";
+import { getRecord } from "./access";
+import { allWorkItems } from "./workItems";
 import { dayNumber, fmtShort, fromDayNumber, todayIso } from "./utils";
 
 // Capacity: how much each person has on, day by day.
@@ -192,6 +194,43 @@ function itemsFor(personId: string, asOf: string): { items: LoadItem[]; undated:
         items.push(makeItem(tasks.length ? "task" : "stage", sh.label, r.contentId, sh.effort, start, sh.end, asOf));
       }
     }
+  }
+
+  // The five-stage workflow. A recording session with no call sheet yet still takes the day of its producer and of
+  // everyone holding a project role; once it has one, being on the sheet is what counts (above). An episode's editing
+  // is spread up to its Post production deadline, and its release work up to its Marketing and distribution deadline.
+  for (const item of allWorkItems()) {
+    if (item.done) continue;
+    if (item.level === "session") {
+      if (!item.due || item.due < asOf || item.callSheetId) continue;
+      const crew = [
+        item.project.workflow.showProducerId,
+        ...db.projectRoles.filter((r) => r.contentId === item.project.contentId).map((r) => r.crewId),
+      ];
+      if (!crew.includes(personId)) continue;
+      items.push({
+        id: `${item.id}#shoot`,
+        kind: "shoot",
+        label: `Recording session: ${item.context}, ${item.title}`,
+        contentId: item.project.contentId,
+        effort: 1,
+        from: item.due,
+        to: item.due,
+        days: [item.due],
+        perDay: 1,
+        late: false,
+      });
+      continue;
+    }
+    if (item.level !== "episode" || item.ownerId !== personId || !item.waitingOn.includes(personId)) continue;
+    const info = getRecord(item.id)?.episode;
+    // In Post production the work is the edit itself; an approved cut only waits to be moved on.
+    if (!info || (info.stage === "Post production" && info.postStage !== "Not started" && info.postStage !== "Editing")) continue;
+    const effort = effortFor(item.category, item.stage, overrides);
+    if (effort <= 0) continue;
+    const label = `${item.context}, ${item.title}: ${item.stage}`;
+    if (!item.due) undated.push(label);
+    else items.push(makeItem("stage", label, item.id, effort, asOf, item.due, asOf));
   }
 
   // Being away with gear takes the whole day, weekends included.

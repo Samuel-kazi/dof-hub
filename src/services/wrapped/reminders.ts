@@ -2,5 +2,5 @@
 import * as core from "../reminders";
 import { rpc, serverOnly } from "../../data/rpc";
 export const logSent = rpc("reminders.logSent", core.logSent);
-export { alreadySent, dueSoon, lastSent, mailtoLink, messageFor, remindersFor, smsLink } from "../reminders";
+export { alreadySent, dueSoon, lastSent, mailtoLink, messageFor, remindersFor, smsLink, workflowDueSoon } from "../reminders";
 export type { Message, Reminder } from "../reminders";

@@ -71,7 +71,8 @@ export function RecordPage({ id }: { id: string }) {
   const crumbs = getBreadcrumb(rec.contentId);
   const kind = childKindFor(rec);
   const children = getChildren(rec.contentId);
-  const roll = !leaf ? getRollupStatus(rec.contentId) : null;
+  // A series of the five-stage workflow has no earlier-pipeline items to count: its seasons below show where each stands.
+  const roll = !leaf && !rec.seriesType ? getRollupStatus(rec.contentId) : null;
   const del = canDelete(rec.contentId);
   const comments = getComments(rec.contentId);
   const existingSheet = leaf ? callSheetForRecord(rec) : undefined;

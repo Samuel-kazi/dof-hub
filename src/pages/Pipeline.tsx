@@ -4,7 +4,8 @@ import { can } from "../services/wrapped/permissions";
 import type { CategoryKey, ContentRecord } from "../types";
 import { useApp, type MenuItem } from "../ui/AppContext";
 import { useDb } from "../data/store";
-import { CATEGORIES, categoryOf } from "../config/categories";
+import { CATEGORIES, categoryOf, type CategoryConfig } from "../config/categories";
+import { WORKFLOW_STAGE_NAMES } from "../config/workflow";
 import { canWrite, visibleRecords } from "../services/access";
 import {
   canDelete,
@@ -19,10 +20,13 @@ import {
   usesPipeline,
 } from "../services/wrapped/content";
 import { nameOf } from "../services/wrapped/people";
+import { projectSummary, type Project } from "../services/wrapped/workflow";
+import { workItems } from "../services/workItems";
 import { fmtShort } from "../services/utils";
 import { Empty, RiskBadge, StageBadge } from "../ui/parts";
 import { IconChevron, IconDown, IconPlus } from "../ui/Icons";
 import { EditRecordModal, NewRecordModal } from "./RecordForms";
+import { WorkflowBoard } from "./workflow/Board";
 
 /** Right-click and "more" actions shared by every record row and card. */
 export function useRecordMenu() {
@@ -62,11 +66,20 @@ export function Pipeline({ category }: { category?: CategoryKey }) {
   const [view, setView] = useState<"board" | "tree">("board");
   const [adding, setAdding] = useState<CategoryKey | null>(null);
   const [showClosed, setShowClosed] = useState(false);
+  const [showPublished, setShowPublished] = useState(false);
   const rm = useRecordMenu();
   const cfg = category ? categoryOf(category) : null;
   const all = visibleRecords(actor);
   const shownCategories = cfg ? [cfg] : CATEGORIES;
-  const closedCount = all.filter((r) => (!category || r.category === category) && r.pipelineStage === "Closed").length;
+  const legacyClosed = all.filter((r) => (!category || r.category === category) && r.pipelineStage === "Closed");
+  // Series, devotions and documentaries run the five-stage workflow. Items made before it keep their old stages until
+  // the existing data is moved over, so they get a board of their own underneath.
+  const wf = !!cfg?.workflow;
+  const wfItems = wf ? workItems(actor) : [];
+  const wfClosed = wf ? visibleRecords(actor, true).filter((r) => r.category === category && r.workflow && r.archived) : [];
+  const legacy = cfg ? all.filter((r) => r.category === cfg.key && usesPipeline(r)) : [];
+  const publishedCount = wfItems.filter((i) => i.category === category && i.level === "episode" && i.done).length;
+  const closedCount = legacyClosed.length + wfClosed.length;
   const tops = all.filter(
     (r) => r.hierarchyLevel === 0 && (!category || r.category === category) && (showClosed || r.pipelineStage !== "Closed"),
   );
@@ -87,13 +100,15 @@ export function Pipeline({ category }: { category?: CategoryKey }) {
         <div className="grow">
           <h1>{cfg ? cfg.label : "Content pipeline"}</h1>
           <p className="sub">
-            {cfg
-              ? cfg.supportsChildren
-                ? cfg.leafLevel === 1
-                  ? `${cfg.singular} → ${cfg.childLevelLabel}. Each ${cfg.childLevelLabel?.toLowerCase()} moves through the stages on its own.`
-                  : `${cfg.singular} → ${cfg.childLevelLabel} → ${cfg.grandchildLevelLabel}. Only ${cfg.grandchildLevelLabel?.toLowerCase()}s move through the stages.`
-                : `${cfg.stages.map((s) => s.name).join(", ")}`
-              : "Every project across all categories."}
+            {cfg?.workflow
+              ? `${WORKFLOW_STAGE_NAMES.join(", ")}. A project shows in Development and Pre-production, a recording session in Production, and each ${cfg.workflow.episodeLabel.toLowerCase()} on its own after that.`
+              : cfg
+                ? cfg.supportsChildren
+                  ? cfg.leafLevel === 1
+                    ? `${cfg.singular} → ${cfg.childLevelLabel}. Each ${cfg.childLevelLabel?.toLowerCase()} moves through the stages on its own.`
+                    : `${cfg.singular} → ${cfg.childLevelLabel} → ${cfg.grandchildLevelLabel}. Only ${cfg.grandchildLevelLabel?.toLowerCase()}s move through the stages.`
+                  : `${cfg.stages.map((s) => s.name).join(", ")}`
+                : "Every project across all categories."}
           </p>
         </div>
         {cfg && (
@@ -128,6 +143,11 @@ export function Pipeline({ category }: { category?: CategoryKey }) {
             {c.label}
           </button>
         ))}
+        {wf && publishedCount > 0 && effective === "board" && (
+          <button className={`chip ${showPublished ? "on" : ""}`} onClick={() => setShowPublished((s) => !s)}>
+            Published ({publishedCount})
+          </button>
+        )}
         {closedCount > 0 && (
           <button className={`chip ${showClosed ? "on" : ""}`} onClick={() => setShowClosed((s) => !s)}>
             Closed ({closedCount})
@@ -135,63 +155,33 @@ export function Pipeline({ category }: { category?: CategoryKey }) {
         )}
       </div>
 
-      {effective === "board" && cfg && (
-        <div className="board">
-          {cfg.stages.map((st) => {
-            const cards = all.filter((r) => r.category === cfg.key && usesPipeline(r) && r.pipelineStage === st.name);
-            return (
-              <section key={st.name} className="col glass" aria-label={st.name}>
-                <h3>
-                  {st.name}
-                  <span className="muted">{cards.length}</span>
-                </h3>
-                {cards.map((r) => (
-                  <div
-                    key={r.contentId}
-                    className="card"
-                    tabIndex={0}
-                    onClick={() => go({ n: "record", id: r.contentId })}
-                    onKeyDown={(e) => e.key === "Enter" && go({ n: "record", id: r.contentId })}
-                    onContextMenu={(e) => rm.onContext(e, r)}
-                  >
-                    <span className="t">{displayTitle(r)}</span>
-                    <span className="cid">{r.contentId}</span>
-                    <span className="muted" style={{ fontSize: ".82rem" }}>
-                      {nameOf(r.assigneePersonId)}
-                      {currentStageDeadline(r) ? `, due ${fmtShort(currentStageDeadline(r))}` : ""}
-                    </span>
-                    <RiskBadge record={r} />
-                  </div>
-                ))}
-              </section>
-            );
-          })}
-          {showClosed && closedCount > 0 && (
-            <section className="col glass" aria-label="Closed">
-              <h3>
-                Closed<span className="muted">{all.filter((r) => r.category === cfg.key && r.pipelineStage === "Closed").length}</span>
-              </h3>
-              {all
-                .filter((r) => r.category === cfg.key && r.pipelineStage === "Closed")
-                .map((r) => (
-                  <div
-                    key={r.contentId}
-                    className="card"
-                    tabIndex={0}
-                    onClick={() => go({ n: "record", id: r.contentId })}
-                    onKeyDown={(e) => e.key === "Enter" && go({ n: "record", id: r.contentId })}
-                    onContextMenu={(e) => rm.onContext(e, r)}
-                  >
-                    <span className="t">{displayTitle(r)}</span>
-                    <span className="cid">{r.contentId}</span>
-                    <span className="muted" style={{ fontSize: ".82rem" }}>
-                      {r.closedReason}
-                    </span>
-                  </div>
-                ))}
+      {effective === "board" && cfg && wf && (
+        <>
+          <WorkflowBoard
+            category={cfg.key}
+            items={wfItems}
+            closed={showClosed ? [...wfClosed, ...legacyClosed] : null}
+            showPublished={showPublished}
+          />
+          {legacy.length > 0 && (
+            <section aria-label="Made before the new workflow" style={{ marginTop: 18 }}>
+              <h2>Made before the new workflow</h2>
+              <p className="sub" style={{ marginBottom: 10 }}>
+                These keep their earlier stages until the existing data is moved over to the new workflow.
+              </p>
+              <StageBoard cfg={cfg} records={legacy} closed={null} onContext={rm.onContext} />
             </section>
           )}
-        </div>
+        </>
+      )}
+
+      {effective === "board" && cfg && !wf && (
+        <StageBoard
+          cfg={cfg}
+          records={all.filter((r) => r.category === cfg.key && usesPipeline(r))}
+          closed={showClosed && closedCount > 0 ? legacyClosed : null}
+          onContext={rm.onContext}
+        />
       )}
 
       {effective === "tree" && (
@@ -227,12 +217,93 @@ export function Pipeline({ category }: { category?: CategoryKey }) {
   );
 }
 
+/** The board of a category's own pipeline stages: Live Shows, Music, General Use, and items made before the new workflow. */
+function StageBoard({
+  cfg,
+  records,
+  closed,
+  onContext,
+}: {
+  cfg: CategoryConfig;
+  records: ContentRecord[];
+  closed: ContentRecord[] | null;
+  onContext: (e: React.MouseEvent, r: ContentRecord) => void;
+}) {
+  const { go } = useApp();
+  return (
+    <div className="board">
+      {cfg.stages.map((st) => {
+        const cards = records.filter((r) => r.pipelineStage === st.name);
+        return (
+          <section key={st.name} className="col glass" aria-label={st.name}>
+            <h3>
+              {st.name}
+              <span className="muted">{cards.length}</span>
+            </h3>
+            {cards.map((r) => (
+              <div
+                key={r.contentId}
+                className="card"
+                tabIndex={0}
+                onClick={() => go({ n: "record", id: r.contentId })}
+                onKeyDown={(e) => e.key === "Enter" && go({ n: "record", id: r.contentId })}
+                onContextMenu={(e) => onContext(e, r)}
+              >
+                <span className="t">{displayTitle(r)}</span>
+                <span className="cid">{r.contentId}</span>
+                <span className="muted" style={{ fontSize: ".82rem" }}>
+                  {nameOf(r.assigneePersonId)}
+                  {currentStageDeadline(r) ? `, due ${fmtShort(currentStageDeadline(r))}` : ""}
+                </span>
+                <RiskBadge record={r} />
+              </div>
+            ))}
+          </section>
+        );
+      })}
+      {closed && (
+        <section className="col glass" aria-label="Closed">
+          <h3>
+            Closed<span className="muted">{closed.length}</span>
+          </h3>
+          {closed.map((r) => (
+            <div
+              key={r.contentId}
+              className="card"
+              tabIndex={0}
+              onClick={() => go({ n: "record", id: r.contentId })}
+              onKeyDown={(e) => e.key === "Enter" && go({ n: "record", id: r.contentId })}
+              onContextMenu={(e) => onContext(e, r)}
+            >
+              <span className="t">{displayTitle(r)}</span>
+              <span className="cid">{r.contentId}</span>
+              <span className="muted" style={{ fontSize: ".82rem" }}>
+                {r.closedReason}
+              </span>
+            </div>
+          ))}
+        </section>
+      )}
+    </div>
+  );
+}
+
 function TreeNode({ record, onContext }: { record: ContentRecord; onContext: (e: React.MouseEvent, r: ContentRecord) => void }) {
   const { go } = useApp();
   const [open, setOpen] = useState(record.hierarchyLevel === 0);
   const kids = getChildren(record.contentId);
   const hasKids = kids.length > 0;
-  const roll = !usesPipeline(record) ? getRollupStatus(record.contentId) : null;
+  // A project of the five-stage workflow shows where it stands, an episode its stage, and a series its seasons.
+  const wfBadge = record.workflow
+    ? projectSummary(record as Project).stage
+    : record.episode
+      ? record.episode.mdStage === "Published"
+        ? "Published"
+        : record.episode.stage === "Post production"
+          ? `Post production: ${record.episode.postStage}`
+          : `Marketing and distribution: ${record.episode.mdStage}`
+      : null;
+  const roll = !usesPipeline(record) && !wfBadge && !record.seriesType ? getRollupStatus(record.contentId) : null;
   return (
     <div>
       <div className="tree-row" onContextMenu={(e) => onContext(e, record)} onClick={() => go({ n: "record", id: record.contentId })}>
@@ -254,7 +325,16 @@ function TreeNode({ record, onContext }: { record: ContentRecord; onContext: (e:
         <span className="muted" style={{ fontSize: ".82rem" }}>
           {levelLabel(record)}
         </span>
-        {roll ? (
+        {wfBadge ? (
+          <>
+            <span className="badge accent">{wfBadge}</span>
+            <RiskBadge record={record} />
+          </>
+        ) : record.seriesType ? (
+          <span className="badge">
+            {kids.length} season{kids.length === 1 ? "" : "s"}
+          </span>
+        ) : roll ? (
           <span className="badge">
             {roll.complete} of {roll.total} complete
           </span>
