@@ -458,6 +458,8 @@ export function closeSession(actor: Actor, sessionId: string): CloseResult {
         const waiting = p.reservedId
           ? db.records.find((r) => r.contentId === p.reservedId && (!r.episode || (r.archived && r.episode.plannedEpisodeId === p.id)))
           : undefined;
+        // Or a Content ID given out ahead of recording, with no record yet: the episode is made under it.
+        const given = p.reservedId && !db.records.some((r) => r.contentId === p.reservedId) ? p.reservedId : undefined;
         const ep = makeEpisode(
           actor,
           project,
@@ -468,7 +470,7 @@ export function closeSession(actor: Actor, sessionId: string): CloseResult {
             productionNotes: row.notesForPost,
             scheduledDate: row.logDate,
           },
-          waiting,
+          waiting ?? given,
         );
         made.push(ep.contentId);
       } else if (existing && existing.episode?.sourceSessionId === sessionId) {

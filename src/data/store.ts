@@ -10,6 +10,7 @@ import {
   upgradeToV13,
   upgradeToV14,
   upgradeToV15,
+  upgradeToV16,
   upgradeToV3,
   upgradeToV4,
   upgradeToV5,
@@ -24,7 +25,7 @@ import {
 // arrives, services keep their signatures and only this layer changes.
 
 const KEY = "dof-hub-db";
-const SCHEMA_VERSION = 15;
+const SCHEMA_VERSION = 16;
 
 /** Older saved data keeps everything it has and gains the new modules with sample data. */
 function migrate(old: Database): Database {
@@ -68,6 +69,7 @@ const UPGRADES: Record<number, (db: Database) => Database> = {
   12: upgradeToV13,
   13: upgradeToV14,
   14: upgradeToV15,
+  15: upgradeToV16,
 };
 
 /** Brings saved data of any older version up to the current one. Returns null if it is not recognisable. */

@@ -14,6 +14,7 @@ const MODULES = [
   "callsheets",
   "content",
   "docs",
+  "documents",
   "equipment",
   "people",
   "permissions",

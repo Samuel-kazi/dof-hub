@@ -193,9 +193,9 @@ const { categoryOf } = await import("../src/config/categories");
 const W = await import("../src/services/workload");
 
 const db = getDb();
-assert.equal(db.schemaVersion, 15);
+assert.equal(db.schemaVersion, 16);
 assert.deepEqual(db.outbox, [], "the record of sent reminders exists");
-assert.equal(store["dof-hub-db-before-v15"], JSON.stringify(old), "a copy of the saved data is kept before it is upgraded");
+assert.equal(store["dof-hub-db-before-v16"], JSON.stringify(old), "a copy of the saved data is kept before it is upgraded");
 for (const part of [
   "developmentForms",
   "plannedEpisodes",
@@ -205,8 +205,17 @@ for (const part of [
   "sessionLogEntries",
   "reviewCheckpoints",
   "shareLinks",
+  "projectDocuments",
+  "documentPages",
+  "documentLinks",
+  "documentReviews",
+  "reviewComments",
+  "storyboards",
+  "storyboardFrames",
+  "shotLists",
+  "shotListRows",
 ] as const)
-  assert.deepEqual(db[part], [], `the workflow's ${part} list exists, empty`);
+  assert.deepEqual(db[part], [], `the ${part} list exists, empty`);
 assert.ok(
   db.records.every((r) => r.seriesType === null && r.workflow === null && r.episode === null),
   "every record has the workflow fields, empty: nothing that existed is moved into the new workflow by the upgrade",

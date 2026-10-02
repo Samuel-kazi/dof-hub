@@ -133,20 +133,16 @@ t("published episodes and closed projects leave the board; Published and Closed 
   assert.match(devotions, /Closed \(1\)/, "the Closed chip counts a closed workflow project");
 });
 
-t("overdue follows A5: a session past its date and an episode past its stage deadline, never a project", () => {
+t("overdue is for episodes only: an episode past its stage deadline, never a session or a project", () => {
   record(WOW).stageDeadlines["Pre-production"] = yesterday();
   session(2).scheduledDate = yesterday();
   record(`${WOW}-E02`).stageDeadlines["Post production"] = yesterday();
   assert.equal(item(`project:${WOW}`).overdue, false, "a project is never overdue");
-  assert.equal(item(`session:${WOW}-R02`).overdue, true);
+  assert.equal(item(`session:${WOW}-R02`).overdue, false, "a session is never overdue, even past its day");
   assert.equal(item(`episode:${WOW}-E02`).overdue, true);
   assert.equal(item(`episode:${WOW}-E01`).overdue, false);
-  // The late session is not a card of its own while it is planned, so its project's card carries it, as the session's.
-  assert.equal(item(`project:${WOW}`).lateSessions, 1);
-  assert.match(item(`project:${WOW}`).step, /^Next: session 2 on .*, now past/);
-  assert.match(html(HOP, <Pipeline category="series" />), /1 session overdue/);
-  session(2).status = "Closed";
-  assert.equal(item(`session:${WOW}-R02`).overdue, false, "a closed session is never overdue");
+  session(2).status = "Open";
+  assert.equal(item(`session:${WOW}-R02`).overdue, false, "nor while it is recording");
   const page = html(HOP, <Pipeline category="series" />);
   const card = (id: string) => page.slice(page.indexOf(`>${id}<`), page.indexOf(`>${id}<`) + 700);
   assert.match(card(`${WOW}-E02`), /Overdue/);
@@ -262,7 +258,7 @@ t("reminders: the producer gets the project's deadline and each session's day, a
   assert.ok(remindersFor("DOF-P-CRW-001", TODAY).some((r) => r.key === `stage:${WOW}-E02:Post production`));
 });
 
-t("reminders: within 24 hours, late sessions and episodes, and never a late project", () => {
+t("reminders: within 24 hours, late episodes, and never a late session or project", () => {
   const soon = workflowDueSoon(PRODUCER);
   assert.ok(
     soon.some((r) => r.key === `session:${WOW}-R02` && r.kind === "session"),
@@ -286,10 +282,12 @@ t("reminders: within 24 hours, late sessions and episodes, and never a late proj
   record(`${WOW}-E03`).stageDeadlines["Post production"] = yesterday();
   const rems = remindersFor(PRODUCER, TODAY);
   assert.ok(!rems.some((r) => r.key === `stage:${WOW}:Pre-production`), "a project's passed deadline is not a late reminder");
-  assert.equal(rems.find((r) => r.key === `session:${WOW}-R02`)?.overdue, true);
-  assert.match(rems.find((r) => r.key === `session:${WOW}-R02`)!.title, /not closed/);
+  assert.ok(!rems.some((r) => r.key === `session:${WOW}-R02`), "a session's passed day is not a late reminder");
   assert.equal(rems.find((r) => r.key === `stage:${WOW}-E03:Post production`)?.overdue, true);
-  assert.ok(rems.filter((r) => r.overdue).every((r) => r.key.startsWith("session:") || r.key.startsWith("stage:DOF-SER-001-S1-E")));
+  assert.ok(
+    rems.filter((r) => r.overdue).every((r) => r.key.startsWith("stage:DOF-SER-001-S1-E")),
+    "only episodes are ever late",
+  );
 });
 
 t("reminders: a waiting review goes to each reviewer named on it, and a call sheet replaces the session's own reminder", () => {
@@ -309,12 +307,14 @@ t("reminders: a waiting review goes to each reviewer named on it, and a call she
 
 // ── Dashboard ────────────────────────────────────────────────
 
-t("the dashboard counts workflow projects, what waits on you, late sessions and episodes, and sessions with no call sheet", () => {
+t("the dashboard counts workflow projects, what waits on you, late episodes, and sessions with no call sheet", () => {
   const page = html(PRODUCER_LOGIN, <Dashboard />);
   assert.match(page, /Whispers of Why: Season 1, Session 2/);
   assert.match(page, /It has no call sheet yet/);
   assert.match(page, /Whispers of Why: Season 1, Why do we doubt\?/, "an episode waiting on its producer");
   session(2).scheduledDate = yesterday();
+  assert.match(html(HOP, <Dashboard />), /100% on track/, "a session past its day is not overdue");
+  record(`${WOW}-E02`).stageDeadlines["Post production"] = yesterday();
   const late = html(HOP, <Dashboard />);
   assert.match(late, /1 overdue/);
   assert.match(late, /days late|Overdue/);

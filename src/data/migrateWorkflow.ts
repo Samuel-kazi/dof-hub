@@ -97,7 +97,7 @@ const EDIT_TASK_TO_POST: Record<string, string> = {
 const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
 const byNumber = (a: ContentRecord, b: ContentRecord): number => a.contentId.localeCompare(b.contentId, undefined, { numeric: true });
 
-function countParts(db: Database): Map<string, number> {
+export function countParts(db: Database): Map<string, number> {
   const out = new Map<string, number>();
   for (const [k, v] of Object.entries(db)) if (Array.isArray(v)) out.set(k, v.length);
   return out;
@@ -224,6 +224,7 @@ export function migrateToWorkflow(db: Database, options: WorkflowMigrationOption
       notes,
       details: {},
       reservedId,
+      sourcePageId: null,
       createdAt: at,
       updatedAt: at,
       archivedAt: null,
@@ -736,10 +737,6 @@ export function migrateToWorkflow(db: Database, options: WorkflowMigrationOption
 }
 
 /** A report from a run that may have applied the move: where the copy of the data was kept, if it did. */
-export interface AppliedMigrationReport extends WorkflowMigrationReport {
-  applied: boolean;
-  backup: string | null;
-}
 
 /** The report as lines of text, for the command line and the server's log. */
 export function describeMigration(r: WorkflowMigrationReport, applied: boolean): string {

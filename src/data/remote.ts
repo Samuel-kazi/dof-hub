@@ -2,7 +2,8 @@ import type { Actor, Database, DocRevision, RoleCode, ShareLink } from "../types
 import { RuleError } from "../types";
 import { commit, getDb, setDb, setPersist } from "./store";
 import { setRpcSink, type Call } from "./rpc";
-import type { AppliedMigrationReport, MigrationChoices } from "./migrateWorkflow";
+import type { MigrationChoices } from "./migrateWorkflow";
+import type { AppliedMigrationReport } from "./moveToNewSystem";
 
 // The app has two ways to run. On your computer with nothing behind it, it is a demo that keeps sample
 // data in the browser. On the real site it signs in to the server, which holds the data, decides who

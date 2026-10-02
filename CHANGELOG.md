@@ -2,6 +2,42 @@
 
 What changed in each version, newest first. How to deploy is in GO-LIVE.md.
 
+## Unreleased: documents for each stage (the documents rework)
+
+Being built in phases. The five stages, their names and order, the stage tracker, Content IDs and every form that
+drives the calendar, reminders, call sheets, gear, storage or overdue stay as they are.
+
+**Phase 1: the data, the services and the move** (data version 16; no new screens yet)
+- New lists: project documents, their pages, links, theological reviews and review comments, storyboards with
+  their frames, and shot lists with their rows. All start empty. Which documents, tools and forms each kind of
+  project has at each stage is set in one place, `src/config/documentCatalog.ts`. A document is made from it the
+  first time it is opened, with its starting pages; people add, rename, reorder and delete pages. A deleted page is
+  kept, archived, and can be restored.
+- Page writing is stored as HTML cleaned to the editor's allow-list (DOMPurify) on every save, in the browser and on
+  the server alike: no scripts, no event handlers, links to http, https and mailto only. A page save carries the
+  version it started from; one made from an older version is refused, and the writer's words stay on screen.
+- Theological Review: named reviewers from the crew list, each with one decision on the whole document (Approve, or
+  Request changes with the reason); comments beside a page that can be resolved and stay. The show producer or the
+  Head of Production names the reviewers, and a reviewer joins the project so they can read it and decide. The same
+  now holds for the workflow's review checkpoints: before, a reviewer who was not on the project could not decide.
+- Storyboards and shot lists, per project or per episode. A new one can start as a copy of an existing one from any
+  project the person can see, so frames and shots can be reused.
+- Devotions: the Devotional Script has one page per devotion (title, scripture, script). In Pre-production its pages
+  become the devotion's list of episodes, each given its Content ID there and then; the episode is made under that
+  ID when its recording session closes.
+- Sessions are never overdue. Overdue is worked out for episodes only (and a devotion's episodes); the session
+  badges, reminders and dashboard counts for late sessions are gone.
+- The move: every field of the old Development forms is written onto a page of the new documents (the six criteria
+  onto Greenlight, a devotion's message-review notes as a review comment, the camera plan into a shot list), or kept
+  on the form: the header strip, consent and release, and the fields a gate or a later stage reads (the logline,
+  the core question, a sermon's delivery). A field the mapping does not know goes onto "Also from the old form", so nothing is lost; the report counts fields
+  not accounted for, which is always zero. The old forms are left exactly as they were. It runs as part of "Move
+  existing projects" (Settings, or `npm run migrate:workflow`), with the same dry run, copy first and all-or-nothing
+  save; running it again changes nothing. `npm run migrate:workflow -- --undo-documents` undoes it, keeping any
+  document or shot list written in since unless `--force` is given. How: GO-LIVE.md.
+- Upgrading saved data keeps a copy first: `hub_items_before_v16` and `hub_meta_before_v16` in MongoDB, and
+  `dof-hub-db-before-v16` in the desktop app and demo.
+
 ## Unreleased: the five-stage workflow for series, devotions and documentaries
 
 Being built in phases. Live Shows and Music work exactly as before. Series, devotionals and documentaries made

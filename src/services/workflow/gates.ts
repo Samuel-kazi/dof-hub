@@ -179,11 +179,7 @@ export function evaluateGate(stage: GateStage, level: GateLevel, id: string): Ga
   return result([`${stage} has no gate at the ${level} level`]);
 }
 
-// ── Overdue (sessions and episodes only, never a project) ────
-
-/** A session is overdue once its date has passed and it is not closed. */
-export const sessionOverdue = (s: RecordingSession, today: string = todayIso()): boolean =>
-  s.status !== "Closed" && !s.archivedAt && !!s.scheduledDate && s.scheduledDate < today;
+// ── Overdue (episodes only: never a session, season, series or project) ──
 
 /** An episode is overdue once the deadline of the stage it is in has passed, until it is published. */
 export function episodeOverdue(ep: ContentRecord, today: string = todayIso()): boolean {

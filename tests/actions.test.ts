@@ -447,6 +447,43 @@ await t("every action accepts the arguments its screen sends", async () => {
   await call("workflow.sendToPostProduction", wfDoc); // refused (nothing recorded yet), but its arguments are accepted
   await must("workflow.closeProject", wfDoc, "Withdrawn by the proposer");
 
+  // Project documents, storyboards and shot lists.
+  const brief = (await must("documents.ensureDocument", wow.project, "Development", "show_brief", null)).id;
+  const firstPage = ((await state()).documentPages as Json[]).find((p) => p.documentId === brief)!.id;
+  await must("documents.savePage", firstPage, { title: "The idea", subtitle: "John 1", bodyHtml: "<p><strong>Bold</strong> idea</p>" }, 1);
+  const extra = (await must("documents.addPage", brief, { title: "Extra", afterPageId: firstPage })).id;
+  await must("documents.movePage", extra, 0);
+  await must("documents.archivePage", extra);
+  await must("documents.restorePage", extra);
+  const docLink = await must("documents.addDocumentLink", brief, "https://docs.google.com/document/d/x", "Draft in Google Docs");
+  await must("documents.removeDocumentLink", docLink.id);
+  await must("documents.setDocumentReviewers", brief, ["DOF-P-CRW-004"]);
+  await must("documents.decideDocumentReview", brief, { status: "approved", note: "" });
+  const comment = await must("documents.addReviewComment", firstPage, "Check the scripture reference.");
+  await must("documents.resolveReviewComment", comment.id, true);
+  const board = (await must("documents.createStoryboard", wow.project, { name: "Opening", episodeId: null })).id;
+  const frame = (await must("documents.addFrame", board, { description: "Wide of the studio" })).id;
+  await must("documents.updateFrame", frame, {
+    scene: "Sc. 1",
+    soundEffects: "Room tone",
+    videoLink: "https://youtu.be/x",
+    imagePath: null,
+  });
+  await must("documents.moveFrame", frame, 0);
+  const twin = (await must("documents.duplicateFrame", frame)).id;
+  const board2 = (await must("documents.createStoryboard", wow.project, { name: "Reused", copyFrom: board })).id;
+  await must("documents.moveFramesTo", [twin], board2);
+  await must("documents.renameStoryboard", board2, "Reused opening");
+  await must("documents.deleteFrames", [twin]);
+  const list = (await must("documents.createShotList", wow.project, { name: "Session 1" })).id;
+  const shot = (await must("documents.addShotRow", list, "shot", { description: "Host, eye level", estMinutes: 2 })).id;
+  await must("documents.updateShotRow", shot, { shotSize: "Medium", shotType: "Eye level", movement: "Static" });
+  await must("documents.moveShotRow", shot, 0);
+  const shot2 = (await must("documents.duplicateShotRow", shot)).id;
+  await must("documents.renameShotList", list, "Session 1 shots");
+  await must("documents.deleteShotRows", [shot2]);
+  await call("documents.makeDevotionEpisodes", wfDoc); // refused (not a devotion), but its arguments are accepted
+
   const missed = Object.keys(ACTIONS).filter((n) => !covered.has(n));
   assert.deepEqual(missed, [], `Add a call for: ${missed.join(", ")}`);
 });

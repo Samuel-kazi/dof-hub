@@ -35,6 +35,16 @@ export const KEYS = [
   "sessionLogEntries",
   "reviewCheckpoints",
   "shareLinks",
+  // Project documents, storyboards and shot lists
+  "projectDocuments",
+  "documentPages",
+  "documentLinks",
+  "documentReviews",
+  "reviewComments",
+  "storyboards",
+  "storyboardFrames",
+  "shotLists",
+  "shotListRows",
   "settings",
   "counters",
 ] as const;

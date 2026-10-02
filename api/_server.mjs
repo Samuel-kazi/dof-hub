@@ -51,6 +51,468 @@ var ConflictError = class extends RuleError {
   }
 };
 
+// src/config/workflow.ts
+var WORKFLOW_STAGES = [
+  {
+    name: "Development",
+    level: "project",
+    ledBy: "Proposer and DOF team",
+    gate: "Greenlight, with team message review"
+  },
+  {
+    name: "Pre-production",
+    level: "project",
+    ledBy: "Show producer",
+    gate: "Rehearsal passed, call sheet issued"
+  },
+  {
+    name: "Production",
+    level: "session",
+    ledBy: "Show producer",
+    gate: "Wrap checklist complete and session log filled"
+  },
+  {
+    name: "Post production",
+    level: "episode",
+    ledBy: "Editor",
+    gate: "Rough cut and final cut approved"
+  },
+  {
+    name: "Marketing and distribution",
+    level: "episode",
+    ledBy: "Post and distribution lead",
+    gate: "Release plan approved, episode published and logged"
+  }
+];
+var WORKFLOW_STAGE_NAMES = WORKFLOW_STAGES.map((s2) => s2.name);
+var WORKFLOW_CATEGORIES = ["series", "devotional", "documentary"];
+var isWorkflowCategory = (key2) => WORKFLOW_CATEGORIES.includes(key2);
+var SERIES_TYPES = [
+  { key: "podcast", label: "Podcast" },
+  { key: "testimonial", label: "Testimonial" },
+  { key: "sermon", label: "Sermon" }
+];
+var OUTCOMES = ["Greenlight", "Revise and resubmit", "Hold", "Decline"];
+var FORM_TYPES = [
+  { key: "podcast", label: "Series: Podcast", category: "series", greenlights: 1, outcomes: OUTCOMES },
+  { key: "testimonial", label: "Series: Testimonial", category: "series", greenlights: 1, outcomes: OUTCOMES },
+  { key: "sermon", label: "Series: Sermon", category: "series", greenlights: 1, outcomes: OUTCOMES },
+  { key: "documentary_dof", label: "Documentary: DOF-made", category: "documentary", greenlights: 2, outcomes: OUTCOMES },
+  {
+    key: "documentary_pitched",
+    label: "Documentary: Pitched by others",
+    category: "documentary",
+    greenlights: 1,
+    outcomes: [...OUTCOMES, "Advice only"]
+  },
+  { key: "devotion", label: "Devotion", category: "devotional", greenlights: 1, outcomes: OUTCOMES }
+];
+var formTypeOf = (key2) => {
+  const f2 = FORM_TYPES.find((x) => x.key === key2);
+  if (!f2) throw new Error(`Unknown form type ${key2}`);
+  return f2;
+};
+var formTypeForSeries = (t2) => t2;
+var CRITERIA = [
+  { key: "missionFit", label: "Mission fit" },
+  { key: "messageSoundness", label: "Message soundness" },
+  { key: "audienceNeed", label: "Audience need" },
+  { key: "feasibility", label: "Feasibility" },
+  { key: "resourceCost", label: "Resource cost" },
+  { key: "teamStrength", label: "Team strength" }
+];
+var PROJECT_ROLE_DEFS = [
+  { key: "director", label: "Director", exclusive: true },
+  { key: "dop", label: "DOP", exclusive: true },
+  { key: "audio_engineer", label: "Audio engineer", exclusive: true },
+  { key: "camera_operator", label: "Camera operator (B-roll)", exclusive: true },
+  { key: "continuity", label: "Continuity", exclusive: true },
+  { key: "editor", label: "Editor", exclusive: true },
+  { key: "host_guest", label: "Host or guest", exclusive: false }
+];
+var REQUIRED_ROLES = ["director", "dop", "audio_engineer", "editor", "host_guest"];
+var roleLabel = (key2) => PROJECT_ROLE_DEFS.find((r) => r.key === key2)?.label ?? key2;
+var item = (key2, label, extra = {}) => ({
+  key: key2,
+  label,
+  required: true,
+  ...extra
+});
+var CHECKLISTS = {
+  /** Development, Handoff: ends when a producer is named and the project exists. */
+  handoff: {
+    owner: "project",
+    stage: "Development",
+    items: [
+      item("outline_locked", "Outline locked"),
+      item("owner_resources", "Owner and resource commitment confirmed"),
+      item("producer_named", "Show producer named", { auto: true }),
+      item("project_created", "Project created with its Content ID", { auto: true })
+    ]
+  },
+  /** Pre-production, for the whole project. */
+  preProject: {
+    owner: "project",
+    stage: "Pre-production",
+    items: [
+      item("roles_assigned", "Production roles assigned by the producer", { auto: true }),
+      item("outline_locked", "Outline locked"),
+      item("visual_plan", "Storyboarding and concept art: visual plan and episode rundown (framing, colours, graphics style, segments)"),
+      item("shot_list", "Shot list: which camera covers host, guest and wide, lenses, inserts, graphics, B-roll"),
+      item("set_design", "Set design: seating, backdrop, lighting, sound treatment, props, wardrobe")
+    ]
+  },
+  /** Pre-production, for each recording session. */
+  preSession: {
+    owner: "session",
+    stage: "Pre-production",
+    items: [
+      item("gear_selected", "Gear selected from the Equipment picker, with no unresolved conflict", { auto: true }),
+      item(
+        "technical_rehearsal",
+        "Technical rehearsal: audio levels, camera sync, colour match, storage and batteries, short mock recording"
+      ),
+      item("call_sheet_issued", "Call sheet issued", { auto: true })
+    ]
+  },
+  /** Production: the wrap checklist. Every item is required. */
+  wrap: {
+    owner: "session",
+    stage: "Production",
+    items: [
+      item("media_offloaded", "All cards and drives offloaded and backed up to a second location", { group: "Media" }),
+      item("files_checked", "Files checked: a few seconds played back from each camera and audio track", { group: "Media" }),
+      item("cards_labeled", "Cards labeled and stored in the project's folder", { group: "Media" }),
+      item("nothing_wiped", "Nothing formatted or wiped until the backup is confirmed", { group: "Media" }),
+      item("gear_counted", "All equipment counted against the call sheet", { group: "Gear" }),
+      item("batteries_faults", "Batteries on charge; damage or faults noted", { group: "Gear" }),
+      item("gear_returned", "Gear returned to storage", { group: "Gear" }),
+      item("set_struck", "Set struck and the space returned to how it was", { group: "Set" }),
+      item("props_returned", "Props and wardrobe returned", { group: "Set" }),
+      item("daily_log", "Daily log written: what was recorded, pickup timestamps, technical problems, who attended", { group: "Records" }),
+      item("continuity_notes", "Continuity notes handed to the editor", { group: "Records" }),
+      item("episode_status", "Episode status updated in the Hub", { group: "Records", auto: true }),
+      item("guests_thanked", "Guests thanked; follow-up noted (release forms, photos, next steps)", { group: "People" }),
+      item("crew_wrap_note", "Crew wrap-up note: what worked, what to change", { group: "People" })
+    ]
+  },
+  /** Post production, for each episode. The gates are the editor's "ready" and the two review checkpoints. */
+  post: {
+    owner: "episode",
+    stage: "Post production",
+    items: [
+      item("offload_check", "Offload check", { required: false }),
+      item("edit", "Edit", { required: false }),
+      item("audio_cleanup", "Audio clean-up", { required: false }),
+      item("rough_cut", "Rough cut", { required: false }),
+      item("final_cut", "Final cut", { required: false }),
+      item("story_lock", "Story lock", { required: false, group: "Finer steps (optional)" }),
+      item("picture_lock", "Picture lock", { required: false, group: "Finer steps (optional)" }),
+      item("color", "Color grade", { required: false, group: "Finer steps (optional)" }),
+      item("sound_mix", "Sound mix", { required: false, group: "Finer steps (optional)" }),
+      item("graphics", "Graphics", { required: false, group: "Finer steps (optional)" })
+    ]
+  },
+  /** Marketing and distribution, for each episode. The release plan items are required; publishing is tracked. */
+  release: {
+    owner: "episode",
+    stage: "Marketing and distribution",
+    items: [
+      item("episode_titles", "Episode titles", { group: "Release plan" }),
+      item("cover_art", "Cover art", { group: "Release plan" }),
+      item("short_clips", "Short clips", { group: "Release plan" }),
+      item("captions", "Captions", { group: "Release plan" }),
+      item("release_calendar", "Release calendar", { group: "Release plan" }),
+      item("upload", "Upload", { required: false, group: "Publishing" }),
+      item("schedule", "Schedule", { required: false, group: "Publishing" }),
+      item("publish", "Publish", { required: false, group: "Publishing" }),
+      item("log_links", "Log the links", { required: false, group: "Publishing" }),
+      item("early_numbers", "Review early listener numbers", { required: false, group: "Publishing" })
+    ]
+  }
+};
+var SESSION_TOKEN = "R";
+var PLANNED_TOKEN = "P";
+var EPISODE_TOKEN = "E";
+
+// src/config/categories.ts
+var s = (name, requiredOutput, extra = {}) => ({
+  name,
+  requiredOutput,
+  ...extra
+});
+var EDIT_TASKS = ["Story lock", "Picture lock", "Sound check", "Color"];
+var CATEGORIES = [
+  {
+    key: "series",
+    label: "Series",
+    singular: "Series",
+    code: "SER",
+    color: "#e8703a",
+    supportsChildren: true,
+    childLevelLabel: "Season",
+    grandchildLevelLabel: "Episode",
+    childToken: "S",
+    grandchildToken: "E",
+    stages: [
+      s("Idea", "Approved concept", { docs: ["concept"] }),
+      s("Scripting", "Locked script", { docs: ["script"] }),
+      s("Pre-production", "Shot list and call sheet", { docs: ["shotlist"] }),
+      s("Recording", "Recorded footage"),
+      s("Ingest", "Verified footage"),
+      s("Editorial", "Finished edit", { tasks: EDIT_TASKS, docs: ["edit-notes"] }),
+      s("Review", "Approved cut"),
+      s("Delivered", "Final delivery file", { docs: ["analysis"] })
+    ],
+    footageStage: "Recording",
+    leafLevel: 2,
+    workflow: {
+      projectLevel: 1,
+      projectLabel: "Season",
+      episodeLevel: 2,
+      episodeLabel: "Episode",
+      formTypes: ["podcast", "testimonial", "sermon"]
+    }
+  },
+  {
+    key: "devotional",
+    label: "Devotionals",
+    singular: "Devotional",
+    code: "DEV",
+    color: "#7fbf95",
+    supportsChildren: false,
+    childLevelLabel: null,
+    grandchildLevelLabel: null,
+    childToken: null,
+    grandchildToken: null,
+    stages: [
+      s("Creation", "Theme, guest and producer set"),
+      s("Guest", "Theological review approved", { tasks: ["Guest outreach", "Setup shared", "Summary submitted"] }),
+      s("Prep/Scripting", "Locked script", { docs: ["script"] }),
+      s("Recording", "Recording logged"),
+      s("Editing", "Ready for review", { docs: ["edit-notes"] }),
+      s("Review", "Approved cut"),
+      s("Published", "Final delivery file", { docs: ["analysis"] })
+    ],
+    footageStage: "Recording",
+    leafLevel: 0,
+    // One guest's five-day sharing: one project, five episodes (Day 1 to Day 5) recorded in one session.
+    workflow: { projectLevel: 0, projectLabel: "Devotion", episodeLevel: 1, episodeLabel: "Day", formTypes: ["devotion"] }
+  },
+  {
+    key: "live",
+    label: "Live Shows",
+    singular: "Live show",
+    code: "LIVE",
+    color: "#f3b943",
+    supportsChildren: true,
+    childLevelLabel: "Day",
+    grandchildLevelLabel: "Day",
+    childToken: "D",
+    grandchildToken: "D",
+    // A show can run for one day or several. Each day is its own item with its own pipeline, call sheet and run of show.
+    stages: [
+      s("Prep", "Gear tested and packed", { docs: ["run-of-show"] }),
+      s("Build", "Rig built and safety-checked"),
+      s("Rehearse", "Camera, audio and stream checks passed"),
+      s("Show", "Stream completed"),
+      s("Wrap", "Strike checklist complete"),
+      s("Review", "Stream review notes"),
+      s("Post Production", "Archive and clips exported", { docs: ["analysis"] })
+    ],
+    footageStage: "Show",
+    leafLevel: 1,
+    workflow: null
+  },
+  {
+    key: "documentary",
+    label: "Documentaries",
+    singular: "Documentary",
+    code: "DOC",
+    color: "#8f9fdc",
+    supportsChildren: false,
+    childLevelLabel: null,
+    grandchildLevelLabel: null,
+    childToken: null,
+    grandchildToken: null,
+    stages: [
+      s("Idea", "Approved treatment", { docs: ["concept"] }),
+      s("Research", "Research file", { docs: ["research"] }),
+      s("Pre-production", "Shot list and call sheet", { docs: ["shotlist"] }),
+      s("Shooting", "Recorded footage"),
+      s("Ingest", "Verified footage"),
+      s("Editorial", "Finished edit", { tasks: EDIT_TASKS, docs: ["edit-notes"] }),
+      s("Review", "Approved cut"),
+      s("Delivered", "Final delivery file", { docs: ["analysis"] })
+    ],
+    footageStage: "Shooting",
+    leafLevel: 0,
+    // One deliverable, the film, unless it is planned as several parts.
+    workflow: {
+      projectLevel: 0,
+      projectLabel: "Documentary",
+      episodeLevel: 1,
+      episodeLabel: "Part",
+      formTypes: ["documentary_dof", "documentary_pitched"]
+    }
+  },
+  {
+    key: "music",
+    label: "DOF Music",
+    singular: "Music project",
+    code: "MUS",
+    color: "#d58fb8",
+    supportsChildren: true,
+    childLevelLabel: "Album",
+    grandchildLevelLabel: "Track",
+    childToken: "A",
+    grandchildToken: "T",
+    stages: [
+      s("Idea", "Approved concept and lyrics", { docs: ["concept"] }),
+      s("Pre-production", "Session plan", { docs: ["music-plan"] }),
+      // Recording is tracked as two parts, so audio and video each have an owner and a date.
+      s("Recording", "Audio and video recorded", { tasks: ["Audio recording", "Video recording"] }),
+      s("Audio post-production", "Approved mix and master", { tasks: ["Mixing", "Mastering"] }),
+      s("Video editing", "Finished edit", { tasks: EDIT_TASKS, docs: ["edit-notes"] }),
+      s("Review", "Approved cut"),
+      s("Publish", "Published, with final link", { docs: ["analysis"] })
+    ],
+    footageStage: "Recording",
+    leafLevel: 2,
+    workflow: null
+  },
+  {
+    key: "general",
+    label: "General Use",
+    singular: "General use",
+    code: "GEN",
+    color: "#8a8a92",
+    supportsChildren: false,
+    childLevelLabel: null,
+    grandchildLevelLabel: null,
+    childToken: null,
+    grandchildToken: null,
+    // Not a production: a placeholder project ID for storage, a call sheet, a document, or a gear
+    // checkout that has nowhere real to attach yet — equipment lent out for something that was never
+    // going to become a tracked production, for instance. One stage, nothing to advance through, and
+    // it stays out of the Pipeline board and Calendar (see Pipeline.tsx and calendarView.ts).
+    stages: [s("In use", "")],
+    footageStage: "In use",
+    leafLevel: 0,
+    workflow: null
+  }
+];
+var categoryOf = (key2) => {
+  const c = CATEGORIES.find((x) => x.key === key2);
+  if (!c) throw new Error(`Unknown category ${key2}`);
+  return c;
+};
+var finalStageOf = (key2) => {
+  const st = categoryOf(key2).stages;
+  return st[st.length - 1];
+};
+var MUSIC_STAGE_MAP = {
+  Idea: "Idea",
+  Writing: "Idea",
+  "Pre-production": "Pre-production",
+  Recording: "Recording",
+  Mixing: "Audio post-production",
+  Mastering: "Audio post-production",
+  Delivered: "Publish"
+};
+
+// src/data/ids.ts
+var IdMismatch = class extends ConflictError {
+  constructor() {
+    super(
+      "Someone else added something at the same moment, so this change was not saved. Your screen now shows the latest. Please do it again."
+    );
+    this.name = "IdMismatch";
+  }
+};
+var recording = null;
+var expecting = null;
+function expectIds(ids2, fn) {
+  if (!ids2) return fn();
+  const prev = expecting;
+  const run = { ids: ids2, at: 0 };
+  expecting = run;
+  try {
+    const out = fn();
+    if (run.at !== ids2.length) throw new IdMismatch();
+    return out;
+  } finally {
+    expecting = prev;
+  }
+}
+function claimId(id2) {
+  if (expecting) {
+    const want = expecting.ids[expecting.at++];
+    if (want !== id2) throw new IdMismatch();
+  }
+  recording?.push(id2);
+  return id2;
+}
+var ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyz";
+function randomPart(n) {
+  const bytes = new Uint8Array(n);
+  globalThis.crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => ALPHABET[b % 36]).join("");
+}
+function localId(prefix, taken = () => false) {
+  let id2;
+  if (expecting) {
+    const want = expecting.ids[expecting.at++];
+    if (typeof want !== "string" || !new RegExp(`^${prefix}-[a-z0-9]{8,24}$`).test(want) || taken(want)) throw new IdMismatch();
+    id2 = want;
+  } else {
+    do
+      id2 = `${prefix}-${Date.now().toString(36)}${randomPart(6)}`;
+    while (taken(id2));
+  }
+  recording?.push(id2);
+  return id2;
+}
+var logId = (prefix) => `${prefix}-${Date.now().toString(36)}${randomPart(6)}`;
+var topLevelCounter = (category2) => `record:${categoryOf(category2).code}`;
+var childCounter = (parentId) => `record:${parentId}`;
+var childToken = (parent) => {
+  const cfg2 = categoryOf(parent.category);
+  return (parent.hierarchyLevel === 0 ? cfg2.childToken : cfg2.grandchildToken) ?? "";
+};
+var topLevelNumber = (contentId) => parseInt(contentId.split("-")[2], 10);
+var childNumber = (contentId, parent) => parseInt(contentId.slice(parent.contentId.length + 1 + childToken(parent).length), 10);
+function syncRecordCounters(db2) {
+  const byId = new Map(db2.records.map((r) => [r.contentId, r]));
+  const raise = (key2, n) => {
+    if (!Number.isNaN(n) && n > (db2.counters[key2] ?? 0)) db2.counters[key2] = n;
+  };
+  for (const r of db2.records) {
+    if (r.hierarchyLevel === 0) raise(topLevelCounter(r.category), topLevelNumber(r.contentId));
+    const parent = r.parentId ? byId.get(r.parentId) : void 0;
+    if (parent) raise(childCounter(parent.contentId), childNumber(r.contentId, parent));
+  }
+}
+var two = (n) => String(n).padStart(2, "0");
+var sessionCode = (projectId, n) => `${projectId}-${SESSION_TOKEN}${two(n)}`;
+var plannedEpisodeId = (projectId, n) => `${projectId}-${PLANNED_TOKEN}${two(n)}`;
+var episodeCode = (projectId, n) => `${projectId}-${EPISODE_TOKEN}${two(n)}`;
+var sessionCounter = (projectId) => `session:${projectId}`;
+var plannedCounter = (projectId) => `planned:${projectId}`;
+var episodeCounter = (projectId) => childCounter(projectId);
+var codeNumber = (code, projectId, token) => {
+  const prefix = `${projectId}-${token}`;
+  return code.startsWith(prefix) && /^\d+$/.test(code.slice(prefix.length)) ? parseInt(code.slice(prefix.length), 10) : NaN;
+};
+function syncWorkflowCounters(db2) {
+  const raise = (key2, n) => {
+    if (!Number.isNaN(n) && n > (db2.counters[key2] ?? 0)) db2.counters[key2] = n;
+  };
+  for (const s2 of db2.recordingSessions ?? []) raise(sessionCounter(s2.contentId), s2.sessionNumber);
+  for (const p of db2.plannedEpisodes ?? []) raise(plannedCounter(p.contentId), p.episodeNumber);
+  for (const r of db2.records) if (r.episode && r.parentId) raise(episodeCounter(r.parentId), r.episode.episodeNumber);
+}
+
 // src/data/constraints.ts
 var WORKFLOW_PARTS = [
   "developmentForms",
@@ -61,6 +523,18 @@ var WORKFLOW_PARTS = [
   "sessionLogEntries",
   "reviewCheckpoints",
   "shareLinks"
+];
+var documentIdOf = (contentId, stage, docKey, ownerId) => `${contentId}|${stage}|${docKey}${ownerId ? `|${ownerId}` : ""}`;
+var DOCUMENT_PARTS = [
+  "projectDocuments",
+  "documentPages",
+  "documentLinks",
+  "documentReviews",
+  "reviewComments",
+  "storyboards",
+  "storyboardFrames",
+  "shotLists",
+  "shotListRows"
 ];
 var UNIQUE_RULES = [
   { name: "development_form", part: "developmentForms", fields: ["contentId"], message: "This project already has a development form." },
@@ -117,6 +591,18 @@ var UNIQUE_RULES = [
     message: "That review checkpoint already exists."
   },
   {
+    name: "project_document",
+    part: "projectDocuments",
+    fields: ["contentId", "stage", "docKey", "ownerId"],
+    message: "This project already has that document."
+  },
+  {
+    name: "document_reviewer",
+    part: "documentReviews",
+    fields: ["documentId", "reviewerId"],
+    message: "That person already reviews this document."
+  },
+  {
     name: "share_token",
     part: "shareLinks",
     fields: ["token"],
@@ -159,7 +645,7 @@ function uniqueViolations(part, elements) {
 function integrityProblems(db2) {
   const out = [];
   const parts = db2;
-  for (const part of [...WORKFLOW_PARTS, "records"]) out.push(...uniqueViolations(part, parts[part] ?? []));
+  for (const part of [...WORKFLOW_PARTS, ...DOCUMENT_PARTS, "records"]) out.push(...uniqueViolations(part, parts[part] ?? []));
   const records = new Set(db2.records.map((r) => r.contentId));
   const people = new Set(db2.people.map((p) => p.personId));
   const sessions = new Map((db2.recordingSessions ?? []).map((s2) => [s2.id, s2]));
@@ -178,8 +664,8 @@ function integrityProblems(db2) {
     project(p.contentId, `Planned episode ${p.id}`);
     if (p.reservedId) {
       const kept2 = byId.get(p.reservedId);
-      if (!kept2) missing("episode", p.reservedId, `Planned episode ${p.id}`);
-      else if (kept2.parentId !== p.contentId)
+      const ownCode = !Number.isNaN(codeNumber(p.reservedId, p.contentId, EPISODE_TOKEN));
+      if (kept2 ? kept2.parentId !== p.contentId : !ownCode)
         out.push(`Planned episode ${p.id} keeps ${p.reservedId}, which belongs to a different project.`);
     }
   }
@@ -220,6 +706,37 @@ function integrityProblems(db2) {
     for (const id2 of c.reviewerIds) person2(id2, `Checkpoint ${c.id}`);
   }
   for (const l of db2.shareLinks ?? []) if (!records.has(l.episodeId)) missing("episode", l.episodeId, `Share link ${l.id}`);
+  const documents = new Set((db2.projectDocuments ?? []).map((d) => d.id));
+  const pages = new Map((db2.documentPages ?? []).map((p) => [p.id, p]));
+  const doc2 = (id2, from) => {
+    if (!documents.has(id2)) missing("document", id2, from);
+  };
+  for (const d of db2.projectDocuments ?? []) {
+    project(d.contentId, `Document ${d.id}`);
+    if (d.id !== documentIdOf(d.contentId, d.stage, d.docKey, d.ownerId))
+      out.push(`Document ${d.id} is filed under the wrong project, stage or kind.`);
+  }
+  for (const p of db2.documentPages ?? []) doc2(p.documentId, `Page ${p.id}`);
+  for (const l of db2.documentLinks ?? []) doc2(l.documentId, `Link ${l.id}`);
+  for (const r of db2.documentReviews ?? []) {
+    doc2(r.documentId, `Review ${r.id}`);
+    person2(r.reviewerId, `Review ${r.id}`);
+  }
+  for (const c of db2.reviewComments ?? []) {
+    doc2(c.documentId, `Comment ${c.id}`);
+    const page = pages.get(c.pageId);
+    if (!page) missing("page", c.pageId, `Comment ${c.id}`);
+    else if (page.documentId !== c.documentId) out.push(`Comment ${c.id} is on a page of a different document.`);
+    person2(c.authorId, `Comment ${c.id}`);
+  }
+  const boards = new Set((db2.storyboards ?? []).map((b) => b.id));
+  const lists = new Set((db2.shotLists ?? []).map((l) => l.id));
+  for (const b of [...db2.storyboards ?? [], ...db2.shotLists ?? []]) {
+    project(b.contentId, b.id);
+    if (b.episodeId !== null && !records.has(b.episodeId)) missing("episode", b.episodeId, b.id);
+  }
+  for (const f2 of db2.storyboardFrames ?? []) if (!boards.has(f2.storyboardId)) missing("storyboard", f2.storyboardId, `Frame ${f2.id}`);
+  for (const r of db2.shotListRows ?? []) if (!lists.has(r.shotListId)) missing("shot list", r.shotListId, `Row ${r.id}`);
   return out;
 }
 function assertIntegrity(db2) {
@@ -255,6 +772,16 @@ var KEYS = [
   "sessionLogEntries",
   "reviewCheckpoints",
   "shareLinks",
+  // Project documents, storyboards and shot lists
+  "projectDocuments",
+  "documentPages",
+  "documentLinks",
+  "documentReviews",
+  "reviewComments",
+  "storyboards",
+  "storyboardFrames",
+  "shotLists",
+  "shotListRows",
   "settings",
   "counters"
 ];
@@ -355,17 +882,17 @@ var MongoCol = class {
   async find(where) {
     return (await this.col.find(where).toArray()).map((d) => this.out(d));
   }
-  async insert(doc) {
+  async insert(doc2) {
     try {
-      await this.col.insertOne(this.inn(doc));
+      await this.col.insertOne(this.inn(doc2));
       return true;
     } catch (e) {
       if (e.code === 11e3) return false;
       throw e;
     }
   }
-  async put(doc) {
-    await this.col.replaceOne({ _id: doc._id }, this.inn(doc), { upsert: true });
+  async put(doc2) {
+    await this.col.replaceOne({ _id: doc2._id }, this.inn(doc2), { upsert: true });
   }
   async remove(id2) {
     await this.col.deleteOne({ _id: id2 });
@@ -667,468 +1194,6 @@ ${dbName}`;
   return store2;
 }
 
-// src/config/categories.ts
-var s = (name, requiredOutput, extra = {}) => ({
-  name,
-  requiredOutput,
-  ...extra
-});
-var EDIT_TASKS = ["Story lock", "Picture lock", "Sound check", "Color"];
-var CATEGORIES = [
-  {
-    key: "series",
-    label: "Series",
-    singular: "Series",
-    code: "SER",
-    color: "#e8703a",
-    supportsChildren: true,
-    childLevelLabel: "Season",
-    grandchildLevelLabel: "Episode",
-    childToken: "S",
-    grandchildToken: "E",
-    stages: [
-      s("Idea", "Approved concept", { docs: ["concept"] }),
-      s("Scripting", "Locked script", { docs: ["script"] }),
-      s("Pre-production", "Shot list and call sheet", { docs: ["shotlist"] }),
-      s("Recording", "Recorded footage"),
-      s("Ingest", "Verified footage"),
-      s("Editorial", "Finished edit", { tasks: EDIT_TASKS, docs: ["edit-notes"] }),
-      s("Review", "Approved cut"),
-      s("Delivered", "Final delivery file", { docs: ["analysis"] })
-    ],
-    footageStage: "Recording",
-    leafLevel: 2,
-    workflow: {
-      projectLevel: 1,
-      projectLabel: "Season",
-      episodeLevel: 2,
-      episodeLabel: "Episode",
-      formTypes: ["podcast", "testimonial", "sermon"]
-    }
-  },
-  {
-    key: "devotional",
-    label: "Devotionals",
-    singular: "Devotional",
-    code: "DEV",
-    color: "#7fbf95",
-    supportsChildren: false,
-    childLevelLabel: null,
-    grandchildLevelLabel: null,
-    childToken: null,
-    grandchildToken: null,
-    stages: [
-      s("Creation", "Theme, guest and producer set"),
-      s("Guest", "Theological review approved", { tasks: ["Guest outreach", "Setup shared", "Summary submitted"] }),
-      s("Prep/Scripting", "Locked script", { docs: ["script"] }),
-      s("Recording", "Recording logged"),
-      s("Editing", "Ready for review", { docs: ["edit-notes"] }),
-      s("Review", "Approved cut"),
-      s("Published", "Final delivery file", { docs: ["analysis"] })
-    ],
-    footageStage: "Recording",
-    leafLevel: 0,
-    // One guest's five-day sharing: one project, five episodes (Day 1 to Day 5) recorded in one session.
-    workflow: { projectLevel: 0, projectLabel: "Devotion", episodeLevel: 1, episodeLabel: "Day", formTypes: ["devotion"] }
-  },
-  {
-    key: "live",
-    label: "Live Shows",
-    singular: "Live show",
-    code: "LIVE",
-    color: "#f3b943",
-    supportsChildren: true,
-    childLevelLabel: "Day",
-    grandchildLevelLabel: "Day",
-    childToken: "D",
-    grandchildToken: "D",
-    // A show can run for one day or several. Each day is its own item with its own pipeline, call sheet and run of show.
-    stages: [
-      s("Prep", "Gear tested and packed", { docs: ["run-of-show"] }),
-      s("Build", "Rig built and safety-checked"),
-      s("Rehearse", "Camera, audio and stream checks passed"),
-      s("Show", "Stream completed"),
-      s("Wrap", "Strike checklist complete"),
-      s("Review", "Stream review notes"),
-      s("Post Production", "Archive and clips exported", { docs: ["analysis"] })
-    ],
-    footageStage: "Show",
-    leafLevel: 1,
-    workflow: null
-  },
-  {
-    key: "documentary",
-    label: "Documentaries",
-    singular: "Documentary",
-    code: "DOC",
-    color: "#8f9fdc",
-    supportsChildren: false,
-    childLevelLabel: null,
-    grandchildLevelLabel: null,
-    childToken: null,
-    grandchildToken: null,
-    stages: [
-      s("Idea", "Approved treatment", { docs: ["concept"] }),
-      s("Research", "Research file", { docs: ["research"] }),
-      s("Pre-production", "Shot list and call sheet", { docs: ["shotlist"] }),
-      s("Shooting", "Recorded footage"),
-      s("Ingest", "Verified footage"),
-      s("Editorial", "Finished edit", { tasks: EDIT_TASKS, docs: ["edit-notes"] }),
-      s("Review", "Approved cut"),
-      s("Delivered", "Final delivery file", { docs: ["analysis"] })
-    ],
-    footageStage: "Shooting",
-    leafLevel: 0,
-    // One deliverable, the film, unless it is planned as several parts.
-    workflow: {
-      projectLevel: 0,
-      projectLabel: "Documentary",
-      episodeLevel: 1,
-      episodeLabel: "Part",
-      formTypes: ["documentary_dof", "documentary_pitched"]
-    }
-  },
-  {
-    key: "music",
-    label: "DOF Music",
-    singular: "Music project",
-    code: "MUS",
-    color: "#d58fb8",
-    supportsChildren: true,
-    childLevelLabel: "Album",
-    grandchildLevelLabel: "Track",
-    childToken: "A",
-    grandchildToken: "T",
-    stages: [
-      s("Idea", "Approved concept and lyrics", { docs: ["concept"] }),
-      s("Pre-production", "Session plan", { docs: ["music-plan"] }),
-      // Recording is tracked as two parts, so audio and video each have an owner and a date.
-      s("Recording", "Audio and video recorded", { tasks: ["Audio recording", "Video recording"] }),
-      s("Audio post-production", "Approved mix and master", { tasks: ["Mixing", "Mastering"] }),
-      s("Video editing", "Finished edit", { tasks: EDIT_TASKS, docs: ["edit-notes"] }),
-      s("Review", "Approved cut"),
-      s("Publish", "Published, with final link", { docs: ["analysis"] })
-    ],
-    footageStage: "Recording",
-    leafLevel: 2,
-    workflow: null
-  },
-  {
-    key: "general",
-    label: "General Use",
-    singular: "General use",
-    code: "GEN",
-    color: "#8a8a92",
-    supportsChildren: false,
-    childLevelLabel: null,
-    grandchildLevelLabel: null,
-    childToken: null,
-    grandchildToken: null,
-    // Not a production: a placeholder project ID for storage, a call sheet, a document, or a gear
-    // checkout that has nowhere real to attach yet — equipment lent out for something that was never
-    // going to become a tracked production, for instance. One stage, nothing to advance through, and
-    // it stays out of the Pipeline board and Calendar (see Pipeline.tsx and calendarView.ts).
-    stages: [s("In use", "")],
-    footageStage: "In use",
-    leafLevel: 0,
-    workflow: null
-  }
-];
-var categoryOf = (key2) => {
-  const c = CATEGORIES.find((x) => x.key === key2);
-  if (!c) throw new Error(`Unknown category ${key2}`);
-  return c;
-};
-var finalStageOf = (key2) => {
-  const st = categoryOf(key2).stages;
-  return st[st.length - 1];
-};
-var MUSIC_STAGE_MAP = {
-  Idea: "Idea",
-  Writing: "Idea",
-  "Pre-production": "Pre-production",
-  Recording: "Recording",
-  Mixing: "Audio post-production",
-  Mastering: "Audio post-production",
-  Delivered: "Publish"
-};
-
-// src/config/workflow.ts
-var WORKFLOW_STAGES = [
-  {
-    name: "Development",
-    level: "project",
-    ledBy: "Proposer and DOF team",
-    gate: "Greenlight, with team message review"
-  },
-  {
-    name: "Pre-production",
-    level: "project",
-    ledBy: "Show producer",
-    gate: "Rehearsal passed, call sheet issued"
-  },
-  {
-    name: "Production",
-    level: "session",
-    ledBy: "Show producer",
-    gate: "Wrap checklist complete and session log filled"
-  },
-  {
-    name: "Post production",
-    level: "episode",
-    ledBy: "Editor",
-    gate: "Rough cut and final cut approved"
-  },
-  {
-    name: "Marketing and distribution",
-    level: "episode",
-    ledBy: "Post and distribution lead",
-    gate: "Release plan approved, episode published and logged"
-  }
-];
-var WORKFLOW_STAGE_NAMES = WORKFLOW_STAGES.map((s2) => s2.name);
-var WORKFLOW_CATEGORIES = ["series", "devotional", "documentary"];
-var isWorkflowCategory = (key2) => WORKFLOW_CATEGORIES.includes(key2);
-var SERIES_TYPES = [
-  { key: "podcast", label: "Podcast" },
-  { key: "testimonial", label: "Testimonial" },
-  { key: "sermon", label: "Sermon" }
-];
-var OUTCOMES = ["Greenlight", "Revise and resubmit", "Hold", "Decline"];
-var FORM_TYPES = [
-  { key: "podcast", label: "Series: Podcast", category: "series", greenlights: 1, outcomes: OUTCOMES },
-  { key: "testimonial", label: "Series: Testimonial", category: "series", greenlights: 1, outcomes: OUTCOMES },
-  { key: "sermon", label: "Series: Sermon", category: "series", greenlights: 1, outcomes: OUTCOMES },
-  { key: "documentary_dof", label: "Documentary: DOF-made", category: "documentary", greenlights: 2, outcomes: OUTCOMES },
-  {
-    key: "documentary_pitched",
-    label: "Documentary: Pitched by others",
-    category: "documentary",
-    greenlights: 1,
-    outcomes: [...OUTCOMES, "Advice only"]
-  },
-  { key: "devotion", label: "Devotion", category: "devotional", greenlights: 1, outcomes: OUTCOMES }
-];
-var formTypeOf = (key2) => {
-  const f2 = FORM_TYPES.find((x) => x.key === key2);
-  if (!f2) throw new Error(`Unknown form type ${key2}`);
-  return f2;
-};
-var formTypeForSeries = (t2) => t2;
-var CRITERIA = [
-  { key: "missionFit", label: "Mission fit" },
-  { key: "messageSoundness", label: "Message soundness" },
-  { key: "audienceNeed", label: "Audience need" },
-  { key: "feasibility", label: "Feasibility" },
-  { key: "resourceCost", label: "Resource cost" },
-  { key: "teamStrength", label: "Team strength" }
-];
-var PROJECT_ROLE_DEFS = [
-  { key: "director", label: "Director", exclusive: true },
-  { key: "dop", label: "DOP", exclusive: true },
-  { key: "audio_engineer", label: "Audio engineer", exclusive: true },
-  { key: "camera_operator", label: "Camera operator (B-roll)", exclusive: true },
-  { key: "continuity", label: "Continuity", exclusive: true },
-  { key: "editor", label: "Editor", exclusive: true },
-  { key: "host_guest", label: "Host or guest", exclusive: false }
-];
-var REQUIRED_ROLES = ["director", "dop", "audio_engineer", "editor", "host_guest"];
-var roleLabel = (key2) => PROJECT_ROLE_DEFS.find((r) => r.key === key2)?.label ?? key2;
-var item = (key2, label, extra = {}) => ({
-  key: key2,
-  label,
-  required: true,
-  ...extra
-});
-var CHECKLISTS = {
-  /** Development, Handoff: ends when a producer is named and the project exists. */
-  handoff: {
-    owner: "project",
-    stage: "Development",
-    items: [
-      item("outline_locked", "Outline locked"),
-      item("owner_resources", "Owner and resource commitment confirmed"),
-      item("producer_named", "Show producer named", { auto: true }),
-      item("project_created", "Project created with its Content ID", { auto: true })
-    ]
-  },
-  /** Pre-production, for the whole project. */
-  preProject: {
-    owner: "project",
-    stage: "Pre-production",
-    items: [
-      item("roles_assigned", "Production roles assigned by the producer", { auto: true }),
-      item("outline_locked", "Outline locked"),
-      item("visual_plan", "Storyboarding and concept art: visual plan and episode rundown (framing, colours, graphics style, segments)"),
-      item("shot_list", "Shot list: which camera covers host, guest and wide, lenses, inserts, graphics, B-roll"),
-      item("set_design", "Set design: seating, backdrop, lighting, sound treatment, props, wardrobe")
-    ]
-  },
-  /** Pre-production, for each recording session. */
-  preSession: {
-    owner: "session",
-    stage: "Pre-production",
-    items: [
-      item("gear_selected", "Gear selected from the Equipment picker, with no unresolved conflict", { auto: true }),
-      item(
-        "technical_rehearsal",
-        "Technical rehearsal: audio levels, camera sync, colour match, storage and batteries, short mock recording"
-      ),
-      item("call_sheet_issued", "Call sheet issued", { auto: true })
-    ]
-  },
-  /** Production: the wrap checklist. Every item is required. */
-  wrap: {
-    owner: "session",
-    stage: "Production",
-    items: [
-      item("media_offloaded", "All cards and drives offloaded and backed up to a second location", { group: "Media" }),
-      item("files_checked", "Files checked: a few seconds played back from each camera and audio track", { group: "Media" }),
-      item("cards_labeled", "Cards labeled and stored in the project's folder", { group: "Media" }),
-      item("nothing_wiped", "Nothing formatted or wiped until the backup is confirmed", { group: "Media" }),
-      item("gear_counted", "All equipment counted against the call sheet", { group: "Gear" }),
-      item("batteries_faults", "Batteries on charge; damage or faults noted", { group: "Gear" }),
-      item("gear_returned", "Gear returned to storage", { group: "Gear" }),
-      item("set_struck", "Set struck and the space returned to how it was", { group: "Set" }),
-      item("props_returned", "Props and wardrobe returned", { group: "Set" }),
-      item("daily_log", "Daily log written: what was recorded, pickup timestamps, technical problems, who attended", { group: "Records" }),
-      item("continuity_notes", "Continuity notes handed to the editor", { group: "Records" }),
-      item("episode_status", "Episode status updated in the Hub", { group: "Records", auto: true }),
-      item("guests_thanked", "Guests thanked; follow-up noted (release forms, photos, next steps)", { group: "People" }),
-      item("crew_wrap_note", "Crew wrap-up note: what worked, what to change", { group: "People" })
-    ]
-  },
-  /** Post production, for each episode. The gates are the editor's "ready" and the two review checkpoints. */
-  post: {
-    owner: "episode",
-    stage: "Post production",
-    items: [
-      item("offload_check", "Offload check", { required: false }),
-      item("edit", "Edit", { required: false }),
-      item("audio_cleanup", "Audio clean-up", { required: false }),
-      item("rough_cut", "Rough cut", { required: false }),
-      item("final_cut", "Final cut", { required: false }),
-      item("story_lock", "Story lock", { required: false, group: "Finer steps (optional)" }),
-      item("picture_lock", "Picture lock", { required: false, group: "Finer steps (optional)" }),
-      item("color", "Color grade", { required: false, group: "Finer steps (optional)" }),
-      item("sound_mix", "Sound mix", { required: false, group: "Finer steps (optional)" }),
-      item("graphics", "Graphics", { required: false, group: "Finer steps (optional)" })
-    ]
-  },
-  /** Marketing and distribution, for each episode. The release plan items are required; publishing is tracked. */
-  release: {
-    owner: "episode",
-    stage: "Marketing and distribution",
-    items: [
-      item("episode_titles", "Episode titles", { group: "Release plan" }),
-      item("cover_art", "Cover art", { group: "Release plan" }),
-      item("short_clips", "Short clips", { group: "Release plan" }),
-      item("captions", "Captions", { group: "Release plan" }),
-      item("release_calendar", "Release calendar", { group: "Release plan" }),
-      item("upload", "Upload", { required: false, group: "Publishing" }),
-      item("schedule", "Schedule", { required: false, group: "Publishing" }),
-      item("publish", "Publish", { required: false, group: "Publishing" }),
-      item("log_links", "Log the links", { required: false, group: "Publishing" }),
-      item("early_numbers", "Review early listener numbers", { required: false, group: "Publishing" })
-    ]
-  }
-};
-var SESSION_TOKEN = "R";
-var PLANNED_TOKEN = "P";
-var EPISODE_TOKEN = "E";
-
-// src/data/ids.ts
-var IdMismatch = class extends ConflictError {
-  constructor() {
-    super(
-      "Someone else added something at the same moment, so this change was not saved. Your screen now shows the latest. Please do it again."
-    );
-    this.name = "IdMismatch";
-  }
-};
-var recording = null;
-var expecting = null;
-function expectIds(ids2, fn) {
-  if (!ids2) return fn();
-  const prev = expecting;
-  const run = { ids: ids2, at: 0 };
-  expecting = run;
-  try {
-    const out = fn();
-    if (run.at !== ids2.length) throw new IdMismatch();
-    return out;
-  } finally {
-    expecting = prev;
-  }
-}
-function claimId(id2) {
-  if (expecting) {
-    const want = expecting.ids[expecting.at++];
-    if (want !== id2) throw new IdMismatch();
-  }
-  recording?.push(id2);
-  return id2;
-}
-var ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyz";
-function randomPart(n) {
-  const bytes = new Uint8Array(n);
-  globalThis.crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => ALPHABET[b % 36]).join("");
-}
-function localId(prefix, taken = () => false) {
-  let id2;
-  if (expecting) {
-    const want = expecting.ids[expecting.at++];
-    if (typeof want !== "string" || !new RegExp(`^${prefix}-[a-z0-9]{8,24}$`).test(want) || taken(want)) throw new IdMismatch();
-    id2 = want;
-  } else {
-    do
-      id2 = `${prefix}-${Date.now().toString(36)}${randomPart(6)}`;
-    while (taken(id2));
-  }
-  recording?.push(id2);
-  return id2;
-}
-var logId = (prefix) => `${prefix}-${Date.now().toString(36)}${randomPart(6)}`;
-var topLevelCounter = (category2) => `record:${categoryOf(category2).code}`;
-var childCounter = (parentId) => `record:${parentId}`;
-var childToken = (parent) => {
-  const cfg2 = categoryOf(parent.category);
-  return (parent.hierarchyLevel === 0 ? cfg2.childToken : cfg2.grandchildToken) ?? "";
-};
-var topLevelNumber = (contentId) => parseInt(contentId.split("-")[2], 10);
-var childNumber = (contentId, parent) => parseInt(contentId.slice(parent.contentId.length + 1 + childToken(parent).length), 10);
-function syncRecordCounters(db2) {
-  const byId = new Map(db2.records.map((r) => [r.contentId, r]));
-  const raise = (key2, n) => {
-    if (!Number.isNaN(n) && n > (db2.counters[key2] ?? 0)) db2.counters[key2] = n;
-  };
-  for (const r of db2.records) {
-    if (r.hierarchyLevel === 0) raise(topLevelCounter(r.category), topLevelNumber(r.contentId));
-    const parent = r.parentId ? byId.get(r.parentId) : void 0;
-    if (parent) raise(childCounter(parent.contentId), childNumber(r.contentId, parent));
-  }
-}
-var two = (n) => String(n).padStart(2, "0");
-var sessionCode = (projectId, n) => `${projectId}-${SESSION_TOKEN}${two(n)}`;
-var plannedEpisodeId = (projectId, n) => `${projectId}-${PLANNED_TOKEN}${two(n)}`;
-var episodeCode = (projectId, n) => `${projectId}-${EPISODE_TOKEN}${two(n)}`;
-var sessionCounter = (projectId) => `session:${projectId}`;
-var plannedCounter = (projectId) => `planned:${projectId}`;
-var episodeCounter = (projectId) => childCounter(projectId);
-var codeNumber = (code, projectId, token) => {
-  const prefix = `${projectId}-${token}`;
-  return code.startsWith(prefix) && /^\d+$/.test(code.slice(prefix.length)) ? parseInt(code.slice(prefix.length), 10) : NaN;
-};
-function syncWorkflowCounters(db2) {
-  const raise = (key2, n) => {
-    if (!Number.isNaN(n) && n > (db2.counters[key2] ?? 0)) db2.counters[key2] = n;
-  };
-  for (const s2 of db2.recordingSessions ?? []) raise(sessionCounter(s2.contentId), s2.sessionNumber);
-  for (const p of db2.plannedEpisodes ?? []) raise(plannedCounter(p.contentId), p.episodeNumber);
-  for (const r of db2.records) if (r.episode && r.parentId) raise(episodeCounter(r.parentId), r.episode.episodeNumber);
-}
-
 // src/data/store.ts
 import { useSyncExternalStore } from "react";
 
@@ -1294,7 +1359,7 @@ function buildGearSeed() {
   batch("DOF-EQ-PWR-SANDBAG-B01", "power", "SANDBAG", "Sandbag 7 kg", "Generic", 6, 12, 350, "Local");
   hist2("DOF-EQ-LGT-002", 5, "repair-start", "Fan noise. Sent to the vendor for service");
   hist2("DOF-EQ-AUD-004", 120, "retired", "Channel 3 faulty. Retired from inventory");
-  const line2 = (equipmentId, quantity, conditionOut, extra = {}) => ({
+  const line3 = (equipmentId, quantity, conditionOut, extra = {}) => ({
     equipmentId,
     quantity,
     conditionOut,
@@ -1323,7 +1388,7 @@ function buildGearSeed() {
       createdBy: "DOF-P-CRW-002",
       checkedOutAt: stamp(72),
       returnedAt: stamp(69),
-      lines: [line2("DOF-EQ-CAM-003", 1, "New", { conditionIn: "Good", returnedGood: 0, damaged: 1 })]
+      lines: [line3("DOF-EQ-CAM-003", 1, "New", { conditionIn: "Good", returnedGood: 0, damaged: 1 })]
     },
     {
       id: "DOF-MF-004",
@@ -1339,7 +1404,7 @@ function buildGearSeed() {
       createdBy: "DOF-P-CRW-002",
       checkedOutAt: stamp(35),
       returnedAt: stamp(32),
-      lines: [line2("DOF-EQ-CAM-003", 1, "Good", { conditionIn: "Fair", returnedGood: 0, damaged: 1 })]
+      lines: [line3("DOF-EQ-CAM-003", 1, "Good", { conditionIn: "Fair", returnedGood: 0, damaged: 1 })]
     },
     // Out now and late.
     {
@@ -1356,7 +1421,7 @@ function buildGearSeed() {
       createdBy: "DOF-P-CRW-002",
       checkedOutAt: stamp(8),
       returnedAt: null,
-      lines: [line2("DOF-EQ-CAM-002", 1, "Good"), line2("DOF-EQ-CAM-004", 1, "Good"), line2("DOF-EQ-AUD-003", 1, "Good")]
+      lines: [line3("DOF-EQ-CAM-002", 1, "Good"), line3("DOF-EQ-CAM-004", 1, "Good"), line3("DOF-EQ-AUD-003", 1, "Good")]
     },
     // Reserved in the studio for the upcoming Season 1 recording day.
     {
@@ -1374,10 +1439,10 @@ function buildGearSeed() {
       checkedOutAt: null,
       returnedAt: null,
       lines: [
-        line2("DOF-EQ-CAM-001", 1, "Good"),
-        line2("DOF-EQ-CAM-003", 1, "Fair"),
-        line2("DOF-EQ-AUD-001", 1, "Good"),
-        line2("DOF-EQ-CAB-XLR10M-B01", 4, "Good")
+        line3("DOF-EQ-CAM-001", 1, "Good"),
+        line3("DOF-EQ-CAM-003", 1, "Fair"),
+        line3("DOF-EQ-AUD-001", 1, "Good"),
+        line3("DOF-EQ-CAB-XLR10M-B01", 4, "Good")
       ]
     }
   ];
@@ -1694,16 +1759,16 @@ var person = (personId, category2, name, skills, hasLogin) => ({
   notifyEmail: category2 === "CRW" || category2 === "HOP",
   notifySms: personId === "DOF-P-CRW-001"
 });
-var deadlinesFor = (cat, current2, currentOffset, stepDays = 4) => {
+var deadlinesFor = (cat, current3, currentOffset, stepDays = 4) => {
   const stages = categoryOf(cat).stages;
-  const idx = stages.findIndex((s2) => s2.name === current2);
+  const idx = stages.findIndex((s2) => s2.name === current3);
   const out = {};
   stages.forEach((s2, i) => out[s2.name] = isoDay(currentOffset + (i - idx) * stepDays));
   return out;
 };
-var outputsBefore = (cat, current2) => {
+var outputsBefore = (cat, current3) => {
   const stages = categoryOf(cat).stages;
-  const idx = stages.findIndex((s2) => s2.name === current2);
+  const idx = stages.findIndex((s2) => s2.name === current3);
   const out = {};
   stages.forEach((s2, i) => out[s2.name] = i < idx);
   return out;
@@ -2087,7 +2152,7 @@ function buildSeed() {
       x.setHours(10, 0, 0, 0);
       return x.toISOString();
     };
-    const doc = {
+    const doc2 = {
       id: `DOF-DCS-${String(++docN).padStart(3, "0")}`,
       contentId,
       title: `${tpl.title}: ${subject(contentId)}`,
@@ -2101,30 +2166,30 @@ function buildSeed() {
       updatedBy: "DOF-P-HOP-001",
       archived: false
     };
-    docs.push(doc);
+    docs.push(doc2);
     docRevisions.push({
       id: `REV-${String(++revN).padStart(5, "0")}`,
-      docId: doc.id,
+      docId: doc2.id,
       version: 1,
       at: at(30),
       byPersonId: "DOF-P-HOP-001",
-      title: doc.title,
-      body: doc.body,
+      title: doc2.title,
+      body: doc2.body,
       note: "Created from template"
     });
     for (const e of edits) {
-      doc.version += 1;
-      if (e.body !== void 0) doc.body = e.body;
-      doc.updatedAt = at(e.daysAgo);
-      doc.updatedBy = e.by;
+      doc2.version += 1;
+      if (e.body !== void 0) doc2.body = e.body;
+      doc2.updatedAt = at(e.daysAgo);
+      doc2.updatedBy = e.by;
       docRevisions.push({
         id: `REV-${String(++revN).padStart(5, "0")}`,
-        docId: doc.id,
-        version: doc.version,
+        docId: doc2.id,
+        version: doc2.version,
         at: at(e.daysAgo),
         byPersonId: e.by,
-        title: doc.title,
-        body: doc.body,
+        title: doc2.title,
+        body: doc2.body,
         note: e.note ?? "Edited"
       });
     }
@@ -2273,6 +2338,15 @@ function buildSeed() {
     sessionLogEntries: [],
     reviewCheckpoints: [],
     shareLinks: [],
+    projectDocuments: [],
+    documentPages: [],
+    documentLinks: [],
+    documentReviews: [],
+    reviewComments: [],
+    storyboards: [],
+    storyboardFrames: [],
+    shotLists: [],
+    shotListRows: [],
     ...gear,
     settings: {
       stageReminderHours: 24,
@@ -2340,7 +2414,7 @@ function upgradeToV3(db2) {
       db2.counters.doc = (db2.counters.doc ?? 0) + 1;
       db2.counters.docrev = (db2.counters.docrev ?? 0) + 1;
       const now = (/* @__PURE__ */ new Date()).toISOString();
-      const doc = {
+      const doc2 = {
         id: `DOF-DCS-${String(db2.counters.doc).padStart(3, "0")}`,
         contentId: r.contentId,
         title: `${tpl.title}: ${r.title}`,
@@ -2356,15 +2430,15 @@ function upgradeToV3(db2) {
       };
       const rev = {
         id: `REV-${String(db2.counters.docrev).padStart(5, "0")}`,
-        docId: doc.id,
+        docId: doc2.id,
         version: 1,
         at: now,
         byPersonId: "DOF-P-HOP-001",
-        title: doc.title,
-        body: doc.body,
+        title: doc2.title,
+        body: doc2.body,
         note: "Created from template"
       };
-      db2.docs.push(doc);
+      db2.docs.push(doc2);
       db2.docRevisions.push(rev);
     }
   }
@@ -2588,10 +2662,17 @@ function upgradeToV15(db2) {
   db2.schemaVersion = 15;
   return db2;
 }
+function upgradeToV16(db2) {
+  const parts = db2;
+  for (const k of DOCUMENT_PARTS) parts[k] ??= [];
+  for (const p of db2.plannedEpisodes ?? []) p.sourcePageId ??= null;
+  db2.schemaVersion = 16;
+  return db2;
+}
 
 // src/data/store.ts
 var KEY = "dof-hub-db";
-var SCHEMA_VERSION = 15;
+var SCHEMA_VERSION = 16;
 function migrate(old) {
   const gear = buildGearSeed();
   const next2 = {
@@ -2629,7 +2710,8 @@ var UPGRADES = {
   11: upgradeToV12,
   12: upgradeToV13,
   13: upgradeToV14,
-  14: upgradeToV15
+  14: upgradeToV15,
+  15: upgradeToV16
 };
 function upgradeDb(parsed) {
   let db2 = parsed.schemaVersion === 1 ? migrate(parsed) : parsed;
@@ -3096,6 +3178,95 @@ function checkPassword(password, context = {}) {
   return null;
 }
 
+// server/html.ts
+import { JSDOM } from "jsdom";
+
+// src/services/html.ts
+import createDOMPurify from "dompurify";
+var TAGS = [
+  "p",
+  "br",
+  "strong",
+  "b",
+  "em",
+  "i",
+  "u",
+  "s",
+  "strike",
+  "h1",
+  "h2",
+  "h3",
+  "ul",
+  "ol",
+  "li",
+  "a",
+  "span",
+  "mark",
+  "label",
+  "input",
+  "div"
+];
+var ATTRS = ["href", "style", "data-type", "data-checked", "type", "checked", "data-color"];
+var STYLE = {
+  color: /^(#[0-9a-f]{3,8}|rgba?\([\d\s.,%]+\))$/i,
+  "background-color": /^(#[0-9a-f]{3,8}|rgba?\([\d\s.,%]+\))$/i,
+  "font-size": /^(0\.\d+|[1-3](\.\d+)?)(em|rem)$|^([89]|[1-4]\d)px$/,
+  "text-align": /^(left|center|right|justify)$/,
+  "margin-left": /^\d{1,3}(px|em)$/,
+  // How Google Docs and Word mark bold, italic, underline and strikethrough when pasted.
+  "font-weight": /^(bold|[6-9]00)$/,
+  "font-style": /^italic$/,
+  "text-decoration": /^(underline|line-through)$/
+};
+function cleanStyle(style) {
+  return style.split(";").map((d) => d.split(":")).filter((p) => p.length === 2).map(([k, v]) => [k.trim().toLowerCase(), v.trim()]).filter(([k, v]) => STYLE[k]?.test(v)).map(([k, v]) => `${k}: ${v}`).join("; ");
+}
+var purifier = null;
+function configure(p) {
+  p.addHook("uponSanitizeAttribute", (node, data) => {
+    if (data.attrName === "style") {
+      data.attrValue = cleanStyle(data.attrValue);
+      if (!data.attrValue) data.keepAttr = false;
+    }
+    if (node.nodeName === "INPUT" && data.attrName === "type" && data.attrValue !== "checkbox") data.keepAttr = false;
+  });
+  p.addHook("afterSanitizeAttributes", (node) => {
+    if (node.nodeName === "INPUT" && node.getAttribute("type") !== "checkbox") node.remove();
+    if (node.nodeName === "A") node.setAttribute("rel", "noopener noreferrer nofollow");
+  });
+  return p;
+}
+function setHtmlWindow(window2) {
+  purifier = configure(createDOMPurify(window2));
+}
+function current() {
+  if (!purifier && typeof window !== "undefined") purifier = configure(createDOMPurify(window));
+  if (!purifier) throw new Error("Rich text cannot be cleaned here: no document to clean it with was given (server/html.ts).");
+  return purifier;
+}
+function cleanHtml(html) {
+  return current().sanitize(html, {
+    ALLOWED_TAGS: TAGS,
+    ALLOWED_ATTR: ATTRS,
+    // DOMPurify checks every attribute value against this, so plain values ("taskList", "checkbox") must pass; of
+    // the values that name a scheme, only web and mail links do.
+    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,
+    ALLOW_DATA_ATTR: false,
+    KEEP_CONTENT: true
+  }).trim();
+}
+function textOf(html) {
+  return html.replace(/<(br|\/p|\/h[1-3]|\/li|\/div)>/gi, " ").replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, " ").trim();
+}
+function textToHtml(text2) {
+  const esc = (s2) => s2.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  return text2.split(/\n{2,}/).map((para) => para.trim()).filter(Boolean).map((para) => `<p>${esc(para).replace(/\n/g, "<br>")}</p>`).join("");
+}
+var escapeHtml = (s2) => s2.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+// server/html.ts
+setHtmlWindow(new JSDOM("").window);
+
 // src/services/docs.ts
 var docs_exports = {};
 __export(docs_exports, {
@@ -3441,7 +3612,7 @@ function build(head, items) {
   }
   return base;
 }
-async function current(store2) {
+async function current2(store2) {
   for (let attempt = 0; attempt < 5; attempt++) {
     const head = await store2.state.head();
     if (!head) return null;
@@ -3494,7 +3665,7 @@ async function upgradeStore(store2, apply) {
 }
 async function changeAllData(store2, apply, backupLabel, fn) {
   for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
-    const base = await current(store2);
+    const base = await current2(store2);
     if (!base) return null;
     const before = await countsOf(store2);
     const db2 = structuredClone(base.db);
@@ -3547,7 +3718,7 @@ function describeUpgrade(r) {
   ].join("\n");
 }
 async function loadDb(store2, _keys) {
-  const base = await current(store2);
+  const base = await current2(store2);
   return base ? { db: base.db, revision: base.head.revision } : null;
 }
 async function headOf(store2) {
@@ -3618,7 +3789,7 @@ var ATTEMPTS = 10;
 var pause = (attempt) => new Promise((r) => setTimeout(r, Math.random() * Math.min(400, 15 * 2 ** attempt)));
 async function mutateState(store2, fn) {
   for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
-    const base = await current(store2);
+    const base = await current2(store2);
     if (!base) throw new Error("The app has not been set up yet.");
     const db2 = structuredClone(base.db);
     const result2 = withDb(db2, () => fn(db2));
@@ -3649,7 +3820,7 @@ function revisionsSent(all, docIds) {
   return all.filter((r) => docIds.has(r.docId)).map((r) => full.has(r.id) ? r : { ...r, body: "", trimmed: true });
 }
 async function snapshotFor(store2, actor) {
-  const base = await current(store2);
+  const base = await current2(store2);
   if (!base) return null;
   const db2 = base.db;
   const audit = withDb(db2, () => can(actor, "backend.audit")) ? await newestAudit(store2, base) : [];
@@ -3662,6 +3833,12 @@ async function snapshotFor(store2, actor) {
     const docIds = new Set(docs.map((d) => d.id));
     const sessions = db2.recordingSessions.filter((x) => ids2.has(x.contentId));
     const sessionIds = new Set(sessions.map((x) => x.id));
+    const documents = (db2.projectDocuments ?? []).filter((d) => ids2.has(d.contentId));
+    const documentIds = new Set(documents.map((d) => d.id));
+    const boards = (db2.storyboards ?? []).filter((b) => ids2.has(b.contentId));
+    const boardIds = new Set(boards.map((b) => b.id));
+    const lists = (db2.shotLists ?? []).filter((l) => ids2.has(l.contentId));
+    const listIds = new Set(lists.map((l) => l.id));
     const settings = { ...db2.settings };
     if (!hop)
       settings.permissions = {
@@ -3697,6 +3874,15 @@ async function snapshotFor(store2, actor) {
       sessionLogEntries: db2.sessionLogEntries.filter((e) => sessionIds.has(e.sessionId)),
       reviewCheckpoints: db2.reviewCheckpoints.filter((c) => ids2.has(c.contentId) && (c.episodeId === null || ids2.has(c.episodeId))),
       shareLinks: db2.shareLinks.filter((l) => ids2.has(l.episodeId)),
+      projectDocuments: documents,
+      documentPages: (db2.documentPages ?? []).filter((p) => documentIds.has(p.documentId)),
+      documentLinks: (db2.documentLinks ?? []).filter((l) => documentIds.has(l.documentId)),
+      documentReviews: (db2.documentReviews ?? []).filter((r) => documentIds.has(r.documentId)),
+      reviewComments: (db2.reviewComments ?? []).filter((c) => documentIds.has(c.documentId)),
+      storyboards: boards,
+      storyboardFrames: (db2.storyboardFrames ?? []).filter((f2) => boardIds.has(f2.storyboardId)),
+      shotLists: lists,
+      shotListRows: (db2.shotListRows ?? []).filter((r) => listIds.has(r.shotListId)),
       outbox: can(actor, "reminders.sendOthers") ? db2.outbox : db2.outbox.filter((o) => o.personId === actor.personId),
       settings,
       counters: db2.counters
@@ -3705,10 +3891,10 @@ async function snapshotFor(store2, actor) {
   return { revision: base.head.revision, db: out };
 }
 async function docHistory(store2, actor, docId) {
-  const base = await current(store2);
+  const base = await current2(store2);
   if (!base) return null;
-  const doc = base.db.docs.find((d) => d.id === docId);
-  if (!doc || !withDb(base.db, () => canViewDoc(actor, doc))) return null;
+  const doc2 = base.db.docs.find((d) => d.id === docId);
+  if (!doc2 || !withDb(base.db, () => canViewDoc(actor, doc2))) return null;
   return base.db.docRevisions.filter((r) => r.docId === docId);
 }
 
@@ -3870,15 +4056,15 @@ async function login(store2, input, ip, agent) {
   const a = await authenticate(store2, token);
   return { token, user: publicUser(a) };
 }
-async function changePassword(store2, who, current2, next2) {
+async function changePassword(store2, who, current3, next2) {
   const key2 = `pw:${who.user._id}`;
   await chargeAttempt(store2, [{ key: key2, max: LIMIT_PASSWORD_CHANGE }]);
-  if (!await verifyPassword(String(current2 ?? ""), who.user.passwordHash))
+  if (!await verifyPassword(String(current3 ?? ""), who.user.passwordHash))
     throw new HttpError(403, "Your current password is not right.");
   await store2.attempts.clear(key2);
   const bad = checkPassword(String(next2 ?? ""), { username: who.user._id, name: who.person.name });
   if (bad) throw new HttpError(400, bad);
-  if (next2 === current2) throw new HttpError(400, "Choose a password you have not used just now.");
+  if (next2 === current3) throw new HttpError(400, "Choose a password you have not used just now.");
   const now = (/* @__PURE__ */ new Date()).toISOString();
   await store2.users.put({ ...who.user, passwordHash: await hashPassword(next2), mustChange: false, passwordChangedAt: now });
   await revokeSessions(store2, who.user._id, who.session._id);
@@ -5171,14 +5357,14 @@ var nonNeg = (n) => Number.isInteger(n) && n >= 0;
 function checkIn(actor, manifestId, returns) {
   const m = loadManifest(actor, manifestId);
   if (m.status !== "checked-out") throw new RuleError("This gear is not checked out.");
-  const plans = m.lines.map((line2) => {
-    const item2 = getItem(line2.equipmentId);
+  const plans = m.lines.map((line3) => {
+    const item2 = getItem(line3.equipmentId);
     if (!item2) throw new RuleError("An item on this list no longer exists.");
-    const r = returns.find((x) => x.equipmentId === line2.equipmentId);
+    const r = returns.find((x) => x.equipmentId === line3.equipmentId);
     if (!r) throw new RuleError(`Record the return for ${item2.name}.`);
     if (![r.returnedGood, r.damaged, r.lost].every(nonNeg)) throw new RuleError(`Counts for ${item2.name} must be whole numbers.`);
-    if (r.returnedGood + r.damaged + r.lost !== line2.quantity)
-      throw new RuleError(`${item2.name}: returned, damaged and lost must add up to ${line2.quantity}.`);
+    if (r.returnedGood + r.damaged + r.lost !== line3.quantity)
+      throw new RuleError(`${item2.name}: returned, damaged and lost must add up to ${line3.quantity}.`);
     let good = r.returnedGood;
     let damaged = r.damaged;
     const lost = r.lost;
@@ -5187,7 +5373,7 @@ function checkIn(actor, manifestId, returns) {
       if (good + damaged > 0) {
         if (!r.conditionIn) throw new RuleError(`Choose the condition ${item2.name} came back in.`);
         cond = r.conditionIn;
-        if (good === 1 && conditionRank(cond) > conditionRank(line2.conditionOut)) {
+        if (good === 1 && conditionRank(cond) > conditionRank(line3.conditionOut)) {
           good = 0;
           damaged = 1;
         }
@@ -5199,7 +5385,7 @@ function checkIn(actor, manifestId, returns) {
     if (damaged + lost > 0 && !desc) throw new RuleError(`Describe what happened to ${item2.name}.`);
     if (damaged + lost > item2.quantityTotal) throw new RuleError(`${item2.name}: more units damaged or lost than the batch holds.`);
     return {
-      line: line2,
+      line: line3,
       item: item2,
       good,
       damaged,
@@ -5277,8 +5463,8 @@ function attachManifest(actor, manifestId, contentId) {
   if (!m) throw new RuleError("Checkout list not found.");
   const target = getRecord(contentId);
   if (!target) throw new RuleError("Project not found.");
-  const current2 = getRecord(m.contentId);
-  if (!canWrite(actor, target) || (current2 ? !canWrite(actor, current2) : !isHop(actor)))
+  const current3 = getRecord(m.contentId);
+  if (!canWrite(actor, target) || (current3 ? !canWrite(actor, current3) : !isHop(actor)))
     throw new RuleError("You are not attached to both projects.");
   if (m.callSheetId) throw new RuleError("This list belongs to a call sheet. It moves with that sheet.");
   if (m.status === "released") throw new RuleError("This list was released, so it cannot be attached.");
@@ -5317,9 +5503,9 @@ function releaseManifest(actor, manifestId) {
 function addLinePhoto(actor, manifestId, equipmentId, input) {
   const m = loadManifest(actor, manifestId);
   if (m.status !== "assigned" && m.status !== "checked-out") throw new RuleError("Photos are added while the gear is out.");
-  const line2 = m.lines.find((l) => l.equipmentId === equipmentId);
-  if (!line2) throw new RuleError("That item is not on this list.");
-  line2.photosOut.push(makeAttachment(actor, input));
+  const line3 = m.lines.find((l) => l.equipmentId === equipmentId);
+  if (!line3) throw new RuleError("That item is not on this list.");
+  line3.photosOut.push(makeAttachment(actor, input));
   commit();
 }
 function listManifests(actor) {
@@ -6108,10 +6294,10 @@ function requiredSections(formType2, stage = 1) {
   return formType2 === "documentary_dof" && stage === 1 ? all.filter((s2) => s2.key !== "team" && s2.key !== "budget") : all;
 }
 function formProblems(projectId, stage = 1) {
-  const form = formOf(projectId);
+  const form2 = formOf(projectId);
   const out = [];
-  for (const section of requiredSections(form.formType, stage)) {
-    const values = form.sections[section.key] ?? {};
+  for (const section of requiredSections(form2.formType, stage)) {
+    const values = form2.sections[section.key] ?? {};
     for (const f2 of section.fields) {
       if (f2.required && !filled(f2, values[f2.key])) out.push(`${section.label}: ${f2.label}`);
       const must = MUST_BE_YES[`${section.key}.${f2.key}`];
@@ -6132,48 +6318,48 @@ function formProblems(projectId, stage = 1) {
 }
 function saveFormSection(actor, projectId, sectionKey, values) {
   const project = projectForWrite(actor, projectId);
-  const form = formOf(projectId);
-  const def = sectionOf(form.formType, sectionKey);
+  const form2 = formOf(projectId);
+  const def = sectionOf(form2.formType, sectionKey);
   if (!def) throw new RuleError("That section is not part of this project's form.");
   const parsed = sectionSchema(def).safeParse(values ?? {});
   if (!parsed.success) throw new RuleError(explain(parsed.error, (k) => def.fields.find((f2) => f2.key === k)?.label ?? k));
   const clean = Object.fromEntries(Object.entries(parsed.data).filter(([, v]) => v !== void 0));
   for (const f2 of def.fields)
     if (f2.type === "crew" && typeof clean[f2.key] === "string" && clean[f2.key] !== "") requireCrew(clean[f2.key], f2.label);
-  form.sections[sectionKey] = { ...form.sections[sectionKey] ?? {}, ...clean };
-  if (form.formType === "sermon" && sectionKey === "brief" && "delivery" in clean)
+  form2.sections[sectionKey] = { ...form2.sections[sectionKey] ?? {}, ...clean };
+  if (form2.formType === "sermon" && sectionKey === "brief" && "delivery" in clean)
     project.workflow.sermonFormat = clean.delivery === "In person" ? "in_person" : clean.delivery === "Recorded" ? "recorded" : null;
-  form.updatedAt = nowStamp();
+  form2.updatedAt = nowStamp();
   logAudit(actor, "form-save", "record", projectId, `${def.label}: ${Object.keys(clean).join(", ")}`);
   commit();
-  return form;
+  return form2;
 }
 function setCriterion(actor, projectId, key2, value) {
   projectForWrite(actor, projectId);
   if (!CRITERIA.some((c) => c.key === key2)) throw new RuleError("That is not one of the six greenlight criteria.");
-  const form = formOf(projectId);
-  form.criteria[key2] = { met: value.met, note: value.note.trim() };
-  form.updatedAt = nowStamp();
+  const form2 = formOf(projectId);
+  form2.criteria[key2] = { met: value.met, note: value.note.trim() };
+  form2.updatedAt = nowStamp();
   logAudit(actor, "form-criterion", "record", projectId, `${key2}: ${value.met === null ? "not assessed" : value.met ? "met" : "not met"}`);
   commit();
-  return form;
+  return form2;
 }
 function setReviewWindow(actor, projectId, date2) {
   projectForWrite(actor, projectId);
-  const form = formOf(projectId);
+  const form2 = formOf(projectId);
   if (date2 !== null) {
     if (!isIsoDate(date2)) throw new RuleError("Pick the review window's date.");
     if (date2 < todayIso()) throw new RuleError("The review window must end today or later.");
   }
-  form.reviewWindowDate = date2;
-  if (date2 !== null && (form.outcome === "Hold" || form.outcome === "Revise and resubmit")) form.outcome = null;
-  form.updatedAt = nowStamp();
+  form2.reviewWindowDate = date2;
+  if (date2 !== null && (form2.outcome === "Hold" || form2.outcome === "Revise and resubmit")) form2.outcome = null;
+  form2.updatedAt = nowStamp();
   logAudit(actor, "review-window", "record", projectId, date2 ?? "cleared");
   commit();
-  return form;
+  return form2;
 }
-var greenlightStageOf = (form) => form.greenlightStage ?? 1;
-var latestDecision = (form, stage) => [...form.decisions].reverse().find((d) => d.stage === stage);
+var greenlightStageOf = (form2) => form2.greenlightStage ?? 1;
+var latestDecision = (form2, stage) => [...form2.decisions].reverse().find((d) => d.stage === stage);
 function greenlightBlockers(project, stage) {
   const out = [];
   for (const key2 of ["pitch", "outline_script"]) {
@@ -6189,9 +6375,9 @@ function decideGreenlight(actor, projectId, input) {
     throw new RuleError('Only the Head of Production, or someone given "Create projects", can make a greenlight decision.');
   const project = requireProject(projectId);
   if (project.archived) throw new RuleError("This project is closed.");
-  const form = formOf(projectId);
-  const type = formTypeOf(form.formType);
-  const stage = greenlightStageOf(form);
+  const form2 = formOf(projectId);
+  const type = formTypeOf(form2.formType);
+  const stage = greenlightStageOf(form2);
   if (!type.outcomes.includes(input.outcome)) throw new RuleError(`${input.outcome} is not a possible decision for a ${type.label} form.`);
   const expected = stage === 1 ? "Development" : "Pre-production";
   if (project.workflow.stage !== expected)
@@ -6205,11 +6391,11 @@ function decideGreenlight(actor, projectId, input) {
     const blockers = greenlightBlockers(project, stage);
     if (blockers.length) throw new RuleError(`Before a greenlight: ${blockers.join("; ")}.`);
   }
-  form.decisions.push({ stage, outcome: input.outcome, notes, date: date2, byPersonId: actor.personId, at: nowStamp() });
-  form.outcome = input.outcome;
-  form.reviewNotes = notes;
-  form.decisionDate = date2;
-  form.updatedAt = nowStamp();
+  form2.decisions.push({ stage, outcome: input.outcome, notes, date: date2, byPersonId: actor.personId, at: nowStamp() });
+  form2.outcome = input.outcome;
+  form2.reviewNotes = notes;
+  form2.decisionDate = date2;
+  form2.updatedAt = nowStamp();
   if (input.outcome === "Decline" || input.outcome === "Advice only") {
     project.workflow.status = input.outcome === "Decline" ? "Closed" : "Advice only";
     project.closedReason = notes;
@@ -6224,26 +6410,26 @@ function decideGreenlight(actor, projectId, input) {
     `${stage === 2 ? "Second greenlight" : "Greenlight"}: ${input.outcome}${notes ? `. ${notes}` : ""}`
   );
   commit();
-  return form;
+  return form2;
 }
 var SYSTEM = { personId: "system", role: "HOP" };
 function applyReviewWindows(today = todayIso()) {
   const db2 = getDb();
   const moved = [];
-  for (const form of db2.developmentForms) {
-    if (!form.reviewWindowDate || form.reviewWindowDate >= today || form.outcome !== null) continue;
-    const project = db2.records.find((r) => r.contentId === form.contentId);
+  for (const form2 of db2.developmentForms) {
+    if (!form2.reviewWindowDate || form2.reviewWindowDate >= today || form2.outcome !== null) continue;
+    const project = db2.records.find((r) => r.contentId === form2.contentId);
     if (!project?.workflow || project.archived) continue;
-    const stage = greenlightStageOf(form);
+    const stage = greenlightStageOf(form2);
     if (project.workflow.stage !== (stage === 1 ? "Development" : "Pre-production")) continue;
-    const notes = `The review window closed on ${form.reviewWindowDate} with no decision, so the project moved to Hold.`;
-    form.decisions.push({ stage, outcome: "Hold", notes, date: today, byPersonId: SYSTEM.personId, at: nowStamp() });
-    form.outcome = "Hold";
-    form.reviewNotes = notes;
-    form.decisionDate = today;
-    form.updatedAt = nowStamp();
-    logAudit(SYSTEM, "greenlight", "record", form.contentId, `Hold (automatic): ${notes}`);
-    moved.push(form.contentId);
+    const notes = `The review window closed on ${form2.reviewWindowDate} with no decision, so the project moved to Hold.`;
+    form2.decisions.push({ stage, outcome: "Hold", notes, date: today, byPersonId: SYSTEM.personId, at: nowStamp() });
+    form2.outcome = "Hold";
+    form2.reviewNotes = notes;
+    form2.decisionDate = today;
+    form2.updatedAt = nowStamp();
+    logAudit(SYSTEM, "greenlight", "record", form2.contentId, `Hold (automatic): ${notes}`);
+    moved.push(form2.contentId);
   }
   return moved;
 }
@@ -6266,9 +6452,9 @@ function lateDates(project, dates) {
 function developmentGate(p) {
   const missing = [];
   if (p.workflow.stage !== "Development") missing.push("The project has already left Development");
-  const form = formOf(p.contentId);
-  if (latestDecision(form, 1)?.outcome !== "Greenlight")
-    missing.push(form.greenlightStage ? "First greenlight decision: Greenlight" : "Greenlight decision: Greenlight");
+  const form2 = formOf(p.contentId);
+  if (latestDecision(form2, 1)?.outcome !== "Greenlight")
+    missing.push(form2.greenlightStage ? "First greenlight decision: Greenlight" : "Greenlight decision: Greenlight");
   missing.push(...formProblems(p.contentId, 1));
   for (const [key2, label] of [
     ["pitch", "Pitch"],
@@ -6373,7 +6559,6 @@ function evaluateGate(stage, level2, id2) {
   }
   return result([`${stage} has no gate at the ${level2} level`]);
 }
-var sessionOverdue = (s2, today = todayIso()) => s2.status !== "Closed" && !s2.archivedAt && !!s2.scheduledDate && s2.scheduledDate < today;
 function episodeOverdue(ep, today = todayIso()) {
   if (!ep.episode || ep.archived || ep.episode.mdStage === "Published") return false;
   const due = ep.stageDeadlines[ep.episode.stage];
@@ -6399,9 +6584,9 @@ function projectSummary(p) {
   if (inPost) parts.push(`Post: ${inPost} episode${inPost === 1 ? "" : "s"}.`);
   if (inMd) parts.push(`Marketing and distribution: ${inMd} episode${inMd === 1 ? "" : "s"}.`);
   if (published) parts.push(`Published: ${published}.`);
-  const doc = isDocumentary(p);
-  const toPlan = sessions.some((s2) => s2.status === "Planned") || !doc && unscheduledPlanned(p.contentId) > 0;
-  const stage = p.workflow.status === "Completed" ? "Completed" : sessions.some((s2) => s2.status === "Open") ? "Production" : toPlan || sessions.length === 0 && eps.length === 0 ? "Pre-production" : doc && eps.length === 0 ? "Production" : inPost ? "Post production" : inMd ? "Marketing and distribution" : "Pre-production";
+  const doc2 = isDocumentary(p);
+  const toPlan = sessions.some((s2) => s2.status === "Planned") || !doc2 && unscheduledPlanned(p.contentId) > 0;
+  const stage = p.workflow.status === "Completed" ? "Completed" : sessions.some((s2) => s2.status === "Open") ? "Production" : toPlan || sessions.length === 0 && eps.length === 0 ? "Pre-production" : doc2 && eps.length === 0 ? "Production" : inPost ? "Post production" : inMd ? "Marketing and distribution" : "Pre-production";
   return { stage, text: parts.length ? parts.join(" ") : "Pre-production: no sessions yet." };
 }
 
@@ -6560,12 +6745,12 @@ function advanceProject(actor, projectId) {
   p.workflow.stage = "Pre-production";
   p.workflow.status = "Active";
   p.version += 1;
-  const form = formOf(projectId);
-  if (form.greenlightStage === 1) {
-    form.greenlightStage = 2;
-    form.outcome = null;
-    form.reviewWindowDate = null;
-    form.updatedAt = nowStamp();
+  const form2 = formOf(projectId);
+  if (form2.greenlightStage === 1) {
+    form2.greenlightStage = 2;
+    form2.outcome = null;
+    form2.reviewWindowDate = null;
+    form2.updatedAt = nowStamp();
   }
   ensureChecklist("preProject", "project", projectId);
   logAudit(actor, "stage-advance", "record", projectId, "Development \u2192 Pre-production");
@@ -6592,7 +6777,12 @@ function nextPlanned(projectId) {
   return { id: claimId(plannedEpisodeId(projectId, n)), n };
 }
 function nextEpisode(projectId) {
-  const used = getDb().records.filter((r) => r.parentId === projectId).map((r) => r.episode?.episodeNumber ?? codeNumber(r.contentId, projectId, EPISODE_TOKEN));
+  const db2 = getDb();
+  const used = [
+    ...db2.records.filter((r) => r.parentId === projectId).map((r) => r.episode?.episodeNumber ?? codeNumber(r.contentId, projectId, EPISODE_TOKEN)),
+    // Codes already given out ahead of recording count too.
+    ...db2.plannedEpisodes.filter((p) => p.contentId === projectId && p.reservedId).map((p) => codeNumber(p.reservedId, projectId, EPISODE_TOKEN))
+  ];
   const n = next(episodeCounter(projectId), used);
   return { id: claimId(episodeCode(projectId, n)), n };
 }
@@ -6618,7 +6808,13 @@ function makeEpisode(actor, project, input, kept2) {
   let id2;
   let n;
   let r;
-  if (kept2) {
+  if (typeof kept2 === "string") {
+    id2 = kept2;
+    n = codeNumber(id2, project.contentId, EPISODE_TOKEN);
+    if (Number.isNaN(n) || getDb().records.some((x) => x.contentId === id2))
+      throw new RuleError(`${id2} cannot become an episode of ${project.contentId}.`);
+    r = blankRecord(id2, project.category, input.title, project.contentId, project.hierarchyLevel + 1);
+  } else if (kept2) {
     id2 = kept2.contentId;
     n = codeNumber(id2, project.contentId, EPISODE_TOKEN);
     if (kept2.parentId !== project.contentId || kept2.episode && !kept2.archived || Number.isNaN(n))
@@ -6652,14 +6848,14 @@ function makeEpisode(actor, project, input, kept2) {
   r.episode = info;
   r.scheduledDate = input.scheduledDate;
   r.stageDeadlines = {
-    ...kept2 ? r.stageDeadlines : {},
+    ...kept2 && typeof kept2 !== "string" ? r.stageDeadlines : {},
     "Post production": addDaysIso(todayIso(), POST_DAYS),
     "Marketing and distribution": addDaysIso(todayIso(), MARKETING_DAYS)
   };
   r.stageEnteredAt = todayIso();
   r.assigneePersonId = info.editorId;
   const db2 = getDb();
-  if (!kept2) db2.records.push(r);
+  if (!kept2 || typeof kept2 === "string") db2.records.push(r);
   const reviewers = checkpoint(project.contentId, "outline_script")?.reviewerIds ?? [];
   for (const key2 of ["rough_cut", "final"]) {
     const earlier = checkpoint(id2, key2);
@@ -6846,8 +7042,8 @@ function leavesUnder(r) {
 function productionUnits(leaves) {
   const map = /* @__PURE__ */ new Map();
   for (const leaf of leaves) {
-    const show = leaf.category === "live" && leaf.hierarchyLevel > 0 ? getRecord(leaf.parentId) : null;
-    const owner = show ?? leaf;
+    const show2 = leaf.category === "live" && leaf.hierarchyLevel > 0 ? getRecord(leaf.parentId) : null;
+    const owner = show2 ?? leaf;
     if (!map.has(owner.contentId)) map.set(owner.contentId, { id: owner.contentId, title: owner.title, leaves: [] });
     map.get(owner.contentId).leaves.push(leaf);
   }
@@ -7019,10 +7215,10 @@ function initPipeline(actor, r, stepDays = 4, startStage) {
 }
 function wrapTasksFor(r) {
   if (r.category !== "live") return [];
-  const show = r.parentId ? getRecord(r.parentId) : null;
-  if (!show?.strikeChecklist) return [];
-  const isLastDay = !show.showEnd || r.scheduledDate === show.showEnd;
-  return isLastDay ? [...show.strikeChecklist.daily, ...show.strikeChecklist.final] : show.strikeChecklist.daily;
+  const show2 = r.parentId ? getRecord(r.parentId) : null;
+  if (!show2?.strikeChecklist) return [];
+  const isLastDay = !show2.showEnd || r.scheduledDate === show2.showEnd;
+  return isLastDay ? [...show2.strikeChecklist.daily, ...show2.strikeChecklist.final] : show2.strikeChecklist.daily;
 }
 function ensureStageTasks(r, stage) {
   if (r.tasks.some((t2) => t2.stage === stage)) return;
@@ -7060,11 +7256,11 @@ function datesBetween(start, end) {
   }
   return out;
 }
-function createDays(actor, show, input) {
+function createDays(actor, show2, input) {
   const dates = input.showStart ? datesBetween(input.showStart, input.showEnd || input.showStart) : [null];
   if (dates.length > MAX_SHOW_DAYS) throw new RuleError(`A live show can run for up to ${MAX_SHOW_DAYS} days. Add a longer one in parts.`);
   dates.forEach((date2, i) => {
-    const day = blankRecord(nextChildId(show), "live", `Day ${i + 1}`, show.contentId, 1);
+    const day = blankRecord(nextChildId(show2), "live", `Day ${i + 1}`, show2.contentId, 1);
     day.scheduledDate = date2;
     day.deadline = date2 ?? input.deadline ?? null;
     day.assigneePersonId = input.assigneePersonId || null;
@@ -7980,6 +8176,819 @@ function runOfShowTotals(cs) {
   return { minutes: end - first, ends: `${pad2(Math.floor(end / 60) % 24)}:${pad2(end % 60)}` };
 }
 
+// src/services/documents.ts
+var documents_exports = {};
+__export(documents_exports, {
+  MAX_PAGE_HTML: () => MAX_PAGE_HTML,
+  addDocumentLink: () => addDocumentLink,
+  addFrame: () => addFrame,
+  addPage: () => addPage,
+  addReviewComment: () => addReviewComment,
+  addShotRow: () => addShotRow,
+  archivePage: () => archivePage,
+  commentsOf: () => commentsOf,
+  createShotList: () => createShotList,
+  createStoryboard: () => createStoryboard,
+  decideDocumentReview: () => decideDocumentReview,
+  deleteFrames: () => deleteFrames,
+  deleteShotRows: () => deleteShotRows,
+  documentOf: () => documentOf,
+  duplicateFrame: () => duplicateFrame,
+  duplicateShotRow: () => duplicateShotRow,
+  ensureDocument: () => ensureDocument,
+  estimatedMinutes: () => estimatedMinutes,
+  framesOf: () => framesOf,
+  getDocument: () => getDocument,
+  linksOf: () => linksOf,
+  makeDevotionEpisodes: () => makeDevotionEpisodes,
+  moveFrame: () => moveFrame,
+  moveFramesTo: () => moveFramesTo,
+  movePage: () => movePage,
+  moveShotRow: () => moveShotRow,
+  pagesOf: () => pagesOf,
+  removeDocumentLink: () => removeDocumentLink,
+  renameShotList: () => renameShotList,
+  renameStoryboard: () => renameStoryboard,
+  resolveReviewComment: () => resolveReviewComment,
+  restorePage: () => restorePage,
+  reviewStateOf: () => reviewStateOf,
+  reviewsOf: () => reviewsOf,
+  rowsOfShotList: () => rowsOfShotList,
+  savePage: () => savePage,
+  setDocumentReviewers: () => setDocumentReviewers,
+  shotListsOf: () => shotListsOf,
+  shotNumbers: () => shotNumbers,
+  storyboardsOf: () => storyboardsOf,
+  updateFrame: () => updateFrame,
+  updateShotRow: () => updateShotRow
+});
+
+// src/config/documentCatalog.ts
+var CRITERIA_LIST = "<ul><li><p><strong>Mission fit:</strong> </p></li><li><p><strong>Message soundness:</strong> </p></li><li><p><strong>Audience need:</strong> </p></li><li><p><strong>Feasibility:</strong> </p></li><li><p><strong>Resource cost:</strong> </p></li><li><p><strong>Team strength:</strong> </p></li></ul>";
+var doc = (key2, title2, pages, extra = {}) => ({
+  key: key2,
+  title: title2,
+  kind: "document",
+  pages: pages.map((p) => typeof p === "string" ? { title: p } : p),
+  ...extra
+});
+var form = (key2, title2, tile, extra = {}) => ({
+  key: key2,
+  title: title2,
+  kind: "form",
+  form: tile,
+  ...extra
+});
+var tool = (key2, title2, which) => ({ key: key2, title: title2, kind: "tool", tool: which });
+var review = (reviews) => ({ key: "theological_review", title: "Theological Review", kind: "review", reviews });
+var IDEA_FIELDS = [
+  { section: "brief", key: "logline", label: "Logline" },
+  { section: "brief", key: "coreQuestion", label: "Core question or tension" }
+];
+var greenlight = doc("greenlight", "Greenlight", [{ title: "Decision", body: `<p>The six criteria:</p>${CRITERIA_LIST}` }]);
+function showBrief(formType2) {
+  const pages = [
+    { title: "The idea", fields: IDEA_FIELDS },
+    { title: "Scripture and source basis" },
+    { title: "Shape" },
+    { title: "Ask" }
+  ];
+  if (formType2 === "testimonial") pages.splice(3, 0, { title: "Sensitivity" });
+  if (formType2 === "sermon") pages.splice(3, 0, { title: "Outline" });
+  return doc("show_brief", "Show Brief", pages);
+}
+function documentaryBrief(formType2) {
+  const pages = [
+    { title: "The idea", fields: IDEA_FIELDS },
+    { title: "Subjects and locations" },
+    { title: "Sources and fact-checking" },
+    { title: "Ask" }
+  ];
+  if (formType2 === "documentary_pitched")
+    pages.push({ title: "Proposer readiness" }, { title: "Support asked for" }, { title: "Ownership terms" });
+  return doc("documentary_brief", "Documentary Brief", pages);
+}
+var marketing = () => [
+  doc("release_plan", "Release Plan", ["Release message", "Platform plan", "Study resources"]),
+  form("platform_status", "Platform Status", "platformStatus"),
+  doc("learning_notes", "Learning Notes", ["Against the success measures"]),
+  form("archive", "Archive", "archive")
+];
+function seriesCatalog(formType2) {
+  return {
+    Development: [
+      showBrief(formType2),
+      review("show_brief"),
+      greenlight,
+      form("planned_episodes", "Planned Episodes", "plannedEpisodes"),
+      ...formType2 === "testimonial" ? [form("consent", "Consent and Release", "consent")] : []
+    ],
+    "Pre-production": [
+      doc("production_pack", "Production Pack", ["Set design", "Rehearsal notes"]),
+      tool("storyboard", "Storyboard", "storyboard"),
+      tool("shot_list", "Shot List", "shotList"),
+      form("roles", "Roles", "roles"),
+      form("sessions", "Sessions", "sessions"),
+      form("call_sheet", "Call Sheet", "callSheet"),
+      form("gear", "Gear", "gear")
+    ],
+    Production: [
+      doc(
+        "recording_day_sheet",
+        "Recording Day Sheet",
+        [{ title: "Run sheet", form: "runSheet" }, "Daily notes", { title: "Wrap checklist", form: "wrapChecklist" }],
+        {
+          per: "session"
+        }
+      ),
+      form("session_log", "Session Log", "sessionLog"),
+      form("storage", "Storage", "storage")
+    ],
+    "Post production": [
+      doc("edit_notes", "Edit Notes", ["Notes to the editor", "Story and theology lock", "Graphics and music"]),
+      form("episode_tracker", "Episode Tracker", "episodeTracker"),
+      doc("review_thread", "Review Thread", [], { pagePerEpisode: true })
+    ],
+    "Marketing and distribution": marketing()
+  };
+}
+function documentaryCatalog(formType2) {
+  return {
+    Development: [
+      documentaryBrief(formType2),
+      review("documentary_brief"),
+      greenlight,
+      form("planned_episodes", "Planned Parts", "plannedEpisodes")
+    ],
+    "Pre-production": [
+      doc("treatment", "Treatment", ["Story structure", "Interview guide"]),
+      tool("storyboard", "Storyboard", "storyboard"),
+      tool("shot_list", "Shot List", "shotList"),
+      form("roles", "Roles", "roles"),
+      form("sessions", "Sessions", "sessions"),
+      form("call_sheet", "Call Sheet", "callSheet"),
+      form("gear", "Gear", "gear")
+    ],
+    Production: [
+      doc(
+        "shoot_day_sheet",
+        "Shoot Day Sheet",
+        [{ title: "Run sheet", form: "runSheet" }, "Interview notes", { title: "Wrap checklist", form: "wrapChecklist" }],
+        {
+          per: "session"
+        }
+      ),
+      form("session_log", "Session Log", "sessionLog"),
+      form("storage", "Storage", "storage")
+    ],
+    "Post production": [
+      doc("edit_notes", "Edit Notes", ["Assembly notes", "Narration", "Fact-check lock", "Graphics and music"]),
+      form("cut_tracker", "Cut Tracker", "episodeTracker"),
+      doc("review_thread", "Review Thread", [], { pagePerEpisode: true })
+    ],
+    "Marketing and distribution": marketing()
+  };
+}
+var DEVOTION_PAGES = [1, 2, 3, 4, 5].map((n) => ({ title: `Devotion ${n}`, subtitle: "" }));
+var devotionCatalog = {
+  Development: [
+    doc("devotional_script", "Devotional Script", DEVOTION_PAGES),
+    review("devotional_script"),
+    form("accept_decline", "Accept or Decline", "acceptDecline")
+  ],
+  "Pre-production": [
+    form("devotion_episodes", "Devotions", "devotionEpisodes"),
+    doc("recording_plan", "Recording Plan", ["Cards and storage", "Notes"]),
+    form("sessions", "Recording Session", "sessions"),
+    form("call_sheet", "Call Sheet", "callSheet")
+  ],
+  Production: [form("recording_day_view", "Recording Day View", "recordingDayView"), form("storage", "Storage", "storage")],
+  "Post production": [doc("edit_notes", "Edit Notes", ["Notes to the editor"]), form("review", "Review", "review")],
+  "Marketing and distribution": [
+    doc("release_plan", "Release Plan", ["Release message", "Platform plan"]),
+    doc("study_notes", "Study Notes", ["Study notes"])
+  ]
+};
+var catalogTypeOf = (formType2) => formType2 === "devotion" ? "devotion" : formType2 === "documentary_dof" || formType2 === "documentary_pitched" ? "documentary" : "series";
+function catalogFor(formType2, stage) {
+  const type = catalogTypeOf(formType2);
+  const all = type === "devotion" ? devotionCatalog : type === "documentary" ? documentaryCatalog(formType2) : seriesCatalog(formType2);
+  return all[stage];
+}
+var catalogEntry = (formType2, stage, key2) => catalogFor(formType2, stage).find((e) => e.key === key2);
+var briefKeyOf = (formType2) => catalogTypeOf(formType2) === "devotion" ? "devotional_script" : catalogTypeOf(formType2) === "documentary" ? "documentary_brief" : "show_brief";
+
+// src/services/documents/common.ts
+function projectOf2(contentId) {
+  const r = getRecord(contentId);
+  if (!isWorkflowProject(r)) throw new RuleError("Project not found.");
+  return r;
+}
+function projectForWrite2(actor, contentId) {
+  const p = projectOf2(contentId);
+  if (!canWrite(actor, p)) throw new RuleError("You have view-only access to this project.");
+  if (p.archived) throw new RuleError("This project is closed. It is kept as it was and cannot be changed.");
+  return p;
+}
+function projectForView(actor, contentId) {
+  const p = projectOf2(contentId);
+  if (!canView(actor, p)) throw new RuleError("Project not found.");
+  return p;
+}
+var mayComment = (actor, r) => canComment(actor, r);
+var getDocument = (id2) => getDb().projectDocuments.find((d) => d.id === id2);
+function requireDocument(id2) {
+  const d = getDocument(id2);
+  if (!d) throw new RuleError("Document not found.");
+  return d;
+}
+function documentForWrite(actor, id2) {
+  const doc2 = requireDocument(id2);
+  return { doc: doc2, project: projectForWrite2(actor, doc2.contentId) };
+}
+function pageForWrite(actor, pageId) {
+  const page = getDb().documentPages.find((p) => p.id === pageId);
+  if (!page) throw new RuleError("That page no longer exists.");
+  const { doc: doc2, project } = documentForWrite(actor, page.documentId);
+  return { page, doc: doc2, project };
+}
+var pagesOf = (documentId, includeArchived = false) => getDb().documentPages.filter((p) => p.documentId === documentId && (includeArchived || !p.archivedAt)).sort((a, b) => a.position - b.position);
+function renumber(items) {
+  items.sort((a, b) => a.position - b.position).forEach((it, i) => it.position = i);
+}
+function moveTo(items, id2, toIndex) {
+  const ordered = [...items].sort((a, b) => a.position - b.position);
+  const from = ordered.findIndex((x) => x.id === id2);
+  if (from === -1) throw new RuleError("That item is not in this list.");
+  const [it] = ordered.splice(from, 1);
+  ordered.splice(Math.max(0, Math.min(ordered.length, Math.floor(toIndex))), 0, it);
+  ordered.forEach((x, i) => x.position = i);
+}
+
+// src/services/documents/pages.ts
+var MAX_PAGE_HTML = 4e5;
+var MAX_LINE = 300;
+function entryFor(formType2, stage, docKey) {
+  const entry = catalogEntry(formType2, stage, docKey);
+  if (!entry || entry.kind !== "document") throw new RuleError("This kind of project has no such document at that stage.");
+  return entry;
+}
+var documentOf = (contentId, stage, docKey, ownerId = null) => getDb().projectDocuments.find((d) => d.id === documentIdOf(contentId, stage, docKey, ownerId));
+function makeDocument(contentId, stage, entry, ownerId, by, migrated = false) {
+  const at = nowStamp();
+  const doc2 = {
+    id: documentIdOf(contentId, stage, entry.key, ownerId),
+    contentId,
+    stage,
+    docKey: entry.key,
+    ownerId,
+    title: entry.title,
+    migrated,
+    createdAt: at,
+    updatedAt: at
+  };
+  const db2 = getDb();
+  db2.projectDocuments.push(doc2);
+  (entry.pages ?? []).forEach(
+    (p, i) => db2.documentPages.push({
+      id: localId("PG"),
+      documentId: doc2.id,
+      position: i,
+      title: p.title,
+      subtitle: p.subtitle ?? "",
+      bodyHtml: p.body ? cleanHtml(p.body) : "",
+      version: 1,
+      archivedAt: null,
+      updatedAt: at,
+      updatedBy: by
+    })
+  );
+  return doc2;
+}
+function ensureDocument(actor, contentId, stage, docKey, ownerId = null) {
+  if (!WORKFLOW_STAGE_NAMES.includes(stage)) throw new RuleError("That is not a stage of the workflow.");
+  const existing = documentOf(contentId, stage, docKey, ownerId);
+  if (existing) {
+    projectForView(actor, contentId);
+    return existing;
+  }
+  const project = projectForWrite2(actor, contentId);
+  const entry = entryFor(project.workflow.formType, stage, docKey);
+  if (entry.per === "session") {
+    const s2 = ownerId ? getSession(ownerId) : void 0;
+    if (!s2 || s2.contentId !== contentId) throw new RuleError("Choose one of this project's recording sessions.");
+  } else if (entry.per === "episode") {
+    const ep = ownerId ? getRecord(ownerId) : void 0;
+    if (!ep?.episode || ep.parentId !== contentId) throw new RuleError("Choose one of this project's episodes.");
+  } else if (ownerId) throw new RuleError("This document is for the whole project.");
+  const doc2 = makeDocument(contentId, stage, entry, ownerId, actor.personId);
+  logAudit(actor, "document", "record", contentId, `${entry.title} started`);
+  commit();
+  return doc2;
+}
+function addPage(actor, documentId, input = {}) {
+  const { doc: doc2 } = documentForWrite(actor, documentId);
+  const pages = pagesOf(doc2.id);
+  const at = nowStamp();
+  const after = input.afterPageId ? pages.findIndex((p) => p.id === input.afterPageId) : pages.length - 1;
+  const page = {
+    id: localId("PG"),
+    documentId: doc2.id,
+    position: after + 0.5,
+    title: (input.title ?? "").trim().slice(0, MAX_LINE) || "New page",
+    subtitle: (input.subtitle ?? "").trim().slice(0, MAX_LINE),
+    bodyHtml: "",
+    version: 1,
+    archivedAt: null,
+    updatedAt: at,
+    updatedBy: actor.personId
+  };
+  getDb().documentPages.push(page);
+  renumber(pagesOf(doc2.id));
+  doc2.updatedAt = at;
+  logAudit(actor, "document-page", "record", doc2.contentId, `${doc2.title}: page "${page.title}" added`);
+  commit();
+  return page;
+}
+function savePage(actor, pageId, edit, baseVersion) {
+  const { page, doc: doc2 } = pageForWrite(actor, pageId);
+  if (page.archivedAt) throw new RuleError("This page was deleted. Restore it to write in it.");
+  if (page.version !== baseVersion)
+    throw new ConflictError(
+      "Someone else saved this page while you were writing. Your words are kept here: copy them, then reload the page."
+    );
+  if (edit.title !== void 0) page.title = edit.title.trim().slice(0, MAX_LINE) || "Untitled page";
+  if (edit.subtitle !== void 0) page.subtitle = edit.subtitle.trim().slice(0, MAX_LINE);
+  if (edit.bodyHtml !== void 0) {
+    if (edit.bodyHtml.length > MAX_PAGE_HTML) throw new RuleError("This page is too long to save. Split it over two pages.");
+    page.bodyHtml = cleanHtml(edit.bodyHtml);
+  }
+  page.version += 1;
+  page.updatedAt = nowStamp();
+  page.updatedBy = actor.personId;
+  doc2.updatedAt = page.updatedAt;
+  commit();
+  return page;
+}
+function movePage(actor, pageId, toIndex) {
+  const { page, doc: doc2 } = pageForWrite(actor, pageId);
+  moveTo(pagesOf(doc2.id), page.id, toIndex);
+  commit();
+  return page;
+}
+function archivePage(actor, pageId) {
+  const { page, doc: doc2 } = pageForWrite(actor, pageId);
+  if (page.archivedAt) return page;
+  page.archivedAt = nowStamp();
+  renumber(pagesOf(doc2.id));
+  logAudit(actor, "document-page", "record", doc2.contentId, `${doc2.title}: page "${page.title}" deleted (kept, archived)`);
+  commit();
+  return page;
+}
+function restorePage(actor, pageId) {
+  const { page, doc: doc2 } = pageForWrite(actor, pageId);
+  if (!page.archivedAt) return page;
+  page.archivedAt = null;
+  page.position = pagesOf(doc2.id).length;
+  logAudit(actor, "document-page", "record", doc2.contentId, `${doc2.title}: page "${page.title}" restored`);
+  commit();
+  return page;
+}
+var linksOf = (documentId) => getDb().documentLinks.filter((l) => l.documentId === documentId);
+function addDocumentLink(actor, documentId, url2, label) {
+  const { doc: doc2 } = documentForWrite(actor, documentId);
+  const link = {
+    id: localId("DL"),
+    documentId: doc2.id,
+    url: requireWebUrl(url2, "The link"),
+    label: label.trim().slice(0, MAX_LINE),
+    addedBy: actor.personId,
+    addedAt: nowStamp()
+  };
+  getDb().documentLinks.push(link);
+  logAudit(actor, "document-link", "record", doc2.contentId, `${doc2.title}: ${link.label || link.url}`);
+  commit();
+  return link;
+}
+function removeDocumentLink(actor, linkId) {
+  const db2 = getDb();
+  const link = db2.documentLinks.find((l) => l.id === linkId);
+  if (!link) throw new RuleError("That link no longer exists.");
+  const { doc: doc2 } = documentForWrite(actor, link.documentId);
+  db2.documentLinks = db2.documentLinks.filter((l) => l.id !== linkId);
+  logAudit(actor, "document-link", "record", doc2.contentId, `${doc2.title}: removed ${link.label || link.url}`);
+  commit();
+}
+
+// src/services/documents/reviews.ts
+var reviewsOf = (documentId) => getDb().documentReviews.filter((r) => r.documentId === documentId);
+function reviewStateOf(documentId) {
+  const rows = reviewsOf(documentId);
+  if (!rows.length) return "no reviewers";
+  if (rows.some((r) => r.status === "changes_requested")) return "changes_requested";
+  return rows.every((r) => r.status === "approved") ? "approved" : "pending";
+}
+function setDocumentReviewers(actor, documentId, reviewerIds) {
+  const { doc: doc2, project } = documentForWrite(actor, documentId);
+  if (!canManageTeam(actor, project) && !canDecide(actor))
+    throw new RuleError("Only the show producer or the Head of Production chooses the reviewers.");
+  const ids2 = [...new Set(reviewerIds)];
+  if (ids2.length > 10) throw new RuleError("Choose up to 10 reviewers.");
+  for (const id2 of ids2) {
+    requireCrew(id2, "A reviewer");
+    joinProject(actor, id2, project);
+  }
+  const db2 = getDb();
+  const at = nowStamp();
+  db2.documentReviews = db2.documentReviews.filter((r) => r.documentId !== doc2.id || ids2.includes(r.reviewerId));
+  for (const reviewerId of ids2)
+    if (!db2.documentReviews.some((r) => r.documentId === doc2.id && r.reviewerId === reviewerId))
+      db2.documentReviews.push({
+        id: `${doc2.id}|${reviewerId}`,
+        documentId: doc2.id,
+        reviewerId,
+        status: "pending",
+        note: "",
+        decidedAt: null,
+        createdAt: at,
+        updatedAt: at
+      });
+  logAudit(actor, "document-reviewers", "record", doc2.contentId, `${doc2.title}: ${ids2.length} reviewer${ids2.length === 1 ? "" : "s"}`);
+  commit();
+  return reviewsOf(doc2.id);
+}
+function decideDocumentReview(actor, documentId, decision) {
+  const { doc: doc2 } = documentForWrite(actor, documentId);
+  const note = decision.note.trim();
+  if (decision.status === "changes_requested" && !note)
+    throw new RuleError("Write what needs to change. The reason goes back to the writer.");
+  const mine = reviewsOf(doc2.id).filter((r) => r.reviewerId === actor.personId || isHop(actor));
+  if (!reviewsOf(doc2.id).length) throw new RuleError("Name a reviewer first.");
+  if (!mine.length) throw new RuleError("Only a reviewer named on this document, or the Head of Production, can decide it.");
+  const at = nowStamp();
+  for (const r of mine) Object.assign(r, { status: decision.status, note, decidedAt: at, updatedAt: at });
+  logAudit(
+    actor,
+    "document-review",
+    "record",
+    doc2.contentId,
+    `${doc2.title}: ${decision.status === "approved" ? "approved" : `changes requested: ${note}`}`
+  );
+  commit();
+  return reviewsOf(doc2.id);
+}
+var commentsOf = (documentId) => getDb().reviewComments.filter((c) => c.documentId === documentId).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+function addReviewComment(actor, pageId, body) {
+  const page = getDb().documentPages.find((p) => p.id === pageId);
+  if (!page) throw new RuleError("That page no longer exists.");
+  const doc2 = requireDocument(page.documentId);
+  const project = projectForView(actor, doc2.contentId);
+  if (!mayComment(actor, project)) throw new RuleError("You can read this document but not comment on it.");
+  const text2 = body.trim();
+  if (!text2) throw new RuleError("Write the comment first.");
+  const c = {
+    id: localId("RC"),
+    documentId: doc2.id,
+    pageId: page.id,
+    authorId: actor.personId,
+    body: text2.slice(0, 5e3),
+    resolved: false,
+    resolvedBy: null,
+    createdAt: nowStamp()
+  };
+  getDb().reviewComments.push(c);
+  logAudit(actor, "document-comment", "record", doc2.contentId, `${doc2.title}, ${page.title}: ${text2.slice(0, 60)}`);
+  commit();
+  return c;
+}
+function resolveReviewComment(actor, commentId, resolved = true) {
+  const c = getDb().reviewComments.find((x) => x.id === commentId);
+  if (!c) throw new RuleError("That comment no longer exists.");
+  documentForWrite(actor, c.documentId);
+  c.resolved = resolved;
+  c.resolvedBy = resolved ? actor.personId : null;
+  commit();
+  return c;
+}
+
+// src/services/documents/boards.ts
+var MAX_LINE2 = 500;
+var IMAGE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
+var MAX_IMAGE = 2e6;
+function imageOf(value) {
+  if (value === null || value === "") return null;
+  if (STORED_FILE.test(value)) return value;
+  if (IMAGE.test(value) && value.length <= MAX_IMAGE) return value;
+  throw new RuleError("That image could not be stored. Choose a JPEG, PNG or WebP picture.");
+}
+var line = (s2) => (s2 ?? "").trim().slice(0, MAX_LINE2);
+function episodeOf(contentId, episodeId) {
+  if (!episodeId) return null;
+  const ep = getRecord(episodeId);
+  if (!ep?.episode || ep.parentId !== contentId) throw new RuleError("Choose one of this project's episodes.");
+  return episodeId;
+}
+var storyboardsOf = (contentId) => getDb().storyboards.filter((b) => b.contentId === contentId).sort((a, b) => a.position - b.position);
+var framesOf = (storyboardId) => getDb().storyboardFrames.filter((f2) => f2.storyboardId === storyboardId).sort((a, b) => a.position - b.position);
+function boardForWrite(actor, id2) {
+  const b = getDb().storyboards.find((x) => x.id === id2);
+  if (!b) throw new RuleError("That storyboard no longer exists.");
+  projectForWrite2(actor, b.contentId);
+  return b;
+}
+function frameForWrite(actor, id2) {
+  const frame = getDb().storyboardFrames.find((f2) => f2.id === id2);
+  if (!frame) throw new RuleError("That frame no longer exists.");
+  return { frame, board: boardForWrite(actor, frame.storyboardId) };
+}
+function createStoryboard(actor, contentId, input) {
+  projectForWrite2(actor, contentId);
+  const db2 = getDb();
+  const source = input.copyFrom ? db2.storyboards.find((b) => b.id === input.copyFrom) : void 0;
+  if (input.copyFrom) {
+    if (!source) throw new RuleError("The storyboard to start from no longer exists.");
+    projectForView(actor, source.contentId);
+  }
+  const at = nowStamp();
+  const board = {
+    id: localId("SB"),
+    contentId,
+    episodeId: episodeOf(contentId, input.episodeId),
+    name: line(input.name) || (source ? `${source.name} (copy)` : "Storyboard"),
+    position: storyboardsOf(contentId).length,
+    copiedFrom: source?.id ?? null,
+    migrated: false,
+    createdAt: at,
+    updatedAt: at
+  };
+  db2.storyboards.push(board);
+  if (source) for (const f2 of framesOf(source.id)) db2.storyboardFrames.push({ ...f2, id: localId("SF"), storyboardId: board.id });
+  logAudit(actor, "storyboard", "record", contentId, `${board.name}${source ? `, from ${source.name}` : ""}`);
+  commit();
+  return board;
+}
+function renameStoryboard(actor, id2, name) {
+  const b = boardForWrite(actor, id2);
+  b.name = line(name) || b.name;
+  b.updatedAt = nowStamp();
+  commit();
+  return b;
+}
+function applyFrame(f2, edit) {
+  if (edit.scene !== void 0) f2.scene = line(edit.scene).slice(0, 40);
+  if (edit.imagePath !== void 0) f2.imagePath = imageOf(edit.imagePath);
+  if (edit.description !== void 0) f2.description = line(edit.description);
+  if (edit.soundEffects !== void 0) f2.soundEffects = line(edit.soundEffects);
+  if (edit.videoLink !== void 0) {
+    const v = edit.videoLink.trim();
+    if (v && !asWebUrl(v)) throw new RuleError("The video link must be a web link starting with http:// or https://.");
+    f2.videoLink = v ? asWebUrl(v) : "";
+  }
+}
+function addFrame(actor, storyboardId, edit = {}) {
+  const b = boardForWrite(actor, storyboardId);
+  const frames = framesOf(b.id);
+  const frame = {
+    id: localId("SF"),
+    storyboardId: b.id,
+    position: frames.length,
+    scene: frames[frames.length - 1]?.scene ?? "Sc. 1",
+    imagePath: null,
+    description: "",
+    soundEffects: "",
+    videoLink: ""
+  };
+  applyFrame(frame, edit);
+  getDb().storyboardFrames.push(frame);
+  b.updatedAt = nowStamp();
+  commit();
+  return frame;
+}
+function updateFrame(actor, frameId, edit) {
+  const { frame, board } = frameForWrite(actor, frameId);
+  applyFrame(frame, edit);
+  board.updatedAt = nowStamp();
+  commit();
+  return frame;
+}
+function moveFrame(actor, frameId, toIndex) {
+  const { frame, board } = frameForWrite(actor, frameId);
+  moveTo(framesOf(board.id), frame.id, toIndex);
+  commit();
+  return frame;
+}
+function duplicateFrame(actor, frameId) {
+  const { frame, board } = frameForWrite(actor, frameId);
+  const copy = { ...frame, id: localId("SF"), position: frame.position + 0.5 };
+  getDb().storyboardFrames.push(copy);
+  renumber(framesOf(board.id));
+  commit();
+  return copy;
+}
+function deleteFrames(actor, frameIds) {
+  const db2 = getDb();
+  const boards = /* @__PURE__ */ new Set();
+  for (const id2 of frameIds) boards.add(frameForWrite(actor, id2).board.id);
+  db2.storyboardFrames = db2.storyboardFrames.filter((f2) => !frameIds.includes(f2.id));
+  for (const b of boards) renumber(framesOf(b));
+  logAudit(actor, "storyboard", "record", db2.storyboards.find((b) => boards.has(b.id)).contentId, `${frameIds.length} frame(s) deleted`);
+  commit();
+  return frameIds.length;
+}
+function moveFramesTo(actor, frameIds, storyboardId) {
+  const target = boardForWrite(actor, storyboardId);
+  const from = /* @__PURE__ */ new Set();
+  let next2 = framesOf(target.id).length;
+  for (const id2 of frameIds) {
+    const { frame, board } = frameForWrite(actor, id2);
+    if (board.contentId !== target.contentId) throw new RuleError("Frames move only between storyboards of the same project.");
+    from.add(board.id);
+    frame.storyboardId = target.id;
+    frame.position = next2++;
+  }
+  for (const b of from) renumber(framesOf(b));
+  commit();
+  return frameIds.length;
+}
+var shotListsOf = (contentId) => getDb().shotLists.filter((l) => l.contentId === contentId).sort((a, b) => a.position - b.position);
+var rowsOfShotList = (shotListId) => getDb().shotListRows.filter((r) => r.shotListId === shotListId).sort((a, b) => a.position - b.position);
+function shotNumbers(shotListId) {
+  let n = 0;
+  return new Map(rowsOfShotList(shotListId).flatMap((r) => r.rowType === "shot" ? [[r.id, ++n]] : []));
+}
+var estimatedMinutes = (shotListId) => rowsOfShotList(shotListId).reduce((sum, r) => sum + (r.rowType === "shot" && r.estMinutes ? r.estMinutes : 0), 0);
+function listForWrite(actor, id2) {
+  const l = getDb().shotLists.find((x) => x.id === id2);
+  if (!l) throw new RuleError("That shot list no longer exists.");
+  projectForWrite2(actor, l.contentId);
+  return l;
+}
+function rowForWrite(actor, id2) {
+  const row = getDb().shotListRows.find((r) => r.id === id2);
+  if (!row) throw new RuleError("That row no longer exists.");
+  return { row, list: listForWrite(actor, row.shotListId) };
+}
+function createShotList(actor, contentId, input) {
+  projectForWrite2(actor, contentId);
+  const db2 = getDb();
+  const source = input.copyFrom ? db2.shotLists.find((l) => l.id === input.copyFrom) : void 0;
+  if (input.copyFrom) {
+    if (!source) throw new RuleError("The shot list to start from no longer exists.");
+    projectForView(actor, source.contentId);
+  }
+  const at = nowStamp();
+  const list = {
+    id: localId("SL"),
+    contentId,
+    episodeId: episodeOf(contentId, input.episodeId),
+    name: line(input.name) || (source ? `${source.name} (copy)` : "Shot list"),
+    position: shotListsOf(contentId).length,
+    copiedFrom: source?.id ?? null,
+    migrated: false,
+    createdAt: at,
+    updatedAt: at
+  };
+  db2.shotLists.push(list);
+  if (source) for (const r of rowsOfShotList(source.id)) db2.shotListRows.push({ ...r, id: localId("SR"), shotListId: list.id });
+  logAudit(actor, "shot-list", "record", contentId, `${list.name}${source ? `, from ${source.name}` : ""}`);
+  commit();
+  return list;
+}
+function renameShotList(actor, id2, name) {
+  const l = listForWrite(actor, id2);
+  l.name = line(name) || l.name;
+  l.updatedAt = nowStamp();
+  commit();
+  return l;
+}
+function applyRow(r, edit) {
+  if (edit.imagePath !== void 0) r.imagePath = imageOf(edit.imagePath);
+  if (edit.description !== void 0) r.description = line(edit.description);
+  if (edit.shotSize !== void 0) r.shotSize = line(edit.shotSize).slice(0, 60);
+  if (edit.shotType !== void 0) r.shotType = line(edit.shotType).slice(0, 60);
+  if (edit.movement !== void 0) r.movement = line(edit.movement).slice(0, 60);
+  if (edit.estMinutes !== void 0) {
+    const m = edit.estMinutes;
+    if (m !== null && (!Number.isFinite(m) || m < 0 || m > 600)) throw new RuleError("Estimated time is in minutes, from 0 to 600.");
+    r.estMinutes = m === null ? null : Math.round(m * 10) / 10;
+  }
+}
+function addShotRow(actor, shotListId, rowType, edit = {}) {
+  const l = listForWrite(actor, shotListId);
+  if (!["shot", "setup", "banner"].includes(rowType)) throw new RuleError("A row is a shot, a setup or a banner.");
+  const row = {
+    id: localId("SR"),
+    shotListId: l.id,
+    position: rowsOfShotList(l.id).length,
+    rowType,
+    imagePath: null,
+    description: "",
+    shotSize: "",
+    shotType: "",
+    movement: "",
+    estMinutes: null
+  };
+  applyRow(row, edit);
+  getDb().shotListRows.push(row);
+  l.updatedAt = nowStamp();
+  commit();
+  return row;
+}
+function updateShotRow(actor, rowId, edit) {
+  const { row, list } = rowForWrite(actor, rowId);
+  applyRow(row, edit);
+  list.updatedAt = nowStamp();
+  commit();
+  return row;
+}
+function moveShotRow(actor, rowId, toIndex) {
+  const { row, list } = rowForWrite(actor, rowId);
+  moveTo(rowsOfShotList(list.id), row.id, toIndex);
+  list.updatedAt = nowStamp();
+  commit();
+  return row;
+}
+function duplicateShotRow(actor, rowId) {
+  const { row, list } = rowForWrite(actor, rowId);
+  const copy = { ...row, id: localId("SR"), position: row.position + 0.5 };
+  getDb().shotListRows.push(copy);
+  renumber(rowsOfShotList(list.id));
+  list.updatedAt = nowStamp();
+  commit();
+  return copy;
+}
+function deleteShotRows(actor, rowIds) {
+  const db2 = getDb();
+  const lists = /* @__PURE__ */ new Set();
+  for (const id2 of rowIds) lists.add(rowForWrite(actor, id2).list.id);
+  db2.shotListRows = db2.shotListRows.filter((r) => !rowIds.includes(r.id));
+  const at = nowStamp();
+  for (const l of db2.shotLists.filter((x) => lists.has(x.id))) {
+    renumber(rowsOfShotList(l.id));
+    l.updatedAt = at;
+  }
+  logAudit(actor, "shot-list", "record", db2.shotLists.find((l) => lists.has(l.id)).contentId, `${rowIds.length} row(s) deleted`);
+  commit();
+  return rowIds.length;
+}
+
+// src/services/documents/devotions.ts
+function makeDevotionEpisodes(actor, projectId) {
+  const p = projectForWrite2(actor, projectId);
+  if (p.workflow.formType !== "devotion") throw new RuleError("Only a devotion makes its episodes from its script.");
+  if (p.workflow.stage !== "Pre-production") throw new RuleError("The episodes are listed in Pre-production, once the script is accepted.");
+  const script = documentOf(projectId, "Development", "devotional_script");
+  const pages = script ? pagesOf(script.id).filter((pg) => pg.title.trim() || textOf(pg.bodyHtml)) : [];
+  if (!pages.length) throw new RuleError("The Devotional Script has no devotions written yet.");
+  const db2 = getDb();
+  const theme = String(formOf(projectId).sections.entry?.theme ?? "");
+  const out = { made: [], updated: [], episodes: [] };
+  const at = nowStamp();
+  let reserved = 0;
+  for (const page of pages) {
+    let planned = db2.plannedEpisodes.find((x) => x.contentId === projectId && x.sourcePageId === page.id);
+    const title2 = page.title.trim() || `Devotion ${pages.indexOf(page) + 1}`;
+    if (!planned) {
+      const { id: id2, n } = nextPlanned(projectId);
+      const made = {
+        id: id2,
+        contentId: projectId,
+        episodeNumber: n,
+        workingTitle: title2,
+        question: theme,
+        guest: String(formOf(projectId).sections.guest?.name ?? ""),
+        notes: "",
+        details: { scripture: page.subtitle },
+        reservedId: null,
+        sourcePageId: page.id,
+        createdAt: at,
+        updatedAt: at,
+        archivedAt: null,
+        archivedReason: null
+      };
+      db2.plannedEpisodes.push(made);
+      planned = made;
+      out.made.push(id2);
+    } else if (planned.workingTitle !== title2 || planned.details.scripture !== page.subtitle) {
+      planned.workingTitle = title2;
+      planned.details = { ...planned.details, scripture: page.subtitle };
+      planned.updatedAt = at;
+      out.updated.push(planned.id);
+    }
+    const recorded = db2.records.find((r) => r.episode?.plannedEpisodeId === planned.id && !r.archived);
+    if (!planned.reservedId && !recorded) {
+      planned.reservedId = nextEpisode(projectId).id;
+      reserved++;
+    }
+    out.episodes.push({ plannedId: planned.id, contentId: recorded?.contentId ?? planned.reservedId, title: title2 });
+  }
+  if (out.made.length || out.updated.length || reserved) {
+    logAudit(actor, "devotion-episodes", "record", projectId, `${out.made.length} listed, ${out.updated.length} updated from the script`);
+    commit();
+  }
+  return out;
+}
+
 // src/services/reminders.ts
 var reminders_exports = {};
 __export(reminders_exports, {
@@ -8040,7 +9049,6 @@ function projectItem(p, stage, step, ownerId, gate) {
     done: false,
     gate,
     callSheetId: null,
-    lateSessions: 0,
     open: { n: "record", id: p.contentId }
   };
 }
@@ -8061,11 +9069,10 @@ function sessionItem(p, s2, gates) {
     waitingOn: s2.status === "Closed" ? [] : waiting(ownerId, []),
     due: s2.scheduledDate,
     start: dateOf(s2.createdAt),
-    overdue: sessionOverdue(s2),
+    overdue: false,
     done: s2.status === "Closed",
     gate: !gates || s2.status === "Closed" ? null : evaluateGate(s2.status === "Planned" ? "Pre-production" : "Production", "session", s2.id),
     callSheetId: s2.callSheetId && getDb().callSheets.some((c) => c.id === s2.callSheetId) ? s2.callSheetId : null,
-    lateSessions: 0,
     open: { n: "session", id: s2.id }
   };
 }
@@ -8101,7 +9108,6 @@ function episodeItem(p, ep, gates) {
     done: published,
     gate,
     callSheetId: null,
-    lateSessions: 0,
     open: { n: "record", id: ep.contentId }
   };
 }
@@ -8141,8 +9147,6 @@ function itemsOf(p, gates) {
         );
     }
   }
-  const late = sessions.filter((s2) => s2.status === "Planned" && sessionOverdue(s2)).length;
-  for (const i of items) i.lateSessions = late;
   for (const s2 of sessions) items.push(sessionItem(p, s2, gates));
   for (const ep of episodes) items.push(episodeItem(p, ep, gates));
   return items;
@@ -8150,7 +9154,7 @@ function itemsOf(p, gates) {
 var nextSession2 = (planned) => {
   const s2 = planned[0];
   const more = planned.length > 1 ? `, and ${planned.length - 1} more` : "";
-  const when = s2.scheduledDate ? ` on ${fmtShort(s2.scheduledDate)}${sessionOverdue(s2) ? ", now past" : ""}` : ", no date yet";
+  const when = s2.scheduledDate ? ` on ${fmtShort(s2.scheduledDate)}` : ", no date yet";
   return `Next: session ${s2.sessionNumber}${when}${more}`;
 };
 var byDue = (a, b) => (a.due ?? "9999").localeCompare(b.due ?? "9999") || a.key.localeCompare(b.key);
@@ -8164,13 +9168,13 @@ function workflowReminders(personId, asOf, add) {
   for (const item2 of allWorkItems()) {
     if (item2.done) continue;
     const base = { contentId: item2.level === "session" ? item2.project.contentId : item2.id, category: item2.category, time: null };
-    for (const review of item2.reviews) {
-      if (!review.reviewerIds.includes(personId)) continue;
+    for (const review2 of item2.reviews) {
+      if (!review2.reviewerIds.includes(personId)) continue;
       add({
         ...base,
-        key: `review:${review.checkpointId}`,
+        key: `review:${review2.checkpointId}`,
         kind: "review",
-        title: `${item2.level === "episode" ? `${item2.context}, ${item2.title}` : item2.title}: ${review.label} waiting for you`,
+        title: `${item2.level === "episode" ? `${item2.context}, ${item2.title}` : item2.title}: ${review2.label} waiting for you`,
         detail: `${item2.id}. Approve it, or send it back with what needs to change.`,
         date: item2.level === "episode" && item2.due ? item2.due : asOf
       });
@@ -8187,13 +9191,13 @@ function workflowReminders(personId, asOf, add) {
       });
     if (item2.level === "session") {
       const sheet = sheets.find((c) => c.id === getDb().recordingSessions.find((s2) => s2.id === item2.id)?.callSheetId);
-      if (item2.due >= asOf && sheet?.crewPersonIds.includes(personId)) continue;
+      if (item2.due < asOf || sheet?.crewPersonIds.includes(personId)) continue;
       add({
         ...base,
         key: `session:${item2.id}`,
         kind: "session",
-        title: `${item2.context}: ${item2.title.toLowerCase()} ${item2.overdue ? "not closed" : "recording"}`,
-        detail: `${item2.id}. ${item2.overdue ? "Its date has passed: close it, or move it to a new date." : item2.step}.`,
+        title: `${item2.context}: ${item2.title.toLowerCase()} recording`,
+        detail: `${item2.id}. ${item2.step}.`,
         date: item2.due,
         sessionId: item2.id
       });
@@ -8304,7 +9308,7 @@ function workflowDueSoon(personId, leadHours = getDb().settings.stageReminderHou
 }
 function messageFor(person2, rems) {
   const first = person2.name.split(" ")[0];
-  const line2 = (r) => `${r.overdue ? "LATE, was " : ""}${fmtShort(r.date)}${r.time ? ` ${r.time}` : ""}: ${r.title}`;
+  const line3 = (r) => `${r.overdue ? "LATE, was " : ""}${fmtShort(r.date)}${r.time ? ` ${r.time}` : ""}: ${r.title}`;
   const n = rems.length;
   return {
     subject: `Dawn of Faith: ${n} thing${n === 1 ? "" : "s"} coming up`,
@@ -8312,12 +9316,12 @@ function messageFor(person2, rems) {
 
 These are coming up for you:
 
-${rems.map((r) => `- ${line2(r)}`).join("\n")}
+${rems.map((r) => `- ${line3(r)}`).join("\n")}
 
 Open the Production Hub for the details.
 
 Dawn of Faith Production Hub`,
-    text: `Dawn of Faith: ${rems.slice(0, 4).map(line2).join("; ")}${n > 4 ? `; and ${n - 4} more` : ""}. Details in the Production Hub.`
+    text: `Dawn of Faith: ${rems.slice(0, 4).map(line3).join("; ")}${n > 4 ? `; and ${n - 4} more` : ""}. Details in the Production Hub.`
   };
 }
 var mailtoLink = (person2, m) => `mailto:${encodeURIComponent(person2.email)}?subject=${encodeURIComponent(m.subject)}&body=${encodeURIComponent(m.email)}`;
@@ -8435,9 +9439,9 @@ function updateWorkspaceAppearance(actor, input) {
   logAudit(actor, "settings", "settings", "appearance", Object.keys(patch).join(", "));
   commit();
 }
-function changePassword2(actor, current2, next2) {
+function changePassword2(actor, current3, next2) {
   const u = getDb().users.find((x) => x.personId === actor.personId);
-  if (!u || u.password !== current2) throw new RuleError("Your current password is not correct.");
+  if (!u || u.password !== current3) throw new RuleError("Your current password is not correct.");
   if (next2.length < 4) throw new RuleError("New password must be at least 4 characters.");
   u.password = next2;
   logAudit(actor, "change-password", "person", actor.personId);
@@ -8602,8 +9606,8 @@ function moveAllocation(actor, id2, contentId) {
   if (a.contentId === contentId) throw new RuleError("This entry is already attached here.");
   const target = getRecord(contentId);
   if (!target) throw new RuleError("Project not found.");
-  const current2 = a.contentId ? getRecord(a.contentId) : null;
-  if (!canWrite(actor, target) || (current2 ? !canWrite(actor, current2) : !isHop(actor)))
+  const current3 = a.contentId ? getRecord(a.contentId) : null;
+  if (!canWrite(actor, target) || (current3 ? !canWrite(actor, current3) : !isHop(actor)))
     throw new RuleError("You are not attached to both projects.");
   const from = a.contentId ?? a.label;
   a.contentId = contentId;
@@ -8856,7 +9860,6 @@ __export(workflow_exports, {
   saveFormSection: () => saveFormSection,
   sendForReview: () => sendForReview,
   sendToPostProduction: () => sendToPostProduction,
-  sessionOverdue: () => sessionOverdue,
   sessionsOf: () => sessionsOf,
   setChecklistItem: () => setChecklistItem,
   setCheckpointReviewers: () => setCheckpointReviewers,
@@ -8880,11 +9883,11 @@ __export(workflow_exports, {
 var PLANNED_EDITABLE = ["workingTitle", "question", "guest", "notes", "details"];
 function checkDetails(projectId, details) {
   if (!details) return {};
-  const form = formOf(projectId);
-  const parsed = plannedDetailsSchema(form.formType).safeParse(details);
+  const form2 = formOf(projectId);
+  const parsed = plannedDetailsSchema(form2.formType).safeParse(details);
   if (!parsed.success)
     throw new RuleError(
-      explain(parsed.error, (k) => plannedSectionOf(form.formType)?.planned?.details.find((d) => d.key === k)?.label ?? k)
+      explain(parsed.error, (k) => plannedSectionOf(form2.formType)?.planned?.details.find((d) => d.key === k)?.label ?? k)
     );
   return Object.fromEntries(
     Object.entries(parsed.data).filter((e) => e[1] !== void 0)
@@ -8913,7 +9916,8 @@ function addPlannedEpisode(actor, projectId, input) {
     updatedAt: at,
     archivedAt: null,
     archivedReason: null,
-    reservedId: null
+    reservedId: null,
+    sourcePageId: null
   };
   getDb().plannedEpisodes.push(p);
   refreshProjectStatus(project);
@@ -9066,7 +10070,10 @@ function setCheckpointReviewers(actor, checkpointId, reviewerIds) {
     throw new RuleError("Only the show producer or the Head of Production can choose who reviews.");
   const ids2 = [...new Set(reviewerIds)];
   if (ids2.length > 10) throw new RuleError("Choose up to 10 reviewers.");
-  for (const id2 of ids2) requireCrew(id2, "A reviewer");
+  for (const id2 of ids2) {
+    requireCrew(id2, "A reviewer");
+    joinProject(actor, id2, p);
+  }
   c.reviewerIds = ids2;
   c.updatedAt = nowStamp();
   logAudit(actor, "checkpoint-reviewers", "record", c.episodeId ?? c.contentId, `${c.checkpoint}: ${ids2.join(", ") || "none"}`);
@@ -9438,6 +10445,7 @@ function closeSession(actor, sessionId) {
         }
         const p = planned.get(row.plannedEpisodeId);
         const waiting2 = p.reservedId ? db2.records.find((r) => r.contentId === p.reservedId && (!r.episode || r.archived && r.episode.plannedEpisodeId === p.id)) : void 0;
+        const given = p.reservedId && !db2.records.some((r) => r.contentId === p.reservedId) ? p.reservedId : void 0;
         const ep = makeEpisode(
           actor,
           project,
@@ -9448,7 +10456,7 @@ function closeSession(actor, sessionId) {
             productionNotes: row.notesForPost,
             scheduledDate: row.logDate
           },
-          waiting2
+          waiting2 ?? given
         );
         made.push(ep.contentId);
       } else if (existing && existing.episode?.sourceSessionId === sessionId) {
@@ -9644,6 +10652,36 @@ var RPC_NAMES = {
     "restoreRevision",
     "saveDoc"
   ],
+  "documents": [
+    "addDocumentLink",
+    "addFrame",
+    "addPage",
+    "addReviewComment",
+    "addShotRow",
+    "archivePage",
+    "createShotList",
+    "createStoryboard",
+    "decideDocumentReview",
+    "deleteFrames",
+    "deleteShotRows",
+    "duplicateFrame",
+    "duplicateShotRow",
+    "ensureDocument",
+    "makeDevotionEpisodes",
+    "moveFrame",
+    "moveFramesTo",
+    "movePage",
+    "moveShotRow",
+    "removeDocumentLink",
+    "renameShotList",
+    "renameStoryboard",
+    "resolveReviewComment",
+    "restorePage",
+    "savePage",
+    "setDocumentReviewers",
+    "updateFrame",
+    "updateShotRow"
+  ],
   "equipment": [
     "addAttachment",
     "addGearToSheet",
@@ -9792,7 +10830,7 @@ var condition = enumOf(CONDITIONS);
 var capability = enumOf(ALL_CAPABILITIES);
 var staffCategory = z2.enum(["CRW", "VOL", "PTR"]);
 var photo = z2.object({ url, caption: short(500).optional() });
-var line = z2.object({ equipmentId: id, quantity: count(1e5) });
+var line2 = z2.object({ equipmentId: id, quantity: count(1e5) });
 var args = (required, optional = []) => ({ required, optional });
 var InvalidArgs = class extends Error {
 };
@@ -9855,6 +10893,18 @@ var runSheetItem = z2.object({
 });
 var logFields = { itemLabel: short(), guest: short(), status: logStatus.nullable(), notesForPost: text() };
 var webLink = z2.string().max(2048);
+var workflowStage = z2.enum(["Development", "Pre-production", "Production", "Post production", "Marketing and distribution"]);
+var image = z2.string().max(2e6).nullable();
+var newBoard = z2.object({ name: short(500), episodeId: id.nullable().optional(), copyFrom: id.nullable().optional() });
+var frameEdit = z2.object({ scene: short(40), imagePath: image, description: short(500), soundEffects: short(500), videoLink: webLink }).partial();
+var rowEdit = z2.object({
+  imagePath: image,
+  description: short(500),
+  shotSize: short(60),
+  shotType: short(60),
+  movement: short(60),
+  estMinutes: z2.number().min(0).max(600).nullable()
+}).partial();
 var distribution = z2.object({
   platform: short(100),
   status: z2.enum(["Planned", "Scheduled", "Published"]),
@@ -10073,12 +11123,12 @@ var ACTIONS = {
       destination: z2.enum(["studio", "outside"]),
       status: z2.enum(["assigned", "checked-out"]),
       responsiblePersonId: ref.optional(),
-      lines: z2.array(line).max(500),
+      lines: z2.array(line2).max(500),
       notes: text(5e3).optional(),
       callSheetId: ref.nullable().optional()
     })
   ]),
-  "equipment.addLines": args([id, z2.array(line).max(500)]),
+  "equipment.addLines": args([id, z2.array(line2).max(500)]),
   "equipment.removeLine": args([id, id]),
   "equipment.markGoneOut": args(
     [id],
@@ -10107,7 +11157,7 @@ var ACTIONS = {
   ]),
   "equipment.attachManifest": args([id, id]),
   "equipment.releaseManifest": args([id]),
-  "equipment.addGearToSheet": args([z2.object({ id, contentId: id, date }), z2.array(line).max(500)]),
+  "equipment.addGearToSheet": args([z2.object({ id, contentId: id, date }), z2.array(line2).max(500)]),
   "equipment.removeGearFromSheet": args([id, id]),
   // People
   "people.createPerson": args([
@@ -10257,7 +11307,41 @@ var ACTIONS = {
   "workflow.setLearningNotes": args([id, text()]),
   // Share links. A link with a token is made by POST /api/share-links, never by an action.
   "workflow.copyShareLink": args([id], [short(500)]),
-  "workflow.revokeShareLink": args([id])
+  "workflow.revokeShareLink": args([id]),
+  // ── Project documents, storyboards and shot lists (src/services/documents.ts) ──
+  "documents.ensureDocument": args([id, workflowStage, short(60)], [compound.nullable()]),
+  "documents.addPage": args([compound], [z2.object({ title: short(300), subtitle: short(300), afterPageId: id.nullable() }).partial()]),
+  // A page body can be long; the service refuses anything over its limit (MAX_PAGE_HTML) with a clear message.
+  "documents.savePage": args([
+    id,
+    z2.object({ title: short(300), subtitle: short(300), bodyHtml: z2.string().max(45e4) }).partial(),
+    version
+  ]),
+  "documents.movePage": args([id, count(1e4)]),
+  "documents.archivePage": args([id]),
+  "documents.restorePage": args([id]),
+  "documents.addDocumentLink": args([compound, webLink, short(300)]),
+  "documents.removeDocumentLink": args([id]),
+  "documents.setDocumentReviewers": args([compound, ids(10)]),
+  "documents.decideDocumentReview": args([compound, z2.object({ status: z2.enum(["approved", "changes_requested"]), note: text(5e3) })]),
+  "documents.addReviewComment": args([id, text(5e3)]),
+  "documents.resolveReviewComment": args([id], [z2.boolean()]),
+  "documents.createStoryboard": args([id, newBoard]),
+  "documents.renameStoryboard": args([id, short(500)]),
+  "documents.addFrame": args([id], [frameEdit]),
+  "documents.updateFrame": args([id, frameEdit]),
+  "documents.moveFrame": args([id, count(1e4)]),
+  "documents.duplicateFrame": args([id]),
+  "documents.deleteFrames": args([ids(500)]),
+  "documents.moveFramesTo": args([ids(500), id]),
+  "documents.createShotList": args([id, newBoard]),
+  "documents.renameShotList": args([id, short(500)]),
+  "documents.addShotRow": args([id, z2.enum(["shot", "setup", "banner"])], [rowEdit]),
+  "documents.updateShotRow": args([id, rowEdit]),
+  "documents.moveShotRow": args([id, count(1e4)]),
+  "documents.duplicateShotRow": args([id]),
+  "documents.deleteShotRows": args([ids(500)]),
+  "documents.makeDevotionEpisodes": args([id])
 };
 
 // server/registry.ts
@@ -10265,6 +11349,7 @@ var modules = {
   callsheets: callsheets_exports,
   content: content_exports,
   docs: docs_exports,
+  documents: documents_exports,
   equipment: equipment_exports,
   people: people_exports,
   permissions: permissions_exports,
@@ -10406,7 +11491,7 @@ async function finishLink(store2, who, origin, code, state) {
       400,
       "Google did not allow the app to stay linked. Remove the app at myaccount.google.com/permissions and try again."
     );
-  const doc = {
+  const doc2 = {
     _id: who.user._id,
     email: claims.email,
     sub: claims.sub,
@@ -10414,8 +11499,8 @@ async function finishLink(store2, who, origin, code, state) {
     refresh: encrypt(tok.refresh_token),
     linkedAt: (/* @__PURE__ */ new Date()).toISOString()
   };
-  await store2.google.put(doc);
-  return doc;
+  await store2.google.put(doc2);
+  return doc2;
 }
 async function unlink(store2, who) {
   const d = await store2.google.get(who.user._id);
@@ -10716,7 +11801,7 @@ function migrateToWorkflow(db2, options) {
   const listed = /* @__PURE__ */ new Set();
   let changed = false;
   const report = { lines, followUps, unexplained: [], counts: [], changed: false, series: [], documentaries: [] };
-  const line2 = (r, outcome2, beforeText, after2, note = "") => {
+  const line3 = (r, outcome2, beforeText, after2, note = "") => {
     if (listed.has(r.contentId)) return;
     listed.add(r.contentId);
     lines.push({ contentId: r.contentId, title: r.title, category: r.category, outcome: outcome2, before: beforeText, after: after2, note });
@@ -10774,7 +11859,7 @@ function migrateToWorkflow(db2, options) {
     };
     db2.reviewCheckpoints.push(c);
   };
-  const form = (p, formType2, greenlit, sections = {}) => {
+  const form2 = (p, formType2, greenlit, sections = {}) => {
     const dof = formType2 === "documentary_dof";
     const notes = `Greenlit before the new workflow (moved across on ${fmtShort(today)}).`;
     const f2 = {
@@ -10805,6 +11890,7 @@ function migrateToWorkflow(db2, options) {
       notes,
       details: {},
       reservedId,
+      sourcePageId: null,
       createdAt: at,
       updatedAt: at,
       archivedAt: null,
@@ -10828,9 +11914,9 @@ function migrateToWorkflow(db2, options) {
     changed = true;
   };
   const episode = (r, projectId, n, plannedId, oldStage, src) => {
-    const review = latestLink(src, "review");
+    const review2 = latestLink(src, "review");
     const delivered = oldStage === "Delivered";
-    const inReview = oldStage === "Review" && !!review;
+    const inReview = oldStage === "Review" && !!review2;
     const info = {
       episodeNumber: n,
       plannedEpisodeId: plannedId,
@@ -10842,7 +11928,7 @@ function migrateToWorkflow(db2, options) {
       finalReviewStatus: delivered ? "Done" : "Pending",
       editorId: ownerOf(src, "Editorial", "Editor"),
       readyForReview: oldStage === "Review",
-      reviewLink: review,
+      reviewLink: review2,
       finalFileLink: latestLink(src, "final"),
       sendBackReason: null,
       mdStage: delivered && src.stageOutputs.Delivered ? "Published" : "Release plan",
@@ -10870,7 +11956,7 @@ function migrateToWorkflow(db2, options) {
     changed = true;
     const after2 = delivered ? `Episode in Marketing and distribution: ${info.mdStage}` : `Episode in Post production: ${info.postStage}`;
     const note = [
-      oldStage === "Review" && !review ? "It had no web review link, so it waits in Editing, marked ready: attach the link and send it for review." : "",
+      oldStage === "Review" && !review2 ? "It had no web review link, so it waits in Editing, marked ready: attach the link and send it for review." : "",
       delivered && info.mdStage === "Release plan" ? "Its delivery was not confirmed, so it is at its release plan." : ""
     ].filter(Boolean).join(" ");
     return { info, after: after2, note };
@@ -10882,15 +11968,15 @@ function migrateToWorkflow(db2, options) {
     const label = SERIES_TYPES.find((t2) => t2.key === type).label;
     const all = [series, ...childrenOf(series.contentId).flatMap((s2) => [s2, ...childrenOf(s2.contentId)])];
     if (series.archived) {
-      for (const r of all) line2(r, "unchanged", "Archived before the move", "Left as it is", "Archived records are not moved.");
+      for (const r of all) line3(r, "unchanged", "Archived before the move", "Left as it is", "Archived records are not moved.");
       continue;
     }
-    if (series.seriesType) line2(series, "unchanged", `Series: ${label}`, "Already in the new workflow");
+    if (series.seriesType) line3(series, "unchanged", `Series: ${label}`, "Already in the new workflow");
     else {
       series.seriesType = type;
       series.version += 1;
       changed = true;
-      line2(series, "moved", "Series", `Series: ${label}`, chosen ? "" : "Podcast, unless another type is chosen before moving.");
+      line3(series, "moved", "Series", `Series: ${label}`, chosen ? "" : "Podcast, unless another type is chosen before moving.");
     }
     for (const season of childrenOf(series.contentId)) migrateSeason(season, type);
   }
@@ -10898,19 +11984,19 @@ function migrateToWorkflow(db2, options) {
     const kids = childrenOf(season.contentId);
     if (season.archived) {
       for (const r of [season, ...kids])
-        line2(r, "unchanged", "Archived before the move", "Left as it is", "Archived records are not moved.");
+        line3(r, "unchanged", "Archived before the move", "Left as it is", "Archived records are not moved.");
       return;
     }
     if (season.workflow) {
-      line2(season, "unchanged", `Season: ${season.workflow.stage}`, "Already in the new workflow");
+      line3(season, "unchanged", `Season: ${season.workflow.stage}`, "Already in the new workflow");
       for (const e of kids) {
         const waits = reserved.get(e.contentId);
-        if (e.episode) line2(e, "unchanged", "Episode", "Already in the new workflow");
+        if (e.episode) line3(e, "unchanged", "Episode", "Already in the new workflow");
         else if (waits)
-          line2(e, "unchanged", "Waiting to be recorded", `Planned episode ${waits.id}`, `It keeps ${e.contentId} when recorded.`);
-        else if (e.archived) line2(e, "unchanged", "Archived before the move", "Left as it is", "Archived records are not moved.");
+          line3(e, "unchanged", "Waiting to be recorded", `Planned episode ${waits.id}`, `It keeps ${e.contentId} when recorded.`);
+        else if (e.archived) line3(e, "unchanged", "Archived before the move", "Left as it is", "Archived records are not moved.");
         else
-          line2(
+          line3(
             e,
             "flagged",
             `Episode at ${e.pipelineStage ?? "no stage"}`,
@@ -10922,11 +12008,11 @@ function migrateToWorkflow(db2, options) {
     }
     const live = kids.filter((e) => !e.archived);
     for (const e of kids.filter((x) => x.archived))
-      line2(e, "unchanged", "Archived before the move", "Left as it is", "Archived records are not moved.");
+      line3(e, "unchanged", "Archived before the move", "Left as it is", "Archived records are not moved.");
     const known = [...NOT_RECORDED, ...POST, "Delivered"];
     const unknown = live.filter((e) => !e.pipelineStage || !known.includes(e.pipelineStage));
     for (const e of unknown)
-      line2(
+      line3(
         e,
         "flagged",
         `Episode at ${e.pipelineStage ?? "no stage"}`,
@@ -10939,7 +12025,7 @@ function migrateToWorkflow(db2, options) {
       (e) => e.pipelineStage === "Recording" || POST.includes(e.pipelineStage) || e.pipelineStage === "Delivered"
     );
     project(season, type, pastDevelopment ? "Pre-production" : "Development", null);
-    form(season, type, pastDevelopment ? 1 : 0);
+    form2(season, type, pastDevelopment ? 1 : 0);
     checkpoint2(season.contentId, null, "pitch", pastDevelopment, []);
     checkpoint2(season.contentId, null, "outline_script", pastDevelopment, []);
     checklist("handoff", "project", season.contentId, () => pastDevelopment);
@@ -11010,7 +12096,7 @@ function migrateToWorkflow(db2, options) {
           };
           db2.sessionLogEntries.push(row);
         }
-        line2(
+        line3(
           e,
           "moved",
           `Episode at ${stage}`,
@@ -11020,14 +12106,14 @@ function migrateToWorkflow(db2, options) {
       } else {
         const p = planned(season, ++planNo, e.title, null, `${MOVED_NOTE} Made as ${e.contentId}.`, guests);
         const made2 = episode(e, season.contentId, numbers.get(e.contentId), p.id, stage, e);
-        line2(e, "moved", `Episode at ${stage}`, made2.after, made2.note);
+        line3(e, "moved", `Episode at ${stage}`, made2.after, made2.note);
       }
     }
     const made = db2.records.filter((r) => r.parentId === season.contentId && r.episode && !r.archived);
     const plans = db2.plannedEpisodes.filter((p) => p.contentId === season.contentId && !p.archivedAt);
     if (pastDevelopment && plans.length && plans.every((p) => made.some((r) => r.episode.plannedEpisodeId === p.id && r.episode.mdStage === "Published")))
       season.workflow.status = "Completed";
-    line2(
+    line3(
       season,
       "moved",
       "Season",
@@ -11049,11 +12135,11 @@ function migrateToWorkflow(db2, options) {
   for (const d of scope.filter((r) => r.category === "devotional").sort(byNumber)) {
     const stage = d.pipelineStage ?? "";
     if (d.workflow) {
-      line2(d, "unchanged", `Devotion: ${d.workflow.stage}`, "Already in the new workflow");
+      line3(d, "unchanged", `Devotion: ${d.workflow.stage}`, "Already in the new workflow");
       continue;
     }
     if (d.archived) {
-      line2(d, "unchanged", "Archived before the move", "Left as it is", "Archived records are not moved.");
+      line3(d, "unchanged", "Archived before the move", "Left as it is", "Archived records are not moved.");
       continue;
     }
     const reviewed = d.reviewApprovedAt ? `Theological review approved by ${d.reviewerName || "the reviewer"} on ${fmtShort(d.reviewApprovedAt.slice(0, 10))}, before the new workflow.` : "";
@@ -11071,18 +12157,18 @@ function migrateToWorkflow(db2, options) {
       d.workflow.status = "Closed";
       d.archived = true;
       d.closedReason = reason;
-      form(d, "devotion", 0, sections);
+      form2(d, "devotion", 0, sections);
       checkpoint2(d.contentId, null, "pitch", false, []);
       checkpoint2(d.contentId, null, "outline_script", false, []);
-      line2(d, "moved", "Devotional: Closed", "Devotion, closed and archived", `Reason kept: ${reason}`);
+      line3(d, "moved", "Devotional: Closed", "Devotion, closed and archived", `Reason kept: ${reason}`);
     } else if (stage === "Creation" || stage === "Guest") {
       project(d, "devotion", "Development", null);
-      form(d, "devotion", 0, sections);
+      form2(d, "devotion", 0, sections);
       checkpoint2(d.contentId, null, "pitch", !!d.reviewApprovedAt, [], reviewed);
       checkpoint2(d.contentId, null, "outline_script", !!d.reviewApprovedAt, [], reviewed);
       checklist("handoff", "project", d.contentId, () => false);
       days();
-      line2(
+      line3(
         d,
         "moved",
         `Devotional at ${stage}`,
@@ -11093,13 +12179,13 @@ function migrateToWorkflow(db2, options) {
     } else if (stage === "Prep/Scripting") {
       const producer = ownerOf(d, "Creation");
       project(d, "devotion", "Pre-production", producer);
-      form(d, "devotion", 1, sections);
+      form2(d, "devotion", 1, sections);
       checkpoint2(d.contentId, null, "pitch", true, [], reviewed);
       checkpoint2(d.contentId, null, "outline_script", true, [], reviewed);
       checklist("handoff", "project", d.contentId, () => true);
       checklist("preProject", "project", d.contentId, () => false);
       days();
-      line2(
+      line3(
         d,
         "moved",
         "Devotional at Prep/Scripting",
@@ -11110,7 +12196,7 @@ function migrateToWorkflow(db2, options) {
         `${titleOf(d)}: ${producer ? "" : "name the show producer, "}assign the roles, fill in the five days, and schedule its recording session.`
       );
     } else if (["Recording", "Editing", "Review", "Published"].includes(stage)) {
-      line2(
+      line3(
         d,
         "flagged",
         `Devotional at ${stage}`,
@@ -11118,7 +12204,7 @@ function migrateToWorkflow(db2, options) {
         "It was recorded as one item, so there is no per-day data to make its five episodes from. It keeps working as before; decide by hand."
       );
     } else
-      line2(
+      line3(
         d,
         "flagged",
         `Devotional at ${stage || "no stage"}`,
@@ -11126,55 +12212,55 @@ function migrateToWorkflow(db2, options) {
         "Its stage is not one the move knows. Move it by hand."
       );
   }
-  for (const doc of scope.filter((r) => r.category === "documentary" && r.hierarchyLevel === 0).sort(byNumber)) {
-    const chosen = options.documentaryForms?.[doc.contentId];
-    const formType2 = doc.workflow?.formType ?? chosen ?? "documentary_dof";
-    report.documentaries.push({ contentId: doc.contentId, title: doc.title, form: formType2, chosen: !!chosen || !!doc.workflow });
-    const kids = childrenOf(doc.contentId);
-    if (doc.workflow) {
-      line2(doc, "unchanged", `Documentary: ${doc.workflow.stage}`, "Already in the new workflow");
-      for (const k of kids) line2(k, "unchanged", "Episode", k.episode ? "Already in the new workflow" : "Left as it is");
+  for (const doc2 of scope.filter((r) => r.category === "documentary" && r.hierarchyLevel === 0).sort(byNumber)) {
+    const chosen = options.documentaryForms?.[doc2.contentId];
+    const formType2 = doc2.workflow?.formType ?? chosen ?? "documentary_dof";
+    report.documentaries.push({ contentId: doc2.contentId, title: doc2.title, form: formType2, chosen: !!chosen || !!doc2.workflow });
+    const kids = childrenOf(doc2.contentId);
+    if (doc2.workflow) {
+      line3(doc2, "unchanged", `Documentary: ${doc2.workflow.stage}`, "Already in the new workflow");
+      for (const k of kids) line3(k, "unchanged", "Episode", k.episode ? "Already in the new workflow" : "Left as it is");
       continue;
     }
-    if (doc.archived) {
-      for (const r of [doc, ...kids]) line2(r, "unchanged", "Archived before the move", "Left as it is", "Archived records are not moved.");
+    if (doc2.archived) {
+      for (const r of [doc2, ...kids]) line3(r, "unchanged", "Archived before the move", "Left as it is", "Archived records are not moved.");
       continue;
     }
-    const stage = doc.pipelineStage ?? "";
+    const stage = doc2.pipelineStage ?? "";
     const label = formTypeOf(formType2).label;
     const dof = formType2 === "documentary_dof";
     if (stage === "Idea" || stage === "Research") {
-      project(doc, formType2, "Development", null);
-      form(doc, formType2, 0);
-      checkpoint2(doc.contentId, null, "pitch", false, []);
-      checkpoint2(doc.contentId, null, "outline_script", false, []);
-      checklist("handoff", "project", doc.contentId, () => false);
-      line2(
-        doc,
+      project(doc2, formType2, "Development", null);
+      form2(doc2, formType2, 0);
+      checkpoint2(doc2.contentId, null, "pitch", false, []);
+      checkpoint2(doc2.contentId, null, "outline_script", false, []);
+      checklist("handoff", "project", doc2.contentId, () => false);
+      line3(
+        doc2,
         "moved",
         `Documentary at ${stage}`,
         `${label} project in Development`,
         chosen ? "" : "DOF-made, unless pitched by others is chosen before moving."
       );
-      followUps.push(`${titleOf(doc)}: fill in the development form, then greenlight it.`);
+      followUps.push(`${titleOf(doc2)}: fill in the development form, then greenlight it.`);
     } else if (stage === "Pre-production" || stage === "Shooting" || POST.includes(stage) || stage === "Delivered") {
       const shot = stage !== "Pre-production";
-      project(doc, formType2, "Pre-production", null);
-      form(doc, formType2, dof ? shot ? 2 : 1 : 1);
-      checkpoint2(doc.contentId, null, "pitch", true, []);
-      checkpoint2(doc.contentId, null, "outline_script", true, []);
-      checklist("handoff", "project", doc.contentId, () => true);
-      checklist("preProject", "project", doc.contentId, () => shot);
+      project(doc2, formType2, "Pre-production", null);
+      form2(doc2, formType2, dof ? shot ? 2 : 1 : 1);
+      checkpoint2(doc2.contentId, null, "pitch", true, []);
+      checkpoint2(doc2.contentId, null, "outline_script", true, []);
+      checklist("handoff", "project", doc2.contentId, () => true);
+      checklist("preProject", "project", doc2.contentId, () => shot);
       let after2 = `${label} project in Pre-production`;
       let note = dof && !shot ? "Its second greenlight (shoot budget, interview sets, shot list) is still to decide." : "";
       if (stage === "Shooting") {
-        const id2 = sessionCode(doc.contentId, 1);
-        const sheet = doc.scheduledDate ? db2.callSheets.find((c) => c.contentId === doc.contentId && c.date === doc.scheduledDate) : void 0;
+        const id2 = sessionCode(doc2.contentId, 1);
+        const sheet = doc2.scheduledDate ? db2.callSheets.find((c) => c.contentId === doc2.contentId && c.date === doc2.scheduledDate) : void 0;
         db2.recordingSessions.push({
           id: id2,
-          contentId: doc.contentId,
+          contentId: doc2.contentId,
           sessionNumber: 1,
-          scheduledDate: doc.scheduledDate,
+          scheduledDate: doc2.scheduledDate,
           venue: sheet?.location ?? "",
           status: "Open",
           closedAt: null,
@@ -11191,10 +12277,10 @@ function migrateToWorkflow(db2, options) {
         after2 = `${label} project, recording on session ${id2} (Production)`;
         note = "Add what was shot to its log, close it, then send the film to post production.";
       } else if (stage !== "Pre-production") {
-        const id2 = episodeCode(doc.contentId, 1);
+        const id2 = episodeCode(doc2.contentId, 1);
         if (byId.has(id2)) {
-          line2(
-            doc,
+          line3(
+            doc2,
             "flagged",
             `Documentary at ${stage}`,
             "Left in the earlier pipeline",
@@ -11202,32 +12288,32 @@ function migrateToWorkflow(db2, options) {
           );
           continue;
         }
-        const film = blankRecord(id2, "documentary", doc.title, doc.contentId, doc.hierarchyLevel + 1);
+        const film = blankRecord(id2, "documentary", doc2.title, doc2.contentId, doc2.hierarchyLevel + 1);
         Object.assign(film, {
           createdAt: at,
           startDate: today,
-          stageEnteredAt: doc.stageEnteredAt,
-          scheduledDate: doc.scheduledDate,
-          deadline: doc.deadline
+          stageEnteredAt: doc2.stageEnteredAt,
+          scheduledDate: doc2.scheduledDate,
+          deadline: doc2.deadline
         });
         db2.records.push(film);
         byId.set(id2, film);
-        const made = episode(film, doc.contentId, 1, null, stage, doc);
-        if (made.info.mdStage === "Published") doc.workflow.status = "Completed";
+        const made = episode(film, doc2.contentId, 1, null, stage, doc2);
+        if (made.info.mdStage === "Published") doc2.workflow.status = "Completed";
         after2 = `${label} project; its film is ${id2}, ${made.after.charAt(0).toLowerCase()}${made.after.slice(1)}`;
         note = made.note;
       }
-      line2(
-        doc,
+      line3(
+        doc2,
         "moved",
         `Documentary at ${stage}`,
         after2,
         [chosen ? "" : "DOF-made, unless pitched by others is chosen before moving.", note].filter(Boolean).join(" ")
       );
-      followUps.push(`${titleOf(doc)}: name the show producer and assign the project roles.`);
+      followUps.push(`${titleOf(doc2)}: name the show producer and assign the project roles.`);
     } else
-      line2(
-        doc,
+      line3(
+        doc2,
         "flagged",
         `Documentary at ${stage || "no stage"}`,
         "Left in the earlier pipeline",
@@ -11235,7 +12321,7 @@ function migrateToWorkflow(db2, options) {
       );
     for (const k of kids)
       if (!listed.has(k.contentId))
-        line2(
+        line3(
           k,
           "flagged",
           "A record under a documentary",
@@ -11265,6 +12351,396 @@ function migrateToWorkflow(db2, options) {
   return report;
 }
 
+// src/data/migrateDocuments.ts
+var MIGRATION = "migration";
+function ruleFor(formType2, section, field) {
+  const brief = briefKeyOf(formType2);
+  const doc2 = catalogTypeOf(formType2) === "documentary";
+  const at = (page, heading) => ({ doc: brief, stage: "Development", page, heading });
+  if (section === "entry" || section === "guest") return { keep: "the header strip" };
+  if (section === "consent") return { keep: "the Consent and Release form" };
+  if (section === "brief" && (field === "logline" || field === "coreQuestion")) return { keep: "the two fields at the top of The idea" };
+  if (section === "brief" && field === "delivery") return { keep: "the project's sermon format, which decides later stages" };
+  switch (section) {
+    case "brief":
+      if ([
+        "workingTitle",
+        "targetAudience",
+        "formatDuration",
+        "thesis",
+        "person",
+        "storyCore",
+        "audience",
+        "speaker",
+        "seriesTheme",
+        "duration"
+      ].includes(field))
+        return at("The idea");
+      if (["showType", "mustNotBecome"].includes(field)) return at(doc2 ? "The idea" : "Shape");
+      if (["scriptureBasis", "scriptureConnection", "mainScripture"].includes(field))
+        return at(doc2 ? "Sources and fact-checking" : "Scripture and source basis");
+      if (field === "contributors") return at(doc2 ? "Subjects and locations" : "Shape");
+      if (["resourceAsk", "distributionPlan", "distribution", "successMeasures", "learningQuestions"].includes(field)) return at("Ask");
+      return null;
+    case "research":
+      return at(doc2 ? "Sources and fact-checking" : "Scripture and source basis", "Research");
+    case "stressTest":
+      return at("The idea", "Stress-test");
+    case "story":
+      return doc2 ? { doc: "treatment", stage: "Pre-production", page: field === "interviewSets" ? "Interview guide" : "Story structure" } : at("Shape", "Story");
+    case "team":
+      return at(doc2 ? "Subjects and locations" : "Shape", "Team");
+    case "budget":
+      return at("Ask", "Budget");
+    case "sensitivity":
+      return at("Sensitivity");
+    case "outline":
+      return at("Outline");
+    case "readiness":
+      return at("Proposer readiness");
+    case "support":
+      return at("Support asked for");
+    case "ownership":
+      return at("Ownership terms");
+    case "messageReview":
+      return { comment: true };
+    case "recordingPlan":
+      return { doc: "recording_plan", stage: "Pre-production", page: "Notes" };
+  }
+  return null;
+}
+var blank = (v) => v === void 0 || v === null || v === "" || Array.isArray(v) && v.length === 0;
+function show(f2, v, nameOf2) {
+  switch (f2?.type) {
+    case "crew":
+      return nameOf2(String(v));
+    case "yesno":
+      return v === "yes" ? "Yes" : v === "no" ? "No" : String(v);
+    case "date":
+      return fmtDate(String(v));
+    case "amount":
+      return typeof v === "number" ? v.toLocaleString("en-GB") : String(v);
+    case "multiselect":
+      return Array.isArray(v) ? v.join(", ") : String(v);
+    default:
+      return Array.isArray(v) ? v.join(", ") : String(v);
+  }
+}
+var labelled = (label, value) => `<p><strong>${escapeHtml(label)}</strong></p>${textToHtml(value)}`;
+function migrateDocuments(db2, options) {
+  const { at } = options;
+  const report = { lines: [], kept: [], extras: [], unaccounted: [], changed: false };
+  const people = new Map(db2.people.map((p) => [p.personId, p.name]));
+  const nameOf2 = (id2) => people.get(id2) ?? id2;
+  const byId = new Map(db2.records.map((r) => [r.contentId, r]));
+  const newDocument = (p, stage, key2) => {
+    const entry = catalogEntry(p.workflow.formType, stage, key2);
+    if (!entry) return null;
+    const id2 = documentIdOf(p.contentId, stage, key2, null);
+    const existing = db2.projectDocuments.find((d2) => d2.id === id2);
+    if (existing) return existing;
+    const d = {
+      id: id2,
+      contentId: p.contentId,
+      stage,
+      docKey: key2,
+      ownerId: null,
+      title: entry.title,
+      migrated: true,
+      createdAt: at,
+      updatedAt: at
+    };
+    db2.projectDocuments.push(d);
+    (entry.pages ?? []).forEach((pg, i) => db2.documentPages.push(page(d.id, i, pg.title, pg.subtitle ?? "", pg.body ?? "")));
+    return d;
+  };
+  const page = (documentId, position, title2, subtitle, bodyHtml) => ({
+    id: localId("PG"),
+    documentId,
+    position,
+    title: title2,
+    subtitle,
+    bodyHtml,
+    version: 1,
+    archivedAt: null,
+    updatedAt: at,
+    updatedBy: MIGRATION
+  });
+  const pagesOf2 = (documentId) => db2.documentPages.filter((p) => p.documentId === documentId && !p.archivedAt).sort((a, b) => a.position - b.position);
+  const write = (d, title2, html) => {
+    let pg = pagesOf2(d.id).find((p) => p.title === title2);
+    if (!pg) {
+      pg = page(d.id, pagesOf2(d.id).length, title2, "", "");
+      db2.documentPages.push(pg);
+    }
+    pg.bodyHtml += html;
+  };
+  for (const p of db2.records.filter((r) => r.workflow).sort((a, b) => a.contentId.localeCompare(b.contentId, void 0, { numeric: true }))) {
+    const formType2 = p.workflow.formType;
+    const form2 = db2.developmentForms.find((f2) => f2.contentId === p.contentId);
+    const briefKey = briefKeyOf(formType2);
+    const title2 = p.parentId && byId.get(p.parentId) ? `${byId.get(p.parentId).title}: ${p.title}` : p.title;
+    const already = db2.projectDocuments.some((d) => d.contentId === p.contentId && d.docKey === briefKey);
+    if (already) {
+      report.lines.push({ contentId: p.contentId, title: title2, documents: [], fields: 0, note: "It already has its documents. Left as it is." });
+      continue;
+    }
+    if (!form2) {
+      report.lines.push({
+        contentId: p.contentId,
+        title: title2,
+        documents: [],
+        fields: 0,
+        note: "It has no Development form, so there is nothing to move."
+      });
+      continue;
+    }
+    const written = /* @__PURE__ */ new Set();
+    let fields = 0;
+    const grouped = /* @__PURE__ */ new Map();
+    for (const section of DEV_FORMS[formType2]) {
+      const values = form2.sections[section.key] ?? {};
+      const keys = [...section.fields.map((f2) => f2.key), ...Object.keys(values).filter((k) => !section.fields.some((f2) => f2.key === k))];
+      for (const key2 of keys) {
+        const v = values[key2];
+        if (blank(v)) continue;
+        const def = section.fields.find((f2) => f2.key === key2);
+        const name = `${section.label}: ${def?.label ?? key2}`;
+        const rule = ruleFor(formType2, section.key, key2);
+        if (rule && "keep" in rule) {
+          report.kept.push({ contentId: p.contentId, field: name, why: rule.keep });
+          continue;
+        }
+        if (rule && "comment" in rule) continue;
+        const target = rule ?? { doc: briefKey, stage: "Development", page: "Also from the old form" };
+        if (!rule) report.extras.push({ contentId: p.contentId, field: name });
+        const pageKey = `${target.stage}|${target.doc}|${target.page}`;
+        if (!grouped.has(pageKey)) grouped.set(pageKey, { target, parts: /* @__PURE__ */ new Map() });
+        const heading = rule ? target.heading ?? "" : section.label;
+        const parts = grouped.get(pageKey).parts;
+        if (!parts.has(heading)) parts.set(heading, []);
+        parts.get(heading).push(labelled(def?.label ?? key2, show(def, v, nameOf2)));
+        fields++;
+      }
+    }
+    for (const [sectionKey, values] of Object.entries(form2.sections)) {
+      if (DEV_FORMS[formType2].some((s2) => s2.key === sectionKey)) continue;
+      for (const [key2, v] of Object.entries(values ?? {})) {
+        if (blank(v)) continue;
+        const pageKey = `Development|${briefKey}|Also from the old form`;
+        if (!grouped.has(pageKey))
+          grouped.set(pageKey, { target: { doc: briefKey, stage: "Development", page: "Also from the old form" }, parts: /* @__PURE__ */ new Map() });
+        const parts = grouped.get(pageKey).parts;
+        if (!parts.has(sectionKey)) parts.set(sectionKey, []);
+        parts.get(sectionKey).push(labelled(key2, show(void 0, v, nameOf2)));
+        report.extras.push({ contentId: p.contentId, field: `${sectionKey}: ${key2}` });
+        fields++;
+      }
+    }
+    const brief = newDocument(p, "Development", briefKey);
+    if (brief) written.add(brief.title);
+    for (const { target, parts } of grouped.values()) {
+      const d = target.doc === briefKey ? brief : newDocument(p, target.stage, target.doc);
+      if (!d) continue;
+      written.add(d.title);
+      for (const [heading, blocks] of parts) write(d, target.page, `${heading ? `<h3>${escapeHtml(heading)}</h3>` : ""}${blocks.join("")}`);
+    }
+    if (formType2 === "devotion" && brief) {
+      const days = db2.plannedEpisodes.filter((x) => x.contentId === p.contentId).sort((a, b) => a.episodeNumber - b.episodeNumber);
+      if (days.length) {
+        db2.documentPages = db2.documentPages.filter((x) => x.documentId !== brief.id);
+        days.forEach((day, i) => {
+          const body = [
+            day.details.keyThought ? labelled("Key thought", day.details.keyThought) : "",
+            day.details.application ? labelled("Application or closing", day.details.application) : "",
+            day.question ? labelled("Question", day.question) : "",
+            day.guest ? labelled("Guest", day.guest) : "",
+            day.notes ? labelled("Notes", day.notes) : "",
+            ...Object.entries(day.details).filter(([k, v]) => !["scripture", "keyThought", "application"].includes(k) && v).map(([k, v]) => labelled(k, v))
+          ].join("");
+          const pg = page(brief.id, i, day.workingTitle || `Devotion ${i + 1}`, day.details.scripture ?? "", body);
+          if (day.archivedAt) pg.archivedAt = day.archivedAt;
+          db2.documentPages.push(pg);
+          day.sourcePageId = pg.id;
+          fields++;
+        });
+      }
+      const notes = form2.sections.messageReview?.notes;
+      const first = pagesOf2(brief.id)[0];
+      if (typeof notes === "string" && notes.trim() && first) {
+        db2.reviewComments.push({
+          id: localId("RC"),
+          documentId: brief.id,
+          pageId: first.id,
+          authorId: "system",
+          body: `From the team's message review: ${notes.trim()}`,
+          resolved: false,
+          resolvedBy: null,
+          createdAt: at
+        });
+        fields++;
+      }
+    }
+    if (catalogEntry(formType2, "Development", "greenlight")) {
+      const judged = CRITERIA.filter((c) => form2.criteria[c.key]?.met !== null || form2.criteria[c.key]?.note);
+      if (judged.length) {
+        const g = newDocument(p, "Development", "greenlight");
+        written.add(g.title);
+        const list = CRITERIA.map((c) => {
+          const cr = form2.criteria[c.key] ?? { met: null, note: "" };
+          const verdict = cr.met === true ? "Met" : cr.met === false ? "Not met" : "Not judged yet";
+          return `<li><p><strong>${escapeHtml(c.label)}:</strong> ${verdict}${cr.note ? `. ${escapeHtml(cr.note)}` : ""}</p></li>`;
+        }).join("");
+        const pg = pagesOf2(g.id)[0];
+        if (pg) pg.bodyHtml = `<p>The six criteria:</p><ul>${list}</ul>`;
+        fields += judged.length;
+      }
+    }
+    if (brief) {
+      const cps = db2.reviewCheckpoints.filter(
+        (c) => c.contentId === p.contentId && !c.episodeId && (c.checkpoint === "pitch" || c.checkpoint === "outline_script")
+      );
+      const both = cps.length === 2 && cps.every((c) => c.status === "Approved");
+      const sentBack = cps.find((c) => c.status === "Changes requested");
+      const reviewers = [...new Set(cps.flatMap((c) => c.reviewerIds))];
+      const decidedBy = [...new Set(cps.map((c) => c.decidedById).filter((x) => !!x))];
+      const ids2 = reviewers.length ? reviewers : both ? decidedBy.length ? decidedBy : ["system"] : [];
+      for (const reviewerId of ids2) {
+        const r = {
+          id: `${brief.id}|${reviewerId}`,
+          documentId: brief.id,
+          reviewerId,
+          status: both ? "approved" : sentBack ? "changes_requested" : "pending",
+          note: both ? cps.map((c) => c.note).filter(Boolean).join(" ") || "Approved at the pitch and outline checkpoints." : sentBack?.note ?? "",
+          decidedAt: both ? cps.map((c) => c.decidedAt).filter(Boolean).sort().pop() ?? at : sentBack?.decidedAt ?? null,
+          createdAt: at,
+          updatedAt: at
+        };
+        if (!db2.documentReviews.some((x) => x.id === r.id)) db2.documentReviews.push(r);
+      }
+    }
+    const camera = cameraPlanRows(db2, p);
+    if (camera.length) {
+      const list = {
+        id: localId("SL"),
+        contentId: p.contentId,
+        episodeId: null,
+        name: "Camera plan (from before the documents)",
+        position: db2.shotLists.filter((l) => l.contentId === p.contentId).length,
+        copiedFrom: null,
+        migrated: true,
+        createdAt: at,
+        updatedAt: at
+      };
+      db2.shotLists.push(list);
+      camera.forEach((r, i) => db2.shotListRows.push({ ...r, id: localId("SR"), shotListId: list.id, position: i }));
+      written.add("Shot List");
+    }
+    report.lines.push({
+      contentId: p.contentId,
+      title: title2,
+      documents: [...written],
+      fields,
+      note: fields ? "" : "Its Development form was empty: its documents start blank."
+    });
+    report.changed = true;
+  }
+  report.unaccounted = unaccountedFields(db2, report);
+  return report;
+}
+function cameraPlanRows(db2, p) {
+  const row = (rowType, description) => ({
+    rowType,
+    imagePath: null,
+    description: description.slice(0, 500),
+    shotSize: "",
+    shotType: "",
+    movement: "",
+    estMinutes: null
+  });
+  const out = [];
+  const note = db2.workflowChecklistItems.find((c) => c.id === `${p.contentId}|Pre-production|shot_list`)?.note.trim();
+  if (note) {
+    out.push(row("banner", "Shot list note from Pre-production"));
+    for (const line3 of note.split("\n").map((l) => l.trim()).filter(Boolean))
+      out.push(row("setup", line3));
+  }
+  const family = /* @__PURE__ */ new Set([p.contentId, ...db2.records.filter((r) => r.parentId === p.contentId).map((r) => r.contentId)]);
+  const template = templateOf("shotlist")?.body.trim();
+  for (const d of db2.docs.filter((x) => x.templateKey === "shotlist" && family.has(x.contentId) && !x.archived)) {
+    if (d.body.trim() === template) continue;
+    out.push(row("banner", d.title));
+    let inShots = false;
+    for (const raw of d.body.split("\n")) {
+      const line3 = raw.trim();
+      if (!line3 || /^_.*_$/.test(line3) || /^\|?\s*-{3,}/.test(line3) || /^\|\s*#\s*\|/.test(line3)) continue;
+      const heading = /^\d+\.\s+(.*)$/.exec(line3);
+      if (heading) {
+        inShots = /shot/i.test(heading[1]);
+        out.push(row("banner", heading[1]));
+        continue;
+      }
+      if (line3.startsWith("|")) {
+        const cells = line3.split("|").map((c) => c.trim()).filter(Boolean);
+        const text2 = (cells.length > 1 && /^\d+$/.test(cells[0]) ? cells.slice(1) : cells).join(", ");
+        if (text2) out.push(row("shot", text2));
+        continue;
+      }
+      const item2 = /^-\s+(\[[ xX]\]\s+)?(.*)$/.exec(line3);
+      out.push(row(item2 && inShots ? "shot" : "setup", item2 ? item2[2] : line3));
+    }
+  }
+  return out;
+}
+function unaccountedFields(db2, report) {
+  const out = [];
+  const kept2 = new Set(report.kept.map((k) => `${k.contentId}|${k.field}`));
+  for (const form2 of db2.developmentForms) {
+    const p = db2.records.find((r) => r.contentId === form2.contentId);
+    if (!p?.workflow) continue;
+    const text2 = db2.documentPages.filter((pg) => pg.documentId.startsWith(`${p.contentId}|`)).map((pg) => `${pg.title} ${pg.subtitle} ${pg.bodyHtml}`).join(" ");
+    const comments = db2.reviewComments.filter((c) => c.documentId.startsWith(`${p.contentId}|`)).map((c) => c.body).join(" ");
+    for (const section of DEV_FORMS[form2.formType]) {
+      for (const [key2, v] of Object.entries(form2.sections[section.key] ?? {})) {
+        if (blank(v) || typeof v !== "string") continue;
+        const def = section.fields.find((f2) => f2.key === key2);
+        const name = `${section.label}: ${def?.label ?? key2}`;
+        if (kept2.has(`${p.contentId}|${name}`) || def?.type === "crew" || def?.type === "date" || def?.type === "yesno") continue;
+        const words = escapeHtml(v.trim().split("\n")[0]);
+        if (!text2.includes(words) && !comments.includes(v.trim())) out.push(`${p.contentId}: ${name}`);
+      }
+    }
+  }
+  return out;
+}
+
+// src/data/moveToNewSystem.ts
+function moveToNewSystem(db2, options) {
+  const before = countParts(db2);
+  const workflow = migrateToWorkflow(db2, options);
+  const documents = migrateDocuments(db2, { at: options.at });
+  if (documents.changed) {
+    const projects = documents.lines.filter((l) => l.documents.length).length;
+    db2.audit.push({
+      id: logId("A"),
+      at: options.at,
+      byPersonId: options.byPersonId,
+      action: "migrate-documents",
+      entity: "system",
+      entityId: "documents",
+      detail: `The Development forms of ${projects} project${projects === 1 ? "" : "s"} moved into their documents.`
+    });
+  }
+  const after = countParts(db2);
+  const parts = [.../* @__PURE__ */ new Set([...before.keys(), ...after.keys()])];
+  return {
+    ...workflow,
+    documents,
+    changed: workflow.changed || documents.changed,
+    counts: parts.map((part) => ({ part, before: before.get(part) ?? 0, after: after.get(part) ?? 0 }))
+  };
+}
+
 // server/migrateWorkflow.ts
 var choices = z3.object({
   seriesTypes: z3.record(z3.string().max(120), z3.enum(["podcast", "testimonial", "sermon"])).optional(),
@@ -11281,7 +12757,7 @@ async function migrateWorkflowStore(store2, apply, byPersonId, picked = {}) {
     store2,
     apply,
     "before_workflow",
-    (db2) => migrateToWorkflow(db2, { ...picked, today: todayIso(), at, byPersonId })
+    (db2) => moveToNewSystem(db2, { ...picked, today: todayIso(), at, byPersonId })
   );
   if (!r) return null;
   return {
@@ -11483,13 +12959,13 @@ var MemCol = class {
   async find(where) {
     return (await this.all()).filter((d) => Object.entries(where).every(([k, v]) => d[k] === v));
   }
-  async insert(doc) {
-    if (this.m.has(doc._id)) return false;
-    this.m.set(doc._id, structuredClone(doc));
+  async insert(doc2) {
+    if (this.m.has(doc2._id)) return false;
+    this.m.set(doc2._id, structuredClone(doc2));
     return true;
   }
-  async put(doc) {
-    this.m.set(doc._id, structuredClone(doc));
+  async put(doc2) {
+    this.m.set(doc2._id, structuredClone(doc2));
   }
   async remove(id2) {
     this.m.delete(id2);

@@ -67,11 +67,6 @@ export function WorkCard({ item }: { item: WorkItem }) {
       </span>
       <span className="wf-chips">
         {item.overdue && <span className="badge bad">Overdue</span>}
-        {item.lateSessions > 0 && (
-          <span className="badge bad">
-            {item.lateSessions} session{item.lateSessions === 1 ? "" : "s"} overdue
-          </span>
-        )}
         <GateBadge item={item} />
       </span>
     </div>

@@ -23,7 +23,6 @@ import {
   resetRunSheet,
   rowsOf,
   RUN_SHEET_NOTE,
-  sessionOverdue,
   updateLogRow,
   updateRunSheetItem,
   updateSession,
@@ -357,7 +356,6 @@ export function SessionPage({ id }: { id: string }) {
           <div className="wf-chips" style={{ marginTop: 4 }}>
             <span className="cid">{session.id}</span>
             <span className={`badge ${session.status === "Closed" ? "ok" : "accent"}`}>{stageOf(session.status)}</span>
-            {sessionOverdue(session) && <span className="badge bad">Overdue</span>}
             {session.scheduledDate && <span className="muted">{fmtDate(session.scheduledDate)}</span>}
           </div>
         </div>

@@ -260,7 +260,8 @@ export function Dashboard() {
         };
       }),
     ...wfItems
-      .filter((i) => !i.done && i.level !== "project" && !!i.due && (onBoard(i) || i.level === "session"))
+      // A session's day that has passed is not a deadline: sessions are never overdue.
+      .filter((i) => !i.done && i.level !== "project" && !!i.due && (onBoard(i) || (i.level === "session" && i.due >= todayIso())))
       .map((i): HorizonRow => ({
         key: i.key,
         title: itemTitle(i),

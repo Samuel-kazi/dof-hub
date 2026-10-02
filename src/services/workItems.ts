@@ -3,7 +3,7 @@ import { getDb } from "../data/store";
 import { categoryOf } from "../config/categories";
 import { WORKFLOW_STAGES } from "../config/workflow";
 import { canView, getRecord } from "./access";
-import { episodeOverdue, evaluateGate, sessionOverdue, type GateResult } from "./workflow/gates";
+import { episodeOverdue, evaluateGate, type GateResult } from "./workflow/gates";
 import {
   episodesOf,
   isDocumentary,
@@ -21,8 +21,8 @@ import type { Route } from "../ui/AppContext";
 // production and Marketing and distribution. The board, calendar, reminders, dashboard, reports and workload all
 // read it, so they agree. It is worked out on every render from what is stored, and nothing here is saved.
 //
-// Overdue follows assumption A5: a session once its date has passed and it is not closed, an episode once the
-// deadline of the stage it is in has passed. A project is never overdue itself.
+// Overdue is worked out for episodes only: once the deadline of the stage an episode is in has passed. A session,
+// season, series or project is never overdue itself.
 
 export type WorkLevel = "project" | "session" | "episode";
 
@@ -52,7 +52,6 @@ export interface WorkItem {
   done: boolean; // a closed session or a published episode
   gate: GateResult | null; // what its next Done button still needs; null while it waits on reviewers or has no button
   callSheetId: string | null; // a session's call sheet, once it has one
-  lateSessions: number; // a project's planned sessions whose date has passed: theirs to be overdue, shown on its card
   open: Route;
 }
 
@@ -122,7 +121,6 @@ function projectItem(p: Project, stage: WorkflowStage, step: string, ownerId: st
     done: false,
     gate,
     callSheetId: null,
-    lateSessions: 0,
     open: { n: "record", id: p.contentId },
   };
 }
@@ -144,11 +142,10 @@ function sessionItem(p: Project, s: RecordingSession, gates: boolean): WorkItem 
     waitingOn: s.status === "Closed" ? [] : waiting(ownerId, []),
     due: s.scheduledDate,
     start: dateOf(s.createdAt),
-    overdue: sessionOverdue(s),
+    overdue: false,
     done: s.status === "Closed",
     gate: !gates || s.status === "Closed" ? null : evaluateGate(s.status === "Planned" ? "Pre-production" : "Production", "session", s.id),
     callSheetId: s.callSheetId && getDb().callSheets.some((c) => c.id === s.callSheetId) ? s.callSheetId : null,
-    lateSessions: 0,
     open: { n: "session", id: s.id },
   };
 }
@@ -187,7 +184,6 @@ function episodeItem(p: Project, ep: Episode, gates: boolean): WorkItem {
     done: published,
     gate,
     callSheetId: null,
-    lateSessions: 0,
     open: { n: "record", id: ep.contentId },
   };
 }
@@ -234,8 +230,6 @@ function itemsOf(p: Project, gates: boolean): WorkItem[] {
         );
     }
   }
-  const late = sessions.filter((s) => s.status === "Planned" && sessionOverdue(s)).length;
-  for (const i of items) i.lateSessions = late;
   for (const s of sessions) items.push(sessionItem(p, s, gates));
   for (const ep of episodes) items.push(episodeItem(p, ep, gates));
   return items;
@@ -244,7 +238,7 @@ function itemsOf(p: Project, gates: boolean): WorkItem[] {
 const nextSession = (planned: RecordingSession[]): string => {
   const s = planned[0];
   const more = planned.length > 1 ? `, and ${planned.length - 1} more` : "";
-  const when = s.scheduledDate ? ` on ${fmtShort(s.scheduledDate)}${sessionOverdue(s) ? ", now past" : ""}` : ", no date yet";
+  const when = s.scheduledDate ? ` on ${fmtShort(s.scheduledDate)}` : ", no date yet";
   return `Next: session ${s.sessionNumber}${when}${more}`;
 };
 

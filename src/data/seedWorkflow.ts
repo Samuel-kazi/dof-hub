@@ -97,6 +97,7 @@ const planned = (projectId: string, n: number, workingTitle: string, details: Re
   notes: "",
   details,
   reservedId: null,
+  sourcePageId: null,
   createdAt: at,
   updatedAt: at,
   archivedAt: null,

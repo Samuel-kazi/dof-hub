@@ -12,7 +12,6 @@ import {
   removeRole,
   rowsOf,
   sendToPostProduction,
-  sessionOverdue,
   sessionsOf,
   type Project,
 } from "../../services/wrapped/workflow";
@@ -163,14 +162,7 @@ export function SessionsPanel({ project, write }: { project: Project; write: boo
                   tabIndex={0}
                 >
                   <td className="cid">{s.id}</td>
-                  <td>
-                    {s.scheduledDate ? fmtDate(s.scheduledDate) : <span className="muted">No date yet</span>}
-                    {sessionOverdue(s) && (
-                      <span className="badge bad" style={{ marginLeft: 6 }}>
-                        Overdue
-                      </span>
-                    )}
-                  </td>
+                  <td>{s.scheduledDate ? fmtDate(s.scheduledDate) : <span className="muted">No date yet</span>}</td>
                   <td>{s.venue || <span className="muted">Not set</span>}</td>
                   <td>
                     <span className={`badge ${s.status === "Closed" ? "ok" : "accent"}`}>

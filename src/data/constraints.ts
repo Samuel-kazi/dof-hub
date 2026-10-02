@@ -1,5 +1,7 @@
 import type { Database } from "../types";
 import { RuleError } from "../types";
+import { EPISODE_TOKEN } from "../config/workflow";
+import { codeNumber } from "./ids";
 
 // The rules the data itself must keep, whoever changes it. There is no SQL database here to declare them in,
 // so they are declared once, below, and enforced in three places:
@@ -22,6 +24,23 @@ export const WORKFLOW_PARTS = [
   "shareLinks",
 ] as const;
 export type WorkflowPart = (typeof WORKFLOW_PARTS)[number];
+
+/** A document's ID: its project, stage and kind, and the session or episode it is for if it is one of those. */
+export const documentIdOf = (contentId: string, stage: string, docKey: string, ownerId: string | null): string =>
+  `${contentId}|${stage}|${docKey}${ownerId ? `|${ownerId}` : ""}`;
+
+/** The lists that hold project documents, storyboards and shot lists (data version 16). */
+export const DOCUMENT_PARTS = [
+  "projectDocuments",
+  "documentPages",
+  "documentLinks",
+  "documentReviews",
+  "reviewComments",
+  "storyboards",
+  "storyboardFrames",
+  "shotLists",
+  "shotListRows",
+] as const;
 
 export interface UniqueRule {
   name: string; // the MongoDB index is called unique_<name>
@@ -86,6 +105,18 @@ export const UNIQUE_RULES: UniqueRule[] = [
     message: "That review checkpoint already exists.",
   },
   {
+    name: "project_document",
+    part: "projectDocuments",
+    fields: ["contentId", "stage", "docKey", "ownerId"],
+    message: "This project already has that document.",
+  },
+  {
+    name: "document_reviewer",
+    part: "documentReviews",
+    fields: ["documentId", "reviewerId"],
+    message: "That person already reviews this document.",
+  },
+  {
     name: "share_token",
     part: "shareLinks",
     fields: ["token"],
@@ -138,7 +169,7 @@ export function uniqueViolations(part: string, elements: unknown[]): string[] {
 export function integrityProblems(db: Database): string[] {
   const out: string[] = [];
   const parts = db as unknown as Record<string, unknown[] | undefined>;
-  for (const part of [...WORKFLOW_PARTS, "records"]) out.push(...uniqueViolations(part, parts[part] ?? []));
+  for (const part of [...WORKFLOW_PARTS, ...DOCUMENT_PARTS, "records"]) out.push(...uniqueViolations(part, parts[part] ?? []));
 
   const records = new Set(db.records.map((r) => r.contentId));
   const people = new Set(db.people.map((p) => p.personId));
@@ -158,9 +189,11 @@ export function integrityProblems(db: Database): string[] {
   for (const p of db.plannedEpisodes ?? []) {
     project(p.contentId, `Planned episode ${p.id}`);
     if (p.reservedId) {
+      // Either an episode made before the workflow, waiting under this project, or one of this project's episode codes
+      // given out ahead of recording (a devotion's episodes get theirs in Pre-production).
       const kept = byId.get(p.reservedId);
-      if (!kept) missing("episode", p.reservedId, `Planned episode ${p.id}`);
-      else if (kept.parentId !== p.contentId)
+      const ownCode = !Number.isNaN(codeNumber(p.reservedId, p.contentId, EPISODE_TOKEN));
+      if (kept ? kept.parentId !== p.contentId : !ownCode)
         out.push(`Planned episode ${p.id} keeps ${p.reservedId}, which belongs to a different project.`);
     }
   }
@@ -201,6 +234,39 @@ export function integrityProblems(db: Database): string[] {
     for (const id of c.reviewerIds) person(id, `Checkpoint ${c.id}`);
   }
   for (const l of db.shareLinks ?? []) if (!records.has(l.episodeId)) missing("episode", l.episodeId, `Share link ${l.id}`);
+
+  // Project documents, storyboards and shot lists.
+  const documents = new Set((db.projectDocuments ?? []).map((d) => d.id));
+  const pages = new Map((db.documentPages ?? []).map((p) => [p.id, p]));
+  const doc = (id: string, from: string) => {
+    if (!documents.has(id)) missing("document", id, from);
+  };
+  for (const d of db.projectDocuments ?? []) {
+    project(d.contentId, `Document ${d.id}`);
+    if (d.id !== documentIdOf(d.contentId, d.stage, d.docKey, d.ownerId))
+      out.push(`Document ${d.id} is filed under the wrong project, stage or kind.`);
+  }
+  for (const p of db.documentPages ?? []) doc(p.documentId, `Page ${p.id}`);
+  for (const l of db.documentLinks ?? []) doc(l.documentId, `Link ${l.id}`);
+  for (const r of db.documentReviews ?? []) {
+    doc(r.documentId, `Review ${r.id}`);
+    person(r.reviewerId, `Review ${r.id}`);
+  }
+  for (const c of db.reviewComments ?? []) {
+    doc(c.documentId, `Comment ${c.id}`);
+    const page = pages.get(c.pageId);
+    if (!page) missing("page", c.pageId, `Comment ${c.id}`);
+    else if (page.documentId !== c.documentId) out.push(`Comment ${c.id} is on a page of a different document.`);
+    person(c.authorId, `Comment ${c.id}`);
+  }
+  const boards = new Set((db.storyboards ?? []).map((b) => b.id));
+  const lists = new Set((db.shotLists ?? []).map((l) => l.id));
+  for (const b of [...(db.storyboards ?? []), ...(db.shotLists ?? [])]) {
+    project(b.contentId, b.id);
+    if (b.episodeId !== null && !records.has(b.episodeId)) missing("episode", b.episodeId, b.id);
+  }
+  for (const f of db.storyboardFrames ?? []) if (!boards.has(f.storyboardId)) missing("storyboard", f.storyboardId, `Frame ${f.id}`);
+  for (const r of db.shotListRows ?? []) if (!lists.has(r.shotListId)) missing("shot list", r.shotListId, `Row ${r.id}`);
   return out;
 }
 

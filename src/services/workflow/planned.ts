@@ -64,6 +64,7 @@ export function addPlannedEpisode(actor: Actor, projectId: string, input: Planne
     archivedAt: null,
     archivedReason: null,
     reservedId: null,
+    sourcePageId: null,
   };
   getDb().plannedEpisodes.push(p);
   refreshProjectStatus(project);

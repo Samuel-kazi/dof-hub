@@ -3,7 +3,8 @@ import { RuleError } from "../types";
 import { commit, getDb, keepCopyOfData, transaction } from "./store";
 import { isHop } from "../services/access";
 import { todayIso } from "../services/utils";
-import { migrateToWorkflow, type AppliedMigrationReport, type MigrationChoices, type WorkflowMigrationReport } from "./migrateWorkflow";
+import type { MigrationChoices } from "./migrateWorkflow";
+import { moveToNewSystem, type AppliedMigrationReport, type MoveReport } from "./moveToNewSystem";
 
 // Moving the existing projects into the five-stage workflow in the desktop app and the demo, where the data is kept
 // on this computer. The hosted site does it on the server instead (src/data/remote.ts, server/migrateWorkflow.ts).
@@ -12,8 +13,8 @@ import { migrateToWorkflow, type AppliedMigrationReport, type MigrationChoices, 
 export const MOVE_COPY_LABEL = "before-workflow";
 
 /** What moving would do now, worked out on a copy. Nothing changes. */
-export function previewMove(actor: Actor, picked: MigrationChoices): WorkflowMigrationReport {
-  return migrateToWorkflow(structuredClone(getDb()), {
+export function previewMove(actor: Actor, picked: MigrationChoices): MoveReport {
+  return moveToNewSystem(structuredClone(getDb()), {
     ...picked,
     today: todayIso(),
     at: new Date().toISOString(),
@@ -29,7 +30,7 @@ export function applyMoveLocally(actor: Actor, picked: MigrationChoices): Applie
   const backup = keepCopyOfData(MOVE_COPY_LABEL);
   if (!backup) throw new RuleError("There is no room on this computer to keep a copy of the data first, so nothing was moved.");
   const report = transaction(() => {
-    const r = migrateToWorkflow(getDb(), { ...picked, today: todayIso(), at: new Date().toISOString(), byPersonId: actor.personId });
+    const r = moveToNewSystem(getDb(), { ...picked, today: todayIso(), at: new Date().toISOString(), byPersonId: actor.personId });
     commit();
     return r;
   });
