@@ -118,7 +118,7 @@ export async function probe(allowDemo = demoAllowed()): Promise<SessionInfo | nu
 // ── Keeping the screen and the server in step ────────────────
 
 let revision = 0;
-let queue: Call[] = [];
+let queue: { call: Call; seq: number }[] = [];
 let running = false;
 let timer: ReturnType<typeof setInterval> | undefined;
 
@@ -141,14 +141,16 @@ async function pump(): Promise<void> {
   try {
     while (queue.length) {
       try {
-        await api.post("/api/action", queue[0]);
-        queue.shift();
+        await api.post("/api/action", queue[0].call);
+        settle(queue.shift()!.seq, true);
       } catch (e) {
         // Changes made after this one were made on top of it, so they cannot be saved without it either.
         // The screen goes back to what the server has, and the person is told how much did not save.
         const later = queue.length - 1;
+        const dropped = queue.map((q) => q.seq);
         queue = [];
         if (e instanceof ApiError && e.code === "signed-out") {
+          dropped.forEach((seq) => settle(seq, false));
           syncEvents.onSignedOut();
           return;
         }
@@ -159,6 +161,7 @@ async function pump(): Promise<void> {
             : why,
         );
         await refresh(true);
+        dropped.forEach((seq) => settle(seq, false));
         return;
       }
     }
@@ -171,6 +174,32 @@ async function pump(): Promise<void> {
 const poll = (): void => {
   if (!running && !queue.length && document.visibilityState !== "hidden") void refresh();
 };
+
+// ── Whether one change reached the server ────────────────────
+// A screen that must know (a page of writing, which keeps the writer's words until they are safely saved) notes the
+// number of the change it just made, then waits for the server's answer.
+
+let lastSeq = 0;
+const outcomes = new Map<number, boolean>();
+const waiting = new Map<number, (saved: boolean) => void>();
+
+function settle(seq: number, saved: boolean): void {
+  outcomes.set(seq, saved);
+  waiting.get(seq)?.(saved);
+  waiting.delete(seq);
+  if (outcomes.size > 200) outcomes.delete(outcomes.keys().next().value!);
+}
+
+/** The number of the last change sent to the server from this screen: 0 if none, and always 0 in the local demo. */
+export const lastChange = (): number => lastSeq;
+
+/** True once the server has saved that change; false if it refused it, or one made before it. */
+export function changeSaved(seq: number): Promise<boolean> {
+  if (seq === 0) return Promise.resolve(true);
+  const known = outcomes.get(seq);
+  if (known !== undefined) return Promise.resolve(known);
+  return new Promise((resolve) => waiting.set(seq, resolve));
+}
 
 /** Resolves once every change made on this screen has been sent to the server (or has failed and been undone). */
 export async function whenSynced(): Promise<void> {
@@ -220,7 +249,7 @@ export async function hydrate(): Promise<void> {
 export function startSync(): void {
   setPersist(false); // what the server sends stays off this computer's storage
   setRpcSink((c) => {
-    queue.push(c);
+    queue.push({ call: c, seq: ++lastSeq });
     void pump();
   }, "That is handled by the server.");
   timer = setInterval(poll, 15000);
@@ -229,6 +258,7 @@ export function startSync(): void {
 
 export function stopSync(): void {
   setRpcSink(null);
+  queue.forEach((q) => settle(q.seq, false));
   queue = [];
   if (timer) clearInterval(timer);
   document.removeEventListener("visibilitychange", poll);

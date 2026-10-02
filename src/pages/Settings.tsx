@@ -307,6 +307,34 @@ export function Settings() {
               </div>
             </section>
 
+            <section className="glass panel" aria-label="Documents preview">
+              <h2>Documents (preview)</h2>
+              <p className="muted" style={{ marginBottom: 12 }}>
+                Projects can show their documents: a Project Home with a row of tiles for each stage, and each document opened full width
+                with its pages and a writing page that saves as you type. The stages, Content IDs and every form (sessions, call sheets,
+                gear, storage) stay as they are. Devotions come first; series and documentaries follow. Anyone can still switch a project
+                back to its earlier screens.
+              </p>
+              <label className="row" style={{ gap: 10, alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={(db.settings.newDocuments ?? []).includes("devotion")}
+                  onChange={(e) =>
+                    attempt(
+                      () =>
+                        updateSettings(actor, {
+                          newDocuments: e.target.checked
+                            ? [...(db.settings.newDocuments ?? []), "devotion"]
+                            : (db.settings.newDocuments ?? []).filter((k) => k !== "devotion"),
+                        }),
+                      e.target.checked ? "Devotions now show their documents" : "Devotions show their earlier screens",
+                    )
+                  }
+                />
+                <span>Devotions show their documents</span>
+              </label>
+            </section>
+
             <section className="glass panel" aria-label="Workload">
               <h2>Workload and capacity</h2>
               <p className="muted" style={{ marginBottom: 12 }}>

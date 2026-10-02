@@ -25,17 +25,46 @@ export function makeDevotionEpisodes(actor: Actor, projectId: string): DevotionL
   if (p.workflow.formType !== "devotion") throw new RuleError("Only a devotion makes its episodes from its script.");
   if (p.workflow.stage !== "Pre-production") throw new RuleError("The episodes are listed in Pre-production, once the script is accepted.");
   const script = documentOf(projectId, "Development", "devotional_script");
-  const pages = script ? pagesOf(script.id).filter((pg) => pg.title.trim() || textOf(pg.bodyHtml)) : [];
+  // A page counts once something is written on it (its script, its scripture or a title of its own), or once the move
+  // from the earlier form wrote it. The starting pages ("Devotion 3", empty) do not.
+  const pages = script
+    ? pagesOf(script.id).filter(
+        (pg) => textOf(pg.bodyHtml) !== "" || pg.subtitle.trim() !== "" || pg.version > 1 || pg.updatedBy === "migration",
+      )
+    : [];
   if (!pages.length) throw new RuleError("The Devotional Script has no devotions written yet.");
   const db = getDb();
   const theme = String(formOf(projectId).sections.entry?.theme ?? "");
   const out: DevotionList = { made: [], updated: [], episodes: [] };
   const at = nowStamp();
   let reserved = 0;
+  // Days already listed on the earlier form, not yet tied to a page: each page takes the next one, in order, so a day is
+  // never listed twice and keeps its Content ID. Anything a page replaces is kept in the day's notes.
+  const earlier = db.plannedEpisodes
+    .filter((x) => x.contentId === projectId && !x.archivedAt && !x.sourcePageId)
+    .sort((a, b) => a.episodeNumber - b.episodeNumber);
   for (const page of pages) {
     let planned = db.plannedEpisodes.find((x) => x.contentId === projectId && x.sourcePageId === page.id);
     const title = page.title.trim() || `Devotion ${pages.indexOf(page) + 1}`;
-    if (!planned) {
+    const day = planned ? undefined : earlier.shift();
+    if (day) {
+      const scripture = page.subtitle.trim() || String(day.details.scripture ?? "");
+      const replaced = [
+        day.workingTitle.trim() && day.workingTitle !== title ? `Title on the earlier form: ${day.workingTitle}` : "",
+        day.details.scripture && day.details.scripture !== scripture
+          ? `Scripture on the earlier form: ${String(day.details.scripture)}`
+          : "",
+      ].filter(Boolean);
+      Object.assign(day, {
+        sourcePageId: page.id,
+        workingTitle: title,
+        details: { ...day.details, scripture },
+        notes: [day.notes, ...replaced].filter(Boolean).join("\n"),
+        updatedAt: at,
+      });
+      planned = day;
+      out.updated.push(day.id);
+    } else if (!planned) {
       const { id, n } = nextPlanned(projectId);
       const made: PlannedEpisode = {
         id,

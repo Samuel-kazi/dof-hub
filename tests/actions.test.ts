@@ -382,6 +382,7 @@ await t("every action accepts the arguments its screen sends", async () => {
   await call("reminders.logSent", "DOF-P-HOP-001", "calendar", "Calendar file", "3 events", ["k1", "k2"]);
   await call("settings.updateSettings", { workDays: [1, 2, 3, 4, 5], effortOverrides: { "series:Editorial": 2.5 } });
   await call("settings.updateSettings", { stageReminderHours: 24 });
+  await call("settings.updateSettings", { newDocuments: ["devotion"] });
   await call("settings.updateSettings", { checkoutReturnDays: 3, storageWarningThreshold: 85 });
   await call("settings.updateWorkspaceAppearance", { accent: "ocean" });
   await call("settings.updateWorkspaceAppearance", { fontPairing: "classic" });

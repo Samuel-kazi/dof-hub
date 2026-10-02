@@ -698,7 +698,12 @@ export interface Settings {
   // Workspace-wide look and feel, set by the Head of Production. Per-user preferences (font size,
   // density, photo) live on the Person record instead, since each person sets their own.
   appearance?: { accent: AccentKey; fontPairing: FontPairingKey };
+  // The kinds of project that show their documents (the documents rework) instead of the earlier screens. Turned on
+  // in Settings, one kind at a time; absent means none.
+  newDocuments?: DocumentProjectType[];
 }
+
+export type DocumentProjectType = "devotion" | "series" | "documentary";
 
 /** A reminder that was sent, or opened in the mail or messages app, so it is not sent twice by accident. */
 export interface OutboxEntry {

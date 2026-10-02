@@ -72,6 +72,9 @@ export const fromDayNumber = (n: number): string => new Date(n * 86400000).toISO
 /** 1200 becomes "1.20 TB", 350 becomes "350 GB". */
 export const fmtSize = (gb: number): string => (gb >= 1000 ? `${(gb / 1000).toFixed(2)} TB` : `${Math.round(gb)} GB`);
 
+/** The time of a moment in Nairobi, as hh:mm. */
+export const fmtTime = (iso: string): string =>
+  new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: TIME_ZONE });
 export const fmtDateTime = (iso: string): string =>
   new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 

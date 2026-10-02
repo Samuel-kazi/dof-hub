@@ -29,5 +29,5 @@ export const savePage = rpc("documents.savePage", core.savePage);
 export const setDocumentReviewers = rpc("documents.setDocumentReviewers", core.setDocumentReviewers);
 export const updateFrame = rpc("documents.updateFrame", core.updateFrame);
 export const updateShotRow = rpc("documents.updateShotRow", core.updateShotRow);
-export { MAX_PAGE_HTML, commentsOf, documentOf, estimatedMinutes, framesOf, getDocument, linksOf, pagesOf, reviewStateOf, reviewsOf, rowsOfShotList, shotListsOf, shotNumbers, storyboardsOf } from "../documents";
+export { MAX_PAGE_HTML, commentsOf, documentHasContent, documentOf, estimatedMinutes, framesOf, getDocument, linksOf, newDocumentsOn, pagesOf, reviewStateOf, reviewsOf, rowsOfShotList, shotListsOf, shotNumbers, storyboardsOf } from "../documents";
 export type { DevotionList, FrameEdit, NewBoard, PageEdit, PageInput, ReviewDecision, RowEdit } from "../documents";

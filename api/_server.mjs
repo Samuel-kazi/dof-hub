@@ -3222,6 +3222,7 @@ function cleanStyle(style) {
   return style.split(";").map((d) => d.split(":")).filter((p) => p.length === 2).map(([k, v]) => [k.trim().toLowerCase(), v.trim()]).filter(([k, v]) => STYLE[k]?.test(v)).map(([k, v]) => `${k}: ${v}`).join("; ");
 }
 var purifier = null;
+var given = null;
 function configure(p) {
   p.addHook("uponSanitizeAttribute", (node, data) => {
     if (data.attrName === "style") {
@@ -3237,6 +3238,7 @@ function configure(p) {
   return p;
 }
 function setHtmlWindow(window2) {
+  given = window2;
   purifier = configure(createDOMPurify(window2));
 }
 function current() {
@@ -8192,6 +8194,7 @@ __export(documents_exports, {
   decideDocumentReview: () => decideDocumentReview,
   deleteFrames: () => deleteFrames,
   deleteShotRows: () => deleteShotRows,
+  documentHasContent: () => documentHasContent,
   documentOf: () => documentOf,
   duplicateFrame: () => duplicateFrame,
   duplicateShotRow: () => duplicateShotRow,
@@ -8205,6 +8208,7 @@ __export(documents_exports, {
   moveFramesTo: () => moveFramesTo,
   movePage: () => movePage,
   moveShotRow: () => moveShotRow,
+  newDocumentsOn: () => newDocumentsOn,
   pagesOf: () => pagesOf,
   removeDocumentLink: () => removeDocumentLink,
   renameShotList: () => renameShotList,
@@ -8423,6 +8427,14 @@ function moveTo(items, id2, toIndex) {
   const [it] = ordered.splice(from, 1);
   ordered.splice(Math.max(0, Math.min(ordered.length, Math.floor(toIndex))), 0, it);
   ordered.forEach((x, i) => x.position = i);
+}
+var newDocumentsOn = (formType2) => (getDb().settings.newDocuments ?? []).includes(catalogTypeOf(formType2));
+function documentHasContent(documentId) {
+  const db2 = getDb();
+  if (db2.documentLinks.some((l) => l.documentId === documentId)) return true;
+  return pagesOf(documentId).some(
+    (p) => (p.version > 1 || p.updatedBy === "migration") && (textOf(p.bodyHtml) !== "" || p.subtitle.trim() !== "")
+  );
 }
 
 // src/services/documents/pages.ts
@@ -8938,17 +8950,36 @@ function makeDevotionEpisodes(actor, projectId) {
   if (p.workflow.formType !== "devotion") throw new RuleError("Only a devotion makes its episodes from its script.");
   if (p.workflow.stage !== "Pre-production") throw new RuleError("The episodes are listed in Pre-production, once the script is accepted.");
   const script = documentOf(projectId, "Development", "devotional_script");
-  const pages = script ? pagesOf(script.id).filter((pg) => pg.title.trim() || textOf(pg.bodyHtml)) : [];
+  const pages = script ? pagesOf(script.id).filter(
+    (pg) => textOf(pg.bodyHtml) !== "" || pg.subtitle.trim() !== "" || pg.version > 1 || pg.updatedBy === "migration"
+  ) : [];
   if (!pages.length) throw new RuleError("The Devotional Script has no devotions written yet.");
   const db2 = getDb();
   const theme = String(formOf(projectId).sections.entry?.theme ?? "");
   const out = { made: [], updated: [], episodes: [] };
   const at = nowStamp();
   let reserved = 0;
+  const earlier = db2.plannedEpisodes.filter((x) => x.contentId === projectId && !x.archivedAt && !x.sourcePageId).sort((a, b) => a.episodeNumber - b.episodeNumber);
   for (const page of pages) {
     let planned = db2.plannedEpisodes.find((x) => x.contentId === projectId && x.sourcePageId === page.id);
     const title2 = page.title.trim() || `Devotion ${pages.indexOf(page) + 1}`;
-    if (!planned) {
+    const day = planned ? void 0 : earlier.shift();
+    if (day) {
+      const scripture = page.subtitle.trim() || String(day.details.scripture ?? "");
+      const replaced = [
+        day.workingTitle.trim() && day.workingTitle !== title2 ? `Title on the earlier form: ${day.workingTitle}` : "",
+        day.details.scripture && day.details.scripture !== scripture ? `Scripture on the earlier form: ${String(day.details.scripture)}` : ""
+      ].filter(Boolean);
+      Object.assign(day, {
+        sourcePageId: page.id,
+        workingTitle: title2,
+        details: { ...day.details, scripture },
+        notes: [day.notes, ...replaced].filter(Boolean).join("\n"),
+        updatedAt: at
+      });
+      planned = day;
+      out.updated.push(day.id);
+    } else if (!planned) {
       const { id: id2, n } = nextPlanned(projectId);
       const made = {
         id: id2,
@@ -9398,8 +9429,10 @@ var SETTINGS_EDITABLE = [
   "storageWarningThreshold",
   "checkoutReturnDays",
   "workDays",
-  "effortOverrides"
+  "effortOverrides",
+  "newDocuments"
 ];
+var DOCUMENTS_READY = ["devotion"];
 function updateSettings(actor, input) {
   requireCan(actor, "backend.settings", "change system settings");
   const patch = pickKeys(input, SETTINGS_EDITABLE);
@@ -9422,6 +9455,13 @@ function updateSettings(actor, input) {
       if (!Number.isFinite(v) || v < 0 || v > 30 || Math.round(v * 4) !== v * 4)
         throw new RuleError(`${key2.split(":")[1] ?? key2}: use a number of days from 0 to 30, in steps of a quarter day.`);
     }
+  }
+  if (patch.newDocuments !== void 0) {
+    if (!Array.isArray(patch.newDocuments)) throw new RuleError("Choose the kinds of project that use the new documents.");
+    const kinds = [...new Set(patch.newDocuments)];
+    const early = kinds.find((k) => !DOCUMENTS_READY.includes(k));
+    if (early) throw new RuleError("Only devotions can use the new documents for now. Series and documentaries follow next.");
+    patch.newDocuments = kinds;
   }
   Object.assign(getDb().settings, patch);
   logAudit(actor, "settings", "settings", "system", Object.keys(patch).join(", "));
@@ -10445,7 +10485,7 @@ function closeSession(actor, sessionId) {
         }
         const p = planned.get(row.plannedEpisodeId);
         const waiting2 = p.reservedId ? db2.records.find((r) => r.contentId === p.reservedId && (!r.episode || r.archived && r.episode.plannedEpisodeId === p.id)) : void 0;
-        const given = p.reservedId && !db2.records.some((r) => r.contentId === p.reservedId) ? p.reservedId : void 0;
+        const given2 = p.reservedId && !db2.records.some((r) => r.contentId === p.reservedId) ? p.reservedId : void 0;
         const ep = makeEpisode(
           actor,
           project,
@@ -10456,7 +10496,7 @@ function closeSession(actor, sessionId) {
             productionNotes: row.notesForPost,
             scheduledDate: row.logDate
           },
-          waiting2 ?? given
+          waiting2 ?? given2
         );
         made.push(ep.contentId);
       } else if (existing && existing.episode?.sourceSessionId === sessionId) {
@@ -11210,7 +11250,8 @@ var ACTIONS = {
       storageWarningThreshold: z2.number().min(0).max(100),
       checkoutReturnDays: count(1e3),
       workDays: z2.array(z2.number().int().min(0).max(6)).max(7),
-      effortOverrides: z2.record(short(200), z2.number().min(0).max(1e3))
+      effortOverrides: z2.record(short(200), z2.number().min(0).max(1e3)),
+      newDocuments: z2.array(z2.enum(["devotion", "series", "documentary"])).max(3)
     }).partial()
   ]),
   "settings.updateWorkspaceAppearance": args([

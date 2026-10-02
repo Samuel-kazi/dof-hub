@@ -183,6 +183,13 @@ comments, storyboards and shot lists. It keeps a copy first, in `hub_items_befor
   `hub_meta_before_undo_documents`) and removes exactly the documents, pages, reviews, comments and shot lists the
   move wrote. A document or shot list written in since the move is kept and listed; add `--force` to remove it too.
 
+### Trying the document screens (documents rework, phase 2)
+
+Nothing changes on screen until it is turned on. In Settings, Documents (preview), tick "Devotions show their
+documents" (it needs the "change system settings" right). Every devotion then opens on its Project Home. Each person
+can switch a project back with "Earlier screens" at any time; the data is the same either way. Untick it to turn it
+off for everyone. Series and documentaries follow in the next phase.
+
 ## What this does not do yet
 
 - The **desktop app** is the local demo. The hosted site is the real one.

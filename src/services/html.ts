@@ -60,6 +60,8 @@ export function cleanStyle(style: string): string {
 }
 
 let purifier: Purifier | null = null;
+type HtmlWindow = Parameters<typeof createDOMPurify>[0];
+let given: HtmlWindow | null = null;
 
 function configure(p: Purifier): Purifier {
   p.addHook("uponSanitizeAttribute", (node, data) => {
@@ -79,7 +81,8 @@ function configure(p: Purifier): Purifier {
 }
 
 /** For the server and the tests: the document to clean with, from a DOM library such as jsdom. */
-export function setHtmlWindow(window: Parameters<typeof createDOMPurify>[0]): void {
+export function setHtmlWindow(window: HtmlWindow): void {
+  given = window;
   purifier = configure(createDOMPurify(window));
 }
 
@@ -132,3 +135,91 @@ export function textToHtml(text: string): string {
 
 export const escapeHtml = (s: string): string =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+// ── Pasting ──────────────────────────────────────────────────
+// A paste from Google Docs, Word or a web page keeps its bold, italic, headings, lists and links, and nothing else:
+// no fonts, colours, sizes, tables or images. Google Docs marks bold and italic with styles, and Word writes its lists
+// as paragraphs with a typed bullet, so those are turned into the plain tags first.
+
+const PASTE_TAGS = ["p", "br", "strong", "b", "em", "i", "h1", "h2", "h3", "ul", "ol", "li", "a"];
+const BLOCKS = new Set(["P", "DIV", "H1", "H2", "H3", "H4", "H5", "H6", "UL", "OL", "LI", "TABLE", "BLOCKQUOTE", "PRE"]);
+
+function windowOf(): Window & typeof globalThis {
+  const w = given ?? (typeof window !== "undefined" ? window : null);
+  if (!w) throw new Error("Pasted text cannot be cleaned here: no document to clean it with was given (server/html.ts).");
+  return w as unknown as Window & typeof globalThis;
+}
+
+const styleOf = (el: Element): string => (el.getAttribute("style") ?? "").replace(/\s+/g, "").toLowerCase();
+
+function rename(el: Element, tag: string): Element {
+  const next = el.ownerDocument.createElement(tag);
+  while (el.firstChild) next.appendChild(el.firstChild);
+  el.replaceWith(next);
+  return next;
+}
+
+function unwrap(el: Element): void {
+  el.replaceWith(...Array.from(el.childNodes));
+}
+
+/** Word's list paragraphs (class MsoListParagraph…, or a mso-list style) become real lists. */
+function wordLists(root: HTMLElement): void {
+  const isItem = (el: Element | null): el is HTMLElement =>
+    !!el && el.tagName === "P" && (/MsoListParagraph/i.test(el.className) || /mso-list:l\d/.test(styleOf(el)));
+  for (const first of Array.from(root.querySelectorAll("p"))) {
+    if (!first.isConnected || !isItem(first) || isItem(first.previousElementSibling)) continue;
+    const marker =
+      Array.from(first.querySelectorAll("[style]"))
+        .find((m) => styleOf(m).includes("mso-list:ignore"))
+        ?.textContent?.trim() ?? "";
+    const list = root.ownerDocument.createElement(/^(\d+|[a-z]|[ivxlc]+)[.)]/i.test(marker) ? "ol" : "ul");
+    first.before(list);
+    let item: Element | null = first;
+    while (isItem(item)) {
+      const next: Element | null = item.nextElementSibling;
+      // Word's typed bullet or number, marked mso-list:Ignore.
+      item.querySelectorAll("[style]").forEach((m) => styleOf(m).includes("mso-list:ignore") && m.remove());
+      list.appendChild(rename(item, "li"));
+      item = next;
+    }
+  }
+}
+
+/** Pasted HTML, cleaned to what a paste keeps: bold, italic, headings, lists and links. */
+export function cleanPastedHtml(html: string): string {
+  const doc = new (windowOf().DOMParser)().parseFromString(html, "text/html");
+  const body = doc.body;
+  body.querySelectorAll("script, style, meta, link, title, img, svg, video, audio, iframe, object, o\\:p").forEach((n) => n.remove());
+  wordLists(body);
+  // Google Docs wraps the whole paste in a <b> that is not bold.
+  body.querySelectorAll('b[id^="docs-internal-guid"], b[style*="font-weight:normal"], b[style*="font-weight: normal"]').forEach(unwrap);
+  // Bold and italic written as styles become the plain tags, so they survive the cleaning.
+  for (const el of Array.from(body.querySelectorAll("span, font, a, p, li"))) {
+    const style = styleOf(el);
+    const bold = /font-weight:(bold|[6-9]00)/.test(style);
+    const italic = /font-style:italic/.test(style);
+    if (!bold && !italic) continue;
+    const inner = doc.createElement(bold ? "strong" : "em");
+    while (el.firstChild) inner.appendChild(el.firstChild);
+    if (bold && italic) {
+      const em = doc.createElement("em");
+      while (inner.firstChild) em.appendChild(inner.firstChild);
+      inner.appendChild(em);
+    }
+    el.appendChild(inner);
+  }
+  // Smaller headings become the smallest the editor has; table cells and plain blocks become paragraphs.
+  body.querySelectorAll("h4, h5, h6").forEach((h) => rename(h, "h3"));
+  for (const el of Array.from(body.querySelectorAll("td, th, div, blockquote, pre"))) {
+    if (Array.from(el.children).some((c) => BLOCKS.has(c.tagName))) unwrap(el);
+    else rename(el, "p");
+  }
+  const cleaned = current().sanitize(body.innerHTML, {
+    ALLOWED_TAGS: PASTE_TAGS,
+    ALLOWED_ATTR: ["href"],
+    ALLOWED_URI_REGEXP: /^(?:https?|mailto):/i,
+    KEEP_CONTENT: true,
+  });
+  return cleaned.replace(/<p>(\s|&nbsp;)*<\/p>/g, "").trim();
+}

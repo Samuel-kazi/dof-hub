@@ -7,6 +7,34 @@ What changed in each version, newest first. How to deploy is in GO-LIVE.md.
 Being built in phases. The five stages, their names and order, the stage tracker, Content IDs and every form that
 drives the calendar, reminders, call sheets, gear, storage or overdue stay as they are.
 
+**Phase 2: the document screens and the editor** (devotions first, behind a setting that starts off)
+- Settings, Documents (preview): "Devotions show their documents". Off until someone with the system settings right
+  turns it on. Series and documentaries cannot be turned on yet. Everyone can still switch a project back with
+  "Earlier screens" (remembered in their own browser).
+- Project Home: one coloured row per stage, the stage's name on the left and a tile for each document, tool or form.
+  A tile shows a small dot when its document has something in it, worked out from its pages and links, never set by
+  hand. The stage tracker stays at the top.
+- A tile opens full width in three panes: the stage's documents on the left (forms tagged "form"), the document's pages
+  as cards in the middle with "+ Add page", and the page on the right. Stage tabs along the top jump between stages,
+  and "Project home" comes back. Pages can be reordered (drag, or the ⋮ menu), deleted and restored.
+- The page: a plain title and subtitle (a devotion's scripture), a rich-text body (TipTap) with a sticky toolbar
+  (undo, redo, block style, text size, bold, italic, underline, strikethrough, colour, highlight, alignment, bullet,
+  numbered and check lists, indent, outdent, link, clear formatting) and the usual shortcuts (Ctrl or Cmd with B, I,
+  U, Z, Shift+Z and K). The writing sits on paper, light in both themes, so colours read the same on screen and
+  printed. A Links box for files kept in Google Docs, Drive or WhatsApp, opened in the person's own browser.
+- Saving: 800 ms after the writer stops, "Saving…" then "Saved @ hh:mm". On the hosted site, "Saved" waits until the
+  server has the save. A save that fails, or meets someone else's newer save, keeps the words on screen with Keep
+  mine (or Save again), Copy my words, or Use theirs; until it is saved, a copy stays in the browser and is offered
+  back next time. Leaving the page, the app screen or the browser tab with words not saved asks first.
+- A paste from Google Docs, Word or the web keeps bold, italic, headings, lists and links and drops everything else.
+  Every page is cleaned again when it is opened.
+- Print page or Print document: the pages alone, without the app, each page on its own sheet.
+- Forms keep their screens: the Accept or Decline tile shows the Development form as before (guest, review, decision
+  and the move to Pre-production) until the next phase; Recording Session, Call Sheet, Recording Day View, Storage
+  and Review open the same screens as before. Devotions (Pre-production) lists the devotions from the script, each with
+  its Content ID; days already listed on the earlier form are taken over in order, never listed twice.
+- The editor is downloaded only when a page is opened (about 130 KB), so the app's first load is not slower.
+
 **Phase 1: the data, the services and the move** (data version 16; no new screens yet)
 - New lists: project documents, their pages, links, theological reviews and review comments, storyboards with
   their frames, and shot lists with their rows. All start empty. Which documents, tools and forms each kind of

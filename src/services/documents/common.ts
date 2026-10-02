@@ -1,7 +1,9 @@
-import type { Actor, ContentRecord, DocumentPage, ProjectDocument } from "../../types";
+import type { Actor, ContentRecord, DocumentPage, FormType, ProjectDocument } from "../../types";
 import { RuleError } from "../../types";
 import { getDb } from "../../data/store";
 import { canComment, canView, canWrite, getRecord } from "../access";
+import { catalogTypeOf } from "../../config/documentCatalog";
+import { textOf } from "../html";
 import { isWorkflowProject, nowStamp, type Project } from "../workflow/common";
 
 // Shared by the document services: finding a project's documents, pages and boards, and who may change them.
@@ -70,4 +72,19 @@ export function moveTo<T extends { id: string; position: number }>(items: T[], i
   const [it] = ordered.splice(from, 1);
   ordered.splice(Math.max(0, Math.min(ordered.length, Math.floor(toIndex))), 0, it);
   ordered.forEach((x, i) => (x.position = i));
+}
+
+/** Whether projects of this form type show their documents (turned on in Settings, one kind at a time). */
+export const newDocumentsOn = (formType: FormType): boolean => (getDb().settings.newDocuments ?? []).includes(catalogTypeOf(formType));
+
+/**
+ * Whether a document has been written in: a link, or a page someone (or the move from the old forms) has written
+ * words on. Worked out every time, never set by hand; a tile shows it as a small filled dot.
+ */
+export function documentHasContent(documentId: string): boolean {
+  const db = getDb();
+  if (db.documentLinks.some((l) => l.documentId === documentId)) return true;
+  return pagesOf(documentId).some(
+    (p) => (p.version > 1 || p.updatedBy === "migration") && (textOf(p.bodyHtml) !== "" || p.subtitle.trim() !== ""),
+  );
 }

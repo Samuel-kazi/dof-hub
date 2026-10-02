@@ -56,4 +56,4 @@ export type { NewBoard, FrameEdit, RowEdit } from "./documents/boards";
 export { makeDevotionEpisodes } from "./documents/devotions";
 export type { DevotionList } from "./documents/devotions";
 
-export { pagesOf, getDocument } from "./documents/common";
+export { pagesOf, getDocument, newDocumentsOn, documentHasContent } from "./documents/common";

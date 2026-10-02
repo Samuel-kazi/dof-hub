@@ -285,6 +285,49 @@ await t("in Pre-production a devotion's script becomes its list of episodes, eac
   ok();
 });
 
+await t("days already listed on the earlier form are taken over by the script's pages, in order, never listed twice", () => {
+  const id = "DOF-DEV-001";
+  const before = getDb()
+    .plannedEpisodes.filter((p) => p.contentId === id)
+    .map((p) => p.id);
+  assert.equal(before.length, 5, "the fixture's five days, from the earlier form");
+  const script = D.ensureDocument(hop(), id, "Development", "devotional_script");
+  const first = pages(script.id)[0];
+  D.savePage(hop(), first.id, { title: "A gift", subtitle: "Psalm 118:24", bodyHtml: "<p>Today</p>" }, first.version);
+  const second = pages(script.id)[1];
+  D.savePage(hop(), second.id, { bodyHtml: "<p>Mercy</p>" }, second.version);
+  Object.assign(getDb().records.find((r) => r.contentId === id)!.workflow!, { stage: "Pre-production", status: "Active" });
+  const list = D.makeDevotionEpisodes(hop(), id);
+  assert.deepEqual(list.made, [], "nothing new: the earlier days are used");
+  const planned = getDb().plannedEpisodes.filter((p) => p.contentId === id);
+  assert.deepEqual(
+    planned.map((p) => p.id),
+    before,
+    "still five days",
+  );
+  const [one, two] = planned;
+  assert.deepEqual([one.sourcePageId, one.workingTitle, one.details.scripture], [first.id, "A gift", "Psalm 118:24"]);
+  assert.match(one.notes, /Title on the earlier form: Day 1: Today is a gift/, "what the page replaced is kept");
+  assert.equal(two.details.scripture, "Lamentations 3:22-23", "a page with no scripture keeps the day's own");
+  assert.equal(two.details.keyThought, "Mercy is new", "and the day's other details stay");
+  assert.deepEqual(
+    list.episodes.map((e) => e.contentId),
+    [`${id}-E01`, `${id}-E02`],
+    "only the pages written in count",
+  );
+  assert.deepEqual(
+    planned.slice(2).map((p) => [p.sourcePageId, p.workingTitle]),
+    [
+      [null, "Day 3: Work as worship"],
+      [null, "Day 4: One day at a time"],
+      [null, "Day 5: Rest is trust"],
+    ],
+    "the days not yet written as pages are left as they were",
+  );
+  assert.equal(D.makeDevotionEpisodes(hop(), id).made.length, 0, "and again, nothing twice");
+  ok();
+});
+
 await t("recording a devotion makes each episode under the Content ID it was given", async () => {
   const id = devotionInPreProduction();
   D.makeDevotionEpisodes(hop(), id);

@@ -469,6 +469,7 @@ export const ACTIONS: Record<string, ActionSpec> = {
         checkoutReturnDays: count(1000),
         workDays: z.array(z.number().int().min(0).max(6)).max(7),
         effortOverrides: z.record(short(200), z.number().min(0).max(1000)),
+        newDocuments: z.array(z.enum(["devotion", "series", "documentary"])).max(3),
       })
       .partial(),
   ]),
