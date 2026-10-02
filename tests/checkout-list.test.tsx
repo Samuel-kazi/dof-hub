@@ -11,9 +11,24 @@ import { resetDemoData, getDb } from "../src/data/store";
 import { createManifest, markGoneOut } from "../src/services/equipment";
 
 let passed = 0;
-const t = (name: string, fn: () => void) => { resetDemoData(); try { fn(); passed++; console.log("ok  ", name); } catch (e) { console.error("FAIL", name, "\n    ", e instanceof Error ? e.message : e); process.exitCode = 1; } };
+const t = (name: string, fn: () => void) => {
+  resetDemoData();
+  try {
+    fn();
+    passed++;
+    console.log("ok  ", name);
+  } catch (e) {
+    console.error("FAIL", name, "\n    ", e instanceof Error ? e.message : e);
+    process.exitCode = 1;
+  }
+};
 const hop = () => login("hop@dof.demo", "demo");
-const page = (id: string) => renderToString(<AppProvider actor={hop()} onLogout={() => {}}>{React.createElement(ManifestPage, { id })}</AppProvider>);
+const page = (id: string) =>
+  renderToString(
+    <AppProvider actor={hop()} onLogout={() => {}}>
+      {React.createElement(ManifestPage, { id })}
+    </AppProvider>,
+  );
 
 t("every field asked for appears as its own column: equipment ID, make/model, qty, condition, photos, accessories, info", () => {
   const m = getDb().manifests.find((x) => x.lines.length > 0)!;
@@ -27,7 +42,16 @@ t("every field asked for appears as its own column: equipment ID, make/model, qt
 
 t("items from more than one category are grouped under a heading per category, sorted alphabetically", () => {
   const actor = hop();
-  const m = createManifest(actor, { contentId: "DOF-SER-001", date: "2026-10-05", destination: "studio", status: "assigned", lines: [{ equipmentId: "DOF-EQ-AUD-001", quantity: 1 }, { equipmentId: "DOF-EQ-CAM-001", quantity: 1 }] });
+  const m = createManifest(actor, {
+    contentId: "DOF-SER-001",
+    date: "2026-10-05",
+    destination: "studio",
+    status: "assigned",
+    lines: [
+      { equipmentId: "DOF-EQ-AUD-001", quantity: 1 },
+      { equipmentId: "DOF-EQ-CAM-001", quantity: 1 },
+    ],
+  });
   const html = page(m.id);
   assert.equal((html.match(/table-group/g) ?? []).length, 2, "one heading per category, even though there are two lines each");
   const audioAt = html.indexOf(">Audio<");
@@ -37,7 +61,16 @@ t("items from more than one category are grouped under a heading per category, s
 
 t("a single category still gets its own heading, not a bare list", () => {
   const actor = hop();
-  const m = createManifest(actor, { contentId: "DOF-SER-001", date: "2026-10-05", destination: "studio", status: "assigned", lines: [{ equipmentId: "DOF-EQ-CAM-001", quantity: 1 }, { equipmentId: "DOF-EQ-CAM-002", quantity: 1 }] });
+  const m = createManifest(actor, {
+    contentId: "DOF-SER-001",
+    date: "2026-10-05",
+    destination: "studio",
+    status: "assigned",
+    lines: [
+      { equipmentId: "DOF-EQ-CAM-001", quantity: 1 },
+      { equipmentId: "DOF-EQ-CAM-002", quantity: 1 },
+    ],
+  });
   const html = page(m.id);
   assert.equal((html.match(/table-group/g) ?? []).length, 1);
   assert.match(html, />Camera</);
@@ -45,7 +78,13 @@ t("a single category still gets its own heading, not a bare list", () => {
 
 t("a photo taken out is shown as an actual thumbnail, not just a link, once uploaded", () => {
   const actor = hop();
-  const m = createManifest(actor, { contentId: "DOF-SER-001", date: "2026-10-05", destination: "outside", status: "assigned", lines: [{ equipmentId: "DOF-EQ-CAM-001", quantity: 1 }] });
+  const m = createManifest(actor, {
+    contentId: "DOF-SER-001",
+    date: "2026-10-05",
+    destination: "outside",
+    status: "assigned",
+    lines: [{ equipmentId: "DOF-EQ-CAM-001", quantity: 1 }],
+  });
   const dataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
   markGoneOut(actor, m.id, { photos: { "DOF-EQ-CAM-001": [{ url: dataUrl }] } });
   assert.match(page(m.id), /<img/);

@@ -4,3 +4,4 @@ import { rpc, serverOnly } from "../../data/rpc";
 export const updateSettings = rpc("settings.updateSettings", core.updateSettings);
 export const updateWorkspaceAppearance = rpc("settings.updateWorkspaceAppearance", core.updateWorkspaceAppearance);
 export const changePassword = serverOnly("settings.changePassword", core.changePassword);
+export { SETTINGS_EDITABLE } from "../settings";

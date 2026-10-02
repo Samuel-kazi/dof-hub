@@ -1,3 +1,7 @@
+import { RuleError } from "../src/types";
+import { UNIQUE_RULES, uniqueViolations } from "../src/data/constraints";
+import { layout1ToItems, versionedKeys } from "./layout";
+
 // Where the server keeps things. The same interface is implemented twice: in memory, for tests and
 // for trying the app on a laptop, and in MongoDB, for the real thing (see mongo.ts).
 
@@ -22,7 +26,26 @@ export interface SessionDoc {
   agent: string;
 }
 
-export interface AttemptDoc { _id: string; count: number; first: number; lockedUntil: number }
+export interface AttemptDoc {
+  _id: string;
+  count: number;
+  first: number;
+  lockedUntil: number;
+}
+
+/**
+ * Counts of sign-in attempts. Every change is a single atomic step in the database, so attempts sent at the
+ * same moment are all counted: a count read first and written back later would let them slip past the limit.
+ */
+export interface AttemptStore {
+  get(key: string): Promise<AttemptDoc | null>;
+  /** Adds one to the count and returns the result. A count whose window has passed starts again from one. */
+  charge(key: string, now: number, windowMs: number): Promise<AttemptDoc>;
+  /** Takes one back off the count, for an attempt that turned out to be the right password. */
+  refund(key: string): Promise<void>;
+  lock(key: string, until: number): Promise<void>;
+  clear(key: string): Promise<void>;
+}
 
 export interface GoogleDoc {
   _id: string; // username
@@ -33,7 +56,13 @@ export interface GoogleDoc {
   linkedAt: string;
 }
 
-export interface OAuthDoc { _id: string; username: string; verifier: string; scopes: string[]; expiresAt: number }
+export interface OAuthDoc {
+  _id: string;
+  username: string;
+  verifier: string;
+  scopes: string[];
+  expiresAt: number;
+}
 
 export interface Col<T extends { _id: string }> {
   get(id: string): Promise<T | null>;
@@ -44,63 +73,217 @@ export interface Col<T extends { _id: string }> {
   remove(id: string): Promise<void>;
 }
 
-export interface Loaded { data: Record<string, unknown>; versions: Record<string, number>; revision: number; schemaVersion: number }
+// ── The app's data ───────────────────────────────────────────
+// Each element of each part of the data is its own document: one record, one person, one log entry. Settings
+// and counters, which are single objects, are one document each. See server/layout.ts for how parts map to
+// elements, and server/state.ts for how changes are found and saved.
+
+/** One element of one part of the data. `o` keeps the order the app keeps it in. */
+export interface Item {
+  k: string;
+  i: string;
+  o: number;
+  d: unknown;
+}
+
+/** Where the data stands: a revision that goes up with every save, the data's schema version, and each part's own version. */
+export interface Head {
+  revision: number;
+  schemaVersion: number;
+  versions: Record<string, number>;
+}
+
+export interface Commit {
+  put: Item[]; // new or changed elements
+  remove: { k: string; i: string }[]; // elements that are gone
+  expect: Record<string, number>; // parts that must still be at these versions, or nothing is written. Each goes up by one.
+  schemaVersion: number;
+}
 
 export interface StateStore {
-  load(keys?: string[]): Promise<Loaded | null>; // null until the app has been set up
-  save(changes: Record<string, unknown>, expected: Record<string, number>, schemaVersion: number): Promise<boolean>; // false if someone else saved first
-  init(data: Record<string, unknown>, schemaVersion: number): Promise<boolean>; // false if it already exists
+  /** Cheap: one small read. Null until the app has been set up. */
+  head(): Promise<Head | null>;
+  /** Every element of these parts, in order. */
+  items(keys: string[]): Promise<Item[]>;
+  /** The newest elements of one part, newest first. */
+  newest(key: string, limit: number): Promise<Item[]>;
+  /**
+   * Writes all of it or none of it. Returns the new revision, or null if someone else changed a part in `expect`
+   * first. Throws a RuleError, writing nothing, if it would break a uniqueness rule (src/data/constraints.ts).
+   */
+  commit(c: Commit): Promise<number | null>;
+  /** The first time only. False if the data already exists. */
+  init(items: Item[], schemaVersion: number): Promise<boolean>;
+  /** How many elements one part has. */
+  count(key: string): Promise<number>;
+  /**
+   * Keeps a copy of all the data under `label`, before an upgrade changes it. A copy already kept under that
+   * label is never replaced, so the first copy, made before anything changed, is the one that stays. Returns
+   * where the copy is.
+   */
+  backup(label: string): Promise<string>;
+}
+
+/** A photo, kept apart from the data so the data stays small. Served at /api/file?id=… to signed-in people. */
+export interface FileDoc {
+  _id: string;
+  type: string;
+  data: string;
+  size: number;
+  at: string;
 }
 
 export interface Store {
   diagnose?(): Promise<Record<string, unknown>>; // extra checks for the health address
   state: StateStore;
+  files: Col<FileDoc>;
   users: Col<UserDoc>;
   sessions: Col<SessionDoc>;
-  attempts: Col<AttemptDoc>;
+  attempts: AttemptStore;
   google: Col<GoogleDoc>;
   oauth: Col<OAuthDoc>;
 }
 
 class MemCol<T extends { _id: string }> implements Col<T> {
   private m = new Map<string, T>();
-  async get(id: string) { const d = this.m.get(id); return d ? structuredClone(d) : null; }
-  async all() { return [...this.m.values()].map((d) => structuredClone(d)); }
-  async find(where: Partial<T>) { return (await this.all()).filter((d) => Object.entries(where).every(([k, v]) => (d as Record<string, unknown>)[k] === v)); }
-  async insert(doc: T) { if (this.m.has(doc._id)) return false; this.m.set(doc._id, structuredClone(doc)); return true; }
-  async put(doc: T) { this.m.set(doc._id, structuredClone(doc)); }
-  async remove(id: string) { this.m.delete(id); }
+  async get(id: string) {
+    const d = this.m.get(id);
+    return d ? structuredClone(d) : null;
+  }
+  async all() {
+    return [...this.m.values()].map((d) => structuredClone(d));
+  }
+  async find(where: Partial<T>) {
+    return (await this.all()).filter((d) => Object.entries(where).every(([k, v]) => (d as Record<string, unknown>)[k] === v));
+  }
+  async insert(doc: T) {
+    if (this.m.has(doc._id)) return false;
+    this.m.set(doc._id, structuredClone(doc));
+    return true;
+  }
+  async put(doc: T) {
+    this.m.set(doc._id, structuredClone(doc));
+  }
+  async remove(id: string) {
+    this.m.delete(id);
+  }
 }
 
 class MemState implements StateStore {
-  private docs = new Map<string, { v: number; data: unknown }>();
-  private revision = 0;
-  private schema = 0;
-  private ready = false;
-  async load(keys?: string[]) {
-    if (!this.ready) return null;
-    const data: Record<string, unknown> = {};
-    const versions: Record<string, number> = {};
-    for (const [k, d] of this.docs) if (!keys || keys.includes(k)) { data[k] = structuredClone(d.data); versions[k] = d.v; }
-    return { data, versions, revision: this.revision, schemaVersion: this.schema };
+  private items_ = new Map<string, Item>(); // by `${k}/${i}`
+  private head_: Head | null = null;
+  constructor(seed?: { items: Item[]; head: Head }) {
+    if (!seed) return;
+    for (const it of seed.items) this.items_.set(`${it.k}/${it.i}`, structuredClone(it));
+    this.head_ = structuredClone(seed.head);
   }
-  async save(changes: Record<string, unknown>, expected: Record<string, number>, schemaVersion: number) {
-    for (const k of Object.keys(changes)) if ((this.docs.get(k)?.v ?? 0) !== (expected[k] ?? 0)) return false;
-    for (const [k, data] of Object.entries(changes)) this.docs.set(k, { v: (this.docs.get(k)?.v ?? 0) + 1, data: structuredClone(data) });
-    this.revision++;
-    this.schema = schemaVersion;
+  async head() {
+    return this.head_ ? structuredClone(this.head_) : null;
+  }
+  async items(keys: string[]) {
+    return [...this.items_.values()]
+      .filter((it) => keys.includes(it.k))
+      .sort((a, b) => (a.k < b.k ? -1 : a.k > b.k ? 1 : a.o - b.o))
+      .map((it) => structuredClone(it));
+  }
+  async newest(key: string, limit: number) {
+    return [...this.items_.values()]
+      .filter((it) => it.k === key)
+      .sort((a, b) => b.o - a.o)
+      .slice(0, limit)
+      .map((it) => structuredClone(it));
+  }
+  async commit(c: Commit) {
+    if (!this.head_) return null;
+    for (const [k, v] of Object.entries(c.expect)) if ((this.head_.versions[k] ?? 0) !== v) return null;
+    const next = new Map(this.items_);
+    for (const r of c.remove) next.delete(`${r.k}/${r.i}`);
+    for (const it of c.put) next.set(`${it.k}/${it.i}`, structuredClone(it));
+    // The same uniqueness rules MongoDB keeps with its unique indexes, checked before anything is kept.
+    for (const part of new Set(c.put.map((it) => it.k).filter((k) => UNIQUE_RULES.some((r) => r.part === k)))) {
+      const broken = uniqueViolations(
+        part,
+        [...next.values()].filter((it) => it.k === part).map((it) => it.d),
+      );
+      if (broken.length) throw new RuleError(broken[0]);
+    }
+    this.items_ = next;
+    for (const k of Object.keys(c.expect)) this.head_.versions[k] = (this.head_.versions[k] ?? 0) + 1;
+    this.head_.revision++;
+    this.head_.schemaVersion = c.schemaVersion;
+    return this.head_.revision;
+  }
+  async init(items: Item[], schemaVersion: number) {
+    if (this.head_) return false;
+    for (const it of items) this.items_.set(`${it.k}/${it.i}`, structuredClone(it));
+    this.head_ = { revision: 1, schemaVersion, versions: Object.fromEntries(versionedKeys().map((k) => [k, 1])) };
     return true;
   }
-  async init(data: Record<string, unknown>, schemaVersion: number) {
-    if (this.ready) return false;
-    for (const [k, v] of Object.entries(data)) this.docs.set(k, { v: 1, data: structuredClone(v) });
-    this.ready = true;
-    this.revision = 1;
-    this.schema = schemaVersion;
-    return true;
+  async count(key: string) {
+    return [...this.items_.values()].filter((it) => it.k === key).length;
+  }
+  /** Copies kept by backup(), for tests to look at. */
+  readonly backups = new Map<string, { items: Item[]; head: Head | null }>();
+  async backup(label: string) {
+    if (!this.backups.has(label))
+      this.backups.set(label, { items: [...this.items_.values()].map((it) => structuredClone(it)), head: structuredClone(this.head_) });
+    return `memory backup ${label}`;
   }
 }
 
-export function memoryStore(): Store {
-  return { state: new MemState(), users: new MemCol(), sessions: new MemCol(), attempts: new MemCol(), google: new MemCol(), oauth: new MemCol() };
+/** Atomic because nothing here awaits between reading a count and writing it back. */
+class MemAttempts implements AttemptStore {
+  private m = new Map<string, AttemptDoc>();
+  async get(key: string) {
+    const d = this.m.get(key);
+    return d ? { ...d } : null;
+  }
+  async charge(key: string, now: number, windowMs: number) {
+    const a = this.m.get(key);
+    const fresh = !a || now - a.first > windowMs;
+    const next: AttemptDoc = { _id: key, count: fresh ? 1 : a.count + 1, first: fresh ? now : a.first, lockedUntil: a?.lockedUntil ?? 0 };
+    this.m.set(key, next);
+    return { ...next };
+  }
+  async refund(key: string) {
+    const a = this.m.get(key);
+    if (a && a.count > 0) a.count--;
+  }
+  async lock(key: string, until: number) {
+    const a = this.m.get(key);
+    this.m.set(key, { _id: key, count: a?.count ?? 0, first: a?.first ?? Date.now(), lockedUntil: until });
+  }
+  async clear(key: string) {
+    this.m.delete(key);
+  }
+}
+
+/**
+ * Everything in memory, for tests and for trying the app on a laptop. `legacy` starts it with data saved in the
+ * earlier layout, upgraded the same way the MongoDB store upgrades it.
+ */
+export function memoryStore(legacy?: { data: Record<string, unknown>; revision: number; schemaVersion: number }): Store {
+  const files = new MemCol<FileDoc>();
+  let state = new MemState();
+  if (legacy) {
+    const up = layout1ToItems(legacy.data);
+    for (const f of up.files) void files.put(f);
+    state = new MemState({
+      items: up.items,
+      head: {
+        revision: legacy.revision,
+        schemaVersion: legacy.schemaVersion,
+        versions: Object.fromEntries(versionedKeys().map((k) => [k, 1])),
+      },
+    });
+  }
+  return {
+    state,
+    files,
+    users: new MemCol(),
+    sessions: new MemCol(),
+    attempts: new MemAttempts(),
+    google: new MemCol(),
+    oauth: new MemCol(),
+  };
 }

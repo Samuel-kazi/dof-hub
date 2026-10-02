@@ -15,15 +15,27 @@ if (!process.env.MONGODB_URI) process.env.DOF_STORE = "memory";
 process.env.SETUP_TOKEN ??= "local-setup-code";
 
 const { handler } = await import("../api/_server.mjs");
-const headers = Object.fromEntries((JSON.parse(readFileSync(join(root, "vercel.json"), "utf8")).headers[0].headers).map((h) => [h.key, h.value]));
-const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".json": "application/json", ".ico": "image/x-icon", ".webmanifest": "application/manifest+json", ".woff2": "font/woff2" };
+const headers = Object.fromEntries(
+  JSON.parse(readFileSync(join(root, "vercel.json"), "utf8")).headers[0].headers.map((h) => [h.key, h.value]),
+);
+const types = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript",
+  ".css": "text/css",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".json": "application/json",
+  ".ico": "image/x-icon",
+  ".webmanifest": "application/manifest+json",
+  ".woff2": "font/woff2",
+};
 const dist = join(root, "dist");
 const port = Number(process.env.PORT ?? 4173);
 
 createServer(async (req, res) => {
   const path = decodeURIComponent((req.url ?? "/").split("?")[0]);
   for (const [k, v] of Object.entries(headers)) res.setHeader(k, v);
-  if (path.startsWith("/api/")) return handler(req, res);
+  if (path.startsWith("/api/") || path.startsWith("/share/")) return handler(req, res); // share links, as vercel.json routes them
   let file = normalize(join(dist, path));
   if (!file.startsWith(dist) || !existsSync(file) || statSync(file).isDirectory()) file = join(dist, "index.html");
   res.setHeader("Content-Type", types[extname(file)] ?? "application/octet-stream");

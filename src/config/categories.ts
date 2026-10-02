@@ -1,4 +1,4 @@
-import type { CategoryKey } from "../types";
+import type { CategoryKey, FormType } from "../types";
 
 // One source of truth for how each content category behaves.
 // The UI reads this; no per-category logic is scattered elsewhere.
@@ -22,6 +22,8 @@ export interface CategoryConfig {
   grandchildLevelLabel: string | null; // "Episode", "Track"
   childToken: string | null; // S1, A1
   grandchildToken: string | null; // E01, T01
+  // For series, devotions and documentaries this is the earlier pipeline, kept for records made before the
+  // five-stage workflow until they are moved across. Their new records follow `workflow` instead.
   stages: StageDef[];
   // The level that carries the pipeline: 0 for a flat project, 1 for a live show's days, 2 for episodes and tracks.
   leafLevel: number;
@@ -30,9 +32,24 @@ export interface CategoryConfig {
   // The one place this category's colour is defined. Every view that renders a category (Kanban
   // cards, the calendar, dashboard charts) reads it from here rather than choosing its own.
   color: string;
+  // The five-stage workflow (src/config/workflow.ts). Null for categories that keep their own pipeline.
+  workflow: CategoryWorkflow | null;
 }
 
-const s = (name: string, requiredOutput: string, extra: { tasks?: string[]; docs?: string[] } = {}): StageDef => ({ name, requiredOutput, ...extra });
+/** Where a category's projects and episodes sit in its hierarchy, for the five-stage workflow. */
+export interface CategoryWorkflow {
+  projectLevel: number; // 1: a season of a series. 0: a devotion or documentary itself.
+  projectLabel: string;
+  episodeLevel: number; // always projectLevel + 1
+  episodeLabel: string;
+  formTypes: FormType[];
+}
+
+const s = (name: string, requiredOutput: string, extra: { tasks?: string[]; docs?: string[] } = {}): StageDef => ({
+  name,
+  requiredOutput,
+  ...extra,
+});
 
 // The levels of finishing an edit, in order. Each one can have its own deadline and person.
 export const EDIT_TASKS = ["Story lock", "Picture lock", "Sound check", "Color"];
@@ -61,6 +78,13 @@ export const CATEGORIES: CategoryConfig[] = [
     ],
     footageStage: "Recording",
     leafLevel: 2,
+    workflow: {
+      projectLevel: 1,
+      projectLabel: "Season",
+      episodeLevel: 2,
+      episodeLabel: "Episode",
+      formTypes: ["podcast", "testimonial", "sermon"],
+    },
   },
   {
     key: "devotional",
@@ -84,6 +108,8 @@ export const CATEGORIES: CategoryConfig[] = [
     ],
     footageStage: "Recording",
     leafLevel: 0,
+    // One guest's five-day sharing: one project, five episodes (Day 1 to Day 5) recorded in one session.
+    workflow: { projectLevel: 0, projectLabel: "Devotion", episodeLevel: 1, episodeLabel: "Day", formTypes: ["devotion"] },
   },
   {
     key: "live",
@@ -108,6 +134,7 @@ export const CATEGORIES: CategoryConfig[] = [
     ],
     footageStage: "Show",
     leafLevel: 1,
+    workflow: null,
   },
   {
     key: "documentary",
@@ -132,6 +159,14 @@ export const CATEGORIES: CategoryConfig[] = [
     ],
     footageStage: "Shooting",
     leafLevel: 0,
+    // One deliverable, the film, unless it is planned as several parts.
+    workflow: {
+      projectLevel: 0,
+      projectLabel: "Documentary",
+      episodeLevel: 1,
+      episodeLabel: "Part",
+      formTypes: ["documentary_dof", "documentary_pitched"],
+    },
   },
   {
     key: "music",
@@ -156,6 +191,7 @@ export const CATEGORIES: CategoryConfig[] = [
     ],
     footageStage: "Recording",
     leafLevel: 2,
+    workflow: null,
   },
   {
     key: "general",
@@ -175,6 +211,7 @@ export const CATEGORIES: CategoryConfig[] = [
     stages: [s("In use", "")],
     footageStage: "In use",
     leafLevel: 0,
+    workflow: null,
   },
 ];
 
@@ -190,7 +227,7 @@ export const categoryColor = (key: CategoryKey): string => categoryOf(key).color
 /** What a record's pipeline items are called: Episode, Track, Day, or the project itself. */
 export const leafLabel = (key: CategoryKey): string => {
   const c = categoryOf(key);
-  return c.leafLevel === 2 ? c.grandchildLevelLabel ?? "Item" : c.leafLevel === 1 ? c.childLevelLabel ?? "Item" : c.singular;
+  return c.leafLevel === 2 ? (c.grandchildLevelLabel ?? "Item") : c.leafLevel === 1 ? (c.childLevelLabel ?? "Item") : c.singular;
 };
 
 /** The shoot date is a show date for live days, which are streamed rather than shot. */

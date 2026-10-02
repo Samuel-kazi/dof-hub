@@ -12,8 +12,21 @@ import { LOGO_PNG, LOGO_PNG_ASPECT } from "../src/brand/logoPng";
 import { reportToPdf } from "../src/services/pdf";
 
 let passed = 0;
-const t = (name: string, fn: () => void | Promise<void>) => Promise.resolve(fn()).then(() => { passed++; console.log("ok  ", name); }, (e) => { console.log("FAIL", name, "\n    ", e instanceof Error ? e.message : e); process.exitCode = 1; });
-const pngSize = (buf: Buffer) => { assert.equal(buf.subarray(1, 4).toString(), "PNG"); return [buf.readUInt32BE(16), buf.readUInt32BE(20)]; };
+const t = (name: string, fn: () => void | Promise<void>) =>
+  Promise.resolve(fn()).then(
+    () => {
+      passed++;
+      console.log("ok  ", name);
+    },
+    (e) => {
+      console.log("FAIL", name, "\n    ", e instanceof Error ? e.message : e);
+      process.exitCode = 1;
+    },
+  );
+const pngSize = (buf: Buffer) => {
+  assert.equal(buf.subarray(1, 4).toString(), "PNG");
+  return [buf.readUInt32BE(16), buf.readUInt32BE(20)];
+};
 
 await t("the logo draws in the surrounding colour and keeps the artwork's proportions", () => {
   const html = renderToString(<Logo width={200} />);
@@ -22,7 +35,10 @@ await t("the logo draws in the surrounding colour and keeps the artwork's propor
   assert.match(html, /fill-rule="evenodd"/);
   assert.match(html, new RegExp(`viewBox="0 0 ${LOGO_W} ${LOGO_H}"`));
   assert.match(html, new RegExp(`height="${Math.round((200 * LOGO_H) / LOGO_W)}"`));
-  assert.ok(LOGO_PATH.length > 1000 && (LOGO_PATH.match(/M/g) ?? []).length === 12, "3 blocks, 2 dots, 3 letter cut-outs, 2 counters and the TV mark");
+  assert.ok(
+    LOGO_PATH.length > 1000 && (LOGO_PATH.match(/M/g) ?? []).length === 12,
+    "3 blocks, 2 dots, 3 letter cut-outs, 2 counters and the TV mark",
+  );
 });
 
 await t("the logo is on the sign-in screens and on printed reports", () => {
@@ -34,7 +50,12 @@ await t("the logo is on the sign-in screens and on printed reports", () => {
 });
 
 await t("PDFs carry the logo, with its transparent background, and stay small", async () => {
-  const bytes = await reportToPdf({ title: "Call sheet", subtitle: "Sunday", landscape: false, blocks: [{ type: "para", text: "Call time 06:30." }] } as never);
+  const bytes = await reportToPdf({
+    title: "Call sheet",
+    subtitle: "Sunday",
+    landscape: false,
+    blocks: [{ type: "para", text: "Call time 06:30." }],
+  } as never);
   const text = Buffer.from(bytes).toString("latin1");
   assert.match(text, /\/Subtype\s*\/Image/);
   assert.match(text, /\/SMask/);
@@ -46,7 +67,8 @@ await t("PDFs carry the logo, with its transparent background, and stay small", 
 await t("every icon the site names is really there, at the right size", () => {
   const html = readFileSync("index.html", "utf8");
   const hrefs = [...html.matchAll(/href="\/([^"]+)"/g)].map((m) => m[1]);
-  for (const f of ["favicon.svg", "favicon-32.png", "favicon.ico", "apple-touch-icon.png", "site.webmanifest"]) assert.ok(hrefs.includes(f), `index.html links ${f}`);
+  for (const f of ["favicon.svg", "favicon-32.png", "favicon.ico", "apple-touch-icon.png", "site.webmanifest"])
+    assert.ok(hrefs.includes(f), `index.html links ${f}`);
   for (const f of hrefs) assert.ok(existsSync(`public/${f}`), `public/${f} exists`);
   const manifest = JSON.parse(readFileSync("public/site.webmanifest", "utf8")) as { icons: { src: string; sizes: string }[] };
   for (const i of manifest.icons) {

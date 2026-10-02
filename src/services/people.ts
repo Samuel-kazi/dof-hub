@@ -1,12 +1,20 @@
 import type { Actor, Person, ProjectMember, RoleCode, User, ContentRecord } from "../types";
 import { RuleError } from "../types";
 import { commit, getDb } from "../data/store";
+import { claimId } from "../data/ids";
 import { ROLES } from "../config/roles";
 import { cleanRoles } from "../config/projectRoles";
-import { requireCan } from "./permissions";
-import { getRecord, isHop } from "./access";
+import { requireCan, requireNotBeyond } from "./permissions";
+import { getRecord, isHop, redactPerson } from "./access";
 import { logAudit } from "./audit";
-import { pad, todayIso } from "./utils";
+import { pad, pickKeys, STORED_FILE, todayIso } from "./utils";
+
+/** The categories a person can be given here. There is one Head of Production, made when the app is set up. */
+export const STAFF_CATEGORIES = ["CRW", "VOL", "PTR"] as const;
+
+function requireStaffCategory(category: unknown): asserts category is Exclude<RoleCode, "HOP"> {
+  if (!STAFF_CATEGORIES.includes(category as (typeof STAFF_CATEGORIES)[number])) throw new RuleError("Choose Crew, Volunteer or Partner.");
+}
 
 /** Highest existing number for the role prefix, plus one. Called once, at save time. */
 export function generatePersonId(category: RoleCode): string {
@@ -15,7 +23,7 @@ export function generatePersonId(category: RoleCode): string {
     .people.filter((p) => p.personId.startsWith(prefix + "-"))
     .map((p) => parseInt(p.personId.slice(prefix.length + 1), 10))
     .filter((n) => !Number.isNaN(n));
-  return `${prefix}-${pad((nums.length ? Math.max(...nums) : 0) + 1)}`;
+  return claimId(`${prefix}-${pad((nums.length ? Math.max(...nums) : 0) + 1)}`);
 }
 
 function requireHop(actor: Actor, what: string) {
@@ -35,7 +43,7 @@ export function getPerson(id: string): Person | undefined {
   return getDb().people.find((p) => p.personId === id);
 }
 
-export const nameOf = (id: string | null | undefined): string => (id ? getPerson(id)?.name ?? id : "Unassigned");
+export const nameOf = (id: string | null | undefined): string => (id ? (getPerson(id)?.name ?? id) : "Unassigned");
 
 export function createLoginForPerson(actor: Actor, personId: string, email: string, password: string): User {
   requireHop(actor, "create logins");
@@ -43,7 +51,8 @@ export function createLoginForPerson(actor: Actor, personId: string, email: stri
   if (!p) throw new RuleError("Person not found.");
   if (getDb().users.some((u) => u.personId === personId)) throw new RuleError("This person already has a login.");
   if (!email.trim()) throw new RuleError("Enter an email address for the login.");
-  if (getDb().users.some((u) => u.email.toLowerCase() === email.trim().toLowerCase())) throw new RuleError("That email is already used by another login.");
+  if (getDb().users.some((u) => u.email.toLowerCase() === email.trim().toLowerCase()))
+    throw new RuleError("That email is already used by another login.");
   if (password.length < 4) throw new RuleError("Password must be at least 4 characters.");
   const user: User = {
     userId: `U-${pad(getDb().users.length + 1)}`,
@@ -63,11 +72,13 @@ export function createLoginForPerson(actor: Actor, personId: string, email: stri
 /** Creates the profile, then the login if requested, as a single action from the user's view. */
 export function createPerson(actor: Actor, input: PersonInput, login?: { email: string; password: string }): Person {
   requireHop(actor, "add people");
+  requireStaffCategory(input.category);
   if (!input.name.trim()) throw new RuleError("Enter a name.");
   if (login) {
     // Validate the login half up front so we never end up with a half-created person.
     if (!login.email.trim()) throw new RuleError("Enter an email address for the login.");
-    if (getDb().users.some((u) => u.email.toLowerCase() === login.email.trim().toLowerCase())) throw new RuleError("That email is already used by another login.");
+    if (getDb().users.some((u) => u.email.toLowerCase() === login.email.trim().toLowerCase()))
+      throw new RuleError("That email is already used by another login.");
     if (login.password.length < 4) throw new RuleError("Password must be at least 4 characters.");
   }
   const person: Person = {
@@ -89,10 +100,23 @@ export function createPerson(actor: Actor, input: PersonInput, login?: { email: 
   return person;
 }
 
-export function updatePerson(actor: Actor, personId: string, patch: Partial<Pick<Person, "name" | "email" | "phone" | "skills" | "equipmentFamiliarity">>): Person {
+/** The details "Edit person" changes. Category, status and login have their own actions and rules. */
+export const PERSON_EDITABLE = ["name", "email", "phone", "skills", "equipmentFamiliarity"] as const;
+
+export function updatePerson(actor: Actor, personId: string, input: Partial<Pick<Person, (typeof PERSON_EDITABLE)[number]>>): Person {
   requireHop(actor, "edit people");
+  const patch = pickKeys(input, PERSON_EDITABLE);
   const p = getPerson(personId);
   if (!p) throw new RuleError("Person not found.");
+  if (p.category === "HOP" && !isHop(actor))
+    throw new RuleError("Only the Head of Production can change the Head of Production's details.");
+  // Details the actor is not allowed to see are not theirs to change either.
+  if (redactPerson(actor, p).contactHidden) {
+    delete patch.email;
+    delete patch.phone;
+    delete patch.equipmentFamiliarity;
+  }
+  if (patch.name !== undefined && !patch.name.trim()) throw new RuleError("Enter a name.");
   Object.assign(p, patch);
   logAudit(actor, "update", "person", personId, Object.keys(patch).join(", "));
   commit();
@@ -100,12 +124,17 @@ export function updatePerson(actor: Actor, personId: string, patch: Partial<Pick
 }
 
 /** Anyone can correct their own name and contact details. Access level and ID stay with the Head of Production. */
-export function updateOwnProfile(actor: Actor, patch: Partial<Pick<Person, "name" | "email" | "phone" | "notifyEmail" | "notifySms" | "photoUrl" | "fontSize" | "density">>): Person {
+export function updateOwnProfile(
+  actor: Actor,
+  patch: Partial<Pick<Person, "name" | "email" | "phone" | "notifyEmail" | "notifySms" | "photoUrl" | "fontSize" | "density">>,
+): Person {
   const p = getPerson(actor.personId);
   if (!p) throw new RuleError("Person not found.");
   if (patch.name !== undefined && !patch.name.trim()) throw new RuleError("Enter your name.");
   // A data: URL photo, kept small so it does not blow the local-storage budget other people share.
   if (patch.photoUrl && patch.photoUrl.length > 400_000) throw new RuleError("That photo is too large. Choose a smaller image.");
+  if (patch.photoUrl && !patch.photoUrl.startsWith("data:image/") && !STORED_FILE.test(patch.photoUrl))
+    throw new RuleError("Choose a photo from your device.");
   Object.assign(p, {
     ...(patch.name !== undefined ? { name: patch.name.trim() } : {}),
     ...(patch.email !== undefined ? { email: patch.email.trim() } : {}),
@@ -124,9 +153,12 @@ export function updateOwnProfile(actor: Actor, patch: Partial<Pick<Person, "name
 /** Promotion: the number in the ID never changes; only the category and login role do. */
 export function updatePersonCategory(actor: Actor, personId: string, newCategory: Exclude<RoleCode, "HOP">): Person {
   requireHop(actor, "change someone's category");
+  requireStaffCategory(newCategory);
   const p = getPerson(personId);
   if (!p) throw new RuleError("Person not found.");
   if (p.category === "HOP") throw new RuleError("The Head of Production category cannot be changed here.");
+  requireNotBeyond(actor, p.category, personId, "change the category");
+  requireNotBeyond(actor, newCategory, personId, "change the category"); // and not to one that would have more access than the actor
   const from = p.category;
   p.category = newCategory;
   const u = getDb().users.find((x) => x.personId === personId);
@@ -142,6 +174,7 @@ export function deactivatePerson(actor: Actor, personId: string): void {
   const p = getPerson(personId);
   if (!p) throw new RuleError("Person not found.");
   if (p.category === "HOP") throw new RuleError("The Head of Production cannot be deactivated.");
+  requireNotBeyond(actor, p.category, personId, "deactivate a login");
   p.status = "inactive";
   const u = getDb().users.find((x) => x.personId === personId);
   if (u) u.active = false;
@@ -153,6 +186,7 @@ export function reactivatePerson(actor: Actor, personId: string): void {
   requireHop(actor, "reactivate people");
   const p = getPerson(personId);
   if (!p) throw new RuleError("Person not found.");
+  requireNotBeyond(actor, p.category, personId, "reactivate a login");
   p.status = "active";
   const u = getDb().users.find((x) => x.personId === personId);
   if (u) u.active = true;
@@ -171,7 +205,8 @@ export function assignToProject(actor: Actor, personId: string, contentId: strin
   requireHop(actor, "assign people to projects");
   const rec = getRecord(contentId);
   if (!rec) throw new RuleError("Project not found.");
-  if (getDb().members.some((m) => m.personId === personId && m.projectContentId === contentId)) throw new RuleError("Already assigned to this project.");
+  if (getDb().members.some((m) => m.personId === personId && m.projectContentId === contentId))
+    throw new RuleError("Already assigned to this project.");
   const roles = cleanRoles(roleOnProject.split(","));
   getDb().members.push({ personId, projectContentId: contentId, roleOnProject: roles.join(", ") || "Team member", canComment });
   logAudit(actor, "assign", "person", personId, contentId);
@@ -182,7 +217,10 @@ export function assignToProject(actor: Actor, personId: string, contentId: strin
 export function workOwnedOn(personId: string, contentId: string): { stages: number; tasks: number } {
   const under = getDb().records.filter((r) => !r.archived && (r.contentId === contentId || r.contentId.startsWith(`${contentId}-`)));
   return {
-    stages: under.reduce((n, r) => n + Object.values(r.stageAssignees).filter((list) => list.some((o) => o.personId === personId)).length, 0),
+    stages: under.reduce(
+      (n, r) => n + Object.values(r.stageAssignees).filter((list) => list.some((o) => o.personId === personId)).length,
+      0,
+    ),
     tasks: under.reduce((n, r) => n + r.tasks.filter((t) => t.assigneePersonId === personId && !t.done).length, 0),
   };
 }
@@ -191,7 +229,12 @@ export function removeFromProject(actor: Actor, personId: string, contentId: str
   requireHop(actor, "remove people from projects");
   const owned = workOwnedOn(personId, contentId);
   if (owned.stages || owned.tasks) {
-    const parts = [owned.stages ? `${owned.stages} stage${owned.stages > 1 ? "s" : ""}` : "", owned.tasks ? `${owned.tasks} open task${owned.tasks > 1 ? "s" : ""}` : ""].filter(Boolean).join(" and ");
+    const parts = [
+      owned.stages ? `${owned.stages} stage${owned.stages > 1 ? "s" : ""}` : "",
+      owned.tasks ? `${owned.tasks} open task${owned.tasks > 1 ? "s" : ""}` : "",
+    ]
+      .filter(Boolean)
+      .join(" and ");
     throw new RuleError(`${getPerson(personId)?.name ?? personId} still owns ${parts} on this project. Hand them to someone else first.`);
   }
   getDb().members = getDb().members.filter((m) => !(m.personId === personId && m.projectContentId === contentId));

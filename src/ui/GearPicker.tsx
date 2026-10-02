@@ -13,7 +13,16 @@ import { fmtShort } from "../services/utils";
  * Chooses gear for a date range. Availability is shown next to every item,
  * so a clash is visible before you pick it. Batches roll up under their item family.
  */
-export function GearPicker({ from, to, excludeManifestId, alreadyOn = [], title = "Add gear", confirmLabel = "Add to list", onConfirm, onClose }: {
+export function GearPicker({
+  from,
+  to,
+  excludeManifestId,
+  alreadyOn = [],
+  title = "Add gear",
+  confirmLabel = "Add to list",
+  onConfirm,
+  onClose,
+}: {
   from: string;
   to: string;
   excludeManifestId?: string;
@@ -32,8 +41,12 @@ export function GearPicker({ from, to, excludeManifestId, alreadyOn = [], title 
   const [open, setOpen] = useState<string | null>(null);
 
   const rows = useMemo(() => pickerRows(from, to, excludeManifestId), [from, to, excludeManifestId]);
-  const shown = rows.filter((r) => (!cat || r.category === cat) && (!q.trim() || `${r.name} ${r.sub}`.toLowerCase().includes(q.trim().toLowerCase())));
-  const grouped = EQUIP_CATEGORIES.map((c) => ({ cat: c, rows: shown.filter((r) => r.category === c.key) })).filter((g) => g.rows.length > 0);
+  const shown = rows.filter(
+    (r) => (!cat || r.category === cat) && (!q.trim() || `${r.name} ${r.sub}`.toLowerCase().includes(q.trim().toLowerCase())),
+  );
+  const grouped = EQUIP_CATEGORIES.map((c) => ({ cat: c, rows: shown.filter((r) => r.category === c.key) })).filter(
+    (g) => g.rows.length > 0,
+  );
 
   const picked = rows.filter((r) => (qty[r.key] ?? 0) > 0 || r.batches?.some((b) => (batchQty[b.item.id] ?? 0) > 0));
 
@@ -57,7 +70,8 @@ export function GearPicker({ from, to, excludeManifestId, alreadyOn = [], title 
 
   const chip = (r: PickerRow) => {
     if (r.state === "ok") return <span className="badge ok">Available</span>;
-    if (r.state === "partial") return <span className="badge warn">{r.batches ? `${r.availableQty} of ${r.totalQty} free` : "Partly booked"}</span>;
+    if (r.state === "partial")
+      return <span className="badge warn">{r.batches ? `${r.availableQty} of ${r.totalQty} free` : "Partly booked"}</span>;
     if (r.state === "repair") return <span className="badge warn">In repair</span>;
     if (r.state === "conflict") return <span className="badge bad">{r.batches ? "None free" : "Booked"}</span>;
     return <span className="badge">{r.reason}</span>;
@@ -68,15 +82,35 @@ export function GearPicker({ from, to, excludeManifestId, alreadyOn = [], title 
       title={title}
       wide
       onClose={onClose}
-      actions={<><span className="muted" style={{ marginRight: "auto" }}>{picked.length} chosen</span><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={confirm}>{confirmLabel}</button></>}
+      actions={
+        <>
+          <span className="muted" style={{ marginRight: "auto" }}>
+            {picked.length} chosen
+          </span>
+          <button className="btn" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="btn primary" onClick={confirm}>
+            {confirmLabel}
+          </button>
+        </>
+      }
     >
-      <p className="muted" style={{ marginBottom: 10 }}>Availability is for {from === to ? fmtShort(from) : `${fmtShort(from)} to ${fmtShort(to)}`}.</p>
+      <p className="muted" style={{ marginBottom: 10 }}>
+        Availability is for {from === to ? fmtShort(from) : `${fmtShort(from)} to ${fmtShort(to)}`}.
+      </p>
       <div className="row" style={{ marginBottom: 10 }}>
-        <Field label="Search"><input type="text" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Camera, XLR, asset code" autoFocus /></Field>
+        <Field label="Search">
+          <input type="text" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Camera, XLR, asset code" autoFocus />
+        </Field>
         <Field label="Category">
           <select value={cat} onChange={(e) => setCat(e.target.value as EquipCategoryKey | "")}>
             <option value="">All categories</option>
-            {EQUIP_CATEGORIES.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+            {EQUIP_CATEGORIES.map((c) => (
+              <option key={c.key} value={c.key}>
+                {c.label}
+              </option>
+            ))}
           </select>
         </Field>
       </div>
@@ -86,64 +120,131 @@ export function GearPicker({ from, to, excludeManifestId, alreadyOn = [], title 
           <div key={g.cat.key}>
             <div className="picker-group">{g.cat.label}</div>
             {g.rows.map((r) => {
-          const onList = !!r.item && alreadyOn.includes(r.item.id);
-          const blocked = onList || r.state === "repair" || r.state === "retired" || r.state === "lost" || r.availableQty === 0;
-          return (
-            <div key={r.key} className={`picker-row ${blocked ? "blocked" : ""}`}>
-              <div className="picker-main">
-                {r.item ? (
-                  <label className="check">
-                    <input type="checkbox" disabled={blocked} checked={(qty[r.key] ?? 0) > 0} onChange={(e) => setQty({ ...qty, [r.key]: e.target.checked ? 1 : 0 })} />
-                    <span><span className="t">{r.name}</span><br /><span className="cid">{r.sub}</span></span>
-                  </label>
-                ) : (
-                  <div style={{ flex: 1 }}>
-                    <span className="t">{r.name}</span><br /><span className="cid">{r.sub}</span>
+              const onList = !!r.item && alreadyOn.includes(r.item.id);
+              const blocked = onList || r.state === "repair" || r.state === "retired" || r.state === "lost" || r.availableQty === 0;
+              return (
+                <div key={r.key} className={`picker-row ${blocked ? "blocked" : ""}`}>
+                  <div className="picker-main">
+                    {r.item ? (
+                      <label className="check">
+                        <input
+                          type="checkbox"
+                          disabled={blocked}
+                          checked={(qty[r.key] ?? 0) > 0}
+                          onChange={(e) => setQty({ ...qty, [r.key]: e.target.checked ? 1 : 0 })}
+                        />
+                        <span>
+                          <span className="t">{r.name}</span>
+                          <br />
+                          <span className="cid">{r.sub}</span>
+                        </span>
+                      </label>
+                    ) : (
+                      <div style={{ flex: 1 }}>
+                        <span className="t">{r.name}</span>
+                        <br />
+                        <span className="cid">{r.sub}</span>
+                      </div>
+                    )}
+                    {r.batches && (
+                      <div className="qty">
+                        <input
+                          type="number"
+                          min={0}
+                          max={r.availableQty}
+                          disabled={blocked}
+                          value={qty[r.key] ?? 0}
+                          onChange={(e) => setQty({ ...qty, [r.key]: Math.max(0, Math.min(r.availableQty, Number(e.target.value) || 0)) })}
+                          aria-label={`Quantity of ${r.name}`}
+                        />
+                      </div>
+                    )}
+                    {r.item && (
+                      <span className="muted" style={{ fontSize: ".82rem" }}>
+                        {r.item.condition}
+                      </span>
+                    )}
+                    {r.item && (r.item.accessories || r.item.info || r.item.photos.length > 0) && (
+                      <button type="button" className="btn small ghost" onClick={() => setOpen(open === r.key ? null : r.key)}>
+                        {open === r.key ? "Hide details" : "Details"}
+                      </button>
+                    )}
+                    {onList ? <span className="badge accent">On this list</span> : chip(r)}
                   </div>
-                )}
-                {r.batches && (
-                  <div className="qty">
-                    <input type="number" min={0} max={r.availableQty} disabled={blocked} value={qty[r.key] ?? 0} onChange={(e) => setQty({ ...qty, [r.key]: Math.max(0, Math.min(r.availableQty, Number(e.target.value) || 0)) })} aria-label={`Quantity of ${r.name}`} />
-                  </div>
-                )}
-                {r.item && <span className="muted" style={{ fontSize: ".82rem" }}>{r.item.condition}</span>}
-                {r.item && (r.item.accessories || r.item.info || r.item.photos.length > 0) && (
-                  <button type="button" className="btn small ghost" onClick={() => setOpen(open === r.key ? null : r.key)}>{open === r.key ? "Hide details" : "Details"}</button>
-                )}
-                {onList ? <span className="badge accent">On this list</span> : chip(r)}
-              </div>
-              {r.state === "conflict" && r.reason && <div className="muted" style={{ fontSize: ".82rem", marginLeft: 28 }}>{r.reason}</div>}
-              {r.item && open === r.key && (r.item.accessories || r.item.info || r.item.photos.length > 0) && (
-                <div style={{ marginLeft: 28, marginTop: 6, display: "flex", gap: 12, alignItems: "flex-start" }}>
-                  {r.item.photos[0] && <img src={r.item.photos[0].url} alt="" style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 8, flex: "none" }} />}
-                  <div className="muted" style={{ fontSize: ".82rem" }}>
-                    {r.item.accessories && <div>Accessories: {r.item.accessories}</div>}
-                    {r.item.info && <div>{r.item.info}</div>}
-                  </div>
-                </div>
-              )}
-              {r.batches && !blocked && (
-                <>
-                  <button type="button" className="btn small ghost" style={{ marginLeft: 22 }} onClick={() => setOpen(open === r.key ? null : r.key)}>{open === r.key ? "Hide batches" : "Choose batches"}</button>
-                  {qty[r.key] > 0 && open !== r.key && <span className="muted" style={{ fontSize: ".82rem", marginLeft: 8 }}>Oldest batch is used first.</span>}
-                  {open === r.key && (
-                    <div style={{ marginLeft: 22, marginTop: 6 }}>
-                      {r.batches.map((b) => (
-                        <div key={b.item.id} className="picker-main" style={{ padding: "4px 0" }}>
-                          <div style={{ flex: 1 }}>
-                            <span className="cid">{b.item.id}</span>
-                            <span className="muted" style={{ fontSize: ".82rem" }}> bought {b.item.purchaseDate ? fmtShort(b.item.purchaseDate) : "unknown"}, {b.item.condition}{b.item.accessories ? `, ${b.item.accessories}` : ""}</span>
-                          </div>
-                          <div className="qty"><input type="number" min={0} max={b.availableQty} disabled={b.availableQty === 0} value={batchQty[b.item.id] ?? 0} onChange={(e) => setBatchQty({ ...batchQty, [b.item.id]: Math.max(0, Math.min(b.availableQty, Number(e.target.value) || 0)) })} aria-label={`Quantity from ${b.item.id}`} /></div>
-                          <span className="muted" style={{ fontSize: ".82rem", minWidth: 60 }}>{b.availableQty} free</span>
-                        </div>
-                      ))}
+                  {r.state === "conflict" && r.reason && (
+                    <div className="muted" style={{ fontSize: ".82rem", marginLeft: 28 }}>
+                      {r.reason}
                     </div>
                   )}
-                </>
-              )}
-            </div>
-          );
+                  {r.item && open === r.key && (r.item.accessories || r.item.info || r.item.photos.length > 0) && (
+                    <div style={{ marginLeft: 28, marginTop: 6, display: "flex", gap: 12, alignItems: "flex-start" }}>
+                      {r.item.photos[0] && (
+                        <img
+                          src={r.item.photos[0].url}
+                          alt=""
+                          style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 8, flex: "none" }}
+                        />
+                      )}
+                      <div className="muted" style={{ fontSize: ".82rem" }}>
+                        {r.item.accessories && <div>Accessories: {r.item.accessories}</div>}
+                        {r.item.info && <div>{r.item.info}</div>}
+                      </div>
+                    </div>
+                  )}
+                  {r.batches && !blocked && (
+                    <>
+                      <button
+                        type="button"
+                        className="btn small ghost"
+                        style={{ marginLeft: 22 }}
+                        onClick={() => setOpen(open === r.key ? null : r.key)}
+                      >
+                        {open === r.key ? "Hide batches" : "Choose batches"}
+                      </button>
+                      {qty[r.key] > 0 && open !== r.key && (
+                        <span className="muted" style={{ fontSize: ".82rem", marginLeft: 8 }}>
+                          Oldest batch is used first.
+                        </span>
+                      )}
+                      {open === r.key && (
+                        <div style={{ marginLeft: 22, marginTop: 6 }}>
+                          {r.batches.map((b) => (
+                            <div key={b.item.id} className="picker-main" style={{ padding: "4px 0" }}>
+                              <div style={{ flex: 1 }}>
+                                <span className="cid">{b.item.id}</span>
+                                <span className="muted" style={{ fontSize: ".82rem" }}>
+                                  {" "}
+                                  bought {b.item.purchaseDate ? fmtShort(b.item.purchaseDate) : "unknown"}, {b.item.condition}
+                                  {b.item.accessories ? `, ${b.item.accessories}` : ""}
+                                </span>
+                              </div>
+                              <div className="qty">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={b.availableQty}
+                                  disabled={b.availableQty === 0}
+                                  value={batchQty[b.item.id] ?? 0}
+                                  onChange={(e) =>
+                                    setBatchQty({
+                                      ...batchQty,
+                                      [b.item.id]: Math.max(0, Math.min(b.availableQty, Number(e.target.value) || 0)),
+                                    })
+                                  }
+                                  aria-label={`Quantity from ${b.item.id}`}
+                                />
+                              </div>
+                              <span className="muted" style={{ fontSize: ".82rem", minWidth: 60 }}>
+                                {b.availableQty} free
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              );
             })}
           </div>
         ))}

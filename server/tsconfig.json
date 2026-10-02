@@ -1,8 +1,17 @@
 {
   "compilerOptions": {
-    "target": "ES2022", "module": "ESNext", "moduleResolution": "bundler", "lib": ["ES2022", "DOM"],
-    "strict": true, "skipLibCheck": true, "noEmit": true, "resolveJsonModule": true, "jsx": "react-jsx",
-    "types": ["node"], "isolatedModules": true, "allowImportingTsExtensions": true
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM"],
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "resolveJsonModule": true,
+    "jsx": "react-jsx",
+    "types": ["node"],
+    "isolatedModules": true,
+    "allowImportingTsExtensions": true
   },
-  "include": ["./**/*.ts", "../src/**/*.ts", "../src/**/*.tsx"]
+  "include": ["./**/*.ts", "../src/**/*.ts", "../src/**/*.tsx", "../scripts/db-upgrade.ts", "../scripts/migrate-workflow.ts"]
 }

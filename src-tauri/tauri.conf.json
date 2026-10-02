@@ -1,38 +1,35 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "dof-hubDawn of Faith Production Hub",
+  "productName": "Dawn of Faith Production Hub",
   "version": "0.1.0",
-  "identifier": "com.tauri.dev",
+  "identifier": "tv.dawnoffaith.productionhub",
   "build": {
-    "frontendDist": "../build../dist",
+    "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build"
+    "beforeBuildCommand": "npm run build:desktop"
   },
   "app": {
     "windows": [
       {
-        "title": "dof-hub",
-        "width": 800,
-        "height": 600,
+        "label": "main",
+        "title": "Dawn of Faith Production Hub",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 900,
+        "minHeight": 600,
         "resizable": true,
         "fullscreen": false
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self' ipc: http://ipc.localhost; img-src 'self' asset: http://asset.localhost data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
     }
   },
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
-    ],
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
     "android": {
       "debugApplicationIdSuffix": ".debug"
     }

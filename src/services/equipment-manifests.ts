@@ -1,44 +1,25 @@
-import type { Actor, Attachment, EquipCondition, EquipmentHistory, EquipmentItem, Incident, Manifest, ManifestLine } from "../types";
+import type { Actor, Attachment, EquipCondition, EquipmentItem, Incident, Manifest, ManifestLine } from "../types";
 import { RuleError } from "../types";
 import { commit, getDb, nextCounter } from "../data/store";
+import { claimId } from "../data/ids";
+import { hist, makeAttachment } from "./equipment-log";
 import { conditionRank } from "../config/equipment";
 import { canView, canWrite, getRecord, isHop } from "./access";
 import { logAudit } from "./audit";
 import { getPerson } from "./people";
 import { fmtShort, pad, todayIso } from "./utils";
 import {
-  addUnits, applyConditionBreakdown, availabilityOn, endOf, getItem, isOverdue, removeFromThenWorst, removeWorstFirst, requireGearAccess,
+  addUnits,
+  applyConditionBreakdown,
+  availabilityOn,
+  getItem,
+  isOverdue,
+  removeFromThenWorst,
+  removeWorstFirst,
+  requireGearAccess,
   type Availability,
 } from "./equipment-items";
 import { groupByFamily } from "./equipment-reports";
-
-// Private copies of two small equipment-items.ts helpers: history logging and attachment validation.
-// Kept as plain (unexported) duplicates rather than shared across files, so neither takes an actor
-// first as a publicly importable symbol here and neither risks being picked up as its own server action.
-function hist(actor: Actor, equipmentId: string, kind: EquipmentHistory["kind"], detail: string, extra: { contentId?: string; manifestId?: string } = {}): void {
-  getDb().equipmentHistory.push({
-    id: `H-${pad(nextCounter("history"), 5)}`,
-    equipmentId,
-    at: new Date().toISOString(),
-    byPersonId: actor.personId,
-    kind,
-    detail,
-    contentId: extra.contentId ?? null,
-    manifestId: extra.manifestId ?? null,
-  });
-}
-
-function makeAttachment(actor: Actor, input: { url: string; caption?: string }): Attachment {
-  const url = input.url.trim();
-  if (!url) throw new RuleError("Add a photo or paste a link.");
-  if (url.startsWith("data:")) {
-    if (!url.startsWith("data:image/")) throw new RuleError("Only images can be attached.");
-    if (url.length > 420_000) throw new RuleError("That image is too large. Try a smaller photo.");
-  } else if (!/^https?:\/\//i.test(url)) {
-    throw new RuleError("Links must start with http:// or https://.");
-  }
-  return { id: `ATT-${pad(nextCounter("attachment"), 5)}`, url, caption: (input.caption ?? "").trim(), at: new Date().toISOString(), byPersonId: actor.personId };
-}
 
 export const getManifest = (id: string): Manifest | undefined => getDb().manifests.find((m) => m.id === id);
 
@@ -80,10 +61,23 @@ function loadManifest(actor: Actor, id: string): Manifest {
 }
 
 function newLine(item: EquipmentItem, quantity: number): ManifestLine {
-  return { equipmentId: item.id, quantity, conditionOut: item.condition, photosOut: [], conditionIn: null, photosIn: [], returnedGood: 0, damaged: 0, lost: 0 };
+  return {
+    equipmentId: item.id,
+    quantity,
+    conditionOut: item.condition,
+    photosOut: [],
+    conditionIn: null,
+    photosIn: [],
+    returnedGood: 0,
+    damaged: 0,
+    lost: 0,
+  };
 }
 
-export interface LineRequest { equipmentId: string; quantity: number }
+export interface LineRequest {
+  equipmentId: string;
+  quantity: number;
+}
 export interface ManifestInput {
   contentId: string;
   date: string;
@@ -116,10 +110,11 @@ export function createManifest(actor: Actor, input: ManifestInput): Manifest {
   const to = expectedReturn ?? input.date;
   const responsible = input.responsiblePersonId ?? actor.personId;
   const person = getPerson(responsible);
-  if (!person || person.status !== "active" || (person.category !== "CRW" && person.category !== "HOP")) throw new RuleError("The person responsible must be active crew.");
+  if (!person || person.status !== "active" || (person.category !== "CRW" && person.category !== "HOP"))
+    throw new RuleError("The person responsible must be active crew.");
   const items = lines.map((l) => checkLine(getItem(l.equipmentId), l.quantity, input.date, to));
   const m: Manifest = {
-    id: `DOF-MF-${pad(nextCounter("manifest"))}`,
+    id: claimId(`DOF-MF-${pad(nextCounter("manifest"))}`),
     contentId: input.contentId,
     callSheetId: input.callSheetId ?? null,
     destination: outside ? "outside" : "studio",
@@ -135,7 +130,14 @@ export function createManifest(actor: Actor, input: ManifestInput): Manifest {
     returnedAt: null,
   };
   getDb().manifests.push(m);
-  for (const l of m.lines) hist(actor, l.equipmentId, m.status === "checked-out" ? "checked-out" : "assigned", `${l.quantity > 1 ? `${l.quantity} units, ` : ""}${m.contentId}, ${fmtShort(m.date)}`, { contentId: m.contentId, manifestId: m.id });
+  for (const l of m.lines)
+    hist(
+      actor,
+      l.equipmentId,
+      m.status === "checked-out" ? "checked-out" : "assigned",
+      `${l.quantity > 1 ? `${l.quantity} units, ` : ""}${m.contentId}, ${fmtShort(m.date)}`,
+      { contentId: m.contentId, manifestId: m.id },
+    );
   logAudit(actor, "create", "manifest", m.id, `${m.status}, ${m.lines.length} lines`);
   syncSheetEquipment(m.callSheetId);
   commit();
@@ -149,7 +151,10 @@ export function addLine(actor: Actor, manifestId: string, equipmentId: string, q
   const item = checkLine(getItem(equipmentId), (existing?.quantity ?? 0) + quantity, m.date, m.expectedReturn ?? m.date, m.id);
   if (existing) existing.quantity += quantity;
   else m.lines.push(newLine(item, quantity));
-  hist(actor, equipmentId, "assigned", `${quantity > 1 ? `${quantity} units, ` : ""}${m.contentId}, ${fmtShort(m.date)}`, { contentId: m.contentId, manifestId: m.id });
+  hist(actor, equipmentId, "assigned", `${quantity > 1 ? `${quantity} units, ` : ""}${m.contentId}, ${fmtShort(m.date)}`, {
+    contentId: m.contentId,
+    manifestId: m.id,
+  });
   syncSheetEquipment(m.callSheetId);
   commit();
   return m;
@@ -179,14 +184,21 @@ export function removeLine(actor: Actor, manifestId: string, equipmentId: string
   return m;
 }
 
-export interface PhotoInput { url: string; caption?: string }
+export interface PhotoInput {
+  url: string;
+  caption?: string;
+}
 
 export function goneOutDefaults(m: Manifest): string {
   return m.expectedReturn ?? addDays(m.date > todayIso() ? m.date : todayIso(), getDb().settings.checkoutReturnDays);
 }
 
 /** Assigned in the studio to gone out. Items must be in service; the return window is re-checked. */
-export function markGoneOut(actor: Actor, manifestId: string, opts: { expectedReturn?: string; responsiblePersonId?: string; photos?: Record<string, PhotoInput[]> } = {}): Manifest {
+export function markGoneOut(
+  actor: Actor,
+  manifestId: string,
+  opts: { expectedReturn?: string; responsiblePersonId?: string; photos?: Record<string, PhotoInput[]> } = {},
+): Manifest {
   const m = loadManifest(actor, manifestId);
   if (m.status !== "assigned") throw new RuleError("Only assigned gear can be marked as gone out.");
   const expectedReturn = opts.expectedReturn || goneOutDefaults(m);
@@ -199,7 +211,10 @@ export function markGoneOut(actor: Actor, manifestId: string, opts: { expectedRe
   m.lines.forEach((l, i) => {
     l.conditionOut = items[i].condition;
     l.photosOut.push(...photoAtts[i]);
-    hist(actor, l.equipmentId, "checked-out", `${m.contentId}, back by ${fmtShort(expectedReturn)}`, { contentId: m.contentId, manifestId: m.id });
+    hist(actor, l.equipmentId, "checked-out", `${m.contentId}, back by ${fmtShort(expectedReturn)}`, {
+      contentId: m.contentId,
+      manifestId: m.id,
+    });
   });
   m.status = "checked-out";
   m.destination = "outside";
@@ -229,14 +244,25 @@ export function checkIn(actor: Actor, manifestId: string, returns: ReturnInput[]
   const m = loadManifest(actor, manifestId);
   if (m.status !== "checked-out") throw new RuleError("This gear is not checked out.");
 
-  interface Plan { line: ManifestLine; item: EquipmentItem; good: number; damaged: number; lost: number; cond: EquipCondition | null; desc: string; repair: boolean; photos: Attachment[] }
+  interface Plan {
+    line: ManifestLine;
+    item: EquipmentItem;
+    good: number;
+    damaged: number;
+    lost: number;
+    cond: EquipCondition | null;
+    desc: string;
+    repair: boolean;
+    photos: Attachment[];
+  }
   const plans: Plan[] = m.lines.map((line) => {
     const item = getItem(line.equipmentId);
     if (!item) throw new RuleError("An item on this list no longer exists.");
     const r = returns.find((x) => x.equipmentId === line.equipmentId);
     if (!r) throw new RuleError(`Record the return for ${item.name}.`);
     if (![r.returnedGood, r.damaged, r.lost].every(nonNeg)) throw new RuleError(`Counts for ${item.name} must be whole numbers.`);
-    if (r.returnedGood + r.damaged + r.lost !== line.quantity) throw new RuleError(`${item.name}: returned, damaged and lost must add up to ${line.quantity}.`);
+    if (r.returnedGood + r.damaged + r.lost !== line.quantity)
+      throw new RuleError(`${item.name}: returned, damaged and lost must add up to ${line.quantity}.`);
     let good = r.returnedGood;
     let damaged = r.damaged;
     const lost = r.lost;
@@ -258,7 +284,17 @@ export function checkIn(actor: Actor, manifestId: string, returns: ReturnInput[]
     const desc = (r.description ?? "").trim();
     if (damaged + lost > 0 && !desc) throw new RuleError(`Describe what happened to ${item.name}.`);
     if (damaged + lost > item.quantityTotal) throw new RuleError(`${item.name}: more units damaged or lost than the batch holds.`);
-    return { line, item, good, damaged, lost, cond, desc, repair: !!r.sendToRepair && item.trackingType === "serialized" && damaged === 1, photos: (r.photos ?? []).map((p) => makeAttachment(actor, p)) };
+    return {
+      line,
+      item,
+      good,
+      damaged,
+      lost,
+      cond,
+      desc,
+      repair: !!r.sendToRepair && item.trackingType === "serialized" && damaged === 1,
+      photos: (r.photos ?? []).map((p) => makeAttachment(actor, p)),
+    };
   });
 
   const now = new Date().toISOString();
@@ -284,9 +320,22 @@ export function checkIn(actor: Actor, manifestId: string, returns: ReturnInput[]
       p.item.quantityLost += p.lost;
     }
     const addIncident = (type: Incident["type"], qty: number) => {
-      const inc: Incident = { id: `DOF-INC-${pad(nextCounter("incident"))}`, equipmentId: p.item.id, at: now, type, quantity: qty, description: p.desc, personId: m.responsiblePersonId, contentId: m.contentId, manifestId: m.id };
+      const inc: Incident = {
+        id: `DOF-INC-${pad(nextCounter("incident"))}`,
+        equipmentId: p.item.id,
+        at: now,
+        type,
+        quantity: qty,
+        description: p.desc,
+        personId: m.responsiblePersonId,
+        contentId: m.contentId,
+        manifestId: m.id,
+      };
       getDb().incidents.push(inc);
-      hist(actor, p.item.id, "incident", `${type === "damage" ? "Damaged" : "Lost"}${qty > 1 ? ` (${qty} units)` : ""}: ${p.desc}`, { contentId: m.contentId, manifestId: m.id });
+      hist(actor, p.item.id, "incident", `${type === "damage" ? "Damaged" : "Lost"}${qty > 1 ? ` (${qty} units)` : ""}: ${p.desc}`, {
+        contentId: m.contentId,
+        manifestId: m.id,
+      });
     };
     if (p.damaged) addIncident("damage", p.damaged);
     if (p.lost) {
@@ -297,7 +346,13 @@ export function checkIn(actor: Actor, manifestId: string, returns: ReturnInput[]
       p.item.baseStatus = "in-repair";
       hist(actor, p.item.id, "repair-start", `Sent for repair after ${m.contentId}`, { contentId: m.contentId, manifestId: m.id });
     }
-    hist(actor, p.item.id, "checked-in", `${m.contentId}${p.cond ? `, back in ${p.cond} condition` : ""}${p.good && p.item.trackingType === "aggregate" ? `, ${p.good} returned` : ""}`, { contentId: m.contentId, manifestId: m.id });
+    hist(
+      actor,
+      p.item.id,
+      "checked-in",
+      `${m.contentId}${p.cond ? `, back in ${p.cond} condition` : ""}${p.good && p.item.trackingType === "aggregate" ? `, ${p.good} returned` : ""}`,
+      { contentId: m.contentId, manifestId: m.id },
+    );
   }
   m.status = "returned";
   m.returnedAt = now;
@@ -315,21 +370,25 @@ export function attachManifest(actor: Actor, manifestId: string, contentId: stri
   const target = getRecord(contentId);
   if (!target) throw new RuleError("Project not found.");
   const current = getRecord(m.contentId);
-  if (!canWrite(actor, target) || (current ? !canWrite(actor, current) : !isHop(actor))) throw new RuleError("You are not attached to both projects.");
+  if (!canWrite(actor, target) || (current ? !canWrite(actor, current) : !isHop(actor)))
+    throw new RuleError("You are not attached to both projects.");
   if (m.callSheetId) throw new RuleError("This list belongs to a call sheet. It moves with that sheet.");
   if (m.status === "released") throw new RuleError("This list was released, so it cannot be attached.");
   if (m.contentId === contentId) throw new RuleError("This list is already attached here.");
   const from = m.contentId;
   m.contentId = contentId;
-  for (const l of m.lines) hist(actor, l.equipmentId, "edited", `${m.id} moved from ${from} to ${contentId}`, { contentId, manifestId: m.id });
+  for (const l of m.lines)
+    hist(actor, l.equipmentId, "edited", `${m.id} moved from ${from} to ${contentId}`, { contentId, manifestId: m.id });
   logAudit(actor, "attach", "manifest", m.id, `${from} to ${contentId}`);
   commit();
   return m;
 }
 
 /** Gear that is out under a Content ID. A project cannot be deleted while its gear is away. */
-export const checkedOutFor = (contentId: string): Manifest[] => getDb().manifests.filter((m) => m.contentId === contentId && m.status === "checked-out");
-export const reservedFor = (contentId: string): Manifest[] => getDb().manifests.filter((m) => m.contentId === contentId && m.status === "assigned");
+export const checkedOutFor = (contentId: string): Manifest[] =>
+  getDb().manifests.filter((m) => m.contentId === contentId && m.status === "checked-out");
+export const reservedFor = (contentId: string): Manifest[] =>
+  getDb().manifests.filter((m) => m.contentId === contentId && m.status === "assigned");
 
 /** Releases every reserved list for a Content ID, so the gear is free again. Used when the project is deleted. */
 export function releaseReservedFor(actor: Actor, contentId: string): number {
@@ -348,7 +407,8 @@ export function releaseManifest(actor: Actor, manifestId: string): Manifest {
   const m = loadManifest(actor, manifestId);
   if (m.status !== "assigned") throw new RuleError("Only assigned gear can be released. Checked-out gear is checked in.");
   m.status = "released";
-  for (const l of m.lines) hist(actor, l.equipmentId, "released", `Released from ${m.contentId}`, { contentId: m.contentId, manifestId: m.id });
+  for (const l of m.lines)
+    hist(actor, l.equipmentId, "released", `Released from ${m.contentId}`, { contentId: m.contentId, manifestId: m.id });
   logAudit(actor, "release", "manifest", m.id);
   syncSheetEquipment(m.callSheetId);
   commit();
@@ -377,9 +437,18 @@ export function listManifests(actor: Actor): Manifest[] {
     .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
 }
 
-export const manifestsForContent = (contentId: string): Manifest[] => getDb().manifests.filter((m) => m.contentId === contentId && m.status !== "released").sort((a, b) => a.date.localeCompare(b.date));
-export const overdueManifests = (): Manifest[] => getDb().manifests.filter(isOverdue).sort((a, b) => (a.expectedReturn ?? "").localeCompare(b.expectedReturn ?? ""));
-export const checkedOutManifests = (): Manifest[] => getDb().manifests.filter((m) => m.status === "checked-out").sort((a, b) => (a.expectedReturn ?? "").localeCompare(b.expectedReturn ?? ""));
+export const manifestsForContent = (contentId: string): Manifest[] =>
+  getDb()
+    .manifests.filter((m) => m.contentId === contentId && m.status !== "released")
+    .sort((a, b) => a.date.localeCompare(b.date));
+export const overdueManifests = (): Manifest[] =>
+  getDb()
+    .manifests.filter(isOverdue)
+    .sort((a, b) => (a.expectedReturn ?? "").localeCompare(b.expectedReturn ?? ""));
+export const checkedOutManifests = (): Manifest[] =>
+  getDb()
+    .manifests.filter((m) => m.status === "checked-out")
+    .sort((a, b) => (a.expectedReturn ?? "").localeCompare(b.expectedReturn ?? ""));
 
 export function manifestSummary(m: Manifest): string {
   const units = m.lines.reduce((n, l) => n + l.quantity, 0);
@@ -389,10 +458,14 @@ export function manifestSummary(m: Manifest): string {
 export function manifestStatusView(m: Manifest): { label: string; tone: "ok" | "warn" | "bad" | "accent" | "" } {
   if (isOverdue(m)) return { label: "Overdue", tone: "bad" };
   switch (m.status) {
-    case "assigned": return { label: "Assigned", tone: "accent" };
-    case "checked-out": return { label: "Checked out", tone: "warn" };
-    case "returned": return { label: "Returned", tone: "ok" };
-    case "released": return { label: "Released", tone: "" };
+    case "assigned":
+      return { label: "Assigned", tone: "accent" };
+    case "checked-out":
+      return { label: "Checked out", tone: "warn" };
+    case "returned":
+      return { label: "Returned", tone: "ok" };
+    case "released":
+      return { label: "Released", tone: "" };
   }
 }
 
@@ -416,7 +489,17 @@ export function pickerRows(from: string, to: string, excludeManifestId?: string)
   const rows: PickerRow[] = [];
   for (const i of all.filter((x) => x.trackingType === "serialized")) {
     const a = availabilityOn(i, from, to, excludeManifestId);
-    rows.push({ key: i.id, name: i.name, sub: [i.make, i.model].filter(Boolean).join(" ") + (i.make || i.model ? ", " : "") + i.id, category: i.category, item: i, availableQty: a.availableQty, totalQty: 1, state: a.state, reason: a.reason });
+    rows.push({
+      key: i.id,
+      name: i.name,
+      sub: [i.make, i.model].filter(Boolean).join(" ") + (i.make || i.model ? ", " : "") + i.id,
+      category: i.category,
+      item: i,
+      availableQty: a.availableQty,
+      totalQty: 1,
+      state: a.state,
+      reason: a.reason,
+    });
   }
   for (const f of groupByFamily(all)) {
     const batches = f.items.map((item) => {
@@ -425,7 +508,17 @@ export function pickerRows(from: string, to: string, excludeManifestId?: string)
     });
     const available = batches.reduce((n, b) => n + b.availableQty, 0);
     const total = f.items.filter((b) => b.baseStatus === "active").reduce((n, b) => n + b.quantityTotal, 0);
-    rows.push({ key: f.key, name: f.name, sub: `${f.key}, ${f.items.length} batch${f.items.length === 1 ? "" : "es"}`, category: f.category, batches, availableQty: available, totalQty: total, state: available === 0 ? "conflict" : available < total ? "partial" : "ok", reason: available === 0 ? "None free for those dates" : "" });
+    rows.push({
+      key: f.key,
+      name: f.name,
+      sub: `${f.key}, ${f.items.length} batch${f.items.length === 1 ? "" : "es"}`,
+      category: f.category,
+      batches,
+      availableQty: available,
+      totalQty: total,
+      state: available === 0 ? "conflict" : available < total ? "partial" : "ok",
+      reason: available === 0 ? "None free for those dates" : "",
+    });
   }
   return rows.sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -451,7 +544,11 @@ export function allocateFifo(familyKey: string, quantity: number, from: string, 
 
 // ── Call sheet gear ──────────────────────────────────────────
 
-export interface SheetRef { id: string; contentId: string; date: string }
+export interface SheetRef {
+  id: string;
+  contentId: string;
+  date: string;
+}
 
 function syncSheetEquipment(sheetId: string | null): void {
   if (!sheetId) return;
@@ -470,12 +567,26 @@ export function manifestForSheet(sheetId: string): Manifest | undefined {
 
 export function addGearToSheet(actor: Actor, sheet: SheetRef, lines: LineRequest[]): Manifest {
   requireGearAccess(actor);
-  const existing = manifestForSheet(sheet.id);
+  // Only the sheet's ID is taken from the caller. Its project and date come from the sheet itself, so gear
+  // can never be booked against another project's call sheet, or on a date the sheet does not have.
+  const cs = getDb().callSheets.find((c) => c.id === sheet.id);
+  if (!cs) throw new RuleError("Call sheet not found.");
+  const project = getRecord(cs.contentId);
+  if (!project || !canWrite(actor, project)) throw new RuleError("You have view-only access to this project.");
+  const existing = manifestForSheet(cs.id);
   if (existing) {
-    if (existing.status !== "assigned") throw new RuleError("This call sheet's gear has already gone out. Manage it from the checkout list.");
+    if (existing.status !== "assigned")
+      throw new RuleError("This call sheet's gear has already gone out. Manage it from the checkout list.");
     return addLines(actor, existing.id, lines);
   }
-  return createManifest(actor, { contentId: sheet.contentId, date: sheet.date, destination: "studio", status: "assigned", lines, callSheetId: sheet.id });
+  return createManifest(actor, {
+    contentId: cs.contentId,
+    date: cs.date,
+    destination: "studio",
+    status: "assigned",
+    lines,
+    callSheetId: cs.id,
+  });
 }
 
 export function removeGearFromSheet(actor: Actor, sheetId: string, equipmentId: string): void {

@@ -4,7 +4,19 @@ import { createPortal } from "react-dom";
 // Escape closes only the topmost dialog, so a picker opened from a form does not close the form too.
 const open: symbol[] = [];
 
-export function Modal({ title, onClose, children, actions, wide }: { title: string; onClose: () => void; children: ReactNode; actions?: ReactNode; wide?: boolean }) {
+export function Modal({
+  title,
+  onClose,
+  children,
+  actions,
+  wide,
+}: {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+  actions?: ReactNode;
+  wide?: boolean;
+}) {
   useEffect(() => {
     const me = Symbol("modal");
     open.push(me);

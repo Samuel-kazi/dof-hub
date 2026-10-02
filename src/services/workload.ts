@@ -5,6 +5,8 @@ import { DEFAULT_WORK_DAYS, HORIZON_DAYS, LOAD_BANDS, effortFor } from "../confi
 import { can } from "./permissions";
 import { docSubject } from "./docs";
 import { isComplete, ownersOf, usesPipeline } from "./content";
+import { getRecord } from "./access";
+import { allWorkItems } from "./workItems";
 import { dayNumber, fmtShort, fromDayNumber, todayIso } from "./utils";
 
 // Capacity: how much each person has on, day by day.
@@ -61,7 +63,8 @@ function workingDates(from: string, to: string): string[] {
 
 function nextWorkingDates(from: string, count: number): string[] {
   const out: string[] = [];
-  for (let n = dayNumber(from); out.length < count && n < dayNumber(from) + 400; n++) if (isWorkDay(fromDayNumber(n))) out.push(fromDayNumber(n));
+  for (let n = dayNumber(from); out.length < count && n < dayNumber(from) + 400; n++)
+    if (isWorkDay(fromDayNumber(n))) out.push(fromDayNumber(n));
   return out;
 }
 
@@ -70,7 +73,15 @@ export const fmtDays = (n: number): string => `${Math.round(n * 10) / 10} day${M
 let seq = 0;
 
 /** Turns some effort and a window into an item. Work already past its date becomes catch-up from today. */
-function makeItem(kind: LoadItem["kind"], label: string, contentId: string, effort: number, start: string, end: string, asOf: string): LoadItem {
+function makeItem(
+  kind: LoadItem["kind"],
+  label: string,
+  contentId: string,
+  effort: number,
+  start: string,
+  end: string,
+  asOf: string,
+): LoadItem {
   let days: string[];
   let late = false;
   if (end < asOf) {
@@ -85,7 +96,18 @@ function makeItem(kind: LoadItem["kind"], label: string, contentId: string, effo
       late = !before.length;
     }
   }
-  return { id: `${contentId}#${++seq}`, kind, label, contentId, effort, from: days[0] ?? start, to: end, days, perDay: effort / days.length, late };
+  return {
+    id: `${contentId}#${++seq}`,
+    kind,
+    label,
+    contentId,
+    effort,
+    from: days[0] ?? start,
+    to: end,
+    days,
+    perDay: effort / days.length,
+    late,
+  };
 }
 
 /** Everything a person has on, as items. */
@@ -100,11 +122,23 @@ function itemsFor(personId: string, asOf: string): { items: LoadItem[]; undated:
   for (const cs of db.callSheets) {
     if (!cs.crewPersonIds.includes(personId) || cs.date < asOf) continue;
     shootKeys.add(`${cs.contentId}|${cs.date}`);
-    items.push({ id: `${cs.id}#shoot`, kind: "shoot", label: `Call sheet: ${cs.title}`, contentId: cs.contentId, effort: 1, from: cs.date, to: cs.date, days: [cs.date], perDay: 1, late: false });
+    items.push({
+      id: `${cs.id}#shoot`,
+      kind: "shoot",
+      label: `Call sheet: ${cs.title}`,
+      contentId: cs.contentId,
+      effort: 1,
+      from: cs.date,
+      to: cs.date,
+      days: [cs.date],
+      perDay: 1,
+      late: false,
+    });
   }
 
   for (const r of db.records) {
-    if (r.archived || !usesPipeline(r) || !r.pipelineStage || isComplete(r) || r.pipelineStage === "Closed" || r.category === "general") continue;
+    if (r.archived || !usesPipeline(r) || !r.pipelineStage || isComplete(r) || r.pipelineStage === "Closed" || r.category === "general")
+      continue;
     const cfg = categoryOf(r.category);
     const stages = cfg.stages;
     const idx = stages.findIndex((s) => s.name === r.pipelineStage);
@@ -117,7 +151,18 @@ function itemsFor(personId: string, asOf: string): { items: LoadItem[]; undated:
     if (r.scheduledDate && r.scheduledDate >= asOf && idx <= footageIdx && !shootKeys.has(`${rootId}|${r.scheduledDate}`)) {
       const crew = ownersOf(r, cfg.footageStage);
       if (crew.some((o) => o.personId === personId)) {
-        items.push({ id: `${r.contentId}#shoot`, kind: "shoot", label: `${cfg.footageStage === "Show" ? "Show" : "Shoot"}: ${subject}`, contentId: r.contentId, effort: 1, from: r.scheduledDate, to: r.scheduledDate, days: [r.scheduledDate], perDay: 1, late: false });
+        items.push({
+          id: `${r.contentId}#shoot`,
+          kind: "shoot",
+          label: `${cfg.footageStage === "Show" ? "Show" : "Shoot"}: ${subject}`,
+          contentId: r.contentId,
+          effort: 1,
+          from: r.scheduledDate,
+          to: r.scheduledDate,
+          days: [r.scheduledDate],
+          perDay: 1,
+          late: false,
+        });
       }
     }
 
@@ -135,26 +180,79 @@ function itemsFor(personId: string, asOf: string): { items: LoadItem[]; undated:
       if (tasks.length) {
         for (const t of tasks.filter((x) => !x.done)) {
           const who = t.assigneePersonId ? [t.assigneePersonId] : owners;
-          for (const w of who) shares.push({ who: w, effort: total / tasks.length / who.length, end: t.dueDate ?? stageDue, label: `${subject}: ${t.label}` });
+          for (const w of who)
+            shares.push({ who: w, effort: total / tasks.length / who.length, end: t.dueDate ?? stageDue, label: `${subject}: ${t.label}` });
         }
       } else {
         for (const w of owners) shares.push({ who: w, effort: total / owners.length, end: stageDue, label: `${subject}: ${stage.name}` });
       }
       for (const sh of shares.filter((x) => x.who === personId)) {
-        if (!sh.end) { undated.push(sh.label); continue; }
+        if (!sh.end) {
+          undated.push(sh.label);
+          continue;
+        }
         items.push(makeItem(tasks.length ? "task" : "stage", sh.label, r.contentId, sh.effort, start, sh.end, asOf));
       }
     }
   }
 
+  // The five-stage workflow. A recording session with no call sheet yet still takes the day of its producer and of
+  // everyone holding a project role; once it has one, being on the sheet is what counts (above). An episode's editing
+  // is spread up to its Post production deadline, and its release work up to its Marketing and distribution deadline.
+  for (const item of allWorkItems()) {
+    if (item.done) continue;
+    if (item.level === "session") {
+      if (!item.due || item.due < asOf || item.callSheetId) continue;
+      const crew = [
+        item.project.workflow.showProducerId,
+        ...db.projectRoles.filter((r) => r.contentId === item.project.contentId).map((r) => r.crewId),
+      ];
+      if (!crew.includes(personId)) continue;
+      items.push({
+        id: `${item.id}#shoot`,
+        kind: "shoot",
+        label: `Recording session: ${item.context}, ${item.title}`,
+        contentId: item.project.contentId,
+        effort: 1,
+        from: item.due,
+        to: item.due,
+        days: [item.due],
+        perDay: 1,
+        late: false,
+      });
+      continue;
+    }
+    if (item.level !== "episode" || item.ownerId !== personId || !item.waitingOn.includes(personId)) continue;
+    const info = getRecord(item.id)?.episode;
+    // In Post production the work is the edit itself; an approved cut only waits to be moved on.
+    if (!info || (info.stage === "Post production" && info.postStage !== "Not started" && info.postStage !== "Editing")) continue;
+    const effort = effortFor(item.category, item.stage, overrides);
+    if (effort <= 0) continue;
+    const label = `${item.context}, ${item.title}: ${item.stage}`;
+    if (!item.due) undated.push(label);
+    else items.push(makeItem("stage", label, item.id, effort, asOf, item.due, asOf));
+  }
+
   // Being away with gear takes the whole day, weekends included.
   for (const m of db.manifests) {
-    if (m.responsiblePersonId !== personId || m.destination !== "outside" || (m.status !== "assigned" && m.status !== "checked-out")) continue;
+    if (m.responsiblePersonId !== personId || m.destination !== "outside" || (m.status !== "assigned" && m.status !== "checked-out"))
+      continue;
     const end = m.expectedReturn ?? m.date;
     if (end < asOf) continue;
     const days: string[] = [];
     for (let n = dayNumber(m.date < asOf ? asOf : m.date); n <= dayNumber(end); n++) days.push(fromDayNumber(n));
-    items.push({ id: `${m.id}#away`, kind: "away", label: `Away with gear: ${m.id}`, contentId: m.contentId, effort: days.length, from: days[0], to: end, days, perDay: 1, late: false });
+    items.push({
+      id: `${m.id}#away`,
+      kind: "away",
+      label: `Away with gear: ${m.id}`,
+      contentId: m.contentId,
+      effort: days.length,
+      from: days[0],
+      to: end,
+      days,
+      perDay: 1,
+      late: false,
+    });
   }
   return { items, undated };
 }
@@ -174,7 +272,10 @@ export function workloadFor(personId: string, asOf: string = todayIso(), horizon
   for (let n = 0; n < horizon; n++) {
     const date = addDay(asOf, n);
     const parts = items.filter((it) => it.days.includes(date)).map((item) => ({ item, amount: item.perDay }));
-    const fixed = Math.max(new Set(parts.filter((p) => p.item.kind === "shoot").map((p) => p.item.id)).size, parts.some((p) => p.item.kind === "away") ? 1 : 0);
+    const fixed = Math.max(
+      new Set(parts.filter((p) => p.item.kind === "shoot").map((p) => p.item.id)).size,
+      parts.some((p) => p.item.kind === "away") ? 1 : 0,
+    );
     const effort = parts.filter((p) => p.item.kind === "stage" || p.item.kind === "task").reduce((a, p) => a + p.amount, 0);
     const load = Math.round((fixed + effort) * 100) / 100;
     const workDay = isWorkDay(date);
@@ -191,7 +292,13 @@ export function workloadFor(personId: string, asOf: string = todayIso(), horizon
   };
 }
 
-export interface Risk { item: LoadItem; needed: number; free: number; shortfall: number; reason: string }
+export interface Risk {
+  item: LoadItem;
+  needed: number;
+  free: number;
+  shortfall: number;
+  reason: string;
+}
 
 /** Work that cannot be finished in the time it has, given everything else the person is doing. */
 export function assignmentRisks(personId: string, asOf: string = todayIso(), horizon: number = HORIZON_DAYS): Risk[] {
@@ -199,7 +306,13 @@ export function assignmentRisks(personId: string, asOf: string = todayIso(), hor
   const risks: Risk[] = [];
   for (const item of w.items.filter((i) => i.kind === "stage" || i.kind === "task")) {
     if (item.late) {
-      risks.push({ item, needed: item.effort, free: 0, shortfall: item.effort, reason: `${item.label} is past its date and needs ${fmtDays(item.effort)} more.` });
+      risks.push({
+        item,
+        needed: item.effort,
+        free: 0,
+        shortfall: item.effort,
+        reason: `${item.label} is past its date and needs ${fmtDays(item.effort)} more.`,
+      });
       continue;
     }
     const window = workingDates(item.days[0], item.to);
@@ -210,7 +323,13 @@ export function assignmentRisks(personId: string, asOf: string = todayIso(), hor
     }, 0);
     const shortfall = item.effort - free;
     if (shortfall > 0.05) {
-      risks.push({ item, needed: item.effort, free, shortfall, reason: `${item.label} needs ${fmtDays(item.effort)} but only ${fmtDays(free)} ${free === 1 ? "is" : "are"} free between ${fmtShort(item.days[0])} and ${fmtShort(item.to)}.` });
+      risks.push({
+        item,
+        needed: item.effort,
+        free,
+        shortfall,
+        reason: `${item.label} needs ${fmtDays(item.effort)} but only ${fmtDays(free)} ${free === 1 ? "is" : "are"} free between ${fmtShort(item.days[0])} and ${fmtShort(item.to)}.`,
+      });
     }
   }
   return risks.sort((a, b) => b.shortfall - a.shortfall);
@@ -235,13 +354,22 @@ export function overloadWarning(personId: string, asOf: string = todayIso()): st
 }
 
 /** Who can see whose workload: the Head of Production sees everyone, crew see their own. */
-export function crewWorkload(actor: Actor, asOf: string = todayIso(), horizon: number = HORIZON_DAYS): { person: Person; workload: Workload }[] {
+export function crewWorkload(
+  actor: Actor,
+  asOf: string = todayIso(),
+  horizon: number = HORIZON_DAYS,
+): { person: Person; workload: Workload }[] {
   const people = getDb().people.filter((p) => p.status === "active" && (p.category === "CRW" || p.category === "HOP"));
   const mine = can(actor, "workload.viewAll") ? people : people.filter((p) => p.personId === actor.personId);
   return mine
     .map((person) => ({ person, workload: workloadFor(person.personId, asOf, horizon) }))
     .filter((x) => x.person.category === "CRW" || x.workload.items.length > 0)
-    .sort((a, b) => b.workload.overDays.length - a.workload.overDays.length || b.workload.peak - a.workload.peak || a.person.name.localeCompare(b.person.name));
+    .sort(
+      (a, b) =>
+        b.workload.overDays.length - a.workload.overDays.length ||
+        b.workload.peak - a.workload.peak ||
+        a.person.name.localeCompare(b.person.name),
+    );
 }
 
 export const canSeeWorkload = (actor: Actor, personId: string): boolean => can(actor, "workload.viewAll") || actor.personId === personId;

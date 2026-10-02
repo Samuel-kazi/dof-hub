@@ -8,7 +8,9 @@ const hasDom = typeof document !== "undefined";
 /** rgba() of a hex colour, for the soft accent tint the way styles.css already builds it. */
 function softTint(hex: string, alpha: number): string {
   const n = parseInt(hex.slice(1), 16);
-  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  const r = (n >> 16) & 255,
+    g = (n >> 8) & 255,
+    b = n & 255;
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
@@ -17,7 +19,13 @@ function softTint(hex: string, alpha: number): string {
  * them up through the same tokens it already uses (--accent, --font-heading, --sp-panel-y, …).
  * Mounted once, near the app root, and re-applied whenever the theme or a choice changes.
  */
-export function useApplyAppearance(opts: { theme: Theme; accent: AccentKey; fontPairing: FontPairingKey; fontSize: FontSize; density: Density }): void {
+export function useApplyAppearance(opts: {
+  theme: Theme;
+  accent: AccentKey;
+  fontPairing: FontPairingKey;
+  fontSize: FontSize;
+  density: Density;
+}): void {
   const { theme, accent, fontPairing, fontSize, density } = opts;
   useEffect(() => {
     if (!hasDom) return;

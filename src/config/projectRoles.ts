@@ -28,7 +28,11 @@ export const PROJECT_ROLES = [
   "Floor crew",
 ];
 
-export const rolesOf = (m: ProjectMember): string[] => m.roleOnProject.split(",").map((s) => s.trim()).filter(Boolean);
+export const rolesOf = (m: ProjectMember): string[] =>
+  m.roleOnProject
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 
 /** Trims, removes repeats, and checks each role. Roles are stored together as a comma-separated list. */
 export function cleanRoles(roles: string[]): string[] {

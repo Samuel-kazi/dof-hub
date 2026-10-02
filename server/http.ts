@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { gzipSync } from "node:zlib";
 import { HttpError } from "./errors";
 
 export const COOKIE = "dof_session";
@@ -23,7 +24,13 @@ function readStream(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => { size += c.length; if (size > MAX_BODY) { reject(new HttpError(413, "That request is too large.")); req.destroy(); } else chunks.push(c); });
+    req.on("data", (c: Buffer) => {
+      size += c.length;
+      if (size > MAX_BODY) {
+        reject(new HttpError(413, "That request is too large."));
+        req.destroy();
+      } else chunks.push(c);
+    });
     req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
     req.on("error", reject);
   });
@@ -43,12 +50,25 @@ export async function readRequest(req: IncomingMessage): Promise<Req> {
   if (method !== "GET" && method !== "HEAD") {
     const pre = (req as IncomingMessage & { body?: unknown }).body;
     const raw = pre !== undefined ? pre : await readStream(req);
-    const parsed = typeof raw === "string" ? (raw ? JSON.parse(raw) : {}) : Buffer.isBuffer(raw) ? JSON.parse(raw.toString("utf8") || "{}") : raw;
+    const parsed =
+      typeof raw === "string" ? (raw ? JSON.parse(raw) : {}) : Buffer.isBuffer(raw) ? JSON.parse(raw.toString("utf8") || "{}") : raw;
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) body = parsed as Record<string, unknown>;
     else if (parsed !== undefined && parsed !== null) throw new HttpError(400, "That request is not valid.");
   }
-  const ip = header(req.headers["x-forwarded-for"]).split(",")[0].trim() || header(req.headers["x-real-ip"]) || req.socket?.remoteAddress || "";
-  return { method, path: url.pathname.replace(/\/+$/, "") || "/", query: url.searchParams, headers: req.headers, ip, agent: header(req.headers["user-agent"]), origin: `${proto}://${host}`, secure: proto === "https", cookies, body };
+  const ip =
+    header(req.headers["x-forwarded-for"]).split(",")[0].trim() || header(req.headers["x-real-ip"]) || req.socket?.remoteAddress || "";
+  return {
+    method,
+    path: url.pathname.replace(/\/+$/, "") || "/",
+    query: url.searchParams,
+    headers: req.headers,
+    ip,
+    agent: header(req.headers["user-agent"]),
+    origin: `${proto}://${host}`,
+    secure: proto === "https",
+    cookies,
+    body,
+  };
 }
 
 /** Changes are only accepted from this site itself. Together with SameSite cookies this stops other sites acting for a signed-in person. */
@@ -67,6 +87,39 @@ export function send(res: ServerResponse, status: number, body: unknown, extra: 
   res.setHeader("X-Content-Type-Options", "nosniff");
   for (const [k, v] of Object.entries(extra)) res.setHeader(k, v);
   res.end(JSON.stringify(body));
+}
+
+/**
+ * A large JSON answer, such as the data a person is sent at sign-in: compressed when the browser accepts it
+ * (all do), and written in pieces, which Vercel streams rather than holding the whole answer at once.
+ */
+export function sendLarge(req: Req, res: ServerResponse, body: unknown): void {
+  let out = Buffer.from(JSON.stringify(body), "utf8");
+  res.statusCode = 200;
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Vary", "Accept-Encoding");
+  if (/\bgzip\b/.test(header(req.headers["accept-encoding"]))) {
+    out = gzipSync(out);
+    res.setHeader("Content-Encoding", "gzip");
+  }
+  const PIECE = 256 * 1024;
+  for (let i = 0; i < out.length; i += PIECE) res.write(out.subarray(i, i + PIECE));
+  res.end();
+}
+
+const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+
+/** A stored photo. Only raster images are ever served, and never as anything a browser would run. */
+export function sendFile(res: ServerResponse, type: string, data: Buffer): void {
+  res.statusCode = 200;
+  res.setHeader("Content-Type", IMAGE_TYPES.has(type) ? type : "application/octet-stream");
+  res.setHeader("Content-Length", String(data.length));
+  res.setHeader("Cache-Control", "private, max-age=31536000, immutable"); // a file's name is its content, so it never changes
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Content-Security-Policy", "default-src 'none'; sandbox");
+  res.end(data);
 }
 
 export function redirect(res: ServerResponse, to: string): void {

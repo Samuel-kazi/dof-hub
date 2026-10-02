@@ -35,7 +35,11 @@ let n = 0;
 const render = (label: string, actorEmail: string, el: JSX.Element) => {
   const actor = login(actorEmail, "demo");
   try {
-    const html = renderToString(<AppProvider actor={actor} onLogout={() => {}}>{el}</AppProvider>);
+    const html = renderToString(
+      <AppProvider actor={actor} onLogout={() => {}}>
+        {el}
+      </AppProvider>,
+    );
     if (!html.length) throw new Error("empty render");
     n++;
   } catch (e) {
@@ -44,13 +48,29 @@ const render = (label: string, actorEmail: string, el: JSX.Element) => {
   }
 };
 
-renderToString(<Login onLogin={() => {}} />); n++;
+renderToString(<Login onLogin={() => {}} />);
+n++;
 for (const [role, email] of Object.entries(roles)) {
   render(`${role} shell`, email, <Shell />);
   render(`${role} dashboard`, email, <Dashboard />);
   render(`${role} pipeline all`, email, <Pipeline />);
-  for (const c of ["series", "devotional", "live", "documentary", "music"] as const) render(`${role} pipeline ${c}`, email, <Pipeline category={c} />);
-  for (const id of ["DOF-SER-001", "DOF-SER-001-S1", "DOF-SER-001-S1-E01", "DOF-SER-001-S1-E02", "DOF-LIVE-001", "DOF-LIVE-001-D1", "DOF-LIVE-002", "DOF-LIVE-002-D1", "DOF-DOC-001", "DOF-DEV-001", "DOF-MUS-001-A1-T01", "DOF-MUS-001-A1-T02"]) render(`${role} record ${id}`, email, <RecordPage id={id} />);
+  for (const c of ["series", "devotional", "live", "documentary", "music"] as const)
+    render(`${role} pipeline ${c}`, email, <Pipeline category={c} />);
+  for (const id of [
+    "DOF-SER-001",
+    "DOF-SER-001-S1",
+    "DOF-SER-001-S1-E01",
+    "DOF-SER-001-S1-E02",
+    "DOF-LIVE-001",
+    "DOF-LIVE-001-D1",
+    "DOF-LIVE-002",
+    "DOF-LIVE-002-D1",
+    "DOF-DOC-001",
+    "DOF-DEV-001",
+    "DOF-MUS-001-A1-T01",
+    "DOF-MUS-001-A1-T02",
+  ])
+    render(`${role} record ${id}`, email, <RecordPage id={id} />);
   render(`${role} callsheets`, email, <CallSheets />);
   render(`${role} callsheet`, email, <CallSheetPage id="DOF-CS-001" />);
   render(`${role} callsheet run of show`, email, <CallSheetPage id="DOF-CS-002" />);
@@ -63,10 +83,22 @@ for (const [role, email] of Object.entries(roles)) {
   render(`${role} settings`, email, <Settings />);
   render(`${role} soon`, email, <Soon module="documents" />);
   for (const tab of ["inventory", "checkouts", "incidents"] as const) render(`${role} equipment ${tab}`, email, <Equipment tab={tab} />);
-  for (const id of ["DOF-EQ-CAM-001", "DOF-EQ-CAM-003", "DOF-EQ-CAB-XLR10M-B01", "DOF-EQ-LGT-002", "DOF-EQ-AUD-004"]) render(`${role} item ${id}`, email, <EquipmentItemPage id={id} />);
+  for (const id of ["DOF-EQ-CAM-001", "DOF-EQ-CAM-003", "DOF-EQ-CAB-XLR10M-B01", "DOF-EQ-LGT-002", "DOF-EQ-AUD-004"])
+    render(`${role} item ${id}`, email, <EquipmentItemPage id={id} />);
   for (const id of ["DOF-MF-001", "DOF-MF-002", "DOF-MF-003"]) render(`${role} manifest ${id}`, email, <ManifestPage id={id} />);
   render(`${role} storage`, email, <Storage />);
-  for (const [scope, params] of [["storage", {}], ["drive", { driveId: "DRV-001" }], ["equipment", {}], ["manifest", { manifestId: "DOF-MF-001" }], ["project", { contentId: "DOF-SER-001" }], ["pipeline", {}], ["workload", {}], ["document", { docId: "DOF-DCS-001" }], ["audit", {}]] as const) render(`${role} report dialog ${scope}`, email, <ReportDialog scope={scope} params={params} onClose={() => {}} />);
+  for (const [scope, params] of [
+    ["storage", {}],
+    ["drive", { driveId: "DRV-001" }],
+    ["equipment", {}],
+    ["manifest", { manifestId: "DOF-MF-001" }],
+    ["project", { contentId: "DOF-SER-001" }],
+    ["pipeline", {}],
+    ["workload", {}],
+    ["document", { docId: "DOF-DCS-001" }],
+    ["audit", {}],
+  ] as const)
+    render(`${role} report dialog ${scope}`, email, <ReportDialog scope={scope} params={params} onClose={() => {}} />);
   render(`${role} access`, email, <Access />);
   render(`${role} reminders`, email, <Reminders />);
   render(`${role} calendar`, email, <CalendarPage />);

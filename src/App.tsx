@@ -4,6 +4,7 @@ import { AppProvider } from "./ui/AppContext";
 import { Shell } from "./ui/Shell";
 import { Login, MustChange, RemoteLogin, Setup, Unavailable } from "./pages/Login";
 import { actorOf, hydrate, probe, signOut, startSync, syncEvents, type SessionInfo, type SessionUser } from "./data/remote";
+import { startLocalDailyChecks } from "./data/localChecks";
 
 type Boot = { kind: "loading" } | { kind: "local" } | { kind: "remote"; info: SessionInfo };
 
@@ -13,7 +14,10 @@ export default function App() {
   const [pending, setPending] = useState<SessionUser | null>(null); // signed in, but must choose a new password
 
   const enter = async (u: SessionUser) => {
-    if (u.mustChange) { setPending(u); return; }
+    if (u.mustChange) {
+      setPending(u);
+      return;
+    }
     await hydrate();
     startSync();
     setPending(null);
@@ -23,13 +27,27 @@ export default function App() {
   useEffect(() => {
     syncEvents.onSignedOut = () => window.location.reload();
     void probe().then(async (info) => {
-      if (!info) { setBoot({ kind: "local" }); return; }
+      if (!info) {
+        setBoot({ kind: "local" });
+        return;
+      }
       setBoot({ kind: "remote", info });
       if (info.user && !info.unavailable) await enter(info.user);
     });
   }, []);
 
-  if (boot.kind === "loading") return <><div className="dawn" /><div className="login-wrap"><p className="muted">Loading…</p></div></>;
+  // Signed in to a server, the server runs the daily checks. On its own, the app runs them.
+  useEffect(() => (boot.kind === "local" ? startLocalDailyChecks() : undefined), [boot.kind]);
+
+  if (boot.kind === "loading")
+    return (
+      <>
+        <div className="dawn" />
+        <div className="login-wrap">
+          <p className="muted">Loading…</p>
+        </div>
+      </>
+    );
 
   return (
     <>

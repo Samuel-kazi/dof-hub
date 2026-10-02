@@ -16,9 +16,17 @@ import { categoryOf } from "../src/config/categories";
 let passed = 0;
 const t = (name: string, fn: () => void) => {
   resetDemoData();
-  try { fn(); passed++; console.log("ok  ", name); } catch (e) { console.error("FAIL", name, "\n    ", (e as Error).message); process.exitCode = 1; }
+  try {
+    fn();
+    passed++;
+    console.log("ok  ", name);
+  } catch (e) {
+    console.error("FAIL", name, "\n    ", (e as Error).message);
+    process.exitCode = 1;
+  }
 };
-const throwsRule = (fn: () => unknown, match?: RegExp) => assert.throws(fn, (e) => e instanceof RuleError && (!match || match.test(e.message)));
+const throwsRule = (fn: () => unknown, match?: RegExp) =>
+  assert.throws(fn, (e) => e instanceof RuleError && (!match || match.test(e.message)));
 const hop = () => login("hop@dof.demo", "demo");
 const crew1 = () => login("crew1@dof.demo", "demo"); // Series, Devotional, Music
 const crew2 = () => login("crew2@dof.demo", "demo"); // Series, Documentary
@@ -31,7 +39,10 @@ const owners = (id: string, stage: string) => rec(id).stageAssignees[stage] ?? [
 t("a stage can have several owners, each with roles, and the first is responsible", () => {
   C.addStageOwner(hop(), "DOF-SER-001-S1-E04", "Scripting", "DOF-P-CRW-003", ["Script writer"]);
   C.addStageOwner(hop(), "DOF-SER-001-S1-E04", "Scripting", "DOF-P-CRW-002", ["Researcher", "Reviewer"]);
-  assert.deepEqual(owners("DOF-SER-001-S1-E04", "Scripting").map((o) => o.personId), ["DOF-P-CRW-001", "DOF-P-CRW-003", "DOF-P-CRW-002"]);
+  assert.deepEqual(
+    owners("DOF-SER-001-S1-E04", "Scripting").map((o) => o.personId),
+    ["DOF-P-CRW-001", "DOF-P-CRW-003", "DOF-P-CRW-002"],
+  );
   assert.deepEqual(owners("DOF-SER-001-S1-E04", "Scripting")[2].roles, ["Researcher", "Reviewer"]);
   assert.equal(rec("DOF-SER-001-S1-E04").assigneePersonId, "DOF-P-CRW-001");
 });
@@ -58,7 +69,10 @@ t("removing the lead hands responsibility to the next owner", () => {
 t("crew can add themselves to a stage even when others are on it, change their roles, and step off", () => {
   C.addStageOwner(crew2(), "DOF-SER-001-S1-E04", "Scripting", "DOF-P-CRW-002", ["Researcher"]);
   C.setOwnerRoles(crew2(), "DOF-SER-001-S1-E04", "Scripting", "DOF-P-CRW-002", ["Researcher", "Fact checker"]);
-  assert.deepEqual(owners("DOF-SER-001-S1-E04", "Scripting").find((o) => o.personId === "DOF-P-CRW-002")!.roles, ["Researcher", "Fact checker"]);
+  assert.deepEqual(owners("DOF-SER-001-S1-E04", "Scripting").find((o) => o.personId === "DOF-P-CRW-002")!.roles, [
+    "Researcher",
+    "Fact checker",
+  ]);
   C.removeStageOwner(crew2(), "DOF-SER-001-S1-E04", "Scripting", "DOF-P-CRW-002");
   assert.ok(!owners("DOF-SER-001-S1-E04", "Scripting").some((o) => o.personId === "DOF-P-CRW-002"));
 });
@@ -68,10 +82,15 @@ t("crew cannot change other people's work", () => {
   throwsRule(() => C.removeStageOwner(crew2(), "DOF-SER-001-S1-E01", "Editorial", "DOF-P-CRW-001"), /change other people's work/);
 });
 t("volunteers cannot change owners, and crew outside a project can only add themselves", () => {
-  throwsRule(() => C.addStageOwner(vol(), "DOF-SER-001-S1-E04", "Recording", "DOF-P-VOL-001", []), /view-only|only active crew|Head of Production/);
+  throwsRule(
+    () => C.addStageOwner(vol(), "DOF-SER-001-S1-E04", "Recording", "DOF-P-VOL-001", []),
+    /view-only|only active crew|Head of Production/,
+  );
   throwsRule(() => C.addStageOwner(crew2(), "DOF-DEV-001", "Recording", "DOF-P-CRW-003", []), /view-only|change other people's work/);
 });
-t("only active crew can own a stage", () => throwsRule(() => C.addStageOwner(hop(), "DOF-SER-001-S1-E04", "Recording", "DOF-P-VOL-001", []), /active crew/));
+t("only active crew can own a stage", () =>
+  throwsRule(() => C.addStageOwner(hop(), "DOF-SER-001-S1-E04", "Recording", "DOF-P-VOL-001", []), /active crew/),
+);
 t("moving to a stage hands responsibility to that stage's first owner", () => {
   const id = "DOF-SER-001-S1-E04";
   C.addStageOwner(hop(), id, "Pre-production", "DOF-P-CRW-002", ["Producer"]);
@@ -99,7 +118,10 @@ t("a stage owner is waiting on when their stage is current, and gets its reminde
 // ── Checklists ──
 t("editing has story lock, picture lock, sound check and color, each with a person and a date", () => {
   const tasks = C.tasksOf(rec("DOF-SER-001-S1-E01"));
-  assert.deepEqual(tasks.map((x) => x.label), ["Story lock", "Picture lock", "Sound check", "Color"]);
+  assert.deepEqual(
+    tasks.map((x) => x.label),
+    ["Story lock", "Picture lock", "Sound check", "Color"],
+  );
   assert.ok(tasks.every((x) => x.dueDate));
   assert.equal(new Set(tasks.map((x) => x.assigneePersonId)).size, 3, "different crew members");
 });
@@ -114,7 +136,8 @@ t("a stage cannot finish while its checklist is open", () => {
 t("people can add their own checklist items, and remove them", () => {
   const id = "DOF-SER-001-S1-E01";
   const extra = C.addTask(crew1(), id, { label: "Subtitles", dueDate: isoDay(5), assigneePersonId: "DOF-P-CRW-003" });
-  assert.equal(extra.stage, "Editorial"); assert.equal(extra.assigneePersonId, "DOF-P-CRW-003");
+  assert.equal(extra.stage, "Editorial");
+  assert.equal(extra.assigneePersonId, "DOF-P-CRW-003");
   throwsRule(() => C.addTask(crew1(), id, { label: "subtitles" }), /already has/);
   throwsRule(() => C.addTask(crew1(), id, { label: "  " }), /name/);
   C.removeTask(crew1(), id, extra.id);
@@ -124,16 +147,23 @@ t("ticking records who and when; people outside the project cannot", () => {
   const id = "DOF-SER-001-S1-E01";
   const tk = C.openTasks(rec(id))[0];
   const done = C.updateTask(crew1(), id, tk.id, { done: true });
-  assert.equal(done.doneBy, "DOF-P-CRW-001"); assert.ok(done.doneAt);
+  assert.equal(done.doneBy, "DOF-P-CRW-001");
+  assert.ok(done.doneAt);
   throwsRule(() => C.updateTask(vol(), id, tk.id, { done: false }), /view-only/);
 });
 t("music recording is tracked as audio and video, each with its own owner and date", () => {
   const tasks = C.tasksOf(rec("DOF-MUS-001-A1-T01"));
-  assert.deepEqual(tasks.map((x) => x.label), ["Audio recording", "Video recording"]);
+  assert.deepEqual(
+    tasks.map((x) => x.label),
+    ["Audio recording", "Video recording"],
+  );
   assert.notEqual(tasks[0].assigneePersonId, tasks[1].assigneePersonId);
 });
 t("music follows idea, pre-production, recording, audio post, video editing, review, publish", () => {
-  assert.deepEqual(categoryOf("music").stages.map((s) => s.name), ["Idea", "Pre-production", "Recording", "Audio post-production", "Video editing", "Review", "Publish"]);
+  assert.deepEqual(
+    categoryOf("music").stages.map((s) => s.name),
+    ["Idea", "Pre-production", "Recording", "Audio post-production", "Video editing", "Review", "Publish"],
+  );
   assert.deepEqual(C.tasksOf(rec("DOF-MUS-001-A1-T01"), "Recording").length, 2);
 });
 t("a new project starts with the checklist and documents for its first stage", () => {
@@ -157,11 +187,18 @@ t("links need a real address", () => {
 t("the final link is only posted once the item reaches its publishing stage", () => {
   const id = "DOF-DOC-001"; // a plain 8-stage pipeline still ending in "Delivered" — devotional has its own publishing rules now
   throwsRule(() => C.addLink(crew2(), id, { kind: "final", url: "https://youtu.be/x" }), /once this reaches Delivered/);
-  for (let i = 0; i < 3; i++) { for (const tk of C.openTasks(rec(id))) C.updateTask(crew2(), id, tk.id, { done: true }); C.setStageOutput(crew2(), id, true); C.advanceStage(crew2(), id); }
+  for (let i = 0; i < 3; i++) {
+    for (const tk of C.openTasks(rec(id))) C.updateTask(crew2(), id, tk.id, { done: true });
+    C.setStageOutput(crew2(), id, true);
+    C.advanceStage(crew2(), id);
+  }
   assert.equal(rec(id).pipelineStage, "Delivered");
   const l = C.addLink(crew2(), id, { kind: "final", url: "https://youtu.be/x" });
   assert.equal(l.stage, "Delivered");
-  assert.ok(getDb().docs.some((d) => d.contentId === id && d.templateKey === "analysis"), "the publishing analysis document is attached");
+  assert.ok(
+    getDb().docs.some((d) => d.contentId === id && d.templateKey === "analysis"),
+    "the publishing analysis document is attached",
+  );
 });
 t("an analysis note needs a link or some words", () => {
   throwsRule(() => C.addLink(crew1(), "DOF-DEV-001", { kind: "analysis" }), /link or write/);
@@ -178,15 +215,20 @@ t("only the person who posted a link, or the Head of Production, removes it", ()
 t("documents are attached once per stage, and never duplicated by going back and forth", () => {
   const id = "DOF-SER-001-S1-E04"; // in Scripting
   const before = getDb().docs.filter((d) => d.contentId === id).length;
-  C.setStageOutput(hop(), id, true); C.advanceStage(hop(), id);
+  C.setStageOutput(hop(), id, true);
+  C.advanceStage(hop(), id);
   assert.equal(getDb().docs.filter((d) => d.contentId === id).length, before + 1);
-  C.sendBackStage(hop(), id); C.setStageOutput(hop(), id, true); C.advanceStage(hop(), id);
+  C.sendBackStage(hop(), id);
+  C.setStageOutput(hop(), id, true);
+  C.advanceStage(hop(), id);
   assert.equal(getDb().docs.filter((d) => d.contentId === id).length, before + 1);
 });
 t("everyone on a project reads its documents; only crew on it edit", () => {
   const script = getDb().docs.find((d) => d.contentId === "DOF-SER-001-S1-E01" && d.templateKey === "script")!;
-  assert.ok(D.canViewDoc(vol(), script)); assert.ok(!D.canEditDoc(vol(), script));
-  assert.ok(D.canEditDoc(crew3(), script)); assert.ok(D.canEditDoc(hop(), script));
+  assert.ok(D.canViewDoc(vol(), script));
+  assert.ok(!D.canEditDoc(vol(), script));
+  assert.ok(D.canEditDoc(crew3(), script));
+  assert.ok(D.canEditDoc(hop(), script));
   const outside = getDb().docs.find((d) => d.contentId === "DOF-DEV-001")!;
   assert.ok(D.canViewDoc(crew2(), outside), "crew can read documents on every project");
   assert.ok(!D.canEditDoc(crew2(), outside), "but edit only where they are attached");
@@ -209,7 +251,10 @@ t("two people editing at once cannot silently overwrite each other", () => {
   const d = D.createDoc(crew1(), { contentId: "DOF-SER-001-S1-E04", title: "Notes", body: "one" });
   const started = d.version; // what both editors opened
   D.saveDoc(crew3(), d.id, { body: "theirs" }, started);
-  assert.throws(() => D.saveDoc(crew1(), d.id, { body: "mine" }, started), (e) => e instanceof ConflictError);
+  assert.throws(
+    () => D.saveDoc(crew1(), d.id, { body: "mine" }, started),
+    (e) => e instanceof ConflictError,
+  );
   assert.equal(D.getDoc(d.id)!.body, "theirs");
 });
 t("an earlier version can be restored, and the history keeps everything", () => {
@@ -225,7 +270,10 @@ t("an earlier version can be restored, and the history keeps everything", () => 
 });
 t("the difference between two versions lists what was added and removed", () => {
   const diff = D.diffLines("a\nb\nc", "a\nc\nd");
-  assert.deepEqual(diff.filter((l) => l.type !== "same").map((l) => `${l.type}:${l.text}`), ["del:b", "add:d"]);
+  assert.deepEqual(
+    diff.filter((l) => l.type !== "same").map((l) => `${l.type}:${l.text}`),
+    ["del:b", "add:d"],
+  );
 });
 t("archived documents leave the list but keep their history", () => {
   const d = D.createDoc(crew1(), { contentId: "DOF-SER-001-S1-E04", title: "Scrap" });
@@ -235,7 +283,8 @@ t("archived documents leave the list but keep their history", () => {
 });
 t("documents can be started from a template, or blank, and need a project the person can edit", () => {
   const d = D.createDoc(crew1(), { contentId: "DOF-SER-001-S1-E04", templateKey: "analysis" });
-  assert.match(d.title, /Publishing analysis/); assert.match(d.body, /Audience retention/);
+  assert.match(d.title, /Publishing analysis/);
+  assert.match(d.body, /Audience retention/);
   throwsRule(() => D.createDoc(crew2(), { contentId: "DOF-DEV-001", title: "x" }), /view-only/);
   throwsRule(() => D.createDoc(crew1(), { contentId: "DOF-SER-001-S1-E04" }), /title/);
 });
@@ -261,7 +310,8 @@ t("the seeded large production already has its run of show", () => {
   assert.equal(CS.runOfShowRequired(cs), true);
   assert.equal(CS.sortedRunOfShow(cs)[0].title, "Stream opens: countdown and welcome loop");
   const totals = CS.runOfShowTotals(cs);
-  assert.equal(totals.ends, "10:20"); assert.equal(totals.minutes, 110);
+  assert.equal(totals.ends, "10:20");
+  assert.equal(totals.minutes, 110);
 });
 t("run of show segments are checked and can be edited or removed while the sheet is a draft", () => {
   const id = "DOF-CS-002";

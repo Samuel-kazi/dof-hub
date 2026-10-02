@@ -19,12 +19,20 @@ const remote = await import("../src/data/remote");
 const { createPerson } = await import("../src/services/wrapped/people");
 
 let passed = 0;
-const ok = (name: string) => { passed++; console.log("ok  ", name); };
+const ok = (name: string) => {
+  passed++;
+  console.log("ok  ", name);
+};
 
 // ── The form, in the demo and on the real site ──
 resetDemoData();
 const demoActor = login("hop@dof.demo", "demo");
-const form = () => renderToString(<AppProvider actor={demoActor} onLogout={() => {}}><AddPersonModal defaultCategory="CRW" onClose={() => {}} onCreated={() => {}} /></AppProvider>);
+const form = () =>
+  renderToString(
+    <AppProvider actor={demoActor} onLogout={() => {}}>
+      <AddPersonModal defaultCategory="CRW" onClose={() => {}} onCreated={() => {}} />
+    </AppProvider>,
+  );
 const demoHtml = form();
 assert.match(demoHtml, /Create login access for this person/);
 assert.doesNotMatch(demoHtml, /Make a login for this person now/);
@@ -37,7 +45,10 @@ const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 let cookie = "";
 const realFetch = globalThis.fetch;
 globalThis.fetch = (async (path: string, init: RequestInit = {}) => {
-  const res = await realFetch(base + path, { ...init, headers: { ...(init.headers as Record<string, string>), ...(cookie ? { Cookie: cookie } : {}) } });
+  const res = await realFetch(base + path, {
+    ...init,
+    headers: { ...(init.headers as Record<string, string>), ...(cookie ? { Cookie: cookie } : {}) },
+  });
   const set = res.headers.getSetCookie().find((c) => c.startsWith("dof_session="));
   if (set) cookie = set.split(";")[0];
   return res;
@@ -45,7 +56,13 @@ globalThis.fetch = (async (path: string, init: RequestInit = {}) => {
 
 const info = await remote.probe();
 assert.ok(info && info.needsSetup);
-const { user } = await remote.api.post<{ user: import("../src/data/remote").SessionUser }>("/api/setup", { token: process.env.SETUP_TOKEN, name: "Kevin Mwangi", username: "kev", password: "correct horse battery", samples: false });
+const { user } = await remote.api.post<{ user: import("../src/data/remote").SessionUser }>("/api/setup", {
+  token: process.env.SETUP_TOKEN,
+  name: "Kevin Mwangi",
+  username: "kev",
+  password: "correct horse battery",
+  samples: false,
+});
 await remote.hydrate();
 // the screen syncs with page-visibility events, which Node does not have
 const g = globalThis as unknown as { document?: unknown };
@@ -55,7 +72,11 @@ remote.startSync();
 delete g.document; // server-side rendering must not see a fake page
 const actor = remote.actorOf(user);
 
-const realHtml = renderToString(<AppProvider actor={actor} onLogout={() => {}}><AddPersonModal defaultCategory="CRW" onClose={() => {}} onCreated={() => {}} /></AppProvider>);
+const realHtml = renderToString(
+  <AppProvider actor={actor} onLogout={() => {}}>
+    <AddPersonModal defaultCategory="CRW" onClose={() => {}} onCreated={() => {}} />
+  </AppProvider>,
+);
 assert.match(realHtml, /Make a login for this person now/);
 assert.match(realHtml, /not an email/);
 assert.doesNotMatch(realHtml, /Starting password|Login email/);
@@ -66,13 +87,19 @@ ok("on the real site the form offers to make the login, with a username, straigh
 const person = createPerson(actor, { category: "CRW", name: "Wanjiru Kamau", email: "", phone: "", skills: [], equipmentFamiliarity: [] });
 await remote.whenSynced();
 assert.ok(getDb().people.some((p) => p.personId === person.personId));
-const made = await remote.api.post<{ username: string; temporaryPassword: string }>("/api/accounts-create", { personId: person.personId, username: "wanjiru.kamau" });
+const made = await remote.api.post<{ username: string; temporaryPassword: string }>("/api/accounts-create", {
+  personId: person.personId,
+  username: "wanjiru.kamau",
+});
 assert.equal(made.username, "wanjiru.kamau");
 assert.ok(made.temporaryPassword.length >= 10);
 ok("a person added on the real site can be given a login as soon as they are saved");
 
 cookie = ""; // a different device: the new crew member signs in with the one-time password
-const signIn = await remote.api.post<{ user: { mustChange: boolean; role: string } }>("/api/login", { username: "wanjiru.kamau", password: made.temporaryPassword });
+const signIn = await remote.api.post<{ user: { mustChange: boolean; role: string } }>("/api/login", {
+  username: "wanjiru.kamau",
+  password: made.temporaryPassword,
+});
 assert.equal(signIn.user.mustChange, true);
 assert.equal(signIn.user.role, "CRW");
 ok("the new crew member signs in with the one-time password and must choose their own");

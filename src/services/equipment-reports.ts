@@ -4,15 +4,36 @@ import { EQUIP_CATEGORIES } from "../config/equipment";
 import { fmtShort } from "./utils";
 import { displayStatus, familyOf, qtyFree } from "./equipment-items";
 
-export interface ReportRow { id: string; name: string; detail: string; serial: string; qty: number; free: number; condition: EquipCondition; status: string; cost: number; vendor: string; purchased: string; packaging: string; accessories: string }
-export interface ReportGroup { category: EquipCategoryKey; label: string; rows: ReportRow[]; units: number }
+export interface ReportRow {
+  id: string;
+  name: string;
+  detail: string;
+  serial: string;
+  qty: number;
+  free: number;
+  condition: EquipCondition;
+  status: string;
+  cost: number;
+  vendor: string;
+  purchased: string;
+  packaging: string;
+  accessories: string;
+}
+export interface ReportGroup {
+  category: EquipCategoryKey;
+  label: string;
+  rows: ReportRow[];
+  units: number;
+}
 
 /** The full equipment list, grouped by category, for printing. */
 export function inventoryReport(category: EquipCategoryKey | "all", includeOutOfService: boolean): ReportGroup[] {
   const groups: ReportGroup[] = [];
   for (const cat of EQUIP_CATEGORIES) {
     if (category !== "all" && cat.key !== category) continue;
-    const items = getDb().equipment.filter((i) => i.category === cat.key && (includeOutOfService || i.baseStatus === "active" || i.baseStatus === "in-repair")).sort((a, b) => a.id.localeCompare(b.id));
+    const items = getDb()
+      .equipment.filter((i) => i.category === cat.key && (includeOutOfService || i.baseStatus === "active" || i.baseStatus === "in-repair"))
+      .sort((a, b) => a.id.localeCompare(b.id));
     if (!items.length) continue;
     const rows = items.map((i): ReportRow => ({
       id: i.id,
@@ -36,7 +57,12 @@ export function inventoryReport(category: EquipCategoryKey | "all", includeOutOf
 
 // ── Grouping ─────────────────────────────────────────────────
 
-export interface Family { key: string; name: string; category: EquipCategoryKey; items: EquipmentItem[] }
+export interface Family {
+  key: string;
+  name: string;
+  category: EquipCategoryKey;
+  items: EquipmentItem[];
+}
 
 /** Aggregate batches roll up under their item family, oldest purchase first (FIFO order). */
 export function groupByFamily(items: EquipmentItem[]): Family[] {
@@ -72,6 +98,15 @@ export function groupSerializedByModel(items: EquipmentItem[]): Family[] {
 
 // ── History and incidents ───────────────────────────────────
 
-export const itemHistory = (id: string): EquipmentHistory[] => getDb().equipmentHistory.filter((h) => h.equipmentId === id).sort((a, b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id));
-export const itemIncidents = (id: string): Incident[] => getDb().incidents.filter((i) => i.equipmentId === id).sort((a, b) => b.at.localeCompare(a.at));
+/** Newest first. Entries made in the same moment keep the order they were added in, newest first. */
+export const itemHistory = (id: string): EquipmentHistory[] =>
+  getDb()
+    .equipmentHistory.map((h, n) => ({ h, n }))
+    .filter(({ h }) => h.equipmentId === id)
+    .sort((a, b) => b.h.at.localeCompare(a.h.at) || b.n - a.n)
+    .map(({ h }) => h);
+export const itemIncidents = (id: string): Incident[] =>
+  getDb()
+    .incidents.filter((i) => i.equipmentId === id)
+    .sort((a, b) => b.at.localeCompare(a.at));
 export const allIncidents = (): Incident[] => [...getDb().incidents].sort((a, b) => b.at.localeCompare(a.at));

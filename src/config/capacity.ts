@@ -4,14 +4,51 @@ import type { CategoryKey } from "../types";
 // The series editorial figure is a rule of thumb from the production team: finishing a cut, which means
 // adding B-roll and working through the notes from the picture-lock review, takes at least two days.
 // The others are starting estimates and can be changed in Settings.
+//
+// Series, devotions and documentaries also have the five-stage workflow's per-episode stages: the edit in Post
+// production (the editor) and the release work in Marketing and distribution (the producer). A devotion's figure is
+// for one day's episode; a documentary's is for the film.
 export const DEFAULT_STAGE_EFFORT: Record<CategoryKey, Record<string, number>> = {
-  series: { Idea: 0.5, Scripting: 2, "Pre-production": 1.5, Ingest: 0.5, Editorial: 2, Review: 0.5, Delivered: 0.5 },
-  devotional: { Creation: 0.3, Guest: 1.5, "Prep/Scripting": 1, Recording: 0.5, Editing: 1, Review: 0.3, Published: 0.2 },
+  series: {
+    Idea: 0.5,
+    Scripting: 2,
+    "Pre-production": 1.5,
+    Ingest: 0.5,
+    Editorial: 2,
+    Review: 0.5,
+    Delivered: 0.5,
+    "Post production": 2,
+    "Marketing and distribution": 0.5,
+  },
+  devotional: {
+    Creation: 0.3,
+    Guest: 1.5,
+    "Prep/Scripting": 1,
+    Recording: 0.5,
+    Editing: 1,
+    Review: 0.3,
+    Published: 0.2,
+    "Post production": 1,
+    "Marketing and distribution": 0.3,
+  },
   general: { "In use": 0 },
   live: { Prep: 0.5, Build: 1.5, Rehearse: 0.5, Show: 1, Wrap: 0.5, Review: 0.5, "Post Production": 1 },
-  documentary: { Idea: 1, Research: 3, "Pre-production": 2, Ingest: 1, Editorial: 5, Review: 1, Delivered: 0.5 },
+  documentary: {
+    Idea: 1,
+    Research: 3,
+    "Pre-production": 2,
+    Ingest: 1,
+    Editorial: 5,
+    Review: 1,
+    Delivered: 0.5,
+    "Post production": 5,
+    "Marketing and distribution": 1,
+  },
   music: { Idea: 0.5, "Pre-production": 1, "Audio post-production": 2, "Video editing": 2, Review: 0.5, Publish: 0.5 },
 };
+
+/** The workflow's stages that are measured per episode, shown in Settings under each category that runs it. */
+export const EPISODE_EFFORT_STAGES = ["Post production", "Marketing and distribution"] as const;
 
 export const DEFAULT_WORK_DAYS = [1, 2, 3, 4, 5];
 

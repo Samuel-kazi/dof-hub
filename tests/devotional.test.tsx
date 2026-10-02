@@ -12,10 +12,30 @@ import { resetDemoData, getDb } from "../src/data/store";
 import * as C from "../src/services/content";
 
 let passed = 0;
-const t = (name: string, fn: () => void) => { resetDemoData(); try { fn(); passed++; console.log("ok  ", name); } catch (e) { console.error("FAIL", name, "\n    ", e instanceof Error ? e.message : e); process.exitCode = 1; } };
+const t = (name: string, fn: () => void) => {
+  resetDemoData();
+  try {
+    fn();
+    passed++;
+    console.log("ok  ", name);
+  } catch (e) {
+    console.error("FAIL", name, "\n    ", e instanceof Error ? e.message : e);
+    process.exitCode = 1;
+  }
+};
 const hop = () => login("hop@dof.demo", "demo");
-const page = (id: string) => renderToString(<AppProvider actor={hop()} onLogout={() => {}}>{React.createElement(RecordPage, { id })}</AppProvider>);
-const board = (category?: "devotional") => renderToString(<AppProvider actor={hop()} onLogout={() => {}}>{React.createElement(Pipeline, { category })}</AppProvider>);
+const page = (id: string) =>
+  renderToString(
+    <AppProvider actor={hop()} onLogout={() => {}}>
+      {React.createElement(RecordPage, { id })}
+    </AppProvider>,
+  );
+const board = (category?: "devotional") =>
+  renderToString(
+    <AppProvider actor={hop()} onLogout={() => {}}>
+      {React.createElement(Pipeline, { category })}
+    </AppProvider>,
+  );
 
 function toGuest() {
   const actor = hop();
@@ -27,10 +47,15 @@ function toGuest() {
 function toEditing() {
   const actor = hop();
   const id = toGuest();
-  for (const t2 of getDb().records.find((r) => r.contentId === id)!.tasks.filter((x) => x.stage === "Guest")) C.updateTask(actor, id, t2.id, { done: true });
+  for (const t2 of getDb()
+    .records.find((r) => r.contentId === id)!
+    .tasks.filter((x) => x.stage === "Guest"))
+    C.updateTask(actor, id, t2.id, { done: true });
   C.approveGuestReview(actor, id, "Pastor X");
-  C.setStageOutput(actor, id, true); C.advanceStage(actor, id); // Recording
-  C.setStageOutput(actor, id, true); C.advanceStage(actor, id); // Editing
+  C.setStageOutput(actor, id, true);
+  C.advanceStage(actor, id); // Recording
+  C.setStageOutput(actor, id, true);
+  C.advanceStage(actor, id); // Editing
   return id;
 }
 
@@ -57,7 +82,7 @@ t("a Closed project shows its reason plainly, on its own page", () => {
 
 t("Editing has exactly one working ready-for-review checkbox, and the advance button waits on it", () => {
   const html = page(toEditing());
-  assert.equal((html.match(/<input type="checkbox"/g) ?? []).filter((_, i) => html.indexOf("Ready for review") > -1).length >= 1, true);
+  assert.equal((html.match(/<input type="checkbox"/g) ?? []).filter(() => html.indexOf("Ready for review") > -1).length >= 1, true);
   assert.doesNotMatch(html, /"Ready for review" is in place/, "the generic duplicate checkbox is hidden");
   assert.match(html, /Done, move to.*Review/s);
   assert.match(html, /disabled=""[^>]*>Done, move to/s, "disabled until ready-for-review is ticked");

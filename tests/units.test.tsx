@@ -8,16 +8,28 @@ import { ItemFormModal } from "../src/pages/EquipmentForms";
 import { EquipmentItemPage } from "../src/pages/EquipmentItem";
 import { Equipment } from "../src/pages/Equipment";
 import { login } from "../src/services/auth";
-import { resetDemoData, getDb } from "../src/data/store";
+import { resetDemoData } from "../src/data/store";
 import { createSerializedUnits, getItem } from "../src/services/equipment";
 
 let passed = 0;
 const t = (name: string, fn: () => void) => {
   resetDemoData();
-  try { fn(); passed++; console.log("ok  ", name); } catch (e) { console.error("FAIL", name, "\n    ", e instanceof Error ? e.message : e); process.exitCode = 1; }
+  try {
+    fn();
+    passed++;
+    console.log("ok  ", name);
+  } catch (e) {
+    console.error("FAIL", name, "\n    ", e instanceof Error ? e.message : e);
+    process.exitCode = 1;
+  }
 };
 const hop = () => login("hop@dof.demo", "demo");
-const html = (el: React.ReactElement) => renderToString(<AppProvider actor={hop()} onLogout={() => {}}>{el}</AppProvider>);
+const html = (el: React.ReactElement) =>
+  renderToString(
+    <AppProvider actor={hop()} onLogout={() => {}}>
+      {el}
+    </AppProvider>,
+  );
 
 t("the add-equipment form offers a list of serial numbers, not just one, for a new serialized item", () => {
   const out = html(<ItemFormModal onClose={() => {}} onSaved={() => {}} />);
@@ -58,9 +70,21 @@ t("a one-off item shows no sibling-units panel", () => {
 
 t("three FX6 bodies added at once render correctly end to end: created, grouped, and cross-linked", () => {
   const made = createSerializedUnits(hop(), {
-    name: "Sony FX6 camera body", make: "Sony", model: "FX6", category: "camera",
-    unitCost: 6000, vendor: "B&H", condition: "Good", packaging: "Pelican 1610", accessories: "2 batteries",
-    info: "", units: [{ serialNumber: "FX6-9001", label: "A-cam" }, { serialNumber: "FX6-9002", label: "B-cam" }, { serialNumber: "FX6-9003", label: "C-cam" }],
+    name: "Sony FX6 camera body",
+    make: "Sony",
+    model: "FX6",
+    category: "camera",
+    unitCost: 6000,
+    vendor: "B&H",
+    condition: "Good",
+    packaging: "Pelican 1610",
+    accessories: "2 batteries",
+    info: "",
+    units: [
+      { serialNumber: "FX6-9001", label: "A-cam" },
+      { serialNumber: "FX6-9002", label: "B-cam" },
+      { serialNumber: "FX6-9003", label: "C-cam" },
+    ],
   });
   assert.equal(made.length, 3);
   const list = html(<Equipment tab="inventory" />);

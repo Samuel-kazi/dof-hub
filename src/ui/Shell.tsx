@@ -1,3 +1,4 @@
+import { ErrorBoundary } from "./ErrorBoundary";
 import { useEffect, useRef, useState } from "react";
 import { useApp, type Route } from "./AppContext";
 import { didSaveFail, useDb } from "../data/store";
@@ -5,8 +6,27 @@ import { modulesFor } from "../services/wrapped/permissions";
 import { CATEGORIES } from "../config/categories";
 import { MODULE_LABELS, ROLES, type ModuleKey } from "../config/roles";
 import { getReminders } from "../services/wrapped/content";
+import { workflowDueSoon } from "../services/wrapped/reminders";
 import { relativeDays } from "../services/utils";
-import { IconBack, IconBell, IconCalendar, IconCam, IconChevron, IconDoc, IconDrive, IconFilm, IconGear, IconHome, IconLink, IconLogout, IconMenu, IconMoon, IconSheet, IconSun, IconUsers } from "./Icons";
+import {
+  IconBack,
+  IconBell,
+  IconCalendar,
+  IconCam,
+  IconChevron,
+  IconDoc,
+  IconDrive,
+  IconFilm,
+  IconGear,
+  IconHome,
+  IconLink,
+  IconLogout,
+  IconMenu,
+  IconMoon,
+  IconSheet,
+  IconSun,
+  IconUsers,
+} from "./Icons";
 import { Logo } from "./Logo";
 import { useTheme } from "./theme";
 import { useApplyAppearance } from "./appearance";
@@ -14,6 +34,7 @@ import { Avatar } from "./parts";
 import { Dashboard } from "../pages/Dashboard";
 import { Pipeline } from "../pages/Pipeline";
 import { RecordPage } from "../pages/RecordPage";
+import { SessionPage } from "../pages/workflow/SessionPage";
 import { CallSheets, CallSheetPage } from "../pages/CallSheets";
 import { Crew, PersonPage } from "../pages/Crew";
 import { Settings } from "../pages/Settings";
@@ -39,38 +60,80 @@ const ICONS: Record<ModuleKey, () => JSX.Element> = {
   reminders: IconBell,
   settings: IconGear,
 };
-const BUILT: ModuleKey[] = ["dashboard", "pipeline", "callsheets", "calendar", "equipment", "storage", "crew", "documents", "reminders", "settings"];
+const BUILT: ModuleKey[] = [
+  "dashboard",
+  "pipeline",
+  "callsheets",
+  "calendar",
+  "equipment",
+  "storage",
+  "crew",
+  "documents",
+  "reminders",
+  "settings",
+];
 
 function moduleOfRoute(r: Route): ModuleKey {
   switch (r.n) {
-    case "dashboard": return "dashboard";
-    case "pipeline": case "record": return "pipeline";
-    case "callsheets": case "callsheet": return "callsheets";
-    case "calendar": return "calendar";
-    case "crew": case "person": return "crew";
-    case "equipment": case "item": case "manifest": return "equipment";
-    case "storage": case "drive": return "storage";
-    case "documents": case "doc": return "documents";
-    case "reminders": return "reminders";
-    case "access": return "settings";
-    case "settings": return "settings";
-    case "soon": return r.module;
+    case "dashboard":
+      return "dashboard";
+    case "pipeline":
+    case "record":
+    case "session":
+      return "pipeline";
+    case "callsheets":
+    case "callsheet":
+      return "callsheets";
+    case "calendar":
+      return "calendar";
+    case "crew":
+    case "person":
+      return "crew";
+    case "equipment":
+    case "item":
+    case "manifest":
+      return "equipment";
+    case "storage":
+    case "drive":
+      return "storage";
+    case "documents":
+    case "doc":
+      return "documents";
+    case "reminders":
+      return "reminders";
+    case "access":
+      return "settings";
+    case "settings":
+      return "settings";
+    case "soon":
+      return r.module;
   }
 }
 
 function routeFor(m: ModuleKey): Route {
   switch (m) {
-    case "dashboard": return { n: "dashboard" };
-    case "pipeline": return { n: "pipeline" };
-    case "callsheets": return { n: "callsheets" };
-    case "calendar": return { n: "calendar" };
-    case "equipment": return { n: "equipment" };
-    case "storage": return { n: "storage" };
-    case "documents": return { n: "documents" };
-    case "crew": return { n: "crew" };
-    case "reminders": return { n: "reminders" };
-    case "settings": return { n: "settings" };
-    default: return { n: "soon", module: m };
+    case "dashboard":
+      return { n: "dashboard" };
+    case "pipeline":
+      return { n: "pipeline" };
+    case "callsheets":
+      return { n: "callsheets" };
+    case "calendar":
+      return { n: "calendar" };
+    case "equipment":
+      return { n: "equipment" };
+    case "storage":
+      return { n: "storage" };
+    case "documents":
+      return { n: "documents" };
+    case "crew":
+      return { n: "crew" };
+    case "reminders":
+      return { n: "reminders" };
+    case "settings":
+      return { n: "settings" };
+    default:
+      return { n: "soon", module: m };
   }
 }
 
@@ -79,7 +142,11 @@ export function Shell() {
   const db = useDb();
   const dockKey = `dof-dock-${actor.personId}`;
   const [wide, setWide] = useState(() => {
-    try { return localStorage.getItem(dockKey) === "wide"; } catch { return false; }
+    try {
+      return localStorage.getItem(dockKey) === "wide";
+    } catch {
+      return false;
+    }
   });
   const { theme, setPref } = useTheme();
   useApplyAppearance({
@@ -91,45 +158,75 @@ export function Shell() {
   });
   const pipeKey = `dof-pipe-${actor.personId}`;
   const [pipeOpen, setPipeOpen] = useState(() => {
-    try { return localStorage.getItem(pipeKey) !== "closed"; } catch { return true; }
+    try {
+      return localStorage.getItem(pipeKey) !== "closed";
+    } catch {
+      return true;
+    }
   });
-  const togglePipe = () => setPipeOpen((o) => { try { localStorage.setItem(pipeKey, o ? "closed" : "open"); } catch { /* ignore */ } return !o; });
+  const togglePipe = () =>
+    setPipeOpen((o) => {
+      try {
+        localStorage.setItem(pipeKey, o ? "closed" : "open");
+      } catch {
+        /* ignore */
+      }
+      return !o;
+    });
   const contentRef = useRef<HTMLElement>(null);
   const role = ROLES[actor.role];
   const active = moduleOfRoute(route);
   const reminders = getReminders(actor);
+  const workflowDue = workflowDueSoon(actor.personId);
   void db;
 
   const toggle = () => {
     setWide((w) => {
-      try { localStorage.setItem(dockKey, w ? "icons" : "wide"); } catch { /* ignore */ }
+      try {
+        localStorage.setItem(dockKey, w ? "icons" : "wide");
+      } catch {
+        /* ignore */
+      }
       return !w;
     });
   };
 
   // A new page starts at the top.
-  useEffect(() => { contentRef.current?.scrollTo?.(0, 0); }, [route]);
+  useEffect(() => {
+    contentRef.current?.scrollTo?.(0, 0);
+  }, [route]);
 
   // One heads-up on sign-in for stage deadlines inside the reminder window.
   useEffect(() => {
-    const n = getReminders(actor).length;
-    if (n) toast(`${n} stage deadline${n > 1 ? "s" : ""} need${n > 1 ? "" : "s"} your attention soon. Check the bell.`, "info");
+    const stages = getReminders(actor).length;
+    const n = stages + workflowDueSoon(actor.personId).length;
+    // A session's day or a waiting review is not a stage deadline, so the word is only used when that is all there is.
+    const what = n === stages ? "stage deadline" : "deadline";
+    if (n) toast(`${n} ${what}${n > 1 ? "s" : ""} need${n > 1 ? "" : "s"} your attention soon. Check the bell.`, "info");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const openBell = (e: React.MouseEvent) => {
     e.stopPropagation();
     const r = e.currentTarget.getBoundingClientRect();
-    menu(
-      { clientX: r.right - 220, clientY: r.bottom + 6, preventDefault: () => {} },
-      [
-        ...notifications.slice(0, 5).map((n) => ({ label: `${n.title}: ${n.body}`, onClick: () => {} })),
-        ...(notifications.length ? [{ label: "Clear notifications", onClick: clearNotifications }, { label: "", divider: true, onClick: () => {} }] : []),
-        ...(reminders.length
-          ? reminders.map((x) => ({ label: `${x.record.title}: ${x.stage} due ${relativeDays(x.dueDate)}`, onClick: () => go({ n: "record", id: x.record.contentId }) }))
-          : [{ label: "No deadlines coming up for you", onClick: () => {}, disabled: true }]),
-      ],
-    );
+    menu({ clientX: r.right - 220, clientY: r.bottom + 6, preventDefault: () => {} }, [
+      ...notifications.slice(0, 5).map((n) => ({ label: `${n.title}: ${n.body}`, onClick: () => {} })),
+      ...(notifications.length
+        ? [
+            { label: "Clear notifications", onClick: clearNotifications },
+            { label: "", divider: true, onClick: () => {} },
+          ]
+        : []),
+      ...reminders.map((x) => ({
+        label: `${x.record.title}: ${x.stage} due ${relativeDays(x.dueDate)}`,
+        onClick: () => go({ n: "record", id: x.record.contentId }),
+      })),
+      ...workflowDue.map((x) => ({
+        label: `${x.title}, ${x.overdue ? "late" : relativeDays(x.date)}`,
+        onClick: () => go(x.sessionId ? { n: "session", id: x.sessionId } : { n: "record", id: x.contentId }),
+      })),
+      ...(reminders.length || workflowDue.length ? [] : [{ label: "No deadlines coming up for you", onClick: () => {}, disabled: true }]),
+    ]);
   };
 
   return (
@@ -149,19 +246,39 @@ export function Shell() {
           return (
             <div key={m} style={wide ? undefined : { display: "contents" }}>
               <div className="dock-row" style={wide ? undefined : { display: "contents" }}>
-                <button className={`dock-item ${active === m ? "active" : ""} ${m === "pipeline" && wide ? "has-chev" : ""}`} data-tip={label} aria-label={label} aria-current={active === m ? "page" : undefined} onClick={() => go(routeFor(m))}>
+                <button
+                  className={`dock-item ${active === m ? "active" : ""} ${m === "pipeline" && wide ? "has-chev" : ""}`}
+                  data-tip={label}
+                  aria-label={label}
+                  aria-current={active === m ? "page" : undefined}
+                  onClick={() => go(routeFor(m))}
+                >
                   <Icon />
                   <span className="dock-label">{label}</span>
                   {!built && <span className="soon">Next</span>}
                 </button>
                 {m === "pipeline" && wide && (
-                  <button className={`dock-chev ${pipeOpen ? "open" : ""}`} aria-expanded={pipeOpen} aria-label={pipeOpen ? "Hide the categories" : "Show the categories"} title={pipeOpen ? "Hide the categories" : "Show the categories"} onClick={togglePipe}><IconChevron /></button>
+                  <button
+                    className={`dock-chev ${pipeOpen ? "open" : ""}`}
+                    aria-expanded={pipeOpen}
+                    aria-label={pipeOpen ? "Hide the categories" : "Show the categories"}
+                    title={pipeOpen ? "Hide the categories" : "Show the categories"}
+                    onClick={togglePipe}
+                  >
+                    <IconChevron />
+                  </button>
                 )}
               </div>
               {m === "pipeline" && wide && pipeOpen && (
                 <div className="dock-sub">
                   {CATEGORIES.map((c) => (
-                    <button key={c.key} className={route.n === "pipeline" && route.category === c.key ? "active" : ""} onClick={() => go({ n: "pipeline", category: c.key })}>{c.label}</button>
+                    <button
+                      key={c.key}
+                      className={route.n === "pipeline" && route.category === c.key ? "active" : ""}
+                      onClick={() => go({ n: "pipeline", category: c.key })}
+                    >
+                      {c.label}
+                    </button>
                   ))}
                 </div>
               )}
@@ -173,13 +290,33 @@ export function Shell() {
 
       <div className="main">
         <header className="topbar">
-          <button className="icon-btn" onClick={back} disabled={!canBack} aria-label="Go back" title="Back"><IconBack /></button>
-          <button className="icon-btn" onClick={toggle} aria-label={wide ? "Collapse menu" : "Expand menu"} title={wide ? "Collapse menu" : "Expand menu"}><IconMenu /></button>
+          <button className="icon-btn" onClick={back} disabled={!canBack} aria-label="Go back" title="Back">
+            <IconBack />
+          </button>
+          <button
+            className="icon-btn"
+            onClick={toggle}
+            aria-label={wide ? "Collapse menu" : "Expand menu"}
+            title={wide ? "Collapse menu" : "Expand menu"}
+          >
+            <IconMenu />
+          </button>
           <div className="spacer" />
-          <button className="icon-btn no-print" onClick={() => void copyLink()} aria-label="Copy a link to this screen" title="Copy a link to this screen"><IconLink /></button>
+          <button
+            className="icon-btn no-print"
+            onClick={() => void copyLink()}
+            aria-label="Copy a link to this screen"
+            title="Copy a link to this screen"
+          >
+            <IconLink />
+          </button>
           <div className="theme-toggle" role="group" aria-label="Colour mode">
-            <button aria-pressed={theme === "light"} aria-label="Light mode" title="Light mode" onClick={() => setPref("light")}><IconSun /></button>
-            <button aria-pressed={theme === "dark"} aria-label="Night mode" title="Night mode" onClick={() => setPref("dark")}><IconMoon /></button>
+            <button aria-pressed={theme === "light"} aria-label="Light mode" title="Light mode" onClick={() => setPref("light")}>
+              <IconSun />
+            </button>
+            <button aria-pressed={theme === "dark"} aria-label="Night mode" title="Night mode" onClick={() => setPref("dark")}>
+              <IconMoon />
+            </button>
           </div>
           <button className="icon-btn" onClick={openBell} aria-label="Deadline reminders" title="Deadline reminders">
             <IconBell />
@@ -192,30 +329,45 @@ export function Shell() {
               <small>{me.name === role.label ? me.personId : role.label}</small>
             </div>
           </div>
-          <button className="icon-btn" onClick={logout} aria-label="Sign out" title="Sign out"><IconLogout /></button>
+          <button className="icon-btn" onClick={logout} aria-label="Sign out" title="Sign out">
+            <IconLogout />
+          </button>
         </header>
         <main className="content" ref={contentRef}>
-          <div className="print-brand" aria-hidden="true"><Logo width={112} /><span>Dawn of Faith Production Hub</span></div>
-          {didSaveFail() && <div className="banner bad no-print" role="alert" style={{ marginBottom: 16 }}><span className="grow"><b>Changes are not being saved.</b> This device is out of storage for the app, usually because of photos. Remove some photos or use links instead. Recent changes will be lost if you close the app.</span></div>}
-          {route.n === "dashboard" && <Dashboard />}
-          {route.n === "pipeline" && <Pipeline category={route.category} />}
-          {route.n === "record" && <RecordPage id={route.id} />}
-          {route.n === "callsheets" && <CallSheets />}
-          {route.n === "callsheet" && <CallSheetPage id={route.id} />}
-          {route.n === "crew" && <Crew tab={route.tab} />}
-          {route.n === "person" && <PersonPage id={route.id} />}
-          {route.n === "settings" && <Settings />}
-          {route.n === "equipment" && <Equipment tab={route.tab} />}
-          {route.n === "item" && <EquipmentItemPage id={route.id} />}
-          {route.n === "manifest" && <ManifestPage id={route.id} />}
-          {route.n === "storage" && <Storage />}
-          {route.n === "drive" && <DrivePage id={route.id} />}
-          {route.n === "access" && <Access />}
-          {route.n === "reminders" && <Reminders />}
-          {route.n === "calendar" && <CalendarPage />}
-          {route.n === "documents" && <Documents />}
-          {route.n === "doc" && <DocPage id={route.id} />}
-          {route.n === "soon" && <Soon module={route.module} />}
+          <div className="print-brand" aria-hidden="true">
+            <Logo width={112} />
+            <span>Dawn of Faith Production Hub</span>
+          </div>
+          {didSaveFail() && (
+            <div className="banner bad no-print" role="alert" style={{ marginBottom: 16 }}>
+              <span className="grow">
+                <b>Changes are not being saved.</b> This device is out of storage for the app, usually because of photos. Remove some photos
+                or use links instead. Recent changes will be lost if you close the app.
+              </span>
+            </div>
+          )}
+          <ErrorBoundary resetKey={JSON.stringify(route)} onHome={() => go({ n: "dashboard" })}>
+            {route.n === "dashboard" && <Dashboard />}
+            {route.n === "pipeline" && <Pipeline category={route.category} />}
+            {route.n === "record" && <RecordPage id={route.id} />}
+            {route.n === "session" && <SessionPage id={route.id} />}
+            {route.n === "callsheets" && <CallSheets />}
+            {route.n === "callsheet" && <CallSheetPage id={route.id} />}
+            {route.n === "crew" && <Crew tab={route.tab} />}
+            {route.n === "person" && <PersonPage id={route.id} />}
+            {route.n === "settings" && <Settings />}
+            {route.n === "equipment" && <Equipment tab={route.tab} />}
+            {route.n === "item" && <EquipmentItemPage id={route.id} />}
+            {route.n === "manifest" && <ManifestPage id={route.id} />}
+            {route.n === "storage" && <Storage />}
+            {route.n === "drive" && <DrivePage id={route.id} />}
+            {route.n === "access" && <Access />}
+            {route.n === "reminders" && <Reminders />}
+            {route.n === "calendar" && <CalendarPage />}
+            {route.n === "documents" && <Documents />}
+            {route.n === "doc" && <DocPage id={route.id} />}
+            {route.n === "soon" && <Soon module={route.module} />}
+          </ErrorBoundary>
         </main>
       </div>
     </div>

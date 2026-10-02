@@ -6,7 +6,7 @@ import { renderToString } from "react-dom/server";
 import { AppProvider } from "../src/ui/AppContext";
 import { RecordPage } from "../src/pages/RecordPage";
 import { login } from "../src/services/auth";
-import { resetDemoData, getDb } from "../src/data/store";
+import { resetDemoData } from "../src/data/store";
 import { getRecord } from "../src/services/access";
 import * as C from "../src/services/content";
 import { categoryOf } from "../src/config/categories";
@@ -14,10 +14,22 @@ import { categoryOf } from "../src/config/categories";
 let passed = 0;
 const t = (name: string, fn: () => void) => {
   resetDemoData();
-  try { fn(); passed++; console.log("ok  ", name); } catch (e) { console.error("FAIL", name, "\n    ", e instanceof Error ? e.message : e); process.exitCode = 1; }
+  try {
+    fn();
+    passed++;
+    console.log("ok  ", name);
+  } catch (e) {
+    console.error("FAIL", name, "\n    ", e instanceof Error ? e.message : e);
+    process.exitCode = 1;
+  }
 };
 const hop = () => login("hop@dof.demo", "demo");
-const html = (id: string) => renderToString(<AppProvider actor={hop()} onLogout={() => {}}><RecordPage id={id} /></AppProvider>);
+const html = (id: string) =>
+  renderToString(
+    <AppProvider actor={hop()} onLogout={() => {}}>
+      <RecordPage id={id} />
+    </AppProvider>,
+  );
 
 function pushToStage(id: string, target: string) {
   const actor = hop();

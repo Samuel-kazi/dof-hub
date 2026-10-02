@@ -1,12 +1,28 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { RuleError } from "../src/types";
 import { runAction } from "./actions";
-import { authenticate, changePassword, createAccount, login, logout, MAX_MS, needsSetup, publicUser, resetPassword, setDisabled, setup, signOutEverywhere, type Authed } from "./accounts";
+import {
+  authenticate,
+  changePassword,
+  createAccount,
+  login,
+  logout,
+  MAX_MS,
+  needsSetup,
+  publicUser,
+  resetPassword,
+  setDisabled,
+  setup,
+  signOutEverywhere,
+  type Authed,
+} from "./accounts";
 import { HttpError } from "./errors";
 import * as google from "./google";
-import { assertSameSite, clearCookie, COOKIE, readRequest, redirect, send, sessionCookie, type Req } from "./http";
-import { loadDb, snapshotFor } from "./state";
+import { assertSameSite, clearCookie, COOKIE, readRequest, redirect, send, sendFile, sendLarge, sessionCookie, type Req } from "./http";
+import { docHistory, headOf, snapshotFor } from "./state";
 import type { Store } from "./stores";
+import { createShareLink, dailyChecks, followShareLink } from "./workflow";
+import { migrateWorkflowRequest } from "./migrateWorkflow";
 
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
 
@@ -15,7 +31,8 @@ async function dispatch(store: Store, req: Req, res: ServerResponse): Promise<vo
   // One-segment addresses (/api/accounts-create) are what the app uses, because they need no special routing on Vercel. The older two-segment forms still work.
   const route = `${req.method} ${req.path.replace(/^\/api/, "").replace(/^\/(accounts|account|google)-/, "/$1/")}`;
   const cookieToken = req.cookies[COOKIE];
-  const ok = (body: Record<string, unknown> = {}, extra: Record<string, string | string[]> = {}) => send(res, 200, { ok: true, ...body }, extra);
+  const ok = (body: Record<string, unknown> = {}, extra: Record<string, string | string[]> = {}) =>
+    send(res, 200, { ok: true, ...body }, extra);
 
   const signedIn = async (allowMustChange = false): Promise<Authed> => {
     const who = await authenticate(store, cookieToken);
@@ -24,17 +41,37 @@ async function dispatch(store: Store, req: Req, res: ServerResponse): Promise<vo
     return who;
   };
 
+  // A share link, /share/<token> (vercel.json sends it here as /api/share/<token>). Open to anyone with the link.
+  const share = /^GET \/share\/([^/]+)$/.exec(route);
+  if (share) return followShareLink(store, share[1], res);
+
   switch (route) {
     case "GET /health": {
-      await store.state.load(["settings"]);
+      await headOf(store);
       return ok({ message: "Connected to MongoDB.", ...(store.diagnose ? await store.diagnose() : {}), setUp: !(await needsSetup(store)) });
     }
     case "GET /session": {
       const who = await authenticate(store, cookieToken);
-      return ok({ remote: true, needsSetup: !who && (await needsSetup(store)), user: who ? publicUser(who) : null, google: { available: google.googleAvailable() } });
+      return ok({
+        remote: true,
+        needsSetup: !who && (await needsSetup(store)),
+        user: who ? publicUser(who) : null,
+        google: { available: google.googleAvailable() },
+      });
     }
     case "POST /setup": {
-      const r = await setup(store, { token: str(req.body.token), name: str(req.body.name), username: str(req.body.username), password: str(req.body.password), samples: req.body.samples === true }, req.ip, req.agent);
+      const r = await setup(
+        store,
+        {
+          token: str(req.body.token),
+          name: str(req.body.name),
+          username: str(req.body.username),
+          password: str(req.body.password),
+          samples: req.body.samples === true,
+        },
+        req.ip,
+        req.agent,
+      );
       return ok({ user: r.user }, { "Set-Cookie": sessionCookie(r.token, req.secure, MAX_MS / 1000) });
     }
     case "POST /login": {
@@ -47,28 +84,87 @@ async function dispatch(store: Store, req: Req, res: ServerResponse): Promise<vo
     }
     case "GET /state": {
       const who = await signedIn();
-      const loaded = await loadDb(store);
-      if (!loaded) throw new HttpError(503, "The app has not been set up yet.");
-      if (req.query.get("rev") === String(loaded.revision)) return ok({ unchanged: true, revision: loaded.revision });
-      return ok({ revision: loaded.revision, db: snapshotFor(loaded.db, who.actor) });
+      await dailyChecks(store);
+      // "Has anything changed?" is answered from one small document, without loading the data.
+      const head = await headOf(store);
+      if (!head) throw new HttpError(503, "The app has not been set up yet.");
+      if (req.query.get("rev") === String(head.revision)) return ok({ unchanged: true, revision: head.revision });
+      const snap = await snapshotFor(store, who.actor);
+      if (!snap) throw new HttpError(503, "The app has not been set up yet.");
+      return sendLarge(req, res, { ok: true, revision: snap.revision, db: snap.db });
+    }
+    case "GET /doc-history": {
+      const revisions = await docHistory(store, (await signedIn()).actor, str(req.query.get("docId")));
+      if (!revisions) throw new HttpError(404, "Not found.");
+      return ok({ revisions });
+    }
+    case "GET /file": {
+      await signedIn();
+      const id = str(req.query.get("id"));
+      const file = /^[a-f0-9]{32}$/.test(id) ? await store.files.get(id) : null;
+      if (!file) throw new HttpError(404, "Not found.");
+      return sendFile(res, file.type, Buffer.from(file.data, "base64"));
     }
     case "POST /action": {
       const who = await signedIn();
-      const result = await runAction(store, who, req.body.name, req.body.args);
+      await dailyChecks(store);
+      const result = await runAction(store, who, req.body.name, req.body.args, req.body.ids);
       return ok({ result: result ?? null });
+    }
+    case "POST /share-links": {
+      const who = await signedIn();
+      return ok(
+        await createShareLink(store, who, req.origin, {
+          episodeId: str(req.body.episodeId),
+          note: str(req.body.note).slice(0, 500),
+          replaces: str(req.body.replaces) || null,
+        }),
+      );
+    }
+    case "POST /migrate-workflow": {
+      // Moving the existing projects into the five-stage workflow: a dry run, or with apply, the move itself.
+      const who = await signedIn();
+      return ok({ report: await migrateWorkflowRequest(store, who, req.body) });
+    }
+    case "GET /cron/daily": {
+      // Vercel's daily cron sends "Authorization: Bearer <CRON_SECRET>". Without the secret set, only app use runs the check.
+      const secret = process.env.CRON_SECRET;
+      if (!secret || req.headers.authorization !== `Bearer ${secret}`) throw new HttpError(401, "Not allowed.");
+      return ok({ movedToHold: await dailyChecks(store, true) });
     }
     case "POST /account/password": {
       const who = await signedIn(true);
       await changePassword(store, who, str(req.body.current), str(req.body.next));
       return ok();
     }
-    case "POST /accounts/create": return ok(await createAccount(store, await signedIn(), { personId: str(req.body.personId), username: str(req.body.username), password: str(req.body.password) || undefined }));
-    case "POST /accounts/reset": return ok(await resetPassword(store, await signedIn(), str(req.body.personId)));
-    case "POST /accounts/disable": { await setDisabled(store, await signedIn(), str(req.body.personId), req.body.disabled === true); return ok(); }
-    case "POST /accounts/signout": { await signOutEverywhere(store, await signedIn(), str(req.body.personId)); return ok(); }
+    case "POST /accounts/create":
+      return ok(
+        await createAccount(store, await signedIn(), {
+          personId: str(req.body.personId),
+          username: str(req.body.username),
+          password: str(req.body.password) || undefined,
+        }),
+      );
+    case "POST /accounts/reset":
+      return ok(await resetPassword(store, await signedIn(), str(req.body.personId)));
+    case "POST /accounts/disable": {
+      await setDisabled(store, await signedIn(), str(req.body.personId), req.body.disabled === true);
+      return ok();
+    }
+    case "POST /accounts/signout": {
+      await signOutEverywhere(store, await signedIn(), str(req.body.personId));
+      return ok();
+    }
 
-    case "GET /google/status": return ok({ google: await google.status(store, await signedIn()) });
-    case "POST /google/link": return ok({ url: await google.startLink(store, await signedIn(), req.origin, { calendar: req.body.calendar === true, gmail: req.body.gmail === true }) });
+    case "GET /google/status":
+      return ok({ google: await google.status(store, await signedIn()) });
+    case "POST /google/link":
+      return ok({
+        url: await google.startLink(store, await signedIn(), req.origin, {
+          calendar: req.body.calendar === true,
+          gmail: req.body.gmail === true,
+        }),
+      });
     case "GET /google/callback": {
       try {
         const who = await signedIn();
@@ -79,9 +175,14 @@ async function dispatch(store: Store, req: Req, res: ServerResponse): Promise<vo
         return redirect(res, "/?google=failed");
       }
     }
-    case "POST /google/unlink": { await google.unlink(store, await signedIn()); return ok(); }
-    case "POST /google/calendar": return ok(await google.addToCalendar(store, await signedIn()));
-    case "POST /google/email": return ok(await google.sendReminderEmail(store, await signedIn(), str(req.body.personId)));
+    case "POST /google/unlink": {
+      await google.unlink(store, await signedIn());
+      return ok();
+    }
+    case "POST /google/calendar":
+      return ok(await google.addToCalendar(store, await signedIn()));
+    case "POST /google/email":
+      return ok(await google.sendReminderEmail(store, await signedIn(), str(req.body.personId)));
     default:
       throw new HttpError(404, "Not found.");
   }

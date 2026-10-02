@@ -13,5 +13,5 @@ export const reopenCallSheet = rpc("callsheets.reopenCallSheet", core.reopenCall
 export const resolveMismatches = rpc("callsheets.resolveMismatches", core.resolveMismatches);
 export const updateCallSheet = rpc("callsheets.updateCallSheet", core.updateCallSheet);
 export const updateRunItem = rpc("callsheets.updateRunItem", core.updateRunItem);
-export { callSheetForRecord, crewConflicts, daysOf, duplicateOf, episodesOnDate, getCallSheet, getMismatches, runOfShowRequired, runOfShowTotals, sheetLevel, sortedRunOfShow } from "../callsheets";
+export { SHEET_EDITABLE, callSheetForRecord, crewConflicts, daysOf, duplicateOf, episodesOnDate, getCallSheet, getMismatches, runOfShowRequired, runOfShowTotals, sheetLevel, sortedRunOfShow } from "../callsheets";
 export type { CallSheetInput, Mismatch, RunItemInput } from "../callsheets";

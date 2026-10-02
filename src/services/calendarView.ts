@@ -3,13 +3,14 @@ import { categoryOf, shootDateLabel } from "../config/categories";
 import { getRecord, visibleCallSheets, visibleRecords } from "./access";
 import { displayTitle, isComplete, usesPipeline } from "./content";
 import { endOf, hasGearAccess, listManifests } from "./equipment";
+import { workItems } from "./workItems";
 import type { Route } from "../ui/AppContext";
 
-// The calendar has no table of its own. Every event is worked out here, on the fly, from records,
-// call sheets and equipment bookings that already exist — so there is nothing to keep in sync, and
+// The calendar has no table of its own. Every event is worked out here, on the fly, from records, recording
+// sessions, call sheets and equipment bookings that already exist — so there is nothing to keep in sync, and
 // changing a date on its source record is all it takes to change what the calendar shows next render.
 
-export type CalSubtype = "shoot" | "deadline" | "callsheet" | "booking" | "window" | "stage";
+export type CalSubtype = "shoot" | "session" | "deadline" | "callsheet" | "booking" | "window" | "stage";
 
 export interface CalEvent {
   id: string; // stable key: kind + source id, so React can key on it and nothing is ever duplicated
@@ -32,6 +33,9 @@ export function calendarEvents(actor: Actor, from: string, to: string): CalEvent
 
   for (const r of visibleRecords(actor)) {
     if (r.category === "general") continue; // a placeholder project, not a production — nothing here to put on a calendar
+    // The five-stage workflow's projects and episodes come from its own work list (Source 5): an episode carries its
+    // session's date, and that day is already the session's own marker.
+    if (r.workflow || r.episode) continue;
     // Source 1: content_registry.scheduled_recording_date — the shoot or show day itself. A live
     // show spanning several days gets one bar instead (below), so its individual days are skipped here.
     const show = r.category === "live" && r.parentId ? getRecord(r.parentId) : null;
@@ -135,6 +139,50 @@ export function calendarEvents(actor: Actor, from: string, to: string): CalEvent
         category,
         color: categoryOf(category).color,
         open: { n: "manifest", id: m.id },
+      });
+    }
+  }
+
+  // Source 5: the five-stage workflow. Each recording session's date (kept after it closes, like any shoot day),
+  // and the stage deadlines of projects and episodes: the stage an episode is in as a bar from when it began, the
+  // stage after it as a mark on its deadline. A project's own deadline is shown while it is in that stage.
+  for (const item of workItems(actor, false)) {
+    const color = categoryOf(item.category).color;
+    if (item.level === "session") {
+      if (!item.due || !inRange(item.due, from, to)) continue;
+      out.push({
+        id: `session:${item.id}`,
+        date: item.due,
+        endDate: item.due,
+        title: `${item.context}: ${item.title.toLowerCase()}`,
+        detail: `${item.id}. ${item.step}.`,
+        subtype: "session",
+        category: item.category,
+        color,
+        open: item.open,
+      });
+      continue;
+    }
+    if (item.done) continue;
+    const marks: { stage: string; due: string; start: string }[] = [];
+    if (item.level === "project" && item.due) marks.push({ stage: item.stage, due: item.due, start: item.due });
+    if (item.level === "episode") {
+      if (item.due) marks.push({ stage: item.stage, due: item.due, start: item.start <= item.due ? item.start : item.due });
+      const next = item.stage === "Post production" ? getRecord(item.id)?.stageDeadlines["Marketing and distribution"] : null;
+      if (next) marks.push({ stage: "Marketing and distribution", due: next, start: next });
+    }
+    for (const m of marks) {
+      if (!overlaps(m.start, m.due, from, to)) continue;
+      out.push({
+        id: `deadline:${item.id}:${m.stage}`,
+        date: m.start,
+        endDate: m.due,
+        title: `${item.level === "episode" ? `${item.context}, ${item.title}` : item.title}: ${m.stage}`,
+        detail: `${m.stage} due. ${item.id}.`,
+        subtype: m.start < m.due ? "stage" : "deadline",
+        category: item.category,
+        color,
+        open: item.open,
       });
     }
   }

@@ -34,5 +34,5 @@ export const splitRecording = rpc("content.splitRecording", core.splitRecording)
 export const updateFeatured = rpc("content.updateFeatured", core.updateFeatured);
 export const updateRecord = rpc("content.updateRecord", core.updateRecord);
 export const updateTask = rpc("content.updateTask", core.updateTask);
-export { PROJECT_STAGE, canAdvance, canDelete, childKindFor, currentStageDeadline, daysInStage, deletionSummary, displayTitle, ensureStageTasks, featuredFor, getBreadcrumb, getChildren, getComments, getRollupStatus, isComplete, isOwnerNow, isStale, leavesUnder, levelLabel, openTasks, ownersOf, productionUnits, riskOf, spinOffCategories, spinOffsOf, tasksOf, usesPipeline } from "../content";
-export type { DeletionImpact, FeaturedInput, LinkBatchInput, LinkInput, NewRecordInput, ProductionUnit, Reminder, Risk, Rollup, SplitInput, TaskInput } from "../content";
+export { PROJECT_STAGE, RECORD_EDITABLE, blankRecord, canAdvance, canDelete, childKindFor, currentStageDeadline, daysInStage, deletionSummary, displayTitle, ensureStageTasks, featuredFor, getBreadcrumb, getChildren, getComments, getRollupStatus, isComplete, isOwnerNow, isStale, leavesUnder, levelLabel, nextChildId, nextTopLevelId, openTasks, ownersOf, productionUnits, riskOf, spinOffCategories, spinOffsOf, tasksOf, usesPipeline } from "../content";
+export type { DeletionImpact, FeaturedInput, LinkBatchInput, LinkInput, NewRecordInput, ProductionUnit, RecordPatch, Reminder, Risk, Rollup, SplitInput, TaskInput } from "../content";

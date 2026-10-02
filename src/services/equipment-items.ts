@@ -1,17 +1,20 @@
-import type { Actor, Attachment, EquipCategoryKey, EquipCondition, EquipmentHistory, EquipmentItem, Manifest, TrackingType } from "../types";
+import type { Actor, Attachment, EquipCategoryKey, EquipCondition, EquipmentItem, Manifest, TrackingType } from "../types";
 import { RuleError } from "../types";
-import { commit, getDb, nextCounter } from "../data/store";
+import { commit, getDb } from "../data/store";
+import { claimId } from "../data/ids";
+import { hist, makeAttachment } from "./equipment-log";
 import { CONDITIONS, equipCategory } from "../config/equipment";
 import { canView, getRecord } from "./access";
 import { logAudit } from "./audit";
 import { can, requireCan } from "./permissions";
-import { fmtShort, pad, todayIso } from "./utils";
+import { fmtShort, pad, pickKeys, todayIso } from "./utils";
 
 // ── Access ───────────────────────────────────────────────────
 
 export const hasGearAccess = (actor: Actor): boolean => can(actor, "equipment.use");
 export function requireGearAccess(actor: Actor): void {
-  if (!hasGearAccess(actor)) throw new RuleError("Equipment is managed by crew and the Head of Production. Ask the Head of Production for access.");
+  if (!hasGearAccess(actor))
+    throw new RuleError("Equipment is managed by crew and the Head of Production. Ask the Head of Production for access.");
 }
 function requireHop(actor: Actor, what: string): void {
   requireCan(actor, "equipment.admin", what);
@@ -89,31 +92,6 @@ export function applyConditionBreakdown(item: EquipmentItem, bd: ConditionBreakd
 }
 export const familyOf = (i: EquipmentItem): string => (i.itemFamily ? i.itemFamily.toUpperCase() : i.id);
 
-function hist(actor: Actor, equipmentId: string, kind: EquipmentHistory["kind"], detail: string, extra: { contentId?: string; manifestId?: string } = {}): void {
-  getDb().equipmentHistory.push({
-    id: `H-${pad(nextCounter("history"), 5)}`,
-    equipmentId,
-    at: new Date().toISOString(),
-    byPersonId: actor.personId,
-    kind,
-    detail,
-    contentId: extra.contentId ?? null,
-    manifestId: extra.manifestId ?? null,
-  });
-}
-
-function makeAttachment(actor: Actor, input: { url: string; caption?: string }): Attachment {
-  const url = input.url.trim();
-  if (!url) throw new RuleError("Add a photo or paste a link.");
-  if (url.startsWith("data:")) {
-    if (!url.startsWith("data:image/")) throw new RuleError("Only images can be attached.");
-    if (url.length > 420_000) throw new RuleError("That image is too large. Try a smaller photo.");
-  } else if (!/^https?:\/\//i.test(url)) {
-    throw new RuleError("Links must start with http:// or https://.");
-  }
-  return { id: `ATT-${pad(nextCounter("attachment"), 5)}`, url, caption: (input.caption ?? "").trim(), at: new Date().toISOString(), byPersonId: actor.personId };
-}
-
 // ── Quantities, status and availability (all computed, never stored) ──
 
 function qtyIn(item: EquipmentItem, status: Manifest["status"]): number {
@@ -126,7 +104,8 @@ function qtyIn(item: EquipmentItem, status: Manifest["status"]): number {
 }
 export const qtyOut = (i: EquipmentItem): number => qtyIn(i, "checked-out");
 export const qtyAssigned = (i: EquipmentItem): number => qtyIn(i, "assigned");
-export const qtyFree = (i: EquipmentItem): number => (i.baseStatus === "active" ? Math.max(0, i.quantityTotal - qtyOut(i) - qtyAssigned(i)) : 0);
+export const qtyFree = (i: EquipmentItem): number =>
+  i.baseStatus === "active" ? Math.max(0, i.quantityTotal - qtyOut(i) - qtyAssigned(i)) : 0;
 
 export function isOverdue(m: Manifest): boolean {
   return m.status === "checked-out" && !!m.expectedReturn && m.expectedReturn < todayIso();
@@ -153,12 +132,21 @@ export function availabilityOn(item: EquipmentItem, from: string, to: string, ex
   if (item.baseStatus === "in-repair") return { state: "repair", availableQty: 0, conflicts: [], reason: "In repair" };
   if (item.baseStatus === "retired") return { state: "retired", availableQty: 0, conflicts: [], reason: "Retired" };
   if (item.baseStatus === "lost") return { state: "lost", availableQty: 0, conflicts: [], reason: "Lost" };
-  const conflicts = getDb().manifests.filter((m) => isActive(m) && m.id !== excludeManifestId && m.lines.some((l) => l.equipmentId === item.id) && m.date <= to && from <= endOf(m));
+  const conflicts = getDb().manifests.filter(
+    (m) => isActive(m) && m.id !== excludeManifestId && m.lines.some((l) => l.equipmentId === item.id) && m.date <= to && from <= endOf(m),
+  );
   const booked = conflicts.reduce((n, m) => n + m.lines.filter((l) => l.equipmentId === item.id).reduce((a, l) => a + l.quantity, 0), 0);
   const availableQty = Math.max(0, item.quantityTotal - booked);
   if (availableQty === 0) {
     const c = conflicts[0];
-    return { state: "conflict", availableQty, conflicts, reason: c ? `Booked for ${c.contentId}, ${fmtShort(c.date)}${endOf(c) !== c.date ? ` to ${fmtShort(endOf(c))}` : ""}` : "Not available" };
+    return {
+      state: "conflict",
+      availableQty,
+      conflicts,
+      reason: c
+        ? `Booked for ${c.contentId}, ${fmtShort(c.date)}${endOf(c) !== c.date ? ` to ${fmtShort(endOf(c))}` : ""}`
+        : "Not available",
+    };
   }
   return { state: booked > 0 ? "partial" : "ok", availableQty, conflicts, reason: booked > 0 ? `${booked} booked elsewhere` : "" };
 }
@@ -177,7 +165,8 @@ export function displayStatus(item: EquipmentItem): StatusView {
   const asg = qtyAssigned(item);
   const overdue = getDb().manifests.some((m) => isOverdue(m) && m.lines.some((l) => l.equipmentId === item.id));
   if (item.trackingType === "serialized") {
-    if (out) return overdue ? { label: "Overdue", tone: "bad", detail: "Not returned" } : { label: "Checked out", tone: "accent", detail: "" };
+    if (out)
+      return overdue ? { label: "Overdue", tone: "bad", detail: "Not returned" } : { label: "Checked out", tone: "accent", detail: "" };
     if (asg) return { label: "Assigned", tone: "accent", detail: "In studio, reserved" };
     return { label: "Available", tone: "ok", detail: "" };
   }
@@ -211,22 +200,31 @@ export interface ItemInput {
 
 function nextAssetCode(cat: EquipCategoryKey): string {
   const prefix = `DOF-EQ-${equipCategory(cat).code}-`;
-  const nums = getDb().equipment.filter((e) => e.trackingType === "serialized" && e.id.startsWith(prefix)).map((e) => parseInt(e.id.slice(prefix.length), 10)).filter((n) => !Number.isNaN(n));
-  return `${prefix}${pad((nums.length ? Math.max(...nums) : 0) + 1)}`;
+  const nums = getDb()
+    .equipment.filter((e) => e.trackingType === "serialized" && e.id.startsWith(prefix))
+    .map((e) => parseInt(e.id.slice(prefix.length), 10))
+    .filter((n) => !Number.isNaN(n));
+  return claimId(`${prefix}${pad((nums.length ? Math.max(...nums) : 0) + 1)}`);
 }
 
 /** The next `count` asset codes for this category, in order, as if reserved one after another. */
 function nextAssetCodes(cat: EquipCategoryKey, count: number): string[] {
   const prefix = `DOF-EQ-${equipCategory(cat).code}-`;
-  const nums = getDb().equipment.filter((e) => e.trackingType === "serialized" && e.id.startsWith(prefix)).map((e) => parseInt(e.id.slice(prefix.length), 10)).filter((n) => !Number.isNaN(n));
+  const nums = getDb()
+    .equipment.filter((e) => e.trackingType === "serialized" && e.id.startsWith(prefix))
+    .map((e) => parseInt(e.id.slice(prefix.length), 10))
+    .filter((n) => !Number.isNaN(n));
   const start = (nums.length ? Math.max(...nums) : 0) + 1;
-  return Array.from({ length: count }, (_, i) => `${prefix}${pad(start + i)}`);
+  return Array.from({ length: count }, (_, i) => claimId(`${prefix}${pad(start + i)}`));
 }
 function nextBatchCode(cat: EquipCategoryKey, family: string): string {
   const token = family.toUpperCase().replace(/[^A-Z0-9]/g, "");
   const prefix = `DOF-EQ-${equipCategory(cat).code}-${token}-B`;
-  const nums = getDb().equipment.filter((e) => e.trackingType === "aggregate" && e.id.startsWith(prefix)).map((e) => parseInt(e.id.slice(prefix.length), 10)).filter((n) => !Number.isNaN(n));
-  return `${prefix}${pad((nums.length ? Math.max(...nums) : 0) + 1, 2)}`;
+  const nums = getDb()
+    .equipment.filter((e) => e.trackingType === "aggregate" && e.id.startsWith(prefix))
+    .map((e) => parseInt(e.id.slice(prefix.length), 10))
+    .filter((n) => !Number.isNaN(n));
+  return claimId(`${prefix}${pad((nums.length ? Math.max(...nums) : 0) + 1, 2)}`);
 }
 
 export function createItem(actor: Actor, input: ItemInput): EquipmentItem {
@@ -254,7 +252,7 @@ export function createItem(actor: Actor, input: ItemInput): EquipmentItem {
     model: input.model.trim(),
     category: input.category,
     itemFamily: input.trackingType === "aggregate" ? family : null,
-    serialNumber: input.trackingType === "serialized" ? (serial || null) : null,
+    serialNumber: input.trackingType === "serialized" ? serial || null : null,
     unitLabel: input.trackingType === "serialized" ? (input.unitLabel ?? "").trim() || null : null,
     quantityTotal: quantity,
     quantityDamaged: 0,
@@ -279,7 +277,10 @@ export function createItem(actor: Actor, input: ItemInput): EquipmentItem {
   return item;
 }
 
-export interface UnitInput { serialNumber: string; label?: string }
+export interface UnitInput {
+  serialNumber: string;
+  label?: string;
+}
 
 export interface UnitsInput {
   name: string;
@@ -352,22 +353,49 @@ export function createSerializedUnits(actor: Actor, input: UnitsInput): Equipmen
 
   getDb().equipment.push(...items);
   for (const it of items) {
-    hist(actor, it.id, "created", cleaned.length > 1 ? `Added with ${cleaned.length - 1} other unit${cleaned.length - 1 === 1 ? "" : "s"} of ${it.name}` : "Added to inventory");
+    hist(
+      actor,
+      it.id,
+      "created",
+      cleaned.length > 1
+        ? `Added with ${cleaned.length - 1} other unit${cleaned.length - 1 === 1 ? "" : "s"} of ${it.name}`
+        : "Added to inventory",
+    );
     logAudit(actor, "create", "equipment", it.id, it.name);
   }
   commit();
   return items;
 }
 
-export type ItemPatch = Partial<Pick<EquipmentItem, "name" | "make" | "model" | "vendor" | "packaging" | "accessories" | "info" | "unitCost" | "purchaseDate" | "serialNumber" | "unitLabel" | "condition" | "quantityTotal" | "category">>;
+/** The fields "Edit item" changes. Status, history, photos and counts of damaged or lost units have their own actions. */
+export const ITEM_EDITABLE = [
+  "name",
+  "make",
+  "model",
+  "vendor",
+  "packaging",
+  "accessories",
+  "info",
+  "unitCost",
+  "purchaseDate",
+  "serialNumber",
+  "unitLabel",
+  "condition",
+  "quantityTotal",
+  "category",
+] as const;
+export type ItemPatch = Partial<Pick<EquipmentItem, (typeof ITEM_EDITABLE)[number]>>;
 
-export function updateItem(actor: Actor, id: string, patch: ItemPatch): EquipmentItem {
+export function updateItem(actor: Actor, id: string, input: ItemPatch): EquipmentItem {
   requireGearAccess(actor);
+  const patch = pickKeys(input, ITEM_EDITABLE);
+  if (patch.condition !== undefined && !CONDITIONS.includes(patch.condition)) throw new RuleError("Choose New, Good, Fair or Poor.");
   const item = getItem(id);
   if (!item) throw new RuleError("Item not found.");
   if (patch.name !== undefined && !patch.name.trim()) throw new RuleError("Name cannot be empty.");
   if (patch.category !== undefined && !equipCategory(patch.category)) throw new RuleError("Choose a valid category.");
-  if (patch.unitCost !== undefined && (!Number.isFinite(patch.unitCost) || patch.unitCost < 0)) throw new RuleError("Cost must be zero or more.");
+  if (patch.unitCost !== undefined && (!Number.isFinite(patch.unitCost) || patch.unitCost < 0))
+    throw new RuleError("Cost must be zero or more.");
   if (patch.serialNumber !== undefined && item.trackingType === "serialized") {
     const s = patch.serialNumber?.trim() ?? "";
     if (s) {
@@ -382,14 +410,17 @@ export function updateItem(actor: Actor, id: string, patch: ItemPatch): Equipmen
   }
   if (patch.quantityTotal !== undefined) {
     if (item.trackingType !== "aggregate") throw new RuleError("Only batches have a quantity.");
-    if (!Number.isInteger(patch.quantityTotal) || patch.quantityTotal < 1) throw new RuleError("Quantity must be a whole number of at least 1.");
+    if (!Number.isInteger(patch.quantityTotal) || patch.quantityTotal < 1)
+      throw new RuleError("Quantity must be a whole number of at least 1.");
     const committed = qtyOut(item) + qtyAssigned(item);
     if (patch.quantityTotal < committed) throw new RuleError(`${committed} are checked out or assigned. The count cannot go below that.`);
   }
   const changes: string[] = [];
   if (patch.condition && patch.condition !== item.condition) changes.push(`Condition ${item.condition} to ${patch.condition}`);
-  if (patch.quantityTotal !== undefined && patch.quantityTotal !== item.quantityTotal) changes.push(`Count ${item.quantityTotal} to ${patch.quantityTotal}`);
-  if (patch.category && patch.category !== item.category) changes.push(`Category ${equipCategory(item.category).label} to ${equipCategory(patch.category).label}`);
+  if (patch.quantityTotal !== undefined && patch.quantityTotal !== item.quantityTotal)
+    changes.push(`Count ${item.quantityTotal} to ${patch.quantityTotal}`);
+  if (patch.category && patch.category !== item.category)
+    changes.push(`Category ${equipCategory(item.category).label} to ${equipCategory(patch.category).label}`);
   const oldCondition = item.condition;
   const oldQty = item.quantityTotal;
   Object.assign(item, patch);
@@ -430,7 +461,14 @@ export function setConditionBreakdown(actor: Actor, id: string, counts: Conditio
   const total = breakdownTotal(clean);
   if (total !== item.quantityTotal) throw new RuleError(`Those counts add up to ${total}, but this batch has ${item.quantityTotal} units.`);
   applyConditionBreakdown(item, clean);
-  hist(actor, id, "edited", `Condition split: ${CONDITIONS.filter((c) => clean[c]).map((c) => `${clean[c]} ${c}`).join(", ")}`);
+  hist(
+    actor,
+    id,
+    "edited",
+    `Condition split: ${CONDITIONS.filter((c) => clean[c])
+      .map((c) => `${clean[c]} ${c}`)
+      .join(", ")}`,
+  );
   logAudit(actor, "update", "equipment", id, "condition breakdown");
   commit();
   return item;
@@ -486,7 +524,8 @@ export function retireItem(actor: Actor, id: string, kind: "retired" | "lost", n
   const item = getItem(id);
   if (!item) throw new RuleError("Item not found.");
   if (item.baseStatus === "retired" || item.baseStatus === "lost") throw new RuleError("This item is already out of service.");
-  if (getDb().manifests.some((m) => isActive(m) && m.lines.some((l) => l.equipmentId === id))) throw new RuleError("This item is on an active checkout list. Check it in or release it first.");
+  if (getDb().manifests.some((m) => isActive(m) && m.lines.some((l) => l.equipmentId === id)))
+    throw new RuleError("This item is on an active checkout list. Check it in or release it first.");
   item.baseStatus = kind;
   hist(actor, id, kind, note.trim() || (kind === "lost" ? "Marked lost" : "Retired from inventory"));
   logAudit(actor, kind, "equipment", id, note);
@@ -508,7 +547,8 @@ export function deleteItem(actor: Actor, id: string): void {
   requireHop(actor, "delete equipment");
   const item = getItem(id);
   if (!item) throw new RuleError("Item not found.");
-  const used = getDb().manifests.some((m) => m.lines.some((l) => l.equipmentId === id)) || getDb().incidents.some((i) => i.equipmentId === id);
+  const used =
+    getDb().manifests.some((m) => m.lines.some((l) => l.equipmentId === id)) || getDb().incidents.some((i) => i.equipmentId === id);
   if (used) throw new RuleError("This item has checkout history. Retire it instead so the history is kept.");
   getDb().equipment = getDb().equipment.filter((e) => e.id !== id);
   getDb().equipmentHistory = getDb().equipmentHistory.filter((h) => h.equipmentId !== id);

@@ -1,12 +1,13 @@
 import type { Actor, Drive, DriveAllocation, ContentRecord } from "../types";
 import { RuleError } from "../types";
 import { commit, getDb, nextCounter } from "../data/store";
+import { claimId } from "../data/ids";
 import { canWrite, getRecord, isHop, selfAndAncestors } from "./access";
 import { getChildren, isComplete, leavesUnder } from "./content";
 import { logAudit } from "./audit";
 import { can, requireCan } from "./permissions";
 import { allDriveUsage, driveUsage, fleetTotals, getDrive, recordSnapshot } from "./driveUsage";
-import { dayNumber, fmtDate, fmtSize, fromDayNumber, pad, todayIso } from "./utils";
+import { dayNumber, fmtDate, fmtSize, fromDayNumber, pad, pickKeys, todayIso } from "./utils";
 
 export const hasStorageAccess = (actor: Actor): boolean => can(actor, "storage.use");
 function requireStorageAccess(actor: Actor): void {
@@ -18,19 +19,32 @@ export type { DriveUsage } from "./driveUsage";
 
 // ── Drives ───────────────────────────────────────────────────
 
-export interface DriveInput { name: string; capacityGB: number; otherUsedGB?: number; notes?: string }
+export interface DriveInput {
+  name: string;
+  capacityGB: number;
+  otherUsedGB?: number;
+  notes?: string;
+}
 
 function validateDrive(input: DriveInput, selfId?: string): void {
   if (!input.name.trim()) throw new RuleError("Give the drive a name.");
-  if (getDb().drives.some((d) => d.id !== selfId && d.name.toLowerCase() === input.name.trim().toLowerCase())) throw new RuleError("A drive with that name already exists.");
+  if (getDb().drives.some((d) => d.id !== selfId && d.name.toLowerCase() === input.name.trim().toLowerCase()))
+    throw new RuleError("A drive with that name already exists.");
   if (!Number.isFinite(input.capacityGB) || input.capacityGB <= 0) throw new RuleError("Capacity must be more than zero.");
-  if (input.otherUsedGB !== undefined && (!Number.isFinite(input.otherUsedGB) || input.otherUsedGB < 0)) throw new RuleError("Other used space cannot be negative.");
+  if (input.otherUsedGB !== undefined && (!Number.isFinite(input.otherUsedGB) || input.otherUsedGB < 0))
+    throw new RuleError("Other used space cannot be negative.");
 }
 
 export function createDrive(actor: Actor, input: DriveInput): Drive {
   requireCan(actor, "storage.admin", "add drives");
   validateDrive(input);
-  const d: Drive = { id: `DRV-${pad(nextCounter("drive"))}`, name: input.name.trim(), capacityGB: input.capacityGB, otherUsedGB: input.otherUsedGB ?? 0, notes: input.notes ?? "" };
+  const d: Drive = {
+    id: claimId(`DRV-${pad(nextCounter("drive"))}`),
+    name: input.name.trim(),
+    capacityGB: input.capacityGB,
+    otherUsedGB: input.otherUsedGB ?? 0,
+    notes: input.notes ?? "",
+  };
   if (d.otherUsedGB > d.capacityGB) throw new RuleError("Used space is larger than the drive.");
   getDb().drives.push(d);
   logAudit(actor, "create", "drive", d.id, d.name);
@@ -45,10 +59,18 @@ export function updateDrive(actor: Actor, id: string, patch: Partial<DriveInput>
   if (!d) throw new RuleError("Drive not found.");
   const structural = patch.name !== undefined || patch.capacityGB !== undefined;
   if (structural) requireCan(actor, "storage.admin", "rename a drive or change its capacity");
-  const next = { name: patch.name ?? d.name, capacityGB: patch.capacityGB ?? d.capacityGB, otherUsedGB: patch.otherUsedGB ?? d.otherUsedGB, notes: patch.notes ?? d.notes };
+  const next = {
+    name: patch.name ?? d.name,
+    capacityGB: patch.capacityGB ?? d.capacityGB,
+    otherUsedGB: patch.otherUsedGB ?? d.otherUsedGB,
+    notes: patch.notes ?? d.notes,
+  };
   validateDrive(next, id);
-  const allocated = getDb().allocations.filter((a) => a.driveId === id).reduce((n, a) => n + a.sizeGB, 0);
-  if (allocated + next.otherUsedGB > next.capacityGB) throw new RuleError(`That would put ${fmtSize(allocated + next.otherUsedGB)} on a ${fmtSize(next.capacityGB)} drive.`);
+  const allocated = getDb()
+    .allocations.filter((a) => a.driveId === id)
+    .reduce((n, a) => n + a.sizeGB, 0);
+  if (allocated + next.otherUsedGB > next.capacityGB)
+    throw new RuleError(`That would put ${fmtSize(allocated + next.otherUsedGB)} on a ${fmtSize(next.capacityGB)} drive.`);
   Object.assign(d, { name: next.name.trim(), capacityGB: next.capacityGB, otherUsedGB: next.otherUsedGB, notes: next.notes });
   logAudit(actor, "update", "drive", id, Object.keys(patch).join(", "));
   recordSnapshot();
@@ -60,7 +82,8 @@ export function deleteDrive(actor: Actor, id: string): void {
   requireCan(actor, "storage.admin", "remove drives");
   const d = getDrive(id);
   if (!d) throw new RuleError("Drive not found.");
-  if (getDb().allocations.some((a) => a.driveId === id)) throw new RuleError("Projects are still recorded on this drive. Remove them first.");
+  if (getDb().allocations.some((a) => a.driveId === id))
+    throw new RuleError("Projects are still recorded on this drive. Remove them first.");
   getDb().drives = getDb().drives.filter((x) => x.id !== id);
   logAudit(actor, "delete", "drive", id, d.name);
   recordSnapshot();
@@ -69,7 +92,14 @@ export function deleteDrive(actor: Actor, id: string): void {
 
 // ── Allocations (what project occupies which drive) ──────────
 
-export interface AllocationInput { driveId: string; contentId: string | null; sizeGB: number; kind: DriveAllocation["kind"]; note?: string; label?: string }
+export interface AllocationInput {
+  driveId: string;
+  contentId: string | null;
+  sizeGB: number;
+  kind: DriveAllocation["kind"];
+  note?: string;
+  label?: string;
+}
 
 function requireProjectWrite(actor: Actor, contentId: string): ContentRecord {
   const rec = getRecord(contentId);
@@ -81,7 +111,10 @@ function requireProjectWrite(actor: Actor, contentId: string): ContentRecord {
 /** For an entry with no project yet, a label is the only thing that identifies it, so it cannot be blank. */
 function requireLabel(label: string | undefined): string {
   const l = (label ?? "").trim();
-  if (!l) throw new RuleError("Give this entry a short label, for example the project or shoot it is holding footage for, since it is not tied to a project yet.");
+  if (!l)
+    throw new RuleError(
+      "Give this entry a short label, for example the project or shoot it is holding footage for, since it is not tied to a project yet.",
+    );
   return l;
 }
 
@@ -94,7 +127,16 @@ export function addAllocation(actor: Actor, input: AllocationInput): DriveAlloca
   if (!Number.isFinite(input.sizeGB) || input.sizeGB <= 0) throw new RuleError("Enter the size in GB.");
   const u = driveUsage(drive);
   if (input.sizeGB > u.freeGB + 1e-6) throw new RuleError(`${drive.name} has only ${fmtSize(u.freeGB)} free.`);
-  const a: DriveAllocation = { id: `ALC-${pad(nextCounter("allocation"), 4)}`, driveId: drive.id, contentId: input.contentId, label, sizeGB: input.sizeGB, kind: input.kind, note: input.note ?? "", updatedAt: todayIso() };
+  const a: DriveAllocation = {
+    id: claimId(`ALC-${pad(nextCounter("allocation"), 4)}`),
+    driveId: drive.id,
+    contentId: input.contentId,
+    label,
+    sizeGB: input.sizeGB,
+    kind: input.kind,
+    note: input.note ?? "",
+    updatedAt: todayIso(),
+  };
   getDb().allocations.push(a);
   logAudit(actor, "allocate", "drive", drive.id, `${input.contentId ?? label} ${fmtSize(a.sizeGB)}`);
   recordSnapshot();
@@ -103,11 +145,24 @@ export function addAllocation(actor: Actor, input: AllocationInput): DriveAlloca
 }
 
 /** Edits the size, type, label or note, or moves the entry to another drive. Space is checked on the drive it ends up on. */
-export function updateAllocation(actor: Actor, id: string, patch: { sizeGB?: number; kind?: DriveAllocation["kind"]; note?: string; label?: string; driveId?: string }): DriveAllocation {
+const ALLOCATION_EDITABLE = ["sizeGB", "kind", "note", "label", "driveId"] as const;
+const ALLOCATION_KINDS: DriveAllocation["kind"][] = ["raw", "project", "delivered", "other"];
+
+export function updateAllocation(
+  actor: Actor,
+  id: string,
+  input: Partial<Pick<DriveAllocation, (typeof ALLOCATION_EDITABLE)[number]>>,
+): DriveAllocation {
   requireStorageAccess(actor);
+  const patch = pickKeys(input, ALLOCATION_EDITABLE);
   const a = getDb().allocations.find((x) => x.id === id);
   if (!a) throw new RuleError("Entry not found.");
-  if (a.contentId !== null) requireProjectWrite(actor, a.contentId);
+  if (patch.kind !== undefined && !ALLOCATION_KINDS.includes(patch.kind)) throw new RuleError("Choose raw, project, delivered or other.");
+  const rec = a.contentId !== null ? requireProjectWrite(actor, a.contentId) : null;
+  // Changing raw footage into another kind would let it be removed before it is Delivered.
+  if (rec && a.kind === "raw" && patch.kind && patch.kind !== "raw" && !isHop(actor) && leavesUnder(rec).some((l) => !isComplete(l))) {
+    throw new RuleError(`Raw footage for ${rec.title} stays marked as raw until everything under it is Delivered.`);
+  }
   const label = a.contentId === null ? requireLabel(patch.label ?? a.label) : (patch.label ?? a.label);
   const target = getDrive(patch.driveId ?? a.driveId);
   if (!target) throw new RuleError("Drive not found.");
@@ -136,7 +191,8 @@ export function moveAllocation(actor: Actor, id: string, contentId: string): Dri
   const target = getRecord(contentId);
   if (!target) throw new RuleError("Project not found.");
   const current = a.contentId ? getRecord(a.contentId) : null;
-  if (!canWrite(actor, target) || (current ? !canWrite(actor, current) : !isHop(actor))) throw new RuleError("You are not attached to both projects.");
+  if (!canWrite(actor, target) || (current ? !canWrite(actor, current) : !isHop(actor)))
+    throw new RuleError("You are not attached to both projects.");
   const from = a.contentId ?? a.label;
   a.contentId = contentId;
   a.updatedAt = todayIso();
@@ -154,7 +210,8 @@ export function removeAllocation(actor: Actor, id: string): void {
     const rec = requireProjectWrite(actor, a.contentId);
     if (a.kind === "raw") {
       const leaves = leavesUnder(rec);
-      if (leaves.some((l) => !isComplete(l))) throw new RuleError(`Raw footage for ${rec.title} cannot be removed until everything under it is Delivered.`);
+      if (leaves.some((l) => !isComplete(l)))
+        throw new RuleError(`Raw footage for ${rec.title} cannot be removed until everything under it is Delivered.`);
     }
   }
   getDb().allocations = getDb().allocations.filter((x) => x.id !== id);
@@ -175,7 +232,8 @@ export function clearRecordFromDrives(actor: Actor, contentId: string): { count:
   const rec = requireProjectWrite(actor, contentId);
   const mine = getDb().allocations.filter((a) => a.contentId === contentId);
   if (!mine.length) throw new RuleError("Nothing is recorded on drives for this item.");
-  if (mine.some((a) => a.kind === "raw") && leavesUnder(rec).some((l) => !isComplete(l))) throw new RuleError(`Raw footage for ${rec.title} cannot be cleared until everything under it is Delivered.`);
+  if (mine.some((a) => a.kind === "raw") && leavesUnder(rec).some((l) => !isComplete(l)))
+    throw new RuleError(`Raw footage for ${rec.title} cannot be cleared until everything under it is Delivered.`);
   const gb = mine.reduce((n, a) => n + a.sizeGB, 0);
   for (const a of mine) logAudit(actor, "deallocate", "drive", a.driveId, `${contentId} ${fmtSize(a.sizeGB)}`);
   getDb().allocations = getDb().allocations.filter((a) => a.contentId !== contentId);
@@ -221,7 +279,9 @@ export function forecast(horizonDays = 90): Forecast {
   }
   const today = dayNumber(todayIso());
   const projected: { date: string; usedGB: number }[] = [{ date: todayIso(), usedGB: t.used }];
-  if (slope > 0) for (let d = 7; d <= horizonDays; d += 7) projected.push({ date: fromDayNumber(today + d), usedGB: Math.min(t.capacity * 1.05, t.used + slope * d) });
+  if (slope > 0)
+    for (let d = 7; d <= horizonDays; d += 7)
+      projected.push({ date: fromDayNumber(today + d), usedGB: Math.min(t.capacity * 1.05, t.used + slope * d) });
   let fillDate: string | null = null;
   if (slope > 0 && t.used < thresholdGB) fillDate = fromDayNumber(today + Math.ceil((thresholdGB - t.used) / slope));
   else if (t.used >= thresholdGB) fillDate = todayIso();
@@ -240,7 +300,12 @@ export function driveReportText(driveId: string): string {
     `Capacity ${fmtSize(d.capacityGB)}, used ${fmtSize(u.usedGB)} (${u.pct.toFixed(1)}%), free ${fmtSize(u.freeGB)}`,
     "",
     "Projects on this drive:",
-    ...(u.projects.length ? u.projects.map((p) => `  ${p.contentId ?? "No project yet"}  ${p.contentId ? getRecord(p.contentId)?.title ?? "" : p.label}  ${fmtSize(p.gb)}  (${p.kinds.join(", ")})`) : ["  None recorded"]),
+    ...(u.projects.length
+      ? u.projects.map(
+          (p) =>
+            `  ${p.contentId ?? "No project yet"}  ${p.contentId ? (getRecord(p.contentId)?.title ?? "") : p.label}  ${fmtSize(p.gb)}  (${p.kinds.join(", ")})`,
+        )
+      : ["  None recorded"]),
     ...(u.otherGB ? [`  Other files  ${fmtSize(u.otherGB)}`] : []),
   ];
   return lines.join("\n");
@@ -254,6 +319,9 @@ export function fleetReportText(): string {
     `Date: ${fmtDate(todayIso())}`,
     `Total capacity ${fmtSize(t.capacity)}, used ${fmtSize(t.used)}, free ${fmtSize(t.capacity - t.used)}`,
     "",
-    ...rows.map((u) => `${u.drive.name}: ${fmtSize(u.usedGB)} of ${fmtSize(u.drive.capacityGB)} (${u.pct.toFixed(0)}%)${u.projects.length ? `. Projects: ${u.projects.map((p) => `${p.contentId ?? p.label} ${fmtSize(p.gb)}`).join(", ")}` : ""}`),
+    ...rows.map(
+      (u) =>
+        `${u.drive.name}: ${fmtSize(u.usedGB)} of ${fmtSize(u.drive.capacityGB)} (${u.pct.toFixed(0)}%)${u.projects.length ? `. Projects: ${u.projects.map((p) => `${p.contentId ?? p.label} ${fmtSize(p.gb)}`).join(", ")}` : ""}`,
+    ),
   ].join("\n");
 }

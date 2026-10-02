@@ -23,8 +23,29 @@ jobs:
       - name: Type-check (app and server)
         run: npm run check
 
+      - name: Lint
+        run: npm run lint
+
+      - name: Check formatting
+        run: npm run format:check
+
       - name: Check the wrapped services are up to date
         run: npm run gen:check
 
+      - name: Check the committed server bundle matches the source
+        run: |
+          npm run build:server
+          git diff --exit-code -- api/_server.mjs || { echo "api/_server.mjs is out of date: run npm run build:server and commit it."; exit 1; }
+
+      # The storage tests start a real MongoDB replica set, downloaded the first time.
+      - name: Keep the downloaded MongoDB between runs
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/mongodb-binaries
+          key: mongodb-binaries-${{ runner.os }}-v1
+
       - name: Run tests
         run: npm test
+
+      - name: Build the site
+        run: npm run build

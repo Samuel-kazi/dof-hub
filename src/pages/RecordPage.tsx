@@ -1,18 +1,35 @@
 import { useState } from "react";
 import { ReportButton } from "../ui/ReportDialog";
-import type { ContentRecord } from "../types";
+
 import { useApp } from "../ui/AppContext";
 import { useDb } from "../data/store";
 import { categoryOf, leafLabel } from "../config/categories";
 import { levelLabel as productionLabel } from "../config/production";
 import { canComment, canView, canWrite, getRecord } from "../services/access";
 import {
-  addComment, advanceStage, canAdvance, canDelete, childKindFor, currentStageDeadline, deleteRecord, deletionImpact, deletionSummary, getBreadcrumb, getChildren, getComments,
-  getRollupStatus, isComplete, levelLabel, sendBackStage, setStageDeadline, setStageOutput, updateRecord, usesPipeline,
+  addComment,
+  advanceStage,
+  canAdvance,
+  canDelete,
+  childKindFor,
+  currentStageDeadline,
+  deleteRecord,
+  deletionImpact,
+  deletionSummary,
+  getBreadcrumb,
+  getChildren,
+  getComments,
+  getRollupStatus,
+  isComplete,
+  levelLabel,
+  sendBackStage,
+  setStageDeadline,
+  setStageOutput,
+  usesPipeline,
 } from "../services/wrapped/content";
 import { callSheetForRecord, openOrCreateForRecord } from "../services/wrapped/callsheets";
 import { nameOf } from "../services/wrapped/people";
-import { fmtDate, fmtShort, relativeDays } from "../services/utils";
+import { fmtShort, relativeDays } from "../services/utils";
 import { Empty, Field, RiskBadge, StageBadge } from "../ui/parts";
 import { IconPlus } from "../ui/Icons";
 import { EditRecordModal, NewRecordModal } from "./RecordForms";
@@ -21,9 +38,12 @@ import { RecordExtras } from "./RecordExtras";
 import { RecordDetails } from "./RecordDetails";
 import { CastPanel } from "./CastPanel";
 import { LinksPanel, DevotionalPanel, PostProductionPanel, StageChecklist, StagePlan, StrikePlanPanel } from "./StagePanel";
+import { WorkflowProjectPage } from "./workflow/ProjectPage";
+import { EpisodePage } from "./workflow/EpisodePage";
+import { projectSummary, type Episode, type Project } from "../services/wrapped/workflow";
 
 export function RecordPage({ id }: { id: string }) {
-  const { actor, go, back, attempt, confirm, menu, toast } = useApp();
+  const { actor, go, back, attempt, confirm, toast } = useApp();
   useDb();
   const [editing, setEditing] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -31,15 +51,28 @@ export function RecordPage({ id }: { id: string }) {
   const rm = useRecordMenu();
   const rec = getRecord(id);
 
-  if (!rec || !canView(actor, rec)) return <div className="page"><Empty>This record does not exist or is not part of a project you are attached to.</Empty></div>;
+  if (!rec || !canView(actor, rec))
+    return (
+      <div className="page">
+        <Empty>This record does not exist or is not part of a project you are attached to.</Empty>
+      </div>
+    );
+
+  // The five-stage workflow's projects and episodes have pages of their own.
+  if (rec.workflow) return <WorkflowProjectPage project={rec as Project} />;
+  if (rec.episode && rec.parentId) {
+    const project = getRecord(rec.parentId);
+    if (project?.workflow) return <EpisodePage ep={rec as Episode} project={project as Project} />;
+  }
 
   const cfg = categoryOf(rec.category);
-  const write = canWrite(actor, rec);
+  const write = canWrite(actor, rec) && !rec.archived;
   const leaf = usesPipeline(rec);
   const crumbs = getBreadcrumb(rec.contentId);
   const kind = childKindFor(rec);
   const children = getChildren(rec.contentId);
-  const roll = !leaf ? getRollupStatus(rec.contentId) : null;
+  // A series of the five-stage workflow has no earlier-pipeline items to count: its seasons below show where each stands.
+  const roll = !leaf && !rec.seriesType ? getRollupStatus(rec.contentId) : null;
   const del = canDelete(rec.contentId);
   const comments = getComments(rec.contentId);
   const existingSheet = leaf ? callSheetForRecord(rec) : undefined;
@@ -61,14 +94,6 @@ export function RecordPage({ id }: { id: string }) {
     if (res) go({ n: "callsheet", id: res.sheet.id });
   };
 
-  const fieldMenu = (e: React.MouseEvent, label: string, clear?: () => void, hasValue = true) =>
-    menu(e, [
-      { label: `Edit ${label}…`, disabled: !write, onClick: () => setEditing(true) },
-      ...(clear ? [{ label: `Clear ${label}`, danger: true, disabled: !write || !hasValue, onClick: clear }] : []),
-    ]);
-
-  const clearField = (patch: Partial<ContentRecord>) => () => attempt(() => updateRecord(actor, rec.contentId, patch, rec.version), "Cleared");
-
   const postComment = () => {
     if (attempt(() => addComment(actor, rec.contentId, comment), "Comment added")) setComment("");
   };
@@ -80,7 +105,11 @@ export function RecordPage({ id }: { id: string }) {
         {crumbs.map((c, i) => (
           <span key={c.contentId}>
             <span aria-hidden> / </span>
-            {i === crumbs.length - 1 ? <span>{c.title}</span> : <button onClick={() => go({ n: "record", id: c.contentId })}>{c.title}</button>}
+            {i === crumbs.length - 1 ? (
+              <span>{c.title}</span>
+            ) : (
+              <button onClick={() => go({ n: "record", id: c.contentId })}>{c.title}</button>
+            )}
           </span>
         ))}
       </nav>
@@ -97,10 +126,20 @@ export function RecordPage({ id }: { id: string }) {
         </div>
         <ReportButton scope="project" params={{ contentId: rec.contentId }} label="Project report" />
         {leaf && (
-          <button className="btn" onClick={callSheet} disabled={!existingSheet && !write}>{existingSheet ? "Open call sheet" : "Create call sheet"}</button>
+          <button className="btn" onClick={callSheet} disabled={!existingSheet && !write}>
+            {existingSheet ? "Open call sheet" : "Create call sheet"}
+          </button>
         )}
-        {kind && write && <button className="btn primary" onClick={() => setAdding(true)}><IconPlus /> Add {kind.toLowerCase()}</button>}
-        {write && <button className="btn" onClick={() => setEditing(true)}>Edit</button>}
+        {kind && write && (
+          <button className="btn primary" onClick={() => setAdding(true)}>
+            <IconPlus /> Add {kind.toLowerCase()}
+          </button>
+        )}
+        {write && (
+          <button className="btn" onClick={() => setEditing(true)}>
+            Edit
+          </button>
+        )}
         {write && (
           <button
             className="btn danger"
@@ -109,7 +148,10 @@ export function RecordPage({ id }: { id: string }) {
             onClick={async () => {
               const impact = attempt(() => deletionImpact(actor, rec.contentId));
               if (!impact) return;
-              if (impact.blockers.length) { toast(impact.blockers[0], "error"); return; }
+              if (impact.blockers.length) {
+                toast(impact.blockers[0], "error");
+                return;
+              }
               if (await confirm({ title: `Delete “${rec.title}”?`, body: deletionSummary(impact), confirmLabel: "Delete", danger: true })) {
                 if (attempt(() => deleteRecord(actor, rec.contentId), "Deleted")) back();
               }
@@ -120,7 +162,27 @@ export function RecordPage({ id }: { id: string }) {
         )}
       </div>
       {!del.ok && write && <p className="muted">{del.reason}</p>}
-      {!write && <div className="banner"><span className="grow">You have view-only access to this project.{canComment(actor, rec) ? " You can add comments." : ""}</span></div>}
+      {rec.archived ? (
+        <div className="banner">
+          <span className="grow">
+            Archived{rec.closedReason ? `: ${rec.closedReason}` : "."} It is kept as it was.
+            {rec.parentId && getRecord(rec.parentId)?.workflow && (
+              <>
+                {" "}
+                <button className="link" onClick={() => go({ n: "record", id: rec.parentId! })}>
+                  Open its project
+                </button>
+              </>
+            )}
+          </span>
+        </div>
+      ) : (
+        !write && (
+          <div className="banner">
+            <span className="grow">You have view-only access to this project.{canComment(actor, rec) ? " You can add comments." : ""}</span>
+          </div>
+        )
+      )}
 
       {leaf && rec.category !== "general" && (stage || rec.pipelineStage === "Closed") && (
         <section className="glass panel" aria-label="Pipeline">
@@ -128,35 +190,67 @@ export function RecordPage({ id }: { id: string }) {
           {stage && (
             <div className="rail">
               {cfg.stages.map((s, i) => (
-                <div key={s.name} className={`rail-step ${i < stageIdx ? "done" : i === stageIdx ? "now" : ""}`}>{s.name}</div>
+                <div key={s.name} className={`rail-step ${i < stageIdx ? "done" : i === stageIdx ? "now" : ""}`}>
+                  {s.name}
+                </div>
               ))}
             </div>
           )}
           <PostProductionPanel rec={rec} />
           <DevotionalPanel rec={rec} />
           {stage && !(rec.category === "devotional" && (rec.pipelineStage === "Guest" || rec.pipelineStage === "Review")) && (
-          <div className={`gate ${gate.ok ? "ready" : ""}`}>
-            {!(rec.category === "devotional" && rec.pipelineStage === "Editing") && (
-              <label className="check">
-                <input type="checkbox" checked={outputDone} disabled={!write} onChange={(e) => attempt(() => setStageOutput(actor, rec.contentId, e.target.checked, rec.version))} />
-                <span><b>{stage.requiredOutput}</b> is in place</span>
-              </label>
-            )}
-            <span className="muted grow" style={{ flex: 1 }}>{isComplete(rec) ? "This item is complete." : gate.ok ? `Ready to move to ${nextStage}.` : gate.reason}</span>
-            {write && !isLast && (
-              <>
-                <button className="btn small ghost" disabled={stageIdx === 0} onClick={() => attempt(() => sendBackStage(actor, rec.contentId, rec.version), "Sent back one stage")}>Send back</button>
-                <button className="btn primary" disabled={!gate.ok} onClick={() => attempt(() => advanceStage(actor, rec.contentId, rec.version), `Moved to ${nextStage}`)}>Done, move to {nextStage}</button>
-              </>
-            )}
-          </div>
+            <div className={`gate ${gate.ok ? "ready" : ""}`}>
+              {!(rec.category === "devotional" && rec.pipelineStage === "Editing") && (
+                <label className="check">
+                  <input
+                    type="checkbox"
+                    checked={outputDone}
+                    disabled={!write}
+                    onChange={(e) => attempt(() => setStageOutput(actor, rec.contentId, e.target.checked, rec.version))}
+                  />
+                  <span>
+                    <b>{stage.requiredOutput}</b> is in place
+                  </span>
+                </label>
+              )}
+              <span className="muted grow" style={{ flex: 1 }}>
+                {isComplete(rec) ? "This item is complete." : gate.ok ? `Ready to move to ${nextStage}.` : gate.reason}
+              </span>
+              {write && !isLast && (
+                <>
+                  <button
+                    className="btn small ghost"
+                    disabled={stageIdx === 0}
+                    onClick={() => attempt(() => sendBackStage(actor, rec.contentId, rec.version), "Sent back one stage")}
+                  >
+                    Send back
+                  </button>
+                  <button
+                    className="btn primary"
+                    disabled={!gate.ok}
+                    onClick={() => attempt(() => advanceStage(actor, rec.contentId, rec.version), `Moved to ${nextStage}`)}
+                  >
+                    Done, move to {nextStage}
+                  </button>
+                </>
+              )}
+            </div>
           )}
           {stage && rec.category !== "devotional" && (
             <div className="row" style={{ marginTop: 14, alignItems: "end" }}>
               <Field label={`${stage.name} deadline (${currentStageDeadline(rec) ? relativeDays(currentStageDeadline(rec)!) : "not set"})`}>
-                <input type="date" value={currentStageDeadline(rec) ?? ""} disabled={!write} onChange={(e) => e.target.value && attempt(() => setStageDeadline(actor, rec.contentId, stage.name, e.target.value, rec.version))} />
+                <input
+                  type="date"
+                  value={currentStageDeadline(rec) ?? ""}
+                  disabled={!write}
+                  onChange={(e) =>
+                    e.target.value && attempt(() => setStageDeadline(actor, rec.contentId, stage.name, e.target.value, rec.version))
+                  }
+                />
               </Field>
-              <div className="muted" style={{ paddingBottom: 10 }}>The person responsible is reminded before this date.</div>
+              <div className="muted" style={{ paddingBottom: 10 }}>
+                The person responsible is reminded before this date.
+              </div>
             </div>
           )}
         </section>
@@ -175,11 +269,20 @@ export function RecordPage({ id }: { id: string }) {
           ) : (
             <div className="stack">
               <div>
-                <b>{roll.complete} of {roll.total}</b> {leafLabel(rec.category).toLowerCase()}s complete
-                <div className="meter" style={{ marginTop: 8 }}><i style={{ width: `${(roll.complete / roll.total) * 100}%` }} /></div>
+                <b>
+                  {roll.complete} of {roll.total}
+                </b>{" "}
+                {leafLabel(rec.category).toLowerCase()}s complete
+                <div className="meter" style={{ marginTop: 8 }}>
+                  <i style={{ width: `${(roll.complete / roll.total) * 100}%` }} />
+                </div>
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                {Object.entries(roll.byStage).map(([s, n]) => <span key={s} className="badge">{s}: {n}</span>)}
+                {Object.entries(roll.byStage).map(([s, n]) => (
+                  <span key={s} className="badge">
+                    {s}: {n}
+                  </span>
+                ))}
                 {roll.overdue > 0 && <span className="badge bad">{roll.overdue} overdue</span>}
                 {roll.atRisk > 0 && <span className="badge warn">{roll.atRisk} at risk</span>}
               </div>
@@ -198,13 +301,34 @@ export function RecordPage({ id }: { id: string }) {
               {children.map((c) => {
                 const r = !usesPipeline(c) ? getRollupStatus(c.contentId) : null;
                 return (
-                  <div key={c.contentId} className="list-item" onClick={() => go({ n: "record", id: c.contentId })} onContextMenu={(e) => rm.onContext(e, c)}>
+                  <div
+                    key={c.contentId}
+                    className="list-item"
+                    onClick={() => go({ n: "record", id: c.contentId })}
+                    onContextMenu={(e) => rm.onContext(e, c)}
+                  >
                     <div className="grow">
                       <div className="title">{c.title}</div>
-                      <span className="cid">{c.contentId}</span>{c.category === "live" && c.scheduledDate && <span className="muted" style={{ fontSize: ".84rem" }}>{`  ${fmtShort(c.scheduledDate)}`}</span>}
+                      <span className="cid">{c.contentId}</span>
+                      {c.category === "live" && c.scheduledDate && (
+                        <span className="muted" style={{ fontSize: ".84rem" }}>{`  ${fmtShort(c.scheduledDate)}`}</span>
+                      )}
                     </div>
-                    {c.category === "live" && c.productionLevel && <span className="badge accent">{productionLabel(c.productionLevel)}</span>}
-                    {r ? <span className="badge">{r.complete} of {r.total} complete</span> : <><StageBadge record={c} /><RiskBadge record={c} /></>}
+                    {c.category === "live" && c.productionLevel && (
+                      <span className="badge accent">{productionLabel(c.productionLevel)}</span>
+                    )}
+                    {c.workflow ? (
+                      <span className="badge accent">{projectSummary(c as Project).stage}</span>
+                    ) : r ? (
+                      <span className="badge">
+                        {r.complete} of {r.total} complete
+                      </span>
+                    ) : (
+                      <>
+                        <StageBadge record={c} />
+                        <RiskBadge record={c} />
+                      </>
+                    )}
                   </div>
                 );
               })}
@@ -222,25 +346,46 @@ export function RecordPage({ id }: { id: string }) {
 
       <section className="glass panel" aria-label="Comments">
         <h2>Comments</h2>
-        {comments.length === 0 ? <Empty>No comments yet.</Empty> : comments.map((c) => (
-          <div key={c.id} className="comment">
-            <b>{nameOf(c.byPersonId)}</b> <small>{new Date(c.at).toLocaleString()}</small>
-            <p>{c.text}</p>
-          </div>
-        ))}
+        {comments.length === 0 ? (
+          <Empty>No comments yet.</Empty>
+        ) : (
+          comments.map((c) => (
+            <div key={c.id} className="comment">
+              <b>{nameOf(c.byPersonId)}</b> <small>{new Date(c.at).toLocaleString()}</small>
+              <p>{c.text}</p>
+            </div>
+          ))
+        )}
         {canComment(actor, rec) ? (
           <div className="row" style={{ marginTop: 12, alignItems: "end" }}>
-            <Field label="Add a comment"><textarea value={comment} onChange={(e) => setComment(e.target.value)} /></Field>
-            <div style={{ flex: "none", minWidth: 0 }}><button className="btn primary" onClick={postComment}>Post comment</button></div>
+            <Field label="Add a comment">
+              <textarea value={comment} onChange={(e) => setComment(e.target.value)} />
+            </Field>
+            <div style={{ flex: "none", minWidth: 0 }}>
+              <button className="btn primary" onClick={postComment}>
+                Post comment
+              </button>
+            </div>
           </div>
         ) : (
-          <p className="muted" style={{ marginTop: 10 }}>You can read comments on this project but not add them.</p>
+          <p className="muted" style={{ marginTop: 10 }}>
+            You can read comments on this project but not add them.
+          </p>
         )}
       </section>
 
       {rm.modal}
       {editing && <EditRecordModal record={rec} onClose={() => setEditing(false)} />}
-      {adding && <NewRecordModal parent={rec} onClose={() => setAdding(false)} onCreated={(r) => { setAdding(false); go({ n: "record", id: r.contentId }); }} />}
+      {adding && (
+        <NewRecordModal
+          parent={rec}
+          onClose={() => setAdding(false)}
+          onCreated={(r) => {
+            setAdding(false);
+            go({ n: "record", id: r.contentId });
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -2,7 +2,7 @@
 // The "General Use" category: a placeholder project ID for storage, a call sheet, a document, or a
 // gear checkout that has nowhere real to attach yet, and the "move it to a real project" actions.
 import assert from "node:assert/strict";
-import { getDb, resetDemoData } from "../src/data/store";
+import { resetDemoData } from "../src/data/store";
 import { login } from "../src/services/auth";
 import { getRecord, visibleRecords } from "../src/services/access";
 import * as C from "../src/services/content";
@@ -14,7 +14,17 @@ import { calendarEvents } from "../src/services/calendarView";
 import { workloadFor } from "../src/services/workload";
 
 let passed = 0;
-const t = (name: string, fn: () => void) => { resetDemoData(); try { fn(); passed++; console.log("ok  ", name); } catch (e) { console.error("FAIL", name, "\n    ", e instanceof Error ? e.message : e); process.exitCode = 1; } };
+const t = (name: string, fn: () => void) => {
+  resetDemoData();
+  try {
+    fn();
+    passed++;
+    console.log("ok  ", name);
+  } catch (e) {
+    console.error("FAIL", name, "\n    ", e instanceof Error ? e.message : e);
+    process.exitCode = 1;
+  }
+};
 const throwsRule = (fn: () => unknown, match?: RegExp) => assert.throws(fn, (e) => e instanceof Error && (!match || match.test(e.message)));
 const hop = () => login("hop@dof.demo", "demo");
 
@@ -46,14 +56,26 @@ t("it never generates a reminder or shows up in anyone's workload", () => {
 t("gear can be checked out against it, exactly like a real project", () => {
   const actor = hop();
   const p = C.createRecord(actor, { category: "general", title: "Loaned to a partner church" });
-  const m = E.createManifest(actor, { contentId: p.contentId, date: "2026-10-01", destination: "outside", status: "assigned", lines: [{ equipmentId: "DOF-EQ-CAM-001", quantity: 1 }] });
+  const m = E.createManifest(actor, {
+    contentId: p.contentId,
+    date: "2026-10-01",
+    destination: "outside",
+    status: "assigned",
+    lines: [{ equipmentId: "DOF-EQ-CAM-001", quantity: 1 }],
+  });
   assert.equal(m.contentId, p.contentId);
 });
 
 t("equipment's existing attach action moves a checkout from General Use onto a real project", () => {
   const actor = hop();
   const p = C.createRecord(actor, { category: "general", title: "Temporary loan" });
-  const m = E.createManifest(actor, { contentId: p.contentId, date: "2026-10-01", destination: "studio", status: "assigned", lines: [{ equipmentId: "DOF-EQ-CAM-001", quantity: 1 }] });
+  const m = E.createManifest(actor, {
+    contentId: p.contentId,
+    date: "2026-10-01",
+    destination: "studio",
+    status: "assigned",
+    lines: [{ equipmentId: "DOF-EQ-CAM-001", quantity: 1 }],
+  });
   const moved = E.attachManifest(actor, m.id, "DOF-SER-001");
   assert.equal(moved.contentId, "DOF-SER-001");
 });
@@ -72,7 +94,9 @@ t("a call sheet moves from General Use onto a real project, and its gear moves w
   const actor = hop();
   const p = C.createRecord(actor, { category: "general", title: "Community day loan" });
   const cs = CS.createCallSheet(actor, { contentId: p.contentId, title: "Loan sheet", date: "2026-10-05" });
-  const m = E.addGearToSheet(actor, { id: cs.id, contentId: cs.contentId, date: cs.date }, [{ equipmentId: "DOF-EQ-CAM-001", quantity: 1 }]);
+  const m = E.addGearToSheet(actor, { id: cs.id, contentId: cs.contentId, date: cs.date }, [
+    { equipmentId: "DOF-EQ-CAM-001", quantity: 1 },
+  ]);
   const moved = CS.attachCallSheet(actor, cs.id, "DOF-SER-001", cs.version);
   assert.equal(moved.contentId, "DOF-SER-001");
   const gear = E.manifestForSheet(cs.id)!;

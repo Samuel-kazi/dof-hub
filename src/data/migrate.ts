@@ -1,6 +1,9 @@
 import type { ContentRecord, Database, DocRecord, DocRevision, DriveAllocation, EquipCondition, EquipmentItem } from "../types";
 import { MUSIC_STAGE_MAP, categoryOf } from "../config/categories";
 import { templateOf } from "../config/docTemplates";
+import { syncRecordCounters } from "./ids";
+import { WORKFLOW_PARTS } from "./constraints";
+import { todayIso } from "../services/utils";
 
 // Upgrades saved data from version 2 to 3. It only touches plain data, so it can run while the
 // store is loading. It is safe to run twice: anything already present is left alone.
@@ -21,7 +24,7 @@ function remapMusic(r: ContentRecord): void {
   const newCurrent = MUSIC_STAGE_MAP[oldCurrent] ?? "Idea";
   const idx = stages.indexOf(newCurrent);
   const oldOutput = !!r.stageOutputs[oldCurrent];
-  const oldDue = r.stageDeadlines[oldCurrent] ?? r.deadline ?? new Date().toISOString().slice(0, 10);
+  const oldDue = r.stageDeadlines[oldCurrent] ?? r.deadline ?? todayIso();
   r.pipelineStage = newCurrent;
   r.stageOutputs = Object.fromEntries(stages.map((s, i) => [s, i < idx ? true : i === idx ? oldOutput : false]));
   r.stageDeadlines = Object.fromEntries(stages.map((s, i) => [s, i === idx ? oldDue : isoPlus(oldDue, (i - idx) * 4)]));
@@ -33,7 +36,9 @@ export function upgradeToV3(db: Database): Database {
   db.counters ??= {};
   for (const r of db.records) {
     remapMusic(r);
-    r.stageAssignees ??= (r.pipelineStage && r.assigneePersonId ? { [r.pipelineStage]: r.assigneePersonId } : {}) as unknown as ContentRecord["stageAssignees"]; // the old one-owner shape, converted in version 6
+    r.stageAssignees ??= (r.pipelineStage && r.assigneePersonId
+      ? { [r.pipelineStage]: r.assigneePersonId }
+      : {}) as unknown as ContentRecord["stageAssignees"]; // the old one-owner shape, converted in version 6
     r.tasks ??= [];
     r.links ??= [];
     r.productionLevel ??= null;
@@ -42,7 +47,16 @@ export function upgradeToV3(db: Database): Database {
     if (def?.tasks && !r.tasks.some((t) => t.stage === def.name)) {
       for (const label of def.tasks) {
         db.counters.task = (db.counters.task ?? 0) + 1;
-        r.tasks.push({ id: `T-${String(db.counters.task).padStart(4, "0")}`, stage: def.name, label, done: false, dueDate: r.stageDeadlines[def.name] ?? null, assigneePersonId: null, doneAt: null, doneBy: null });
+        r.tasks.push({
+          id: `T-${String(db.counters.task).padStart(4, "0")}`,
+          stage: def.name,
+          label,
+          done: false,
+          dueDate: r.stageDeadlines[def.name] ?? null,
+          assigneePersonId: null,
+          doneAt: null,
+          doneBy: null,
+        });
       }
     }
     // Attach the documents the current stage calls for, once.
@@ -52,8 +66,30 @@ export function upgradeToV3(db: Database): Database {
       db.counters.doc = (db.counters.doc ?? 0) + 1;
       db.counters.docrev = (db.counters.docrev ?? 0) + 1;
       const now = new Date().toISOString();
-      const doc: DocRecord = { id: `DOF-DCS-${String(db.counters.doc).padStart(3, "0")}`, contentId: r.contentId, title: `${tpl.title}: ${r.title}`, body: tpl.body, templateKey: key, stage: def!.name, version: 1, createdBy: "DOF-P-HOP-001", createdAt: now, updatedAt: now, updatedBy: "DOF-P-HOP-001", archived: false };
-      const rev: DocRevision = { id: `REV-${String(db.counters.docrev).padStart(5, "0")}`, docId: doc.id, version: 1, at: now, byPersonId: "DOF-P-HOP-001", title: doc.title, body: doc.body, note: "Created from template" };
+      const doc: DocRecord = {
+        id: `DOF-DCS-${String(db.counters.doc).padStart(3, "0")}`,
+        contentId: r.contentId,
+        title: `${tpl.title}: ${r.title}`,
+        body: tpl.body,
+        templateKey: key,
+        stage: def!.name,
+        version: 1,
+        createdBy: "DOF-P-HOP-001",
+        createdAt: now,
+        updatedAt: now,
+        updatedBy: "DOF-P-HOP-001",
+        archived: false,
+      };
+      const rev: DocRevision = {
+        id: `REV-${String(db.counters.docrev).padStart(5, "0")}`,
+        docId: doc.id,
+        version: 1,
+        at: now,
+        byPersonId: "DOF-P-HOP-001",
+        title: doc.title,
+        body: doc.body,
+        note: "Created from template",
+      };
       db.docs.push(doc);
       db.docRevisions.push(rev);
     }
@@ -78,7 +114,16 @@ export function upgradeToV4(db: Database): Database {
       db.counters.history = db.counters.history ?? 0;
       for (const l of m.lines) {
         db.counters.history += 1;
-        db.equipmentHistory.push({ id: `H-${String(db.counters.history).padStart(5, "0")}`, equipmentId: l.equipmentId, at: new Date().toISOString(), kind: "released", detail: `Released: ${m.contentId} was deleted`, byPersonId: "DOF-P-HOP-001", contentId: m.contentId, manifestId: m.id });
+        db.equipmentHistory.push({
+          id: `H-${String(db.counters.history).padStart(5, "0")}`,
+          equipmentId: l.equipmentId,
+          at: new Date().toISOString(),
+          kind: "released",
+          detail: `Released: ${m.contentId} was deleted`,
+          byPersonId: "DOF-P-HOP-001",
+          contentId: m.contentId,
+          manifestId: m.id,
+        });
       }
     }
     const droppedSheets = new Set(db.callSheets.filter((c) => gone.has(c.contentId)).map((c) => c.id));
@@ -87,7 +132,7 @@ export function upgradeToV4(db: Database): Database {
     // Today's storage figure follows, so the forecast does not count files that were cleared.
     const used = db.drives.reduce((n, d) => n + d.otherUsedGB, 0) + db.allocations.reduce((n, a) => n + a.sizeGB, 0);
     const capacity = db.drives.reduce((n, d) => n + d.capacityGB, 0);
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayIso();
     const snap = db.snapshots.find((s) => s.date === today);
     if (snap) Object.assign(snap, { usedGB: used, capacityGB: capacity });
     else db.snapshots.push({ date: today, usedGB: used, capacityGB: capacity });
@@ -106,10 +151,13 @@ export function upgradeToV5(db: Database): Database {
     r.showStart ??= null;
     r.showEnd ??= null;
   }
-  const flat = db.records.filter((r) => r.category === "live" && r.hierarchyLevel === 0 && r.pipelineStage !== null && !db.records.some((c) => c.parentId === r.contentId));
+  const flat = db.records.filter(
+    (r) =>
+      r.category === "live" && r.hierarchyLevel === 0 && r.pipelineStage !== null && !db.records.some((c) => c.parentId === r.contentId),
+  );
   for (const r of flat) {
     const id = `${r.contentId}-D1`;
-    const copy = <T,>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
+    const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
     const day: ContentRecord = {
       ...copy(r),
       contentId: id,
@@ -123,7 +171,18 @@ export function upgradeToV5(db: Database): Database {
     db.records.push(day);
     r.showStart = r.showStart ?? r.scheduledDate;
     r.showEnd = r.showEnd ?? r.scheduledDate;
-    Object.assign(r, { pipelineStage: null, stageOutputs: {}, stageDeadlines: {}, tasks: [], links: [], stageAssignees: {}, assigneePersonId: null, productionLevel: null, scheduledDate: null, version: r.version + 1 });
+    Object.assign(r, {
+      pipelineStage: null,
+      stageOutputs: {},
+      stageDeadlines: {},
+      tasks: [],
+      links: [],
+      stageAssignees: {},
+      assigneePersonId: null,
+      productionLevel: null,
+      scheduledDate: null,
+      version: r.version + 1,
+    });
     for (const d of db.docs) if (d.contentId === r.contentId && d.stage) d.contentId = id;
     for (const c of db.callSheets) c.linkedEpisodeIds = c.linkedEpisodeIds.map((x) => (x === r.contentId ? id : x));
   }
@@ -144,10 +203,16 @@ export function upgradeToV6(db: Database): Database {
     const rootId = r.contentId.split("-").slice(0, 3).join("-");
     const next: Record<string, { personId: string; roles: string[] }[]> = {};
     for (const [stage, v] of Object.entries(raw)) {
-      if (Array.isArray(v)) { next[stage] = v as { personId: string; roles: string[] }[]; continue; }
+      if (Array.isArray(v)) {
+        next[stage] = v as { personId: string; roles: string[] }[];
+        continue;
+      }
       if (typeof v !== "string") continue;
       const m = db.members.find((x) => x.personId === v && x.projectContentId === rootId);
-      const roles = (m?.roleOnProject ?? "").split(",").map((x) => x.trim()).filter((x) => x && !generic.includes(x.toLowerCase()));
+      const roles = (m?.roleOnProject ?? "")
+        .split(",")
+        .map((x) => x.trim())
+        .filter((x) => x && !generic.includes(x.toLowerCase()));
       next[stage] = [{ personId: v, roles }];
     }
     r.stageAssignees = next;
@@ -202,11 +267,19 @@ export function upgradeToV10(db: Database): Database {
     if (r.category !== "live" || !r.pipelineStage) continue;
     if (r.pipelineStage in RENAME) r.pipelineStage = RENAME[r.pipelineStage];
     for (const dict of [r.stageOutputs, r.stageDeadlines] as Record<string, unknown>[]) {
-      for (const [from, to] of Object.entries(RENAME)) if (from in dict) { dict[to] = dict[from]; delete dict[from]; }
+      for (const [from, to] of Object.entries(RENAME))
+        if (from in dict) {
+          dict[to] = dict[from];
+          delete dict[from];
+        }
       for (const s of NEW_STAGES) if (!(s in dict)) dict[s] = dict === r.stageOutputs ? false : null;
     }
     for (const t of r.tasks) if (t.stage in RENAME) t.stage = RENAME[t.stage];
-    for (const [from, to] of Object.entries(RENAME)) if (from in r.stageAssignees) { r.stageAssignees[to] = r.stageAssignees[from]; delete r.stageAssignees[from]; }
+    for (const [from, to] of Object.entries(RENAME))
+      if (from in r.stageAssignees) {
+        r.stageAssignees[to] = r.stageAssignees[from];
+        delete r.stageAssignees[from];
+      }
   }
   db.schemaVersion = 10;
   return db;
@@ -244,10 +317,18 @@ export function upgradeToV12(db: Database): Database {
     if (r.category !== "devotional" || !r.pipelineStage) continue;
     if (r.pipelineStage in RENAME) r.pipelineStage = RENAME[r.pipelineStage];
     for (const dict of [r.stageOutputs, r.stageDeadlines] as Record<string, unknown>[]) {
-      for (const [from, to] of Object.entries(RENAME)) if (from in dict) { dict[to] = dict[from]; delete dict[from]; }
+      for (const [from, to] of Object.entries(RENAME))
+        if (from in dict) {
+          dict[to] = dict[from];
+          delete dict[from];
+        }
     }
     for (const t of r.tasks) if (t.stage in RENAME) t.stage = RENAME[t.stage];
-    for (const [from, to] of Object.entries(RENAME)) if (from in r.stageAssignees) { r.stageAssignees[to] = r.stageAssignees[from]; delete r.stageAssignees[from]; }
+    for (const [from, to] of Object.entries(RENAME))
+      if (from in r.stageAssignees) {
+        r.stageAssignees[to] = r.stageAssignees[from];
+        delete r.stageAssignees[from];
+      }
   }
   db.schemaVersion = 12;
   return db;
@@ -270,5 +351,35 @@ export function upgradeToV13(db: Database): Database {
   }
   for (const a of db.allocations) (a as DriveAllocation & { label?: string }).label ??= "";
   db.schemaVersion = 13;
+  return db;
+}
+
+/**
+ * Version 14: project numbers come from counters, so the browser and the server always agree on the number
+ * a new project gets (src/data/ids.ts). Each counter starts at the highest number already used, archived
+ * projects included, so no Content ID is ever given out twice.
+ */
+export function upgradeToV14(db: Database): Database {
+  db.counters ??= {};
+  syncRecordCounters(db);
+  db.schemaVersion = 14;
+  return db;
+}
+
+/**
+ * Version 15: the five-stage workflow for series, devotions and documentaries gets its own lists, all empty,
+ * and every record gains three workflow fields, all empty. Nothing that exists is changed, moved or removed:
+ * projects made before this keep their earlier pipeline until they are moved across, which is a separate step
+ * with a dry run of its own.
+ */
+export function upgradeToV15(db: Database): Database {
+  const parts = db as unknown as Record<string, unknown[] | undefined>;
+  for (const k of WORKFLOW_PARTS) parts[k] ??= [];
+  for (const r of db.records) {
+    r.seriesType ??= null;
+    r.workflow ??= null;
+    r.episode ??= null;
+  }
+  db.schemaVersion = 15;
   return db;
 }

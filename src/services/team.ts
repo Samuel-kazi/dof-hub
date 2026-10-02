@@ -3,7 +3,7 @@ import { RuleError } from "../types";
 import { commit, getDb } from "../data/store";
 import { PROJECT_ROLES, cleanRoles, rolesOf } from "../config/projectRoles";
 export { cleanRoles, rolesOf };
-import { getRecord, isHop, rootOf, selfAndAncestors } from "./access";
+import { getRecord, rootOf, selfAndAncestors } from "./access";
 import { logAudit } from "./audit";
 import { requireCan } from "./permissions";
 import { getPerson } from "./people";
@@ -11,7 +11,11 @@ import { getPerson } from "./people";
 // A project team is a list of people with the roles they do on it. Being on the team is also what gives
 // someone access to the project, so only the Head of Production changes it.
 
-export interface TeamEntry { member: ProjectMember; person: Person; roles: string[] }
+export interface TeamEntry {
+  member: ProjectMember;
+  person: Person;
+  roles: string[];
+}
 
 const GENERIC_ROLES = ["assigned", "team member"];
 
@@ -23,8 +27,11 @@ export function rolesOnProject(personId: string, rec: ContentRecord): string[] {
   const root = rootOf(rec);
   const under = getDb().records.filter((r) => r.contentId === root.contentId || r.contentId.startsWith(`${root.contentId}-`));
   const out: string[] = [];
-  const add = (role: string) => { if (!GENERIC_ROLES.includes(role.toLowerCase()) && !out.some((x) => x.toLowerCase() === role.toLowerCase())) out.push(role); };
-  for (const r of under) for (const list of Object.values(r.stageAssignees)) for (const o of list) if (o.personId === personId) o.roles.forEach(add);
+  const add = (role: string) => {
+    if (!GENERIC_ROLES.includes(role.toLowerCase()) && !out.some((x) => x.toLowerCase() === role.toLowerCase())) out.push(role);
+  };
+  for (const r of under)
+    for (const list of Object.values(r.stageAssignees)) for (const o of list) if (o.personId === personId) o.roles.forEach(add);
   const m = getDb().members.find((x) => x.personId === personId && x.projectContentId === root.contentId);
   if (m) rolesOf(m).forEach(add);
   return out;
@@ -78,9 +85,15 @@ export function addTeamMember(actor: Actor, contentId: string, personId: string,
   const person = getPerson(personId);
   if (!person || person.status !== "active") throw new RuleError("Choose an active person.");
   if (person.category === "HOP") throw new RuleError("The Head of Production already has access to every project.");
-  if (getDb().members.some((m) => m.personId === personId && m.projectContentId === root.contentId)) throw new RuleError(`${person.name} is already on this project. Change their roles instead.`);
+  if (getDb().members.some((m) => m.personId === personId && m.projectContentId === root.contentId))
+    throw new RuleError(`${person.name} is already on this project. Change their roles instead.`);
   const cleaned = cleanRoles(roles);
-  getDb().members.push({ personId, projectContentId: root.contentId, roleOnProject: cleaned.join(", ") || "Team member", canComment: person.category === "CRW" ? true : canComment });
+  getDb().members.push({
+    personId,
+    projectContentId: root.contentId,
+    roleOnProject: cleaned.join(", ") || "Team member",
+    canComment: person.category === "CRW" ? true : canComment,
+  });
   logAudit(actor, "assign", "person", personId, `${root.contentId}: ${cleaned.join(", ")}`);
   commit();
 }
