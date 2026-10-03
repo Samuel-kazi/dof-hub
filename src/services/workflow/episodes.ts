@@ -7,6 +7,8 @@ import { logAudit } from "../audit";
 import { addDaysIso, isIsoDate, todayIso } from "../utils";
 import { requireWebUrl } from "../urls";
 import { EPISODE_TOKEN } from "../../config/workflow";
+import { briefKeyOf } from "../../config/documentCatalog";
+import { documentIdOf } from "../../data/constraints";
 import { checkpoint, ensureChecklist, episodeForWrite, openRequired, requireCrew, type Episode, type Project } from "./common";
 import { blankCheckpoint } from "./projects";
 import { evaluateGate, gateError } from "./gates";
@@ -87,8 +89,11 @@ export function makeEpisode(actor: Actor, project: Project, input: NewEpisode, k
   r.assigneePersonId = info.editorId;
   const db = getDb();
   if (!kept || typeof kept === "string") db.records.push(r);
-  // The episode's reviewers start as whoever reviewed the project's outline.
-  const reviewers = checkpoint(project.contentId, "outline_script")?.reviewerIds ?? [];
+  // The episode's reviewers start as whoever reviews the project's brief (or a devotion's script); for a project
+  // reviewed before its documents, whoever reviewed its outline.
+  const brief = documentIdOf(project.contentId, "Development", briefKeyOf(project.workflow.formType), null);
+  const briefReviewers = db.documentReviews.filter((x) => x.documentId === brief && x.reviewerId !== "system").map((x) => x.reviewerId);
+  const reviewers = briefReviewers.length ? briefReviewers : (checkpoint(project.contentId, "outline_script")?.reviewerIds ?? []);
   for (const key of ["rough_cut", "final"] as const) {
     // A kept episode recorded a second time starts its reviews again.
     const earlier = checkpoint(id, key);

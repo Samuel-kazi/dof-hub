@@ -228,9 +228,7 @@ export function SessionsPanel({ project, write }: { project: Project; write: boo
 
 export function PreProductionTab({ project, write }: { project: Project; write: boolean }) {
   if (project.workflow.stage === "Development")
-    return (
-      <Empty>Pre-production starts once the project is greenlit and handed off. See the Development tab for what is still needed.</Empty>
-    );
+    return <Empty>Pre-production starts once the project is greenlit and handed off. Project home shows what is still needed.</Empty>;
   const ready = evaluateGate("Pre-production", "project", project.contentId);
   const isDofDoc = project.workflow.formType === "documentary_dof";
   return (

@@ -16,9 +16,19 @@ import * as W from "../src/services/wrapped/workflow";
 import * as C from "../src/services/wrapped/content";
 import * as CS from "../src/services/wrapped/callsheets";
 import * as EQ from "../src/services/wrapped/equipment";
+import * as D from "../src/services/wrapped/documents";
 import { CHECKLISTS } from "../src/config/workflow";
 import { DEV_FORMS } from "../src/config/devForms";
-import { completeForm, fillSection, prepareSession, tickAll, walkWhispersOfWhy, PRODUCER, type Call } from "./support/wow-walkthrough";
+import {
+  approveBrief,
+  completeForm,
+  fillSection,
+  prepareSession,
+  tickAll,
+  walkWhispersOfWhy,
+  PRODUCER,
+  type Call,
+} from "./support/wow-walkthrough";
 
 let passed = 0;
 const t = async (name: string, fn: () => Promise<void> | void) => {
@@ -37,7 +47,7 @@ const t = async (name: string, fn: () => Promise<void> | void) => {
 const hop = (): Actor => login("hop@dof.demo", "demo");
 const crew = (n: number): Actor => login(`crew${n}@dof.demo`, "demo");
 const vol = (): Actor => login("volunteer1@dof.demo", "demo");
-const modules: Record<string, Record<string, unknown>> = { workflow: W, content: C, callsheets: CS, equipment: EQ };
+const modules: Record<string, Record<string, unknown>> = { workflow: W, content: C, callsheets: CS, equipment: EQ, documents: D };
 
 /** Calls a service as someone, through the wrappers the screens use, as the walkthrough expects. */
 const as =
@@ -69,10 +79,7 @@ async function readyProject(formType: FormType = "podcast", planned = 3): Promis
   for (let n = 1; n <= planned; n++)
     await call("workflow.addPlannedEpisode", id, { workingTitle: `Episode ${n}`, details: fillSection(section?.planned?.details ?? []) });
   await completeForm(call, id, formType);
-  for (const cp of ["pitch", "outline_script"]) {
-    await call("workflow.setCheckpointReviewers", `${id}|${cp}`, [PRODUCER]);
-    await call("workflow.decideCheckpoint", `${id}|${cp}`, { status: "Approved", note: "" });
-  }
+  await approveBrief(call, read, id, formType);
   await call("workflow.decideGreenlight", id, { outcome: "Greenlight", notes: "" });
   await call("workflow.assignProducer", id, PRODUCER);
   await tickAll(call, "handoff", id);
@@ -154,26 +161,27 @@ await t("a devotion's days and a documentary's film are numbered under their own
 
 // ── Gates ────────────────────────────────────────────────────
 
-await t("Development gate: lists everything missing, and passes once it is all there", async () => {
+await t("Development gate: the short list of hard gates, the rest as notes that never block, and it passes once they are met", async () => {
   const p = (await call("workflow.createWorkflowProject", { category: "series", title: "Gate test", seriesType: "podcast" })).contentId;
   const g = W.evaluateGate("Development", "project", p);
   assert.equal(g.passed, false);
-  for (const expected of [
-    /Greenlight decision/,
-    /Brief: Logline/,
-    /Story: Planned episodes needs at least 1/,
-    /Pitch review checkpoint Approved/,
-    /Handoff: Outline locked/,
-    /Show producer named/,
-  ])
+  assert.deepEqual(
+    g.missing.map((m) => m.split(" (")[0]),
+    [
+      "The logline and the core question written in the brief",
+      "Theological review of the brief approved",
+      "Greenlight decision recorded as Greenlight, and a show producer named",
+    ],
+  );
+  for (const note of [/No planned episodes listed yet/, /Handoff: Outline locked/])
     assert.ok(
-      g.missing.some((m) => expected.test(m)),
-      `missing should mention ${expected}: ${g.missing.join(" | ")}`,
+      g.warnings.some((w) => note.test(w)),
+      `the notes should mention ${note}: ${g.warnings.join(" | ")}`,
     );
   await throwsRule(() => call("workflow.advanceProject", p), /Not ready to leave Development/);
   await throwsRule(
     () => call("workflow.decideGreenlight", p, { outcome: "Greenlight", notes: "" }),
-    /pitch review checkpoint must be Approved/,
+    /Theological review of the brief approved/,
   );
   const ready = await readyProject();
   assert.equal(getDb().records.find((r) => r.contentId === ready)!.workflow!.stage, "Pre-production");
@@ -184,7 +192,7 @@ await t("a testimonial cannot be greenlit until consent and release is complete,
   await call("workflow.addPlannedEpisode", p, { workingTitle: "Amina's story" });
   await completeForm(call, p, "testimonial");
   await call("workflow.saveFormSection", p, "consent", { agreement: "no" });
-  for (const cp of ["pitch", "outline_script"]) await call("workflow.decideCheckpoint", `${p}|${cp}`, { status: "Approved", note: "" });
+  await approveBrief(call, read, p, "testimonial");
   await throwsRule(() => call("workflow.decideGreenlight", p, { outcome: "Greenlight", notes: "" }), /must agree to be recorded/);
   await call("workflow.saveFormSection", p, "consent", { agreement: "yes" });
   await call("workflow.decideGreenlight", p, { outcome: "Greenlight", notes: "" });
@@ -540,11 +548,13 @@ await t("who may do what: greenlight, the producer, roles, reviews, view-only", 
   await throwsRule(() => as(() => crew(2))("workflow.assignProducer", p, "DOF-P-CRW-002"), /name the show producer/);
   // Not on the project: refused as view-only before anything else.
   await throwsRule(() => as(() => crew(2))("workflow.saveFormSection", p, "brief", { logline: "x" }), /view-only/);
-  // On the project (as its producer), but not a reviewer named on the checkpoint.
+  // On the project (as its producer), but not a reviewer named on the brief.
   await call("workflow.assignProducer", p, PRODUCER);
+  const brief = (await call("documents.ensureDocument", p, "Development", "show_brief", null)).id;
+  await call("documents.setDocumentReviewers", brief, ["DOF-P-CRW-001"]);
   await throwsRule(
-    () => as(() => crew(4))("workflow.decideCheckpoint", `${p}|pitch`, { status: "Approved", note: "" }),
-    /reviewer named on this checkpoint/,
+    () => as(() => crew(4))("documents.decideDocumentReview", brief, { status: "approved", note: "" }),
+    /Only a reviewer named on this document/,
   );
   await throwsRule(() => as(vol)("workflow.saveFormSection", p, "brief", { logline: "x" }), /view-only/);
   const project = await readyProject("podcast", 1);

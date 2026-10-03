@@ -9,7 +9,7 @@ import { decideGreenlight } from "../workflow/forms";
 import { advanceProject } from "../workflow/projects";
 import { todayIso } from "../utils";
 import { documentOf } from "./pages";
-import { newDocumentsOn, nowStamp, pagesOf, projectForWrite } from "./common";
+import { nowStamp, pagesOf, projectForWrite } from "./common";
 
 // A devotion's writers type every devotion they will record as a page of its Devotional Script, in Development: its
 // topic (the page's title), the scripture, and the script. In Pre-production those pages become the list of separate
@@ -121,8 +121,6 @@ export function makeDevotionEpisodes(actor: Actor, projectId: string): DevotionL
 export function acceptDevotion(actor: Actor, projectId: string, note: string): DevotionList {
   const p = projectForWrite(actor, projectId);
   if (p.workflow.formType !== "devotion") throw new RuleError("Only a devotion is accepted this way.");
-  if (!newDocumentsOn("devotion"))
-    throw new RuleError("Devotions are accepted from their Development form while their documents are not in use.");
   decideGreenlight(actor, projectId, { outcome: "Greenlight", notes: note, date: todayIso() });
   advanceProject(actor, projectId);
   logAudit(actor, "devotion-accepted", "record", projectId, note.trim() ? `Accepted. ${note.trim()}` : "Accepted");

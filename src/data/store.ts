@@ -11,6 +11,7 @@ import {
   upgradeToV14,
   upgradeToV15,
   upgradeToV16,
+  upgradeToV17,
   upgradeToV3,
   upgradeToV4,
   upgradeToV5,
@@ -25,7 +26,7 @@ import {
 // arrives, services keep their signatures and only this layer changes.
 
 const KEY = "dof-hub-db";
-const SCHEMA_VERSION = 16;
+const SCHEMA_VERSION = 17;
 
 /** Older saved data keeps everything it has and gains the new modules with sample data. */
 function migrate(old: Database): Database {
@@ -70,6 +71,7 @@ const UPGRADES: Record<number, (db: Database) => Database> = {
   13: upgradeToV14,
   14: upgradeToV15,
   15: upgradeToV16,
+  16: upgradeToV17,
 };
 
 /** Brings saved data of any older version up to the current one. Returns null if it is not recognisable. */
@@ -118,9 +120,20 @@ function load(): Database {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Database;
-      if (parsed.schemaVersion !== SCHEMA_VERSION) keepCopy(raw, `before-v${SCHEMA_VERSION}`);
+      const older = parsed.schemaVersion !== SCHEMA_VERSION;
+      if (older) keepCopy(raw, `before-v${SCHEMA_VERSION}`);
       const up = upgradeDb(parsed);
-      if (up) return up;
+      if (up) {
+        // Saved at once, so what the upgrade made (documents moved from the old forms) is the same on the next load.
+        if (older && persist) {
+          try {
+            localStorage.setItem(KEY, JSON.stringify(up));
+          } catch {
+            /* kept in memory; saved with the next change */
+          }
+        }
+        return up;
+      }
       keepCopy(raw, "unreadable");
     }
   } catch {

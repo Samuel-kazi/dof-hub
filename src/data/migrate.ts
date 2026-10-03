@@ -4,6 +4,8 @@ import { templateOf } from "../config/docTemplates";
 import { syncRecordCounters } from "./ids";
 import { DOCUMENT_PARTS, WORKFLOW_PARTS } from "./constraints";
 import { todayIso } from "../services/utils";
+import { migrateDocuments } from "./migrateDocuments";
+import { logId } from "./ids";
 
 // Upgrades saved data from version 2 to 3. It only touches plain data, so it can run while the
 // store is loading. It is safe to run twice: anything already present is left alone.
@@ -390,5 +392,32 @@ export function upgradeToV16(db: Database): Database {
   for (const k of DOCUMENT_PARTS) parts[k] ??= [];
   for (const p of db.plannedEpisodes ?? []) p.sourcePageId ??= null;
   db.schemaVersion = 16;
+  return db;
+}
+
+/**
+ * Version 17: the old Development screens are gone, so every project of the workflow has its Development form in its
+ * documents. The move into the documents (src/data/migrateDocuments.ts) runs for any that has not had it; a brief
+ * someone had already started is left as it is, with the old form kept beside it on an "Earlier Development form".
+ * Nothing on the old form is changed, and the move can be undone (undoDocumentMove). The setting that turned the
+ * documents on for each kind of project is no longer read, and goes.
+ */
+export function upgradeToV17(db: Database): Database {
+  const at = new Date().toISOString();
+  const report = migrateDocuments(db, { at });
+  if (report.changed) {
+    const projects = report.lines.filter((l) => l.documents.length).length;
+    db.audit.push({
+      id: logId("A"),
+      at,
+      byPersonId: "system",
+      action: "migrate-documents",
+      entity: "system",
+      entityId: "documents",
+      detail: `With the old Development screens gone, the Development forms of ${projects} project${projects === 1 ? "" : "s"} moved into their documents.`,
+    });
+  }
+  delete (db.settings as { newDocuments?: unknown }).newDocuments;
+  db.schemaVersion = 17;
   return db;
 }

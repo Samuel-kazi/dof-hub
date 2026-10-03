@@ -11,7 +11,7 @@ import { DOCUMENT_PARTS, WORKFLOW_PARTS, integrityProblems, uniqueViolations } f
 import { buildWorkflowFixture } from "../src/data/seedWorkflow";
 import { buildSeed } from "../src/data/seed";
 import { upgradeDb, CURRENT_SCHEMA, commit, enableRollback, getDb, setDb, transaction } from "../src/data/store";
-import { upgradeToV15, upgradeToV16 } from "../src/data/migrate";
+import { upgradeToV15, upgradeToV16, upgradeToV17 } from "../src/data/migrate";
 import { codeNumber, episodeCode, episodeCounter, plannedEpisodeId, plannedCounter, sessionCode, sessionCounter } from "../src/data/ids";
 import { addDaysIso, dateInNairobi, hoursUntilEndOfDay, isIsoDate, todayIso } from "../src/services/utils";
 
@@ -244,7 +244,7 @@ t("date arithmetic is by the calendar: months, years and leap days", () => {
 // ── Saved data from before the workflow ──────────────────────
 
 t(
-  "upgrading to versions 15 and 16 adds the workflow's and the documents' lists and fields, changes nothing else, and can run twice",
+  "upgrading to versions 15, 16 and 17 adds the workflow's and the documents' lists and fields, changes nothing else, and can run twice",
   () => {
     const old = buildSeed() as unknown as Record<string, unknown>;
     for (const k of WORKFLOW_PARTS) delete old[k];
@@ -257,7 +257,7 @@ t(
     const before = JSON.stringify(old);
     const up = upgradeDb(JSON.parse(before) as Database)!;
     assert.equal(up.schemaVersion, CURRENT_SCHEMA);
-    assert.equal(CURRENT_SCHEMA, 16);
+    assert.equal(CURRENT_SCHEMA, 17);
     for (const k of [...WORKFLOW_PARTS, ...DOCUMENT_PARTS]) assert.deepEqual(up[k], []);
     const was = JSON.parse(before) as Database;
     assert.deepEqual(
@@ -265,12 +265,36 @@ t(
       was.records.map((r) => [r, null, null, null]),
       "every record is exactly as it was, plus three empty fields",
     );
-    const twice = JSON.stringify(upgradeToV16(upgradeToV15(structuredClone(up))));
+    const twice = JSON.stringify(upgradeToV17(upgradeToV16(upgradeToV15(structuredClone(up)))));
     assert.equal(twice, JSON.stringify(up), "running it again changes nothing");
     assert.equal(upgradeDb(up), up, "data already at the current version is left alone");
     assert.equal(upgradeDb({ ...up, schemaVersion: 99 }), null, "a version this app does not know is refused, not guessed at");
   },
 );
+
+t("upgrading to version 17 moves every workflow project's Development form into its documents, once, and drops the old setting", () => {
+  const old = fixture() as Database & { settings: { newDocuments?: string[] } };
+  old.settings.newDocuments = ["series"];
+  old.schemaVersion = 16;
+  const formsBefore = JSON.stringify(old.developmentForms);
+  const up = upgradeDb(structuredClone(old))!;
+  assert.equal(up.schemaVersion, 17);
+  assert.equal("newDocuments" in up.settings, false, "the setting is gone");
+  for (const [id, key] of [
+    ["DOF-SER-001-S1", "show_brief"],
+    ["DOF-DEV-001", "devotional_script"],
+    ["DOF-DOC-001", "documentary_brief"],
+  ])
+    assert.ok(
+      up.projectDocuments.some((d) => d.id === `${id}|Development|${key}` && d.migrated),
+      `${id}: its ${key}, made by the move`,
+    );
+  assert.equal(JSON.stringify(up.developmentForms), formsBefore, "the old forms are left exactly as they were");
+  assert.equal(up.audit.filter((a) => a.action === "migrate-documents" && a.byPersonId === "system").length, 1);
+  const again = JSON.stringify(upgradeToV17(structuredClone(up)));
+  assert.equal(again, JSON.stringify(up), "running it again changes nothing");
+  assert.deepEqual(integrityProblems(up), []);
+});
 
 // ── All or nothing ───────────────────────────────────────────
 

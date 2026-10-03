@@ -172,8 +172,9 @@ comments, storyboards and shot lists. It keeps a copy first, in `hub_items_befor
 - **The move.** "Move existing projects" (above) now also writes every project's old Development form into its new
   documents, in the same dry run and the same all-or-nothing save. Its report lists, for each project, the documents
   written and how many fields went onto pages, the fields kept on the form and why, and the fields not accounted
-  for, which must be zero. The old forms are not changed or removed. A project whose documents were already started
-  by hand is left alone. Running it again changes nothing.
+  for, which must be zero. The old forms are not changed or removed. A project whose brief was already started by
+  hand keeps it as it is; its old form is kept beside it, on an "Earlier Development form" document. Running it again
+  changes nothing.
 - **To undo only the documents,** keeping the move into the workflow:
 
       MONGODB_URI="mongodb+srv://..." npm run migrate:workflow -- --undo-documents
@@ -183,21 +184,26 @@ comments, storyboards and shot lists. It keeps a copy first, in `hub_items_befor
   `hub_meta_before_undo_documents`) and removes exactly the documents, pages, reviews, comments and shot lists the
   move wrote. A document or shot list written in since the move is kept and listed; add `--force` to remove it too.
 
-### Trying the document screens (documents rework, phases 2 and 3)
+### Data version 17: the documents are how every project shows (the old Development screens are gone)
 
-Nothing changes on screen until it is turned on. In Settings, Documents (preview), tick the kinds of project that
-should show their documents: devotions, series, documentaries (it needs the "change system settings" right). Each
-project of that kind then opens on its Project Home. Each person can switch a project back with "Earlier screens" at
-any time; the data is the same either way. Untick a kind to turn it off for everyone.
+Devotions, series and documentaries now always open on their Project Home and documents. The "Documents (preview)"
+setting and each person's "Earlier screens" switch are gone, and so is the old Development tab (the long form, the six
+criteria, the pitch and outline review cards and the long "Still needed" list). A project leaves Development on the
+short list of hard gates; a testimonial also needs its consent and release, with the person's agreement, which cannot
+be passed by hand.
+
+The first time a version with data version 17 starts, it keeps a copy (`hub_items_before_v17` and
+`hub_meta_before_v17`), then moves the Development form of every project in the workflow that has not had it into its
+documents, exactly as "Move existing projects" does, so nothing written on the old screens is left where no one can see
+it. A project whose brief was started by hand while the documents were a preview keeps it as it was, with its old form
+on an "Earlier Development form" document beside it. The old forms are not changed. `npm run db:upgrade` shows what it
+will do; going back is as for version 15 above, with `v17` in the names, and the documents part alone can be undone
+with `--undo-documents` (above); "Move existing projects" in Settings writes them again. Nothing has to be turned on.
 
 Storyboard and shot list pictures: on the hosted site they are stored like equipment photos. In the desktop app they
 are written to a `media` folder inside the app's own data folder on that computer (for example
 `%APPDATA%\tv.dawnoffaith.productionhub\media` on Windows), one folder per project; back that folder up with the computer.
 A picture kept on one desktop computer does not show anywhere else.
-
-Turning a kind on also changes how its projects leave Development: the short list of hard gates (phase 3) instead of
-the earlier form's long list. A project already past Development is not affected. Turning the kind off again brings
-the earlier gates back.
 
 ## What this does not do yet
 

@@ -307,44 +307,6 @@ export function Settings() {
               </div>
             </section>
 
-            <section className="glass panel" aria-label="Documents preview">
-              <h2>Documents (preview)</h2>
-              <p className="muted" style={{ marginBottom: 12 }}>
-                Projects can show their documents: a Project Home with a row of tiles for each stage, and each document opened full width
-                with its pages and a writing page that saves as you type. The stages, Content IDs and every form (sessions, call sheets,
-                gear, storage) stay as they are. Turning a kind on also gives its projects the short gates: a few hard ones, and notes that
-                never block. Anyone can still switch a project back to its earlier screens.
-              </p>
-              {(
-                [
-                  ["devotion", "Devotions show their documents"],
-                  ["series", "Series show their documents"],
-                  ["documentary", "Documentaries show their documents"],
-                ] as const
-              ).map(([kind, label]) => (
-                <label key={kind} className="row" style={{ gap: 10, alignItems: "center" }}>
-                  <input
-                    type="checkbox"
-                    checked={(db.settings.newDocuments ?? []).includes(kind)}
-                    onChange={(e) =>
-                      attempt(
-                        () =>
-                          updateSettings(actor, {
-                            newDocuments: e.target.checked
-                              ? [...(db.settings.newDocuments ?? []), kind]
-                              : (db.settings.newDocuments ?? []).filter((k) => k !== kind),
-                          }),
-                        e.target.checked
-                          ? `${label.split(" ")[0]} now show their documents`
-                          : `${label.split(" ")[0]} show their earlier screens`,
-                      )
-                    }
-                  />
-                  <span>{label}</span>
-                </label>
-              ))}
-            </section>
-
             <section className="glass panel" aria-label="Workload">
               <h2>Workload and capacity</h2>
               <p className="muted" style={{ marginBottom: 12 }}>

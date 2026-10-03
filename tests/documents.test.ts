@@ -375,10 +375,22 @@ async function everyFormFilled(): Promise<Record<FormType, string>> {
     for (let n = 1; n <= (formType === "devotion" ? 5 : 2); n++)
       await call("workflow.addPlannedEpisode", id, { workingTitle: `Planned ${n}`, details: fillSection(section?.planned?.details ?? []) });
     await completeForm(call, id, formType);
-    for (const cp of ["pitch", "outline_script"]) {
-      await call("workflow.setCheckpointReviewers", `${id}|${cp}`, [PRODUCER]);
-      await call("workflow.decideCheckpoint", `${id}|${cp}`, { status: "Approved", note: "Sound." });
-    }
+    // Reviewed on the earlier pitch and outline checkpoints, as projects made before the documents were.
+    for (const checkpoint of ["pitch", "outline_script"] as const)
+      getDb().reviewCheckpoints.push({
+        id: `${id}|${checkpoint}`,
+        contentId: id,
+        episodeId: null,
+        checkpoint,
+        reviewerIds: [PRODUCER],
+        status: "Approved",
+        note: "Sound.",
+        decidedAt: AT,
+        decidedById: PRODUCER,
+        createdAt: AT,
+        updatedAt: AT,
+      });
+    commit();
     out[formType] = id;
   }
   return out;
@@ -504,11 +516,65 @@ await t("the move runs twice without change, and undoing it removes exactly what
   const once = JSON.stringify(getDb());
   assert.equal(migrateDocuments(getDb(), { at: AT }).changed, false);
   assert.equal(JSON.stringify(getDb()), once, "the second run changed nothing");
-  // A document started by hand before the move is left alone, and its project's form is not copied over it.
-  const fresh = structuredClone(buildWorkflowFixture());
-  setDb(fresh);
+  // A brief started by hand before the move is never written into: the old form is kept beside it, on the Earlier
+  // Development form, made by the move (so undoing the move removes it). Running it again changes nothing.
+  // A brief only opened, with nothing written in it, is made again by the move, as if never opened.
+  setDb(structuredClone(buildWorkflowFixture()));
   D.ensureDocument(hop(), WOW, "Development", "show_brief");
-  assert.match(migrateDocuments(getDb(), { at: AT }).lines.find((l) => l.contentId === WOW)!.note, /already has its documents/);
+  const opened = migrateDocuments(getDb(), { at: AT });
+  assert.ok(opened.lines.find((l) => l.contentId === WOW)!.documents.includes("Show Brief"));
+  assert.ok(getDb().projectDocuments.find((d) => d.id === `${WOW}|Development|show_brief`)!.migrated, "the move's own brief now");
+  assert.ok(!getDb().projectDocuments.some((d) => d.id === `${WOW}|Development|earlier_form`), "no Earlier Development form needed");
+  assert.match(textIn(getDb(), WOW), /Target audience/);
+  // A brief someone wrote in is never written into.
+  setDb(structuredClone(buildWorkflowFixture()));
+  const started = D.ensureDocument(hop(), WOW, "Development", "show_brief");
+  const ask = D.pagesOf(started.id).find((pg) => pg.title === "Ask")!;
+  D.savePage(hop(), ask.id, { bodyHtml: "<p>Written during the preview</p>" }, ask.version);
+  const pagesBefore = JSON.stringify(D.pagesOf(started.id));
+  const late = migrateDocuments(getDb(), { at: AT });
+  assert.match(late.lines.find((l) => l.contentId === WOW)!.note, /left as it was/);
+  assert.deepEqual(late.unaccounted, [], "nothing lost");
+  assert.equal(JSON.stringify(D.pagesOf(started.id)), pagesBefore, "the brief started by hand is as it was");
+  const kept = getDb().projectDocuments.find((d) => d.id === `${WOW}|Development|earlier_form`)!;
+  assert.ok(kept?.migrated, "the Earlier Development form is the move's");
+  assert.ok(
+    D.pagesOf(kept.id).every(
+      (pg) => pg.title.startsWith("Show Brief: ") || pg.title.startsWith("Greenlight") || pg.title.startsWith("Theological"),
+    ),
+    D.pagesOf(kept.id)
+      .map((pg) => pg.title)
+      .join(" | "),
+  );
+  assert.equal(getDb().documentReviews.filter((r) => r.documentId === started.id).length, 0, "no review added to the brief");
+  const twice = JSON.stringify(getDb());
+  const again = migrateDocuments(getDb(), { at: AT });
+  assert.equal(again.changed, false);
+  assert.match(again.lines.find((l) => l.contentId === WOW)!.note, /already has its documents/);
+  assert.equal(JSON.stringify(getDb()), twice);
+  undoDocumentMove(getDb());
+  assert.ok(!getDb().projectDocuments.some((d) => d.id === kept.id), "undone, exactly");
+  assert.ok(
+    getDb().projectDocuments.some((d) => d.id === started.id),
+    "the brief started by hand stays",
+  );
+  // A devotion's script started by hand: its pages are the devotions, so the earlier days are kept beside it.
+  setDb(structuredClone(buildWorkflowFixture()));
+  const script = D.ensureDocument(hop(), "DOF-DEV-001", "Development", "devotional_script");
+  const day1 = D.pagesOf(script.id)[0];
+  D.savePage(hop(), day1.id, { title: "Morning mercy", subtitle: "Lamentations 3:22-23" }, day1.version);
+  const scriptBefore = JSON.stringify(D.pagesOf(script.id));
+  migrateDocuments(getDb(), { at: AT });
+  assert.equal(JSON.stringify(D.pagesOf(script.id)), scriptBefore, "no page added to the script, so no extra devotion");
+  const days = D.pagesOf("DOF-DEV-001|Development|earlier_form").find((pg) => pg.title === "Devotions on the earlier form")!;
+  assert.match(days.bodyHtml, /Day 1/);
+  assert.ok(
+    getDb()
+      .plannedEpisodes.filter((x) => x.contentId === "DOF-DEV-001")
+      .every((x) => !x.sourcePageId),
+    "the days are not tied to pages",
+  );
+  assert.deepEqual(integrityProblems(getDb()), []);
   // Undo.
   setDb(buildWorkflowFixture());
   getDb().workflowChecklistItems.find((c) => c.id === `${WOW}|Pre-production|shot_list`)!.note = "A cam on host";
@@ -577,9 +643,11 @@ await t("the catalogue follows the five stages for every type, and a devotion ha
   for (const formType of ["podcast", "testimonial", "sermon", "documentary_dof", "documentary_pitched", "devotion"] as FormType[]) {
     const dev = catalogFor(formType, "Development").map((e) => e.key);
     if (formType === "devotion") {
-      assert.deepEqual(dev, ["devotional_script", "theological_review", "accept_decline"]);
+      assert.deepEqual(dev, ["devotional_script", "theological_review", "accept_decline", "earlier_form"]);
       assert.equal(catalogFor(formType, "Development")[0].pages?.length, 5, "five devotion pages to start");
     } else assert.ok(dev.includes("greenlight") && dev.includes("theological_review"), formType);
+    const earlier = catalogFor(formType, "Development").find((e) => e.key === "earlier_form");
+    assert.ok(earlier?.onlyIfMade, "the Earlier Development form shows only when the move made it");
     assert.ok(catalogFor(formType, "Marketing and distribution").length > 0);
   }
   assert.deepEqual(

@@ -95,7 +95,6 @@ function startProject(actor: Actor, r: ContentRecord, formType: FormType, deadli
   const db = getDb();
   db.records.push(r);
   db.developmentForms.push(blankForm(r.contentId, formType));
-  db.reviewCheckpoints.push(blankCheckpoint(r.contentId, null, "pitch"), blankCheckpoint(r.contentId, null, "outline_script"));
   ensureChecklist("handoff", "project", r.contentId);
   logAudit(actor, "create", "record", r.contentId, `${formTypeOf(formType).label}: ${r.title}`);
   return r as Project;

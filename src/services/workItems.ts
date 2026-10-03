@@ -15,7 +15,6 @@ import {
 } from "./workflow/common";
 import { fmtShort } from "./utils";
 import { briefKeyOf, catalogEntry } from "../config/documentCatalog";
-import { newDocumentsOn } from "./documents/common";
 import { documentOf } from "./documents/pages";
 import { reviewsOf, reviewStateOf } from "./documents/reviews";
 import type { Route } from "../ui/AppContext";
@@ -95,7 +94,7 @@ function pendingReviews(ownerId: string, keys: readonly [string, string][]): Pen
 }
 
 /**
- * With the documents in use, the review a project's Development waits on is the theological review of its brief (or a
+ * The review a project's Development waits on is the theological review of its brief (or a
  * devotion's script): its reviewers still to decide. When they ask for changes, it waits on the owner instead.
  */
 function briefReview(p: Project): { title: string; state: ReturnType<typeof reviewStateOf>; reviews: PendingReview[] } {
@@ -121,15 +120,7 @@ const waiting = (ownerId: string | null, reviews: PendingReview[], ownerToo = tr
 ];
 
 function projectItem(p: Project, stage: WorkflowStage, step: string, ownerId: string | null, gate: GateResult | null): WorkItem {
-  const reviews =
-    stage !== "Development"
-      ? []
-      : newDocumentsOn(p.workflow.formType)
-        ? briefReview(p).reviews
-        : pendingReviews(p.contentId, [
-            ["pitch", "Pitch review"],
-            ["outline_script", "Outline or script review"],
-          ]);
+  const reviews = stage !== "Development" ? [] : briefReview(p).reviews;
   return {
     key: `project:${p.contentId}`,
     level: "project",
@@ -220,7 +211,7 @@ function itemsOf(p: Project, gates: boolean): WorkItem[] {
   if (p.workflow.stage === "Development") {
     const outcome = getDb().developmentForms.find((f) => f.contentId === p.contentId)?.outcome;
     let step = outcome === "Greenlight" ? "Greenlit: handoff" : outcome ? outcome : "Form and reviews";
-    if (newDocumentsOn(p.workflow.formType) && outcome !== "Greenlight") {
+    if (outcome !== "Greenlight") {
       const { title, state } = briefReview(p);
       if (state === "changes_requested") step = `Changes requested on the ${title}`;
       else if (state === "pending") step = "Theological review";

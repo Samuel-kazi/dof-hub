@@ -14,7 +14,6 @@ import { integrityProblems } from "../src/data/constraints";
 import { sectionOf } from "../src/config/devForms";
 import { login } from "../src/services/auth";
 import * as D from "../src/services/wrapped/documents";
-import * as S from "../src/services/wrapped/settings";
 import * as W from "../src/services/wrapped/workflow";
 import { AppProvider } from "../src/ui/AppContext";
 import { ProjectHome } from "../src/pages/documents/ProjectDocuments";
@@ -50,7 +49,6 @@ const throwsRule = (fn: () => unknown, match?: RegExp) =>
   assert.throws(fn, (e) => (e instanceof RuleError && (!match || match.test(e.message))) || assert.fail((e as Error).message));
 const ok = () => assert.deepEqual(integrityProblems(getDb()), [], "the data keeps its own rules");
 const project = (id: string) => getDb().records.find((r) => r.contentId === id) as Project;
-const on = (...kinds: ("devotion" | "series" | "documentary")[]) => S.updateSettings(hop(), { newDocuments: kinds });
 const html = (who: string, el: JSX.Element): string =>
   renderToString(
     <AppProvider actor={login(who, "demo")} onLogout={() => {}}>
@@ -70,21 +68,9 @@ function approveBrief(id: string, docKey: string) {
   return doc;
 }
 
-// ── With the documents off: as before ────────────────────────
-
-await t("with a type's documents off, its Development gate is the earlier, longer one", () => {
-  const gate = W.evaluateGate("Development", "project", WOW);
-  assert.ok(
-    gate.missing.some((m) => /review checkpoint Approved/.test(m)),
-    gate.missing.join("; "),
-  );
-  assert.ok(!D.hardGates(WOW).every((g) => g.met), "the hard gates are worked out either way");
-});
-
 // ── Series and documentaries ─────────────────────────────────
 
 await t("a series leaves Development on three hard gates; everything else is a note that never blocks", () => {
-  on("series");
   assert.ok(W.evaluateGate("Development", "project", WOW).warnings.includes("The Show Brief is not started yet"));
   D.ensureDocument(hop(), WOW, "Development", "show_brief");
   assert.deepEqual(
@@ -131,7 +117,6 @@ await t("a series leaves Development on three hard gates; everything else is a n
 });
 
 await t("a hard gate can be passed by hand, with a note, by the Head of Production; never the decision itself", () => {
-  on("series");
   throwsRule(() => D.setGateOverride(producer(), WOW, "review", "Pastor approved by phone"), /pass a gate by hand/);
   throwsRule(() => D.setGateOverride(hop(), WOW, "review", "  "), /short note/);
   throwsRule(() => D.setGateOverride(hop(), WOW, "greenlight", "Just go"), /recorded, not passed by hand/);
@@ -148,12 +133,11 @@ await t("a hard gate can be passed by hand, with a note, by the Head of Producti
   ok();
 });
 
-await t("a project reviewed on the earlier checkpoints keeps that review when its documents are turned on", () => {
+await t("a project reviewed on the earlier checkpoints keeps that review, until reviewers are named on its brief", () => {
   for (const k of ["pitch", "outline_script"] as const) {
     W.setCheckpointReviewers(hop(), `${WOW}|${k}`, ["DOF-P-CRW-002"]);
     W.decideCheckpoint(crew2(), `${WOW}|${k}`, { status: "Approved", note: "" });
   }
-  on("series");
   const review = D.hardGates(WOW).find((g) => g.key === "review")!;
   assert.deepEqual([review.met, review.detail], [true, "Approved on the earlier review checkpoints"]);
   const brief = D.ensureDocument(hop(), WOW, "Development", "show_brief");
@@ -167,7 +151,6 @@ await t("a project reviewed on the earlier checkpoints keeps that review when it
 });
 
 await t("the review: changes requested go back to the writers, who ask again; comments sit beside a page and can be resolved", () => {
-  on("series");
   const brief = D.ensureDocument(hop(), WOW, "Development", "show_brief");
   throwsRule(() => D.askForReviewAgain(hop(), brief.id), /No reviewer has asked for changes/);
   W.assignProducer(hop(), WOW, PRODUCER);
@@ -204,7 +187,6 @@ await t("the review: changes requested go back to the writers, who ask again; co
 });
 
 await t("the review on screen: who may decide, the reason sent back on the document, and a comment box per page", () => {
-  on("series");
   const brief = D.ensureDocument(hop(), WOW, "Development", "show_brief");
   W.assignProducer(hop(), WOW, PRODUCER);
   D.setDocumentReviewers(hop(), brief.id, ["DOF-P-CRW-002"]);
@@ -228,7 +210,6 @@ await t("the review on screen: who may decide, the reason sent back on the docum
 });
 
 await t("Waiting on you follows the review: the reviewers still to decide, then the owner when changes are asked for", () => {
-  on("series");
   const brief = D.ensureDocument(hop(), WOW, "Development", "show_brief");
   D.setDocumentReviewers(hop(), brief.id, ["DOF-P-CRW-002"]);
   let item = allWorkItems().find((i) => i.id === WOW)!;
@@ -246,7 +227,6 @@ await t("Waiting on you follows the review: the reviewers still to decide, then 
 });
 
 await t("Project Home shows the header strip and the short gate while in Development", () => {
-  on("series");
   const home = html("hop@dof.demo", <ProjectHome project={project(WOW)} write onOpen={() => {}} />);
   assert.match(home, /Project details/);
   assert.match(home, /aria-label="Leave Development"/);
@@ -259,6 +239,32 @@ await t("Project Home shows the header strip and the short gate while in Develop
   );
   assert.match(home, /Done: move to Pre-production/);
   assert.match(home, /Dismiss/);
+});
+
+await t("a testimonial is not greenlit without the person's consent and release, which is never passed by hand", () => {
+  project(WOW).workflow.formType = "testimonial";
+  getDb().developmentForms.find((f) => f.contentId === WOW)!.formType = "testimonial";
+  commit(); // kept, so a refused change goes back to this and not before it
+  const consent = () => D.hardGates(WOW).find((g) => g.key === "consent");
+  assert.equal(consent()?.met, false);
+  assert.match(consent()!.detail, /They agree to be recorded and published/);
+  throwsRule(() => D.setGateOverride(hop(), WOW, "consent", "They said yes on the phone"), /given by the person, not passed by hand/);
+  approveBrief(WOW, "show_brief");
+  throwsRule(() => W.decideGreenlight(hop(), WOW, { outcome: "Greenlight", notes: "" }), /Consent and release complete/);
+  const all = {
+    agreement: "yes",
+    whereShared: "YouTube",
+    peopleNamed: "None",
+    minors: "no",
+    withdrawalTerms: "Any time before publication",
+  };
+  W.saveFormSection(hop(), WOW, "consent", { ...all, agreement: "no" });
+  assert.match(consent()!.detail, /must agree to be recorded/);
+  W.saveFormSection(hop(), WOW, "consent", all);
+  assert.equal(consent()?.met, true);
+  assert.ok(!W.evaluateGate("Development", "project", WOW).warnings.some((w) => /Consent/.test(w)), "not said twice as a note");
+  W.decideGreenlight(hop(), WOW, { outcome: "Greenlight", notes: "" });
+  ok();
 });
 
 await t("testimonials and sermons have the logline and core question too, optional on the earlier form", () => {
@@ -283,7 +289,6 @@ function writeFive() {
 }
 
 await t("a devotion: guest name and contact, five full pages and the review; then Accept lists its devotions in Pre-production", () => {
-  on("devotion");
   assert.deepEqual(
     D.hardGates(DEV).map((g) => [g.key, g.met, g.detail]),
     [
@@ -320,7 +325,6 @@ await t("a devotion: guest name and contact, five full pages and the review; the
 });
 
 await t("a devotion's gates can be passed by hand, and Accept still works with fewer pages", () => {
-  on("devotion");
   W.saveFormSection(hop(), DEV, "guest", { contact: "mary@example.org" });
   const script = D.ensureDocument(hop(), DEV, "Development", "devotional_script");
   const first = D.pagesOf(script.id)[0];
@@ -333,7 +337,6 @@ await t("a devotion's gates can be passed by hand, and Accept still works with f
 });
 
 await t("Decline needs a reason, and closes and archives the devotion, never deleting it", () => {
-  on("devotion");
   throwsRule(() => W.decideGreenlight(hop(), DEV, { outcome: "Decline", notes: " " }), /reason/);
   W.decideGreenlight(hop(), DEV, { outcome: "Decline", notes: "The guest withdrew" });
   const p = project(DEV);
@@ -345,7 +348,6 @@ await t("Decline needs a reason, and closes and archives the devotion, never del
 });
 
 await t("a devotion's Project Home offers Accept and Decline, enabled for the Head of Production once its gates are met", () => {
-  on("devotion");
   const home = () => html("hop@dof.demo", <ProjectHome project={project(DEV)} write onOpen={() => {}} />);
   assert.match(home(), /aria-label="Accept or decline"/);
   assert.match(home(), /<button class="btn primary" disabled="">Accept<\/button>/);
@@ -358,7 +360,6 @@ await t("a devotion's Project Home offers Accept and Decline, enabled for the He
 });
 
 await t("a devotion's pages are its topics, under one theme every devotion shares; the Devotions list shows both", () => {
-  on("devotion");
   W.saveFormSection(hop(), DEV, "guest", { contact: "mary@example.org" });
   const script = writeFive();
   approveBrief(DEV, "devotional_script");

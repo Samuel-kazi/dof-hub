@@ -236,6 +236,6 @@ export function FormPane({ project, entry, write }: { project: Project; entry: C
         </Note>
       );
     default:
-      return <Empty>{entry.title} is on the project's earlier screens until a later phase.</Empty>;
+      return <Empty>{entry.title} has no screen here.</Empty>;
   }
 }

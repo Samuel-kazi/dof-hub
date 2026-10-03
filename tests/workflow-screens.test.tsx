@@ -10,13 +10,14 @@ import { RecordPage } from "../src/pages/RecordPage";
 import { CallSheetPage } from "../src/pages/CallSheets";
 import { NewRecordModal } from "../src/pages/RecordForms";
 import { SessionPage } from "../src/pages/workflow/SessionPage";
-import { DevelopmentTab } from "../src/pages/workflow/Development";
+import { DecisionPanel } from "../src/pages/workflow/Development";
+import { FormPane } from "../src/pages/documents/FormPanes";
+import { catalogEntry } from "../src/config/documentCatalog";
 import { PreProductionTab, SessionsPanel } from "../src/pages/workflow/PreProduction";
 import { EpisodeTracker } from "../src/pages/workflow/EpisodeTracker";
 import { decodeRoute, encodeRoute } from "../src/ui/routeLink";
 import { getDb, setDb } from "../src/data/store";
 import { buildWorkflowFixture } from "../src/data/seedWorkflow";
-import { DEV_FORMS } from "../src/config/devForms";
 import { login } from "../src/services/auth";
 import type { Project } from "../src/services/workflow";
 
@@ -71,45 +72,42 @@ t("the project page shows the derived stage and summary, and someone not on it g
   assert.match(html(ROLES.vol, <RecordPage id={WOW} />), /does not exist or is not part of a project/);
 });
 
-t("the Development tab draws every section of the form type, the greenlight and the handoff", () => {
+t("Development is the project's documents: the header strip, the short gate, its tiles, and the planned episodes", () => {
   setDb(buildWorkflowFixture({ through: "development" }));
-  const page = html(ROLES.hop, <DevelopmentTab project={project()} write />);
-  for (const s of DEV_FORMS.podcast) assert.ok(page.includes(s.label), s.label);
+  const page = html(ROLES.hop, <RecordPage id={WOW} />);
   for (const text of [
-    "The six criteria",
-    "Mission fit",
-    "Pitch",
-    "Outline or script",
-    "Review window",
-    "Record decision",
-    "Handoff",
-    "Show producer",
+    "Project details",
+    "Leave Development",
+    'aria-label="Show Brief',
+    'aria-label="Theological Review (review)',
+    'aria-label="Greenlight',
+    'aria-label="Planned Episodes (form)',
     "Done: move to Pre-production",
-    "Still needed:",
   ])
     assert.ok(page.includes(text), text);
-  assert.match(page, /Planned episodes.*\(30\)/s, "the 30 planned episodes are listed");
+  assert.ok(!page.includes("Still needed:") && !page.includes("Mission fit"), "not the earlier long form");
   assert.match(page, /disabled=""[^>]*>Done: move to Pre-production/, "the Done button waits for the gate");
+  const planned = html(
+    ROLES.hop,
+    <FormPane project={project()} entry={catalogEntry("podcast", "Development", "planned_episodes")!} write />,
+  );
+  assert.match(planned, /Planned episodes.*\(30\)/s, "the 30 planned episodes are listed");
+  const decision = html(ROLES.hop, <DecisionPanel project={project()} write active />);
+  for (const text of ["Review window", "Record decision"]) assert.ok(decision.includes(text), text);
 });
 
-t("a devotion's form has its guest, five-day outline and message review; a pitched documentary offers Advice only", () => {
-  const dev = html(ROLES.hop, <DevelopmentTab project={project("DOF-DEV-001")} write />);
-  for (const text of [
-    "Guest",
-    "Five-day outline",
-    "The five days",
-    "(5 of 5)",
-    "Message review",
-    "Recording plan",
-    "Scripture",
-    "Key thought",
-  ])
-    assert.ok(dev.includes(text), text);
+t("a devotion's guest is in its Project details and on Accept or Decline; a pitched documentary's decision offers Advice only", () => {
+  const dev = html(ROLES.hop, <RecordPage id="DOF-DEV-001" />);
+  for (const text of ["Guest", "Accept or decline", 'aria-label="Devotional Script']) assert.ok(dev.includes(text), text);
+  const accept = html(
+    ROLES.hop,
+    <FormPane project={project("DOF-DEV-001")} entry={catalogEntry("devotion", "Development", "accept_decline")!} write />,
+  );
+  assert.ok(accept.includes("Guest") && accept.includes("Decline"), "the guest and the decision");
   const db = getDb();
   db.developmentForms.find((f) => f.contentId === "DOF-DOC-001")!.formType = "documentary_pitched";
   project("DOF-DOC-001").workflow.formType = "documentary_pitched";
-  const doc = html(ROLES.hop, <DevelopmentTab project={project("DOF-DOC-001")} write />);
-  assert.ok(doc.includes("Advice only") && doc.includes("Support menu") && doc.includes("Ownership terms"));
+  assert.ok(html(ROLES.hop, <DecisionPanel project={project("DOF-DOC-001")} write active />).includes("Advice only"));
 });
 
 t("Pre-production: roles from the crew list, hosts and guests, the checklist, and the sessions", () => {

@@ -16,6 +16,7 @@ import { Reminders } from "../src/pages/Reminders";
 import { RecordPage } from "../src/pages/RecordPage";
 import { getDb, setDb } from "../src/data/store";
 import { buildWorkflowFixture } from "../src/data/seedWorkflow";
+import { migrateDocuments } from "../src/data/migrateDocuments";
 import { rec } from "../src/data/seed";
 import { categoryOf } from "../src/config/categories";
 import { WORKFLOW_STAGE_NAMES } from "../src/config/workflow";
@@ -265,14 +266,22 @@ t("reminders: within 24 hours, late episodes, and never a late session or projec
     "session 2 is today",
   );
   // The fixture names the producer as reviewer of the devotion's and the documentary's pitch and outline, both waiting.
+  // Those earlier checkpoints are decided nowhere now, so they remind no one; moved into the documents (as the upgrade
+  // does), they are the review of each project's script or brief, and that is what the producer is reminded of.
   assert.deepEqual(
-    soon
+    soon.filter((r) => r.kind === "review"),
+    [],
+  );
+  migrateDocuments(getDb(), { at: new Date().toISOString() });
+  const moved = workflowDueSoon(PRODUCER);
+  assert.deepEqual(
+    moved
       .filter((r) => r.kind === "review")
       .map((r) => r.key)
       .sort(),
-    ["review:DOF-DEV-001|outline_script", "review:DOF-DEV-001|pitch", "review:DOF-DOC-001|outline_script", "review:DOF-DOC-001|pitch"],
+    ["review:DOF-DEV-001|Development|devotional_script", "review:DOF-DOC-001|Development|documentary_brief"],
   );
-  assert.equal(soon.length, 5, "nothing else is due within 24 hours");
+  assert.equal(moved.length, 3, "nothing else is due within 24 hours");
   assert.ok(
     dueSoon(PRODUCER).some((r) => r.key === `session:${WOW}-R02`),
     "the emails and texts include it too",

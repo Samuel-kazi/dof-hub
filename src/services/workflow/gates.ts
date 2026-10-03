@@ -19,8 +19,7 @@ import {
   type Episode,
   type Project,
 } from "./common";
-import { formProblems, latestDecision } from "./forms";
-import { newDocumentsOn } from "../documents/common";
+import { latestDecision } from "./forms";
 import { hardGatesMissing } from "../documents/gates";
 import { softNudges } from "../documents/nudges";
 
@@ -65,25 +64,9 @@ function lateDates(project: ContentRecord, dates: [string, string | null | undef
 
 function developmentGate(p: Project): GateResult {
   const late = lateDates(p, [["The Development deadline", p.stageDeadlines.Development]]);
-  // A project whose documents are in use: the short list of hard gates, and everything else as nudges.
-  if (newDocumentsOn(p.workflow.formType)) {
-    const missing = p.workflow.stage === "Development" ? hardGatesMissing(p.contentId) : ["The project has already left Development"];
-    return result(missing, [...softNudges(p.contentId), ...late]);
-  }
-  const missing: string[] = [];
-  if (p.workflow.stage !== "Development") missing.push("The project has already left Development");
-  const form = formOf(p.contentId);
-  if (latestDecision(form, 1)?.outcome !== "Greenlight")
-    missing.push(form.greenlightStage ? "First greenlight decision: Greenlight" : "Greenlight decision: Greenlight");
-  missing.push(...formProblems(p.contentId, 1));
-  for (const [key, label] of [
-    ["pitch", "Pitch"],
-    ["outline_script", "Outline or script"],
-  ] as const)
-    if (checkpoint(p.contentId, key)?.status !== "Approved") missing.push(`${label} review checkpoint Approved`);
-  missing.push(...openRequired("handoff", p.contentId).map((l) => `Handoff: ${l}`));
-  if (!p.workflow.showProducerId) missing.push("Handoff: Show producer named");
-  return result(missing, late);
+  // The short list of hard gates of the project's documents, and everything else as nudges that never block.
+  const missing = p.workflow.stage === "Development" ? hardGatesMissing(p.contentId) : ["The project has already left Development"];
+  return result(missing, [...softNudges(p.contentId), ...late]);
 }
 
 /** The project's own part of every session's Pre-production gate. */

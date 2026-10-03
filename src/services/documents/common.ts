@@ -1,8 +1,7 @@
-import type { Actor, ContentRecord, DocumentPage, FormType, ProjectDocument } from "../../types";
+import type { Actor, ContentRecord, DocumentPage, ProjectDocument } from "../../types";
 import { RuleError } from "../../types";
 import { getDb } from "../../data/store";
 import { canComment, canView, canWrite, getRecord } from "../access";
-import { catalogTypeOf } from "../../config/documentCatalog";
 import { textOf } from "../html";
 import { isWorkflowProject, nowStamp, type Project } from "../workflow/common";
 
@@ -73,9 +72,6 @@ export function moveTo<T extends { id: string; position: number }>(items: T[], i
   ordered.splice(Math.max(0, Math.min(ordered.length, Math.floor(toIndex))), 0, it);
   ordered.forEach((x, i) => (x.position = i));
 }
-
-/** Whether projects of this form type show their documents (turned on in Settings, one kind at a time). */
-export const newDocumentsOn = (formType: FormType): boolean => (getDb().settings.newDocuments ?? []).includes(catalogTypeOf(formType));
 
 /**
  * Whether a document has been written in: a link, or a page someone (or the move from the old forms) has written

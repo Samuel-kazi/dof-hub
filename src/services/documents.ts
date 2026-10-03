@@ -62,4 +62,4 @@ export type { HardGate, HardGateKey } from "./documents/gates";
 export { softNudges } from "./documents/nudges";
 export type { DevotionList } from "./documents/devotions";
 
-export { pagesOf, getDocument, newDocumentsOn, documentHasContent } from "./documents/common";
+export { pagesOf, getDocument, documentHasContent } from "./documents/common";

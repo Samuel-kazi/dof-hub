@@ -71,6 +71,10 @@ function iconOf(entry: CatalogEntry): ReactNode {
   }
 }
 
+/** The tiles a project shows at a stage: the catalogue's, less any made only by the move that this project does not have. */
+const shownAt = (project: Project, stage: WorkflowStage): CatalogEntry[] =>
+  catalogFor(project.workflow.formType, stage).filter((e) => !e.onlyIfMade || !!documentOf(project.contentId, stage, e.key));
+
 /** Whether a tile's document or tool has something in it: worked out, never set by hand. */
 function hasContent(project: Project, stage: WorkflowStage, entry: CatalogEntry): boolean {
   if (entry.kind === "document") {
@@ -131,7 +135,7 @@ export function ProjectHome({
             {stage === current && <span className="pd-now">Now</span>}
           </div>
           <div className="pd-tiles">
-            {catalogFor(project.workflow.formType, stage).map((entry) => {
+            {shownAt(project, stage).map((entry) => {
               const filled = hasContent(project, stage, entry);
               return (
                 <button
@@ -191,7 +195,7 @@ function DocumentView({
 }) {
   const { actor, attempt } = useApp();
   const formType = project.workflow.formType;
-  const entries = catalogFor(formType, opened.stage);
+  const entries = shownAt(project, opened.stage);
   const entry = catalogEntry(formType, opened.stage, opened.key);
   // A day sheet is one per recording session: the session chosen here. Its run sheet and wrap checklist are the
   // session's own forms, as fixed cards beside the pages.
