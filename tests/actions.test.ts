@@ -450,6 +450,7 @@ await t("every action accepts the arguments its screen sends", async () => {
 
   // Project documents, storyboards and shot lists.
   const brief = (await must("documents.ensureDocument", wow.project, "Development", "show_brief", null)).id;
+  await must("documents.syncReviewThread", wow.project);
   const firstPage = ((await state()).documentPages as Json[]).find((p) => p.documentId === brief)!.id;
   await must("documents.savePage", firstPage, { title: "The idea", subtitle: "John 1", bodyHtml: "<p><strong>Bold</strong> idea</p>" }, 1);
   const extra = (await must("documents.addPage", brief, { title: "Extra", afterPageId: firstPage })).id;

@@ -246,7 +246,16 @@ export function integrityProblems(db: Database): string[] {
     if (d.id !== documentIdOf(d.contentId, d.stage, d.docKey, d.ownerId))
       out.push(`Document ${d.id} is filed under the wrong project, stage or kind.`);
   }
-  for (const p of db.documentPages ?? []) doc(p.documentId, `Page ${p.id}`);
+  const docProject = new Map((db.projectDocuments ?? []).map((d) => [d.id, d.contentId]));
+  const episodes = new Map(db.records.filter((r) => r.episode).map((r) => [r.contentId, r]));
+  for (const p of db.documentPages ?? []) {
+    doc(p.documentId, `Page ${p.id}`);
+    if (p.episodeId) {
+      const ep = episodes.get(p.episodeId);
+      if (!ep) missing("episode", p.episodeId, `Page ${p.id}`);
+      else if (ep.parentId !== docProject.get(p.documentId)) out.push(`Page ${p.id} is about an episode of a different project.`);
+    }
+  }
   for (const l of db.documentLinks ?? []) doc(l.documentId, `Link ${l.id}`);
   for (const r of db.documentReviews ?? []) {
     doc(r.documentId, `Review ${r.id}`);

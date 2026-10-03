@@ -3381,6 +3381,54 @@ button.link:hover {
   padding: 12px;
   background: var(--glass-2);
 }
+/* A day sheet's choice of session, above its cards; its forms as fixed cards; an episode's review above its page. */
+.pd-session-pick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.pd-session-pick label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 160px;
+  min-width: 0;
+  font-size: 0.82rem;
+  color: var(--ink-2);
+}
+.pd-session-pick select {
+  width: 100%;
+}
+.pd-card-form {
+  border-style: dashed;
+}
+.pd-card-form .pd-card-num {
+  background: color-mix(in srgb, var(--st, var(--accent)) 22%, transparent);
+}
+.pd-episode {
+  border: 1px solid var(--glass-line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  background: var(--glass-2);
+}
+.pd-episode .wf-chips {
+  align-items: center;
+}
+.pd-checkpoints {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin: 8px 0 0;
+  padding: 0;
+  font-size: 0.9rem;
+}
+.pd-episode .banner {
+  margin: 8px 0 0;
+}
 .pd-with-comments {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 270px;

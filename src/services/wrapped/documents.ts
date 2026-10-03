@@ -30,6 +30,7 @@ export const restorePage = rpc("documents.restorePage", core.restorePage);
 export const savePage = rpc("documents.savePage", core.savePage);
 export const setDocumentReviewers = rpc("documents.setDocumentReviewers", core.setDocumentReviewers);
 export const setGateOverride = rpc("documents.setGateOverride", core.setGateOverride);
+export const syncReviewThread = rpc("documents.syncReviewThread", core.syncReviewThread);
 export const updateFrame = rpc("documents.updateFrame", core.updateFrame);
 export const updateShotRow = rpc("documents.updateShotRow", core.updateShotRow);
 export { DEVOTION_PAGES_NEEDED, MAX_PAGE_HTML, commentsOf, devotionPageReady, documentHasContent, documentOf, estimatedMinutes, framesOf, getDocument, hardGates, hardGatesPass, linksOf, newDocumentsOn, pagesOf, reviewStateOf, reviewsOf, rowsOfShotList, shotListsOf, shotNumbers, softNudges, storyboardsOf } from "../documents";

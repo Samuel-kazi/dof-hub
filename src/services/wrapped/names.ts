@@ -92,6 +92,7 @@ export const RPC_NAMES: Record<string, string[]> = {
     "savePage",
     "setDocumentReviewers",
     "setGateOverride",
+    "syncReviewThread",
     "updateFrame",
     "updateShotRow"
   ],

@@ -29,6 +29,8 @@ import {
   type Project,
 } from "../../services/wrapped/workflow";
 import { fmtDate, fmtDateTime } from "../../services/utils";
+import { cleanHtml } from "../../services/html";
+import { pagesOf } from "../../services/wrapped/documents";
 import { useApp } from "../../ui/AppContext";
 import { Empty, Field } from "../../ui/parts";
 import { GatePanel } from "../../ui/workflow/shared";
@@ -293,6 +295,92 @@ function RecordingDay({ project, sessionId, editable }: { project: Project; sess
   );
 }
 
+/** A session's run sheet: the schedule of the day, which also sets the call sheet's call time. */
+export function RunSheetPanel({ sessionId, editable }: { sessionId: string; editable: boolean }) {
+  const { actor, attempt, confirm } = useApp();
+  const session = getSession(sessionId);
+  if (!session) return null;
+  const id = sessionId;
+  const rows = rowsOf(id);
+  return (
+    <section className="glass panel" aria-label="Run sheet">
+      <div className="wf-head">
+        <h2>Run sheet</h2>
+        {editable && (
+          <button
+            className="btn small"
+            onClick={async () => {
+              if (
+                await confirm({
+                  title: "Rebuild the run sheet?",
+                  body: `It is made again from the template for ${rows.filter((r) => r.plannedEpisodeId).length || 5} episodes. Changes made to it are replaced.`,
+                  confirmLabel: "Rebuild",
+                })
+              )
+                attempt(() => resetRunSheet(actor, id), "Run sheet rebuilt");
+            }}
+          >
+            Rebuild from the template
+          </button>
+        )}
+      </div>
+      <p className="muted">{RUN_SHEET_NOTE}</p>
+      {session.runSheet.length === 0 ? (
+        <Empty>The run sheet is empty.</Empty>
+      ) : (
+        <div className="wf-scroll">
+          <table className="table wf-table">
+            <thead>
+              <tr>
+                <th>Start</th>
+                <th>End</th>
+                <th>Activity</th>
+                <th>Minutes</th>
+                <th>Notes</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {session.runSheet.map((item) => (
+                <RunSheetRow key={item.id} sessionId={id} item={item} editable={editable} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {editable && (
+        <button
+          className="btn small"
+          style={{ marginTop: 8 }}
+          onClick={() => attempt(() => addRunSheetItem(actor, id, { time: "17:00", title: "New item", durationMin: 15, notes: "" }))}
+        >
+          Add a line
+        </button>
+      )}
+    </section>
+  );
+}
+
+/** A session's wrap checklist, once recording has started. */
+export function WrapPanel({ sessionId, editable }: { sessionId: string; editable: boolean }) {
+  const session = getSession(sessionId);
+  if (!session) return null;
+  return (
+    <ConfigChecklist
+      title="Wrap"
+      listKey="wrap"
+      ownerId={sessionId}
+      disabled={!editable}
+      auto={{
+        episode_status: [
+          session.status === "Closed",
+          session.status === "Closed" ? "Done when the session closed" : "Done by the app when you close the session",
+        ],
+      }}
+    />
+  );
+}
+
 export function SessionPage({ id }: { id: string }) {
   const { actor, go, attempt, confirm, toast } = useApp();
   useDb();
@@ -318,6 +406,8 @@ export function SessionPage({ id }: { id: string }) {
   const issues = sheet ? gearIssues(sheet.id) : [];
   const available = availableForLog(id);
   const crumbs = getBreadcrumb(p.contentId);
+  // With the documents in use, the day's notes are written in the session's day sheet once it is started.
+  const daySheet = getDb().projectDocuments.find((d) => d.ownerId === id && d.stage === "Production");
 
   const addRow = () => {
     const input = isDoc ? { itemLabel: label } : { plannedEpisodeId: pick };
@@ -480,61 +570,7 @@ export function SessionPage({ id }: { id: string }) {
         </>
       )}
 
-      <section className="glass panel" aria-label="Run sheet">
-        <div className="wf-head">
-          <h2>Run sheet</h2>
-          {editable && (
-            <button
-              className="btn small"
-              onClick={async () => {
-                if (
-                  await confirm({
-                    title: "Rebuild the run sheet?",
-                    body: `It is made again from the template for ${rows.filter((r) => r.plannedEpisodeId).length || 5} episodes. Changes made to it are replaced.`,
-                    confirmLabel: "Rebuild",
-                  })
-                )
-                  attempt(() => resetRunSheet(actor, id), "Run sheet rebuilt");
-              }}
-            >
-              Rebuild from the template
-            </button>
-          )}
-        </div>
-        <p className="muted">{RUN_SHEET_NOTE}</p>
-        {session.runSheet.length === 0 ? (
-          <Empty>The run sheet is empty.</Empty>
-        ) : (
-          <div className="wf-scroll">
-            <table className="table wf-table">
-              <thead>
-                <tr>
-                  <th>Start</th>
-                  <th>End</th>
-                  <th>Activity</th>
-                  <th>Minutes</th>
-                  <th>Notes</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {session.runSheet.map((item) => (
-                  <RunSheetRow key={item.id} sessionId={id} item={item} editable={editable} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {editable && (
-          <button
-            className="btn small"
-            style={{ marginTop: 8 }}
-            onClick={() => attempt(() => addRunSheetItem(actor, id, { time: "17:00", title: "New item", durationMin: 15, notes: "" }))}
-          >
-            Add a line
-          </button>
-        )}
-      </section>
+      <RunSheetPanel sessionId={id} editable={editable} />
 
       <section className="glass panel" aria-label="Recording session log">
         <h2>Recording session log</h2>
@@ -597,35 +633,41 @@ export function SessionPage({ id }: { id: string }) {
 
       {session.status !== "Planned" && (
         <>
-          <ConfigChecklist
-            title="Wrap"
-            listKey="wrap"
-            ownerId={id}
-            disabled={!editable}
-            auto={{
-              episode_status: [
-                session.status === "Closed",
-                session.status === "Closed" ? "Done when the session closed" : "Done by the app when you close the session",
-              ],
-            }}
-          />
+          <WrapPanel sessionId={id} editable={editable} />
           <section className="glass panel" aria-label="Daily log">
             <h2>Daily log</h2>
-            <textarea
-              aria-label="Daily log"
-              placeholder="What was recorded, timestamps of pickups, technical problems, who attended"
-              value={dailyLog ?? session.dailyLog}
-              disabled={!editable}
-              onChange={(e) => setDailyLog(e.target.value)}
-              onBlur={() => {
-                if (
-                  dailyLog !== null &&
-                  dailyLog !== session.dailyLog &&
-                  attempt(() => updateSession(actor, id, { dailyLog }), "Daily log saved")
-                )
-                  setDailyLog(null);
-              }}
-            />
+            {daySheet ? (
+              <>
+                <p className="muted">
+                  Written in the session&apos;s {daySheet.title}, with the project&apos;s documents (Production). It began with this log.
+                </p>
+                <div className="pd-paper">
+                  {/* Cleaned to the editor's allow-list, as on every load. */}
+                  <div
+                    className="pd-prose"
+                    dangerouslySetInnerHTML={{
+                      __html: cleanHtml(pagesOf(daySheet.id)[0]?.bodyHtml ?? "") || "<p><em>Nothing written yet.</em></p>",
+                    }}
+                  />
+                </div>
+              </>
+            ) : (
+              <textarea
+                aria-label="Daily log"
+                placeholder="What was recorded, timestamps of pickups, technical problems, who attended"
+                value={dailyLog ?? session.dailyLog}
+                disabled={!editable}
+                onChange={(e) => setDailyLog(e.target.value)}
+                onBlur={() => {
+                  if (
+                    dailyLog !== null &&
+                    dailyLog !== session.dailyLog &&
+                    attempt(() => updateSession(actor, id, { dailyLog }), "Daily log saved")
+                  )
+                    setDailyLog(null);
+                }}
+              />
+            )}
           </section>
         </>
       )}

@@ -575,6 +575,7 @@ export const ACTIONS: Record<string, ActionSpec> = {
 
   // ── Project documents, storyboards and shot lists (src/services/documents.ts) ──
   "documents.ensureDocument": args([id, workflowStage, short(60)], [compound.nullable()]),
+  "documents.syncReviewThread": args([id]),
   "documents.addPage": args([compound], [z.object({ title: short(300), subtitle: short(300), afterPageId: id.nullable() }).partial()]),
   // A page body can be long; the service refuses anything over its limit (MAX_PAGE_HTML) with a clear message.
   "documents.savePage": args([

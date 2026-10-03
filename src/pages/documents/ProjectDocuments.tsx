@@ -1,21 +1,17 @@
-import { useRef, useState, type ReactNode } from "react";
-import type { DocumentPage, ProjectDocument, WorkflowStage } from "../../types";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import type { DocumentPage, WorkflowStage } from "../../types";
 import { catalogEntry, catalogFor, type CatalogEntry } from "../../config/documentCatalog";
 import { WORKFLOW_STAGE_NAMES } from "../../config/workflow";
 import { getDb, useDb } from "../../data/store";
-import { textOf } from "../../services/html";
 import {
-  addPage,
-  archivePage,
   commentsOf,
   documentHasContent,
   documentOf,
   ensureDocument,
-  movePage,
   pagesOf,
-  restorePage,
   storyboardsOf,
   shotListsOf,
+  syncReviewThread,
 } from "../../services/wrapped/documents";
 import type { Project } from "../../services/wrapped/workflow";
 import { useApp } from "../../ui/AppContext";
@@ -28,6 +24,8 @@ import { LinksBox } from "./LinksBox";
 import { FormFields, pageFields, ProjectDetails } from "./ProjectDetails";
 import { PageComments, ReviewBanner, ReviewPanes } from "./ReviewView";
 import { PageEditor, type PageEditorHandle } from "./PageEditor";
+import { PageList } from "./PageList";
+import { DaySheetForm, EpisodeStrip, SessionPicker, defaultSession, formCards } from "./StagePanes";
 import { usePrintDocument } from "./printDocument";
 
 // A project's documents (the documents rework), StudioBinder style. Project Home has one coloured row per stage, each
@@ -76,6 +74,11 @@ function iconOf(entry: CatalogEntry): ReactNode {
 /** Whether a tile's document or tool has something in it: worked out, never set by hand. */
 function hasContent(project: Project, stage: WorkflowStage, entry: CatalogEntry): boolean {
   if (entry.kind === "document") {
+    // A day sheet has content if any session's has.
+    if (entry.per)
+      return getDb().projectDocuments.some(
+        (d) => d.contentId === project.contentId && d.stage === stage && d.docKey === entry.key && documentHasContent(d.id),
+      );
     const doc = documentOf(project.contentId, stage, entry.key);
     return !!doc && documentHasContent(doc.id);
   }
@@ -151,122 +154,6 @@ export function ProjectHome({
   );
 }
 
-// ── The pages of a document (middle pane) ────────────────────
-
-function PageList({
-  doc,
-  pages,
-  selected,
-  write,
-  onSelect,
-}: {
-  doc: ProjectDocument;
-  pages: DocumentPage[];
-  selected: string | null;
-  write: boolean;
-  onSelect: (pageId: string) => void;
-}) {
-  const { actor, attempt, confirm, menu } = useApp();
-  const [dragging, setDragging] = useState<string | null>(null);
-  const deleted = pagesOf(doc.id, true).filter((p) => p.archivedAt);
-  const remove = async (p: DocumentPage) => {
-    if (
-      await confirm({
-        title: `Delete "${p.title}"?`,
-        body: "The page is taken out of the document and kept, archived. It can be restored from Deleted pages below.",
-        confirmLabel: "Delete page",
-        danger: true,
-      })
-    )
-      attempt(() => archivePage(actor, p.id), "Page deleted. It can be restored.");
-  };
-  return (
-    <div className="pd-pages">
-      <ol aria-label={`Pages of ${doc.title}`}>
-        {pages.map((p, i) => (
-          <li
-            key={p.id}
-            className={`pd-card${p.id === selected ? " on" : ""}${dragging === p.id ? " dragging" : ""}`}
-            draggable={write}
-            onDragStart={(e) => {
-              setDragging(p.id);
-              e.dataTransfer.effectAllowed = "move";
-              e.dataTransfer.setData("text/plain", p.id);
-            }}
-            onDragEnd={() => setDragging(null)}
-            onDragOver={(e) => {
-              if (dragging) e.preventDefault();
-            }}
-            onDrop={(e) => {
-              e.preventDefault();
-              const id = e.dataTransfer.getData("text/plain");
-              setDragging(null);
-              if (id && id !== p.id) attempt(() => movePage(actor, id, i));
-            }}
-          >
-            <button className="pd-card-main" aria-current={p.id === selected ? "page" : undefined} onClick={() => onSelect(p.id)}>
-              <span className="pd-card-num">{i + 1}</span>
-              <span className="pd-card-text">
-                <span className="pd-card-title">{p.title || "Untitled page"}</span>
-                {p.subtitle && <span className="pd-card-sub">{p.subtitle}</span>}
-                <span className="pd-card-snip">{textOf(p.bodyHtml).slice(0, 90) || "Nothing written yet"}</span>
-              </span>
-            </button>
-            {write && (
-              <button
-                className="pd-card-menu"
-                aria-label={`Options for page ${i + 1}, ${p.title || "Untitled page"}`}
-                aria-haspopup="menu"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  const r = e.currentTarget.getBoundingClientRect();
-                  menu({ clientX: r.left, clientY: r.bottom, preventDefault: () => {} }, [
-                    { label: "Move up", disabled: i === 0, onClick: () => attempt(() => movePage(actor, p.id, i - 1)) },
-                    { label: "Move down", disabled: i === pages.length - 1, onClick: () => attempt(() => movePage(actor, p.id, i + 1)) },
-                    { label: "", divider: true, onClick: () => {} },
-                    { label: "Delete page", danger: true, onClick: () => void remove(p) },
-                  ]);
-                }}
-              >
-                ⋮
-              </button>
-            )}
-          </li>
-        ))}
-      </ol>
-      {pages.length === 0 && <p className="muted">No pages. Add one to start writing.</p>}
-      {write && (
-        <button
-          className="btn small pd-add"
-          onClick={() => {
-            const page = attempt(() => addPage(actor, doc.id, {}));
-            if (page) onSelect(page.id);
-          }}
-        >
-          + Add page
-        </button>
-      )}
-      {deleted.length > 0 && (
-        <details className="pd-deleted">
-          <summary>Deleted pages ({deleted.length})</summary>
-          <ul>
-            {deleted.map((p) => (
-              <li key={p.id}>
-                <span className="grow">{p.title || "Untitled page"}</span>
-                {write && (
-                  <button className="btn small" onClick={() => attempt(() => restorePage(actor, p.id), "Page restored")}>
-                    Restore
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
-    </div>
-  );
-}
-
 // ── The greenlight, above the Greenlight document's page ─────
 
 /** The recorded decision, its date and notes, and the show producer: structured, as before. Then the gate to move on. */
@@ -302,17 +189,31 @@ function DocumentView({
   onOpen: (stage: WorkflowStage, key: string) => void;
   onHome: () => void;
 }) {
-  const [pageId, setPageId] = useState<string | null>(null);
-  const [print, printNode] = usePrintDocument();
+  const { actor, attempt } = useApp();
   const formType = project.workflow.formType;
   const entries = catalogFor(formType, opened.stage);
   const entry = catalogEntry(formType, opened.stage, opened.key);
-  const doc = entry?.kind === "document" ? documentOf(project.contentId, opened.stage, opened.key) : undefined;
+  // A day sheet is one per recording session: the session chosen here. Its run sheet and wrap checklist are the
+  // session's own forms, as fixed cards beside the pages.
+  const perSession = entry?.kind === "document" && entry.per === "session";
+  const [sessionId, setSessionId] = useState<string | null>(() => (perSession ? defaultSession(project.contentId) : null));
+  const cards = perSession && entry ? formCards(entry) : [];
+  const [pageId, setPageId] = useState<string | null>(() => cards.find((c) => c.at === "start")?.id ?? null);
+  const [print, printNode] = usePrintDocument();
+  const ownerId = perSession ? sessionId : null;
+  const doc =
+    entry?.kind === "document" && (!perSession || ownerId) ? documentOf(project.contentId, opened.stage, opened.key, ownerId) : undefined;
   const pages = doc ? pagesOf(doc.id) : [];
-  const page = pages.find((p) => p.id === pageId) ?? pages[0];
+  const formOpen = pageId?.startsWith("form:") ? pageId.slice("form:".length) : null;
+  const page = formOpen ? undefined : (pages.find((p) => p.id === pageId) ?? pages[0]);
+  // A session's day sheet is made the first time someone who may write in it opens it, as other documents are.
+  useEffect(() => {
+    if (perSession && write && sessionId && !documentOf(project.contentId, opened.stage, opened.key, sessionId))
+      attempt(() => ensureDocument(actor, project.contentId, opened.stage, opened.key, sessionId));
+  }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
   // The document this one's theological review is of, if it is reviewed.
   const reviewEntry = entries.find((e) => e.kind === "review" && e.reviews === opened.key);
-  const showComments = !!doc && (!!reviewEntry || commentsOf(doc.id).length > 0);
+  const showComments = !!doc && (!!reviewEntry || !!entry?.pagePerEpisode || commentsOf(doc.id).length > 0);
   // The catalogue page that carries the brief's structured fields (the logline and core question): the page of that
   // title, or the first page if it has been renamed.
   const fieldsPage = entry?.pages?.find((p) => p.fields?.length);
@@ -389,9 +290,13 @@ function DocumentView({
           <div className="pd-form">
             <FormPane project={project} entry={entry} write={write} />
           </div>
-        ) : entry.per || entry.pagePerEpisode ? (
-          <Empty>{entry.title} opens from each session or episode, in a later phase.</Empty>
-        ) : !doc ? (
+        ) : entry.per === "episode" ? (
+          <Empty>{entry.title} opens from each episode.</Empty>
+        ) : perSession && !sessionId ? (
+          <div className="pd-write">
+            <Empty>No recording sessions yet. They are scheduled in Pre-production, under Sessions.</Empty>
+          </div>
+        ) : !doc && !perSession ? (
           <>
             <div className="pd-pages">
               <ol aria-label="Pages">
@@ -413,47 +318,87 @@ function DocumentView({
           </>
         ) : (
           <>
-            <PageList doc={doc} pages={pages} selected={page?.id ?? null} write={write} onSelect={(id) => leaveThen(() => setPageId(id))} />
-            <div className="pd-write">
-              <div className="pd-write-bar">
-                <span className="pd-doc-title">{doc.title}</span>
-                <button className="btn small" disabled={!page} onClick={() => page && printJob(page)}>
-                  Print page
-                </button>
-                <button className="btn small" disabled={!pages.length} onClick={() => printJob()}>
-                  Print document
-                </button>
-              </div>
-              {doc.docKey === "devotional_script" && <SharedTheme project={project} />}
-              {reviewEntry && <ReviewBanner doc={doc} write={write} />}
-              {opened.key === "greenlight" && <GreenlightPanel project={project} write={write} />}
-              {page && fieldsPage?.fields && page.id === fieldsTarget?.id && (
-                <FormFields
-                  project={project}
-                  sectionKey={fieldsPage.fields[0].section}
-                  keys={fieldsPage.fields.map((f) => f.key)}
-                  write={write && !project.archived}
-                  label="Logline and core question"
-                />
-              )}
-              {page ? (
-                <div className={showComments ? "pd-with-comments" : undefined}>
-                  <PageEditor
-                    key={page.id}
-                    ref={editor}
-                    doc={doc}
-                    page={page}
-                    write={write}
-                    subtitleLabel={subtitleLabelOf(doc.docKey)}
-                    titleLabel={titleLabelOf(doc.docKey)}
+            <PageList
+              doc={doc ?? null}
+              pages={pages}
+              selected={formOpen ? pageId : (page?.id ?? null)}
+              write={write}
+              fixed={cards}
+              emptyText={
+                entry.pagePerEpisode
+                  ? "No episodes yet: each episode gets its page here once its session closes."
+                  : doc
+                    ? undefined
+                    : "Nothing has been written for this session yet."
+              }
+              onSelect={(id) => leaveThen(() => setPageId(id))}
+              head={
+                perSession && (
+                  <SessionPicker
+                    project={project}
+                    value={sessionId}
+                    onChange={(id) =>
+                      leaveThen(() => {
+                        editor.current = null;
+                        setSessionId(id);
+                        setPageId(cards.find((c) => c.at === "start")?.id ?? null);
+                      })
+                    }
                   />
-                  {showComments && <PageComments project={project} doc={doc} page={page} />}
+                )
+              }
+            />
+            {formOpen && sessionId ? (
+              <div className="pd-write">
+                <DaySheetForm project={project} sessionId={sessionId} form={formOpen} />
+              </div>
+            ) : !doc ? (
+              <div className="pd-write">
+                <Empty>Nothing has been written for this session yet.</Empty>
+              </div>
+            ) : (
+              <div className="pd-write">
+                <div className="pd-write-bar">
+                  <span className="pd-doc-title">{doc.title}</span>
+                  <button className="btn small" disabled={!page} onClick={() => page && printJob(page)}>
+                    Print page
+                  </button>
+                  <button className="btn small" disabled={!pages.length} onClick={() => printJob()}>
+                    Print document
+                  </button>
                 </div>
-              ) : (
-                <Empty>This document has no pages.</Empty>
-              )}
-              <LinksBox doc={doc} write={write} />
-            </div>
+                {doc.docKey === "devotional_script" && <SharedTheme project={project} />}
+                {reviewEntry && <ReviewBanner doc={doc} write={write} />}
+                {opened.key === "greenlight" && <GreenlightPanel project={project} write={write} />}
+                {page && fieldsPage?.fields && page.id === fieldsTarget?.id && (
+                  <FormFields
+                    project={project}
+                    sectionKey={fieldsPage.fields[0].section}
+                    keys={fieldsPage.fields.map((f) => f.key)}
+                    write={write && !project.archived}
+                    label="Logline and core question"
+                  />
+                )}
+                {page?.episodeId && <EpisodeStrip episodeId={page.episodeId} />}
+                {page ? (
+                  <div className={showComments ? "pd-with-comments" : undefined}>
+                    <PageEditor
+                      key={page.id}
+                      ref={editor}
+                      doc={doc}
+                      page={page}
+                      write={write}
+                      subtitleLabel={subtitleLabelOf(doc.docKey)}
+                      titleLabel={titleLabelOf(doc.docKey)}
+                    />
+                    {showComments && <PageComments project={project} doc={doc} page={page} />}
+                  </div>
+                ) : (
+                  <Empty>{entry.pagePerEpisode ? "No episodes yet." : "This document has no pages."}</Empty>
+                )}
+                <LinksBox doc={doc} write={write} />
+              </div>
+            )}
           </>
         )}
       </div>
@@ -480,6 +425,8 @@ export function ProjectDocuments({ project, write }: { project: Project; write: 
       // A document is made from the catalogue the first time someone who may write in it opens it.
       if (entry?.kind === "document" && !entry.per && !entry.pagePerEpisode && write && !documentOf(project.contentId, stage, key))
         attempt(() => ensureDocument(actor, project.contentId, stage, key));
+      // A Review Thread gains a page for each episode that has none yet.
+      if (entry?.kind === "document" && entry.pagePerEpisode && write) attempt(() => syncReviewThread(actor, project.contentId));
       editor.current = null;
       setOpened({ stage, key });
     });

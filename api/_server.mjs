@@ -716,7 +716,16 @@ function integrityProblems(db2) {
     if (d.id !== documentIdOf(d.contentId, d.stage, d.docKey, d.ownerId))
       out.push(`Document ${d.id} is filed under the wrong project, stage or kind.`);
   }
-  for (const p of db2.documentPages ?? []) doc2(p.documentId, `Page ${p.id}`);
+  const docProject = new Map((db2.projectDocuments ?? []).map((d) => [d.id, d.contentId]));
+  const episodes = new Map(db2.records.filter((r) => r.episode).map((r) => [r.contentId, r]));
+  for (const p of db2.documentPages ?? []) {
+    doc2(p.documentId, `Page ${p.id}`);
+    if (p.episodeId) {
+      const ep = episodes.get(p.episodeId);
+      if (!ep) missing("episode", p.episodeId, `Page ${p.id}`);
+      else if (ep.parentId !== docProject.get(p.documentId)) out.push(`Page ${p.id} is about an episode of a different project.`);
+    }
+  }
   for (const l of db2.documentLinks ?? []) doc2(l.documentId, `Link ${l.id}`);
   for (const r of db2.documentReviews ?? []) {
     doc2(r.documentId, `Review ${r.id}`);
@@ -5276,7 +5285,7 @@ function makeDocument(contentId, stage, entry, ownerId, by, migrated = false) {
   };
   const db2 = getDb();
   db2.projectDocuments.push(doc2);
-  (entry.pages ?? []).forEach(
+  (entry.pages ?? []).filter((p) => !p.form).forEach(
     (p, i) => db2.documentPages.push({
       id: localId("PG"),
       documentId: doc2.id,
@@ -5301,16 +5310,55 @@ function ensureDocument(actor, contentId, stage, docKey, ownerId = null) {
   }
   const project = projectForWrite2(actor, contentId);
   const entry = entryFor(project.workflow.formType, stage, docKey);
+  const session = entry.per === "session" && ownerId ? getSession(ownerId) : void 0;
   if (entry.per === "session") {
-    const s2 = ownerId ? getSession(ownerId) : void 0;
-    if (!s2 || s2.contentId !== contentId) throw new RuleError("Choose one of this project's recording sessions.");
+    if (!session || session.contentId !== contentId) throw new RuleError("Choose one of this project's recording sessions.");
   } else if (entry.per === "episode") {
     const ep = ownerId ? getRecord(ownerId) : void 0;
     if (!ep?.episode || ep.parentId !== contentId) throw new RuleError("Choose one of this project's episodes.");
   } else if (ownerId) throw new RuleError("This document is for the whole project.");
   const doc2 = makeDocument(contentId, stage, entry, ownerId, actor.personId);
+  if (session?.dailyLog.trim()) {
+    const notes = pagesOf(doc2.id)[0];
+    if (notes) {
+      notes.bodyHtml = cleanHtml(textToHtml(session.dailyLog));
+      notes.version = 2;
+    }
+  }
   logAudit(actor, "document", "record", contentId, `${entry.title} started`);
   commit();
+  return doc2;
+}
+var REVIEW_THREAD = "review_thread";
+function syncReviewThread(actor, contentId) {
+  const project = projectForView(actor, contentId);
+  const existing = documentOf(contentId, "Post production", REVIEW_THREAD);
+  if (!canWrite(actor, project) || project.archived) return existing;
+  const entry = entryFor(project.workflow.formType, "Post production", REVIEW_THREAD);
+  if (!entry.pagePerEpisode) throw new RuleError("This document has no page for each episode.");
+  const doc2 = existing ?? makeDocument(contentId, "Post production", entry, null, actor.personId);
+  const covered = new Set(pagesOf(doc2.id, true).map((p) => p.episodeId));
+  const missing = episodesOf(contentId).filter((ep) => !covered.has(ep.contentId));
+  if (!existing || missing.length) {
+    const at = nowStamp();
+    let position = pagesOf(doc2.id).length;
+    for (const ep of missing)
+      getDb().documentPages.push({
+        id: localId("PG"),
+        documentId: doc2.id,
+        position: position++,
+        title: ep.title.trim().slice(0, MAX_LINE) || ep.contentId,
+        subtitle: ep.contentId,
+        bodyHtml: "",
+        version: 1,
+        archivedAt: null,
+        updatedAt: at,
+        updatedBy: actor.personId,
+        episodeId: ep.contentId
+      });
+    if (!existing) logAudit(actor, "document", "record", contentId, `${entry.title} started`);
+    commit();
+  }
   return doc2;
 }
 function addPage(actor, documentId, input = {}) {
@@ -9901,6 +9949,7 @@ __export(documents_exports, {
   shotNumbers: () => shotNumbers,
   softNudges: () => softNudges,
   storyboardsOf: () => storyboardsOf,
+  syncReviewThread: () => syncReviewThread,
   updateFrame: () => updateFrame,
   updateShotRow: () => updateShotRow
 });
@@ -11895,6 +11944,7 @@ var RPC_NAMES = {
     "savePage",
     "setDocumentReviewers",
     "setGateOverride",
+    "syncReviewThread",
     "updateFrame",
     "updateShotRow"
   ],
@@ -12527,6 +12577,7 @@ var ACTIONS = {
   "workflow.revokeShareLink": args([id]),
   // ── Project documents, storyboards and shot lists (src/services/documents.ts) ──
   "documents.ensureDocument": args([id, workflowStage, short(60)], [compound.nullable()]),
+  "documents.syncReviewThread": args([id]),
   "documents.addPage": args([compound], [z2.object({ title: short(300), subtitle: short(300), afterPageId: id.nullable() }).partial()]),
   // A page body can be long; the service refuses anything over its limit (MAX_PAGE_HTML) with a clear message.
   "documents.savePage": args([

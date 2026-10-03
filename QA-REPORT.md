@@ -12,7 +12,7 @@ How to run everything: `npm run check`, `npm run lint`, `npm test`, `npm run bui
 |---|---|
 | Typecheck (app and server) | Passes |
 | Lint | 0 errors; 2 warnings that were there before the workflow (`Accounts.tsx`, `AppContext.tsx`) |
-| Tests | 40 of 40 files, 589 tests, all pass (after documents Phase 4) |
+| Tests | 41 of 41 files, all pass (after documents Phase 5) |
 | The Whispers of Why fixture passes in tests | Yes: `workflow-services`, "Whispers of Why, Season 1, end to end" |
 | The fixture passes by hand | Yes, clicked through in a real browser on the hosted site, to publishing and the share link: 30 of 30 checks (below) |
 | Live Session and Music behave exactly as before | Yes: their own tests pass unchanged, and the sample's Live and Music records are identical before and after the move |
@@ -88,6 +88,7 @@ app the desktop app runs. Every run checks there are no errors in the page.
 | 2. The editor | `documents-editor` (12): what a paste keeps, the setting, the content dot, links and colours, the screens; plus browser runs of writing, saving, refusals, printing and both themes |
 | 3. Gates and review | `documents-gates` (14): the short gates, passing by hand, the review and comments, Accept and Decline, the shared theme, Waiting on; plus browser runs, hosted and demo |
 | 4. Storyboard and Shot List | `documents-tools` (4): where pictures may come from, both screens for writers and readers, shot numbering and times, starting from a copy; plus browser runs in the demo (28 checks) and on the hosted site (6) |
+| 5. The later stages | `documents-stages` (5): a day sheet per session with the run sheet and wrap as the session's forms and its notes from the daily log, the forms' rules, the Review Thread's page per episode (added, never taken away, nothing made for a reader), each episode's review above its page; plus browser runs in the demo (24 checks) and on the hosted site (8) |
 
 Browser runs of the documents, all passing on the Phase 4 build: writing and saving in the demo 45 of 45 and hosted
 21 of 21; gates and review in the demo 32 of 32 and hosted 12 of 12; Storyboard and Shot List in the demo 28 of 28

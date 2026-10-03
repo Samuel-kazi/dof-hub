@@ -4,6 +4,7 @@
 
 export {
   ensureDocument,
+  syncReviewThread,
   addPage,
   savePage,
   movePage,

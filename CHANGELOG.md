@@ -7,6 +7,24 @@ What changed in each version, newest first. How to deploy is in GO-LIVE.md.
 Being built in phases. The five stages, their names and order, the stage tracker, Content IDs and every form that
 drives the calendar, reminders, call sheets, gear, storage or overdue stay as they are.
 
+**Phase 5: the documents of Production, Post production, and Marketing and distribution** (behind the same setting)
+- Recording Day Sheet (a documentary's Shoot Day Sheet), in Production: one for each recording session, chosen at the
+  top (it opens on the session recording now, else the next one planned). Its run sheet and wrap checklist are the
+  session's own forms, as before, shown as fixed cards beside the pages: a line added to the run sheet here is the
+  session's, and still sets the call sheet's call time; a closed session's run sheet is as it was; the wrap opens
+  once recording starts. The notes (Daily notes, or Interview notes) are pages like any other, and start with the
+  daily log already written on the session. Once a session has its day sheet, the session's screen shows those notes
+  as its daily log, so they are written in one place.
+- Review Thread, in Post production: a page for each episode (or cut), added when the thread is opened after a session
+  closes, and never taken away (an archived episode keeps its page; a page deleted by hand stays deleted and can be
+  restored). Above each page, where that episode's review stands: its post-production step, editor, rough cut and
+  final review with their notes, why it was sent back, its review link, and the way to the episode. Comments sit
+  beside each page and can be resolved.
+- Edit Notes, Release Plan, Learning Notes and a devotion's Study Notes are written like the other documents. The
+  forms of these stages (Session Log, Storage, Episode or Cut Tracker, Platform Status, Archive, a devotion's Recording
+  Day View and Review) keep their screens and behaviour.
+- A day sheet's tile shows it has content when any session's sheet has some.
+
 **Phase 4: the Storyboard and the Shot List** (behind the same setting)
 - Storyboard, in Pre-production: the project's boards in a row above with their frame counts, and "+ New storyboard",
   which starts blank or as a copy of any board the person may see, in this project or another, pictures and all. A

@@ -7,9 +7,9 @@ import { catalogEntry, type CatalogEntry } from "../../config/documentCatalog";
 import { WORKFLOW_STAGE_NAMES } from "../../config/workflow";
 import { logAudit } from "../audit";
 import { requireWebUrl } from "../urls";
-import { cleanHtml } from "../html";
-import { getRecord } from "../access";
-import { getSession } from "../workflow/common";
+import { cleanHtml, textToHtml } from "../html";
+import { canWrite, getRecord } from "../access";
+import { episodesOf, getSession } from "../workflow/common";
 import { documentForWrite, nowStamp, pageForWrite, pagesOf, projectForView, projectForWrite, moveTo, renumber } from "./common";
 
 // A project's documents and their pages. A document is made the first time it is needed, from the catalogue
@@ -57,20 +57,24 @@ export function makeDocument(
   };
   const db = getDb();
   db.projectDocuments.push(doc);
-  (entry.pages ?? []).forEach((p, i) =>
-    db.documentPages.push({
-      id: localId("PG"),
-      documentId: doc.id,
-      position: i,
-      title: p.title,
-      subtitle: p.subtitle ?? "",
-      bodyHtml: p.body ? cleanHtml(p.body) : "",
-      version: 1,
-      archivedAt: null,
-      updatedAt: at,
-      updatedBy: by,
-    }),
-  );
+  // A page that is a structured form (a session's run sheet or wrap checklist) is the session's own, shown beside the
+  // pages; it is not a page of writing.
+  (entry.pages ?? [])
+    .filter((p) => !p.form)
+    .forEach((p, i) =>
+      db.documentPages.push({
+        id: localId("PG"),
+        documentId: doc.id,
+        position: i,
+        title: p.title,
+        subtitle: p.subtitle ?? "",
+        bodyHtml: p.body ? cleanHtml(p.body) : "",
+        version: 1,
+        archivedAt: null,
+        updatedAt: at,
+        updatedBy: by,
+      }),
+    );
   return doc;
 }
 
@@ -93,16 +97,63 @@ export function ensureDocument(
   }
   const project = projectForWrite(actor, contentId);
   const entry = entryFor(project.workflow.formType, stage, docKey);
+  const session = entry.per === "session" && ownerId ? getSession(ownerId) : undefined;
   if (entry.per === "session") {
-    const s = ownerId ? getSession(ownerId) : undefined;
-    if (!s || s.contentId !== contentId) throw new RuleError("Choose one of this project's recording sessions.");
+    if (!session || session.contentId !== contentId) throw new RuleError("Choose one of this project's recording sessions.");
   } else if (entry.per === "episode") {
     const ep = ownerId ? getRecord(ownerId) : undefined;
     if (!ep?.episode || ep.parentId !== contentId) throw new RuleError("Choose one of this project's episodes.");
   } else if (ownerId) throw new RuleError("This document is for the whole project.");
   const doc = makeDocument(contentId, stage, entry, ownerId, actor.personId);
+  // A session's day sheet starts its notes with the daily log already written on the session: the page's first save.
+  if (session?.dailyLog.trim()) {
+    const notes = pagesOf(doc.id)[0];
+    if (notes) {
+      notes.bodyHtml = cleanHtml(textToHtml(session.dailyLog));
+      notes.version = 2;
+    }
+  }
   logAudit(actor, "document", "record", contentId, `${entry.title} started`);
   commit();
+  return doc;
+}
+
+const REVIEW_THREAD = "review_thread";
+
+/**
+ * The project's Review Thread, with a page for each of its episodes (or a documentary's cuts): a page is added for an
+ * episode that has none yet, so the thread keeps up as sessions close. Someone who may only read gets it as it is.
+ * Pages are never taken away: an episode archived later keeps its page and what was written there.
+ */
+export function syncReviewThread(actor: Actor, contentId: string): ProjectDocument | undefined {
+  const project = projectForView(actor, contentId);
+  const existing = documentOf(contentId, "Post production", REVIEW_THREAD);
+  if (!canWrite(actor, project) || project.archived) return existing;
+  const entry = entryFor(project.workflow.formType, "Post production", REVIEW_THREAD);
+  if (!entry.pagePerEpisode) throw new RuleError("This document has no page for each episode.");
+  const doc = existing ?? makeDocument(contentId, "Post production", entry, null, actor.personId);
+  const covered = new Set(pagesOf(doc.id, true).map((p) => p.episodeId));
+  const missing = episodesOf(contentId).filter((ep) => !covered.has(ep.contentId));
+  if (!existing || missing.length) {
+    const at = nowStamp();
+    let position = pagesOf(doc.id).length;
+    for (const ep of missing)
+      getDb().documentPages.push({
+        id: localId("PG"),
+        documentId: doc.id,
+        position: position++,
+        title: ep.title.trim().slice(0, MAX_LINE) || ep.contentId,
+        subtitle: ep.contentId,
+        bodyHtml: "",
+        version: 1,
+        archivedAt: null,
+        updatedAt: at,
+        updatedBy: actor.personId,
+        episodeId: ep.contentId,
+      });
+    if (!existing) logAudit(actor, "document", "record", contentId, `${entry.title} started`);
+    commit();
+  }
   return doc;
 }
 

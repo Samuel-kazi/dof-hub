@@ -386,6 +386,8 @@ export interface DocumentPage {
   archivedAt: string | null; // a deleted page is kept, archived, so no writing is ever lost
   updatedAt: string;
   updatedBy: string;
+  // The episode a page is about: a Review Thread has one page for each episode. Absent or null on every other page.
+  episodeId?: string | null;
 }
 
 /** A link kept with a document: a Google Doc, a Drive folder, a WhatsApp thread. The file stays where it is. */
