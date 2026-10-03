@@ -20,6 +20,32 @@ export const PRODUCER = "DOF-P-CRW-004";
 export const REVIEW_LINK = "https://www.youtube.com/watch?v=wow-e01-review";
 export const FINAL_LINK = "https://drive.google.com/file/d/wow-e01-final/view";
 
+/**
+ * Passes Development's hard gates the way the documents do: the brief's theological review named and approved, and for
+ * a devotion, five script pages each with its topic, scripture and script. The rest (the greenlight, the producer) is
+ * the caller's.
+ */
+export async function approveBrief(call: Call, read: Read, project: string, formType: FormType, reviewer = PRODUCER): Promise<string> {
+  const key = formType === "devotion" ? "devotional_script" : formType.startsWith("documentary") ? "documentary_brief" : "show_brief";
+  const brief = (await call("documents.ensureDocument", project, "Development", key, null)).id as string;
+  if (formType === "devotion") {
+    const pages = (await read()).documentPages
+      .filter((pg) => pg.documentId === brief && !pg.archivedAt)
+      .sort((a, b) => a.position - b.position)
+      .slice(0, 5);
+    for (const [i, pg] of pages.entries())
+      await call(
+        "documents.savePage",
+        pg.id,
+        { title: `Day ${i + 1}`, subtitle: "Lamentations 3:22-23", bodyHtml: "<p>The script.</p>" },
+        pg.version,
+      );
+  }
+  await call("documents.setDocumentReviewers", brief, [reviewer]);
+  await call("documents.decideDocumentReview", brief, { status: "approved", note: "" });
+  return brief;
+}
+
 /** A value for every field of a section, of the right type, so a form can be completed in one go. */
 export function fillSection(fields: FieldDef[], crewId = PRODUCER): Record<string, unknown> {
   const value = (f: FieldDef): unknown => {
@@ -92,10 +118,10 @@ export async function walkWhispersOfWhy(call: Call, read: Read): Promise<WalkRes
   await completeForm(call, project, "podcast");
   for (const key of CRITERIA.map((c) => c.key)) await call("workflow.setCriterion", project, key, { met: true, note: "" });
   await call("workflow.setReviewWindow", project, addDaysIso(todayIso(), 7));
-  for (const cp of ["pitch", "outline_script"]) {
-    await call("workflow.setCheckpointReviewers", `${project}|${cp}`, [PRODUCER]);
-    await call("workflow.decideCheckpoint", `${project}|${cp}`, { status: "Approved", note: "" });
-  }
+  // The theological review is of the Show Brief, as a document: its reviewer named, then one approval for the whole.
+  const brief = (await call("documents.ensureDocument", project, "Development", "show_brief", null)).id as string;
+  await call("documents.setDocumentReviewers", brief, [PRODUCER]);
+  await call("documents.decideDocumentReview", brief, { status: "approved", note: "" });
   await call("workflow.decideGreenlight", project, { outcome: "Greenlight", notes: "The team reviewed the message together." });
   await call("workflow.assignProducer", project, PRODUCER); // Operations names the producer
   await tickAll(call, "handoff", project);

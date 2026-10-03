@@ -406,7 +406,7 @@ export function SessionPage({ id }: { id: string }) {
   const issues = sheet ? gearIssues(sheet.id) : [];
   const available = availableForLog(id);
   const crumbs = getBreadcrumb(p.contentId);
-  // With the documents in use, the day's notes are written in the session's day sheet once it is started.
+  // The day's notes are written in the session's day sheet once it is started.
   const daySheet = getDb().projectDocuments.find((d) => d.ownerId === id && d.stage === "Production");
 
   const addRow = () => {

@@ -408,6 +408,7 @@ await t("every action accepts the arguments its screen sends", async () => {
   };
   const wow = await walkWhispersOfWhy(must, state as never);
   const e01 = `${wow.project}-E01`;
+  await must("workflow.setCheckpointReviewers", `${wow.project}-E02|rough_cut`, ["DOF-P-CRW-004", "DOF-P-CRW-001"]);
   await must("workflow.setWorkflowDeadline", wow.project, "Pre-production", "2026-12-01");
   await must("workflow.setWorkflowDeadline", `${wow.project}-E02`, "Post production", "2026-12-05");
   await must("workflow.updatePlannedEpisode", `${wow.project}-P30`, {

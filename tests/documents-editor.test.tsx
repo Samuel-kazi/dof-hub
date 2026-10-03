@@ -51,7 +51,6 @@ const html = (who: string, el: JSX.Element): string =>
 const DEV = "DOF-DEV-001";
 const WOW = "DOF-SER-001-S1";
 const project = (id: string) => getDb().records.find((r) => r.contentId === id) as Project;
-const devotionsOn = () => S.updateSettings(hop(), { newDocuments: ["devotion"] });
 
 // ── Pasting ──────────────────────────────────────────────────
 
@@ -104,20 +103,12 @@ await t("what the editor makes survives the cleaner: checklists, colours, highli
   assert.ok(!kept.includes("color: inherit"), "only the colours the toolbar sets");
 });
 
-// ── The setting ──────────────────────────────────────────────
+// ── No setting: the documents are how every project shows ────
 
-await t("each kind of project can be set to show its documents; only with the settings right", () => {
-  assert.equal(D.newDocumentsOn("devotion"), false, "off to start");
-  S.updateSettings(hop(), { newDocuments: ["devotion", "devotion"] });
-  assert.deepEqual(getDb().settings.newDocuments, ["devotion"]);
-  assert.equal(D.newDocumentsOn("devotion"), true);
-  assert.equal(D.newDocumentsOn("podcast"), false);
-  S.updateSettings(hop(), { newDocuments: ["devotion", "series", "documentary"] });
-  assert.equal(D.newDocumentsOn("sermon"), true);
-  assert.equal(D.newDocumentsOn("documentary_pitched"), true);
-  assert.throws(() => S.updateSettings(login("crew2@dof.demo", "demo"), { newDocuments: [] }), RuleError);
-  S.updateSettings(hop(), { newDocuments: [] });
-  assert.equal(D.newDocumentsOn("devotion"), false);
+await t("there is no setting for the documents any more: every kind of project shows them, and Settings takes no such key", () => {
+  S.updateSettings(hop(), { newDocuments: [] } as never);
+  assert.equal("newDocuments" in getDb().settings, false, "an old screen sending it changes nothing");
+  assert.throws(() => S.updateSettings(login("crew2@dof.demo", "demo"), {}), RuleError, "Settings are still the Head of Production's");
 });
 
 // ── The "has content" dot ────────────────────────────────────
@@ -167,19 +158,11 @@ await t("in the local demo every save is final at once: there is no server to wa
 
 // ── The screens ──────────────────────────────────────────────
 
-await t("with the setting off, a devotion shows its earlier screens", () => {
-  const page = html("hop@dof.demo", <RecordPage id={DEV} />);
-  assert.match(page, /aria-label="Stages of this project"/);
-  assert.ok(!page.includes("Project home"));
-  assert.ok(!page.includes("Documents (preview)"));
-});
-
-await t("with it on, a devotion opens on Project Home: five stage rows of tiles, no Show Brief or Greenlight", () => {
-  devotionsOn();
+await t("a devotion opens on Project Home: five stage rows of tiles, no Show Brief or Greenlight, and no way back to old screens", () => {
   const page = html("hop@dof.demo", <RecordPage id={DEV} />);
   assert.match(page, /aria-label="Project home"/);
-  assert.match(page, /Documents \(preview\)/);
-  assert.match(page, /Earlier screens/);
+  assert.ok(!page.includes("Documents (preview)") && !page.includes("Earlier screens"), "no switch to the old screens");
+  assert.ok(!page.includes('aria-label="Stages of this project"'), "no old tabs");
   assert.equal((page.match(/class="pd-row /g) ?? []).length, 5);
   for (const stage of ["Development", "Pre-production", "Production", "Post production", "Marketing and distribution"])
     assert.ok(page.includes(`aria-label="${stage}"`), stage);
@@ -193,12 +176,13 @@ await t("with it on, a devotion opens on Project Home: five stage rows of tiles,
   ])
     assert.ok(page.includes(`aria-label="${tile}`), tile);
   assert.ok(!page.includes('aria-label="Show Brief') && !page.includes('aria-label="Greenlight'));
-  // A series is not affected while series are off.
-  assert.match(html("hop@dof.demo", <RecordPage id={WOW} />), /aria-label="Stages of this project"/);
+  // A series opens on its own Project Home too.
+  const series = html("hop@dof.demo", <RecordPage id={WOW} />);
+  assert.match(series, /aria-label="Project home"/);
+  assert.ok(series.includes('aria-label="Show Brief') && series.includes('aria-label="Greenlight'));
 });
 
 await t("a tile shows a dot once its document has content, worked out from the pages", () => {
-  devotionsOn();
   const home = () => html("hop@dof.demo", <ProjectHome project={project(DEV)} write onOpen={() => {}} />);
   assert.ok(!home().includes("has content"));
   const script = D.ensureDocument(hop(), DEV, "Development", "devotional_script");

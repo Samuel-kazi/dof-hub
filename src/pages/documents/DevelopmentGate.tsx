@@ -13,7 +13,7 @@ import { Field } from "../../ui/parts";
 import { CrewSelect } from "../../ui/workflow/shared";
 import { useReason } from "../workflow/common";
 
-// Leaving Development, once the documents are in use: the short list of hard gates (each met, passed by hand with a
+// Leaving Development: the short list of hard gates (each met, passed by hand with a
 // note, or not yet), the nudges that never block (each one can be dismissed), and the button that moves on: "Done:
 // move to Pre-production" for a series or documentary, Accept or Decline for a devotion.
 

@@ -6,13 +6,14 @@ import { plannedOf } from "../workflow/planned";
 import { documentHasContent, pagesOf, projectOf } from "./common";
 import { documentOf } from "./pages";
 
-// Everything a project's Development might still want, once its documents are in use, as short notes: shown beside
+// Everything a project's Development might still want, as short notes: shown beside
 // the gate, each one dismissible, and never blocking (./gates.ts holds the few things that do block).
 
 // What the hard gates already cover, so it is not said twice.
 const GATED = new Set(["Brief: Logline", "Brief: Core question or tension", "Guest: Name", "Guest: Contact"]);
-// Sections kept on the form: the header strip and the consent form. The rest of the earlier form now lives in the documents.
-const KEPT_SECTIONS = ["Entry", "Guest", "Consent and release"];
+// Sections kept on the form: the header strip. (A testimonial's consent form is a hard gate.) The rest of the earlier
+// form now lives in the documents.
+const KEPT_SECTIONS = ["Entry", "Guest"];
 
 /** Short notes on what is not written or done yet. */
 export function softNudges(projectId: string): string[] {

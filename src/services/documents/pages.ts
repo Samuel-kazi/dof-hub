@@ -97,6 +97,7 @@ export function ensureDocument(
   }
   const project = projectForWrite(actor, contentId);
   const entry = entryFor(project.workflow.formType, stage, docKey);
+  if (entry.onlyIfMade) throw new RuleError(`The ${entry.title} is only made by the move from the old forms.`);
   const session = entry.per === "session" && ownerId ? getSession(ownerId) : undefined;
   if (entry.per === "session") {
     if (!session || session.contentId !== contentId) throw new RuleError("Choose one of this project's recording sessions.");

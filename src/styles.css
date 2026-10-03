@@ -2614,13 +2614,6 @@ button.link:hover {
 .st-mkt {
   --st: var(--st-mkt);
 }
-.pd-view-switch {
-  display: flex;
-  justify-content: flex-end;
-}
-.pd-view-switch > .seg {
-  flex: none;
-}
 .pd-home {
   display: flex;
   flex-direction: column;
@@ -2952,8 +2945,13 @@ button.link:hover {
 }
 .pd-page-head {
   display: flex;
+  flex-wrap: wrap; /* on a narrow screen the "Saved" line goes under the title */
   align-items: center;
-  gap: 12px;
+  gap: 4px 12px;
+}
+.pd-page-head .pd-title {
+  flex: 1 1 220px;
+  min-width: 0;
 }
 .pd-title,
 .pd-subtitle {

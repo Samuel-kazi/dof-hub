@@ -44,6 +44,7 @@ export interface CatalogEntry {
   reviews?: string; // a review view: the key of the document it reviews
   per?: "session" | "episode"; // one of these documents for each session or episode, rather than one for the project
   pagePerEpisode?: boolean; // its pages are one per episode (a review thread)
+  onlyIfMade?: boolean; // made only by the move from the old forms: its tile shows once it exists, and it is never made empty
 }
 
 const CRITERIA_LIST =
@@ -73,6 +74,13 @@ const IDEA_FIELDS = [
 ];
 
 const greenlight = doc("greenlight", "Greenlight", [{ title: "Decision", body: `<p>The six criteria:</p>${CRITERIA_LIST}` }]);
+
+/**
+ * What a project's old Development form held, for a project whose brief was started before the form was moved: kept
+ * here, word for word, rather than written into pages someone had already begun (src/data/migrateDocuments.ts).
+ */
+export const EARLIER_FORM_KEY = "earlier_form";
+const earlierForm = doc(EARLIER_FORM_KEY, "Earlier Development form", [], { onlyIfMade: true });
 
 /** The Show Brief's pages, with the extra pages a testimonial or a sermon series keeps from its earlier form. */
 function showBrief(formType: FormType): CatalogEntry {
@@ -114,6 +122,7 @@ function seriesCatalog(formType: FormType): Record<WorkflowStage, CatalogEntry[]
       greenlight,
       form("planned_episodes", "Planned Episodes", "plannedEpisodes"),
       ...(formType === "testimonial" ? [form("consent", "Consent and Release", "consent")] : []),
+      earlierForm,
     ],
     "Pre-production": [
       doc("production_pack", "Production Pack", ["Set design", "Rehearsal notes"]),
@@ -152,6 +161,7 @@ function documentaryCatalog(formType: FormType): Record<WorkflowStage, CatalogEn
       review("documentary_brief"),
       greenlight,
       form("planned_episodes", "Planned Parts", "plannedEpisodes"),
+      earlierForm,
     ],
     "Pre-production": [
       doc("treatment", "Treatment", ["Story structure", "Interview guide"]),
@@ -191,6 +201,7 @@ const devotionCatalog: Record<WorkflowStage, CatalogEntry[]> = {
     doc("devotional_script", "Devotional Script", DEVOTION_PAGES),
     review("devotional_script"),
     form("accept_decline", "Accept or Decline", "acceptDecline"),
+    earlierForm,
   ],
   "Pre-production": [
     form("devotion_episodes", "Devotions", "devotionEpisodes"),

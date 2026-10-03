@@ -8,9 +8,10 @@ import { canDecide, checkpoint, formOf, nowStamp, type Project } from "../workfl
 import { pagesOf, projectForWrite, projectOf } from "./common";
 import { documentOf } from "./pages";
 import { reviewsOf, reviewStateOf } from "./reviews";
+import { formProblems } from "../workflow/forms";
 
-// The short list of what must be true before a project leaves Development, once its documents are in use (the
-// documents rework). Everything else is a nudge that never blocks (./nudges.ts).
+// The short list of what must be true before a project leaves Development (the documents rework). Everything else is
+// a nudge that never blocks (./nudges.ts).
 //
 //   Series and documentary   1. the logline and the core question written in the brief
 //                            2. the theological review of the brief approved
@@ -22,7 +23,7 @@ import { reviewsOf, reviewStateOf } from "./reviews";
 // The Head of Production, or someone given "Create projects", can pass a gate by hand with a short note: kept with the
 // project and in the activity log. The greenlight decision itself is never passed by hand: recording it is the way.
 
-export type HardGateKey = "idea" | "review" | "greenlight" | "guest" | "pages";
+export type HardGateKey = "idea" | "review" | "greenlight" | "guest" | "pages" | "consent";
 
 export interface HardGate {
   key: HardGateKey;
@@ -45,8 +46,8 @@ function reviewGate(projectId: string, docKey: string, what: string): Omit<HardG
   const doc = documentOf(projectId, "Development", docKey);
   const state = doc ? reviewStateOf(doc.id) : "no reviewers";
   const rows = doc ? reviewsOf(doc.id) : [];
-  // A project reviewed on the earlier screens, before its documents were turned on, keeps that review: both of its
-  // checkpoints approved count, until reviewers are named on the document.
+  // A project reviewed on the earlier pitch and outline checkpoints, before the documents, keeps that review: both of
+  // its checkpoints approved count, until reviewers are named on the document.
   const earlier = (["pitch", "outline_script"] as const).every((k) => checkpoint(projectId, k)?.status === "Approved");
   if (state === "no reviewers" && earlier)
     return {
@@ -118,6 +119,8 @@ export function hardGates(projectId: string): HardGate[] {
       overridable: true,
     }),
     withOverride(reviewGate(projectId, briefKeyOf(p.workflow.formType), "brief")),
+    // A testimonial records someone telling their own story: it is not greenlit without their consent and release.
+    ...(p.workflow.formType === "testimonial" ? [withOverride(consentGate(projectId))] : []),
     withOverride({
       key: "greenlight",
       label: `${first} decision recorded as Greenlight, and a show producer named`,
@@ -129,6 +132,20 @@ export function hardGates(projectId: string): HardGate[] {
       overridable: false,
     }),
   ];
+}
+
+/** A testimonial's Consent and Release form: complete, with the person's agreement. It cannot be passed by hand. */
+function consentGate(projectId: string): Omit<HardGate, "override"> {
+  const lacking = formProblems(projectId, 1)
+    .filter((m) => m.startsWith("Consent and release: "))
+    .map((m) => m.slice("Consent and release: ".length));
+  return {
+    key: "consent",
+    label: "Consent and release complete, with the person's agreement",
+    met: lacking.length === 0,
+    detail: lacking.length ? lacking.join("; ") : "Complete",
+    overridable: false,
+  };
 }
 
 /** True when every hard gate is met or passed by hand. `except` leaves some out (the decision, before it is made). */
@@ -151,7 +168,12 @@ export function setGateOverride(actor: Actor, projectId: string, key: HardGateKe
   if (p.workflow.stage !== "Development") throw new RuleError("The project has already left Development.");
   const gate = hardGates(projectId).find((g) => g.key === key);
   if (!gate) throw new RuleError("That is not one of this project's gates.");
-  if (!gate.overridable) throw new RuleError("The greenlight decision is recorded, not passed by hand.");
+  if (!gate.overridable)
+    throw new RuleError(
+      gate.key === "consent"
+        ? "Consent and release is given by the person, not passed by hand."
+        : "The greenlight decision is recorded, not passed by hand.",
+    );
   const form = formOf(projectId);
   const rest = (form.overrides ?? []).filter((o) => o.key !== key);
   if (note === null) {

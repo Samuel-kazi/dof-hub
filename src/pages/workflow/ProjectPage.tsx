@@ -10,38 +10,12 @@ import { fmtDate } from "../../services/utils";
 import { useApp } from "../../ui/AppContext";
 import { Modal } from "../../ui/Modal";
 import { Field } from "../../ui/parts";
-import { DevelopmentTab } from "./Development";
-import { PreProductionTab, SessionsPanel } from "./PreProduction";
-import { EpisodeTracker } from "./EpisodeTracker";
 import { StageRail, useReason } from "./common";
-import { newDocumentsOn } from "../../services/wrapped/documents";
 import { ProjectDocuments } from "../documents/ProjectDocuments";
 
 // A project of the five-stage workflow: a season of a series, a devotion or a documentary. Its stage is worked
-// out from its sessions and episodes; the tabs follow the stages.
-
-type Tab = "development" | "pre" | "sessions" | "episodes";
-
-// While the documents rework is in preview, each person can still switch a project back to its earlier screens. The
-// choice is theirs alone, kept in this browser.
-const VIEW_KEY = "dof-hub-project-view";
-function savedView(): "documents" | "classic" {
-  try {
-    return localStorage.getItem(VIEW_KEY) === "classic" ? "classic" : "documents";
-  } catch {
-    return "documents";
-  }
-}
-function keepView(view: "documents" | "classic"): void {
-  try {
-    localStorage.setItem(VIEW_KEY, view);
-  } catch {
-    /* the choice lasts until the page is reloaded */
-  }
-}
-
-const tabFor = (stage: string): Tab =>
-  stage === "Development" ? "development" : stage === "Pre-production" ? "pre" : stage === "Production" ? "sessions" : "episodes";
+// out from its sessions and episodes. Below its header and stage tracker are its documents: Project Home, with a row
+// of tiles for each stage (src/pages/documents/ProjectDocuments.tsx).
 
 function EditProjectModal({ project, onClose }: { project: Project; onClose: () => void }) {
   const { actor, attempt } = useApp();
@@ -101,10 +75,6 @@ function EditProjectModal({ project, onClose }: { project: Project; onClose: () 
 export function WorkflowProjectPage({ project }: { project: Project }) {
   const { actor, go, attempt, confirm } = useApp();
   const summary = projectSummary(project);
-  const [tab, setTab] = useState<Tab>(() => tabFor(summary.stage));
-  const documentsReady = newDocumentsOn(project.workflow.formType);
-  const [view, setView] = useState<"documents" | "classic">(savedView);
-  const showDocuments = documentsReady && view === "documents";
   const [editing, setEditing] = useState(false);
   const [ask, reasonModal] = useReason();
   const cfg = categoryOf(project.category);
@@ -181,54 +151,7 @@ export function WorkflowProjectPage({ project }: { project: Project }) {
         <StageRail current={summary.stage} />
         <p style={{ marginTop: 10 }}>{summary.text}</p>
       </section>
-      {documentsReady && (
-        <div className="row pd-view-switch">
-          <div className="seg" role="group" aria-label="How to show this project">
-            {(
-              [
-                ["documents", "Documents (preview)"],
-                ["classic", "Earlier screens"],
-              ] as const
-            ).map(([k, label]) => (
-              <button
-                key={k}
-                className={view === k ? "on" : ""}
-                aria-pressed={view === k}
-                onClick={() => {
-                  setView(k);
-                  keepView(k);
-                }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-      {showDocuments ? (
-        <ProjectDocuments project={project} write={write} />
-      ) : (
-        <>
-          <div className="seg wf-tabs" role="tablist" aria-label="Stages of this project">
-            {(
-              [
-                ["development", "Development"],
-                ["pre", "Pre-production"],
-                ["sessions", "Sessions"],
-                ["episodes", "Episodes"],
-              ] as const
-            ).map(([k, label]) => (
-              <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>
-                {label}
-              </button>
-            ))}
-          </div>
-          {tab === "development" && <DevelopmentTab project={project} write={write} />}
-          {tab === "pre" && <PreProductionTab project={project} write={write} />}
-          {tab === "sessions" && <SessionsPanel project={project} write={write} />}
-          {tab === "episodes" && <EpisodeTracker project={project} />}
-        </>
-      )}
+      <ProjectDocuments project={project} write={write} />
       {editing && <EditProjectModal project={project} onClose={() => setEditing(false)} />}
       {reasonModal}
     </div>

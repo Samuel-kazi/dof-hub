@@ -6,18 +6,7 @@ import { CRITERIA, formTypeOf } from "../../config/workflow";
 import { DEV_FORMS, plannedSectionOf, sectionOf, type FieldDef, type SectionDef } from "../../config/devForms";
 import { isIsoDate, todayIso } from "../utils";
 import { logAudit } from "../audit";
-import {
-  canDecide,
-  checkpoint,
-  formOf,
-  nowStamp,
-  openRequired,
-  projectForWrite,
-  requireCrew,
-  requireProject,
-  type Project,
-} from "./common";
-import { newDocumentsOn } from "../documents/common";
+import { canDecide, formOf, nowStamp, openRequired, projectForWrite, requireCrew, requireProject, type Project } from "./common";
 import { hardGatesMissing } from "../documents/gates";
 
 // The development form: its sections, checked against src/config/devForms.ts every time they are saved, the six
@@ -192,16 +181,11 @@ export const latestDecision = (form: DevelopmentForm, stage: 1 | 2): GreenlightD
 
 /** What stops "Greenlight" being chosen now, as sentences. */
 export function greenlightBlockers(project: Project, stage: 1 | 2): string[] {
-  // With the documents in use, the first greenlight needs only the hard gates before the decision (src/services/documents/gates.ts).
-  if (stage === 1 && newDocumentsOn(project.workflow.formType)) return hardGatesMissing(project.contentId, ["greenlight"]);
-  const out: string[] = [];
-  for (const key of ["pitch", "outline_script"] as const) {
-    const c = checkpoint(project.contentId, key);
-    if (c?.status !== "Approved") out.push(`The ${key === "pitch" ? "pitch" : "outline or script"} review checkpoint must be Approved`);
-  }
-  out.push(...formProblems(project.contentId, stage));
-  if (stage === 2) out.push(...openRequired("preProject", project.contentId).filter((l) => l.startsWith("Shot list")));
-  return out;
+  // The first greenlight needs only the hard gates before the decision (src/services/documents/gates.ts).
+  if (stage === 1) return hardGatesMissing(project.contentId, ["greenlight"]);
+  // A DOF-made documentary's second greenlight, at Pre-production: its shot list. The shoot budget and interview sets
+  // are written in its documents (the Documentary Brief's Ask, the Treatment's Interview guide).
+  return openRequired("preProject", project.contentId).filter((l) => l.startsWith("Shot list"));
 }
 
 export interface DecisionInput {
@@ -211,7 +195,7 @@ export interface DecisionInput {
 }
 
 /**
- * Records the team's decision. "Greenlight" needs the pitch and outline approved and the form complete. "Decline"
+ * Records the team's decision. "Greenlight" needs the hard gates before it met (greenlightBlockers). "Decline"
  * and "Advice only" need a reason and close the project: it is archived, never deleted, with its Content ID kept.
  */
 export function decideGreenlight(actor: Actor, projectId: string, input: DecisionInput): DevelopmentForm {

@@ -11,7 +11,7 @@ import type {
 } from "../types";
 import { CRITERIA } from "../config/workflow";
 import { DEV_FORMS, type FieldDef } from "../config/devForms";
-import { briefKeyOf, catalogEntry, catalogTypeOf } from "../config/documentCatalog";
+import { EARLIER_FORM_KEY, briefKeyOf, catalogEntry, catalogTypeOf } from "../config/documentCatalog";
 import { templateOf } from "../config/docTemplates";
 import { escapeHtml, textToHtml } from "../services/html";
 import { fmtDate } from "../services/utils";
@@ -197,11 +197,23 @@ export function migrateDocuments(db: Database, options: DocumentMigrationOptions
     const form = db.developmentForms.find((f) => f.contentId === p.contentId);
     const briefKey = briefKeyOf(formType);
     const title = p.parentId && byId.get(p.parentId) ? `${byId.get(p.parentId)!.title}: ${p.title}` : p.title;
-    const already = db.projectDocuments.some((d) => d.contentId === p.contentId && d.docKey === briefKey);
-    if (already) {
+    // A brief started by hand before the move (while the documents were a preview) is never written into: what the
+    // form held goes to the "Earlier Development form" document instead. A brief made by the move, or that document,
+    // means it is done. A brief only opened, with nothing written, linked, reviewed or commented on, is its starting
+    // pages and nothing more: it is made again by the move, as if it had never been opened.
+    let started = db.projectDocuments.find((d) => d.contentId === p.contentId && d.docKey === briefKey && !d.ownerId);
+    const carried = db.projectDocuments.some((d) => d.contentId === p.contentId && d.docKey === EARLIER_FORM_KEY);
+    if ((started && started.migrated) || carried) {
       report.lines.push({ contentId: p.contentId, title, documents: [], fields: 0, note: "It already has its documents. Left as it is." });
       continue;
     }
+    if (started && form && onlyOpened(db, started.id)) {
+      const id = started.id;
+      db.projectDocuments = db.projectDocuments.filter((d) => d.id !== id);
+      db.documentPages = db.documentPages.filter((pg) => pg.documentId !== id);
+      started = undefined;
+    }
+    const late = !!started;
     if (!form) {
       report.lines.push({
         contentId: p.contentId,
@@ -258,17 +270,61 @@ export function migrateDocuments(db: Database, options: DocumentMigrationOptions
       }
     }
 
-    // 2. The brief (or a devotion's script) always exists, so it can be written and reviewed.
-    const brief = newDocument(p, "Development", briefKey);
+    // 2. The brief (or a devotion's script) always exists, so it can be written and reviewed. A document someone had
+    // already started is left as it is: what was meant for it is kept on the "Earlier Development form", page by page.
+    let keep: ProjectDocument | null = null;
+    const keeping = (): ProjectDocument => {
+      keep ??= newDocument(p, "Development", EARLIER_FORM_KEY)!;
+      written.add(keep.title);
+      return keep;
+    };
+    const ours = (stage: WorkflowStage, key: string): ProjectDocument | null => {
+      const existing = db.projectDocuments.find((d) => d.id === documentIdOf(p.contentId, stage, key, null));
+      return existing && !existing.migrated ? null : newDocument(p, stage, key);
+    };
+    const brief = late ? null : newDocument(p, "Development", briefKey);
     if (brief) written.add(brief.title);
     for (const { target, parts } of grouped.values()) {
-      const d = target.doc === briefKey ? brief : newDocument(p, target.stage, target.doc);
-      if (!d) continue;
-      written.add(d.title);
-      for (const [heading, blocks] of parts) write(d, target.page, `${heading ? `<h3>${escapeHtml(heading)}</h3>` : ""}${blocks.join("")}`);
+      const d = target.doc === briefKey ? brief : ours(target.stage, target.doc);
+      const docTitle = catalogEntry(formType, target.stage, target.doc)?.title ?? target.doc;
+      const [into, pageTitle] = d ? [d, target.page] : [keeping(), `${docTitle}: ${target.page}`];
+      written.add(into.title);
+      for (const [heading, blocks] of parts)
+        write(into, pageTitle, `${heading ? `<h3>${escapeHtml(heading)}</h3>` : ""}${blocks.join("")}`);
     }
 
     // 3. A devotion's planned days become the pages of its script: title, scripture and the script itself.
+    if (formType === "devotion" && late) {
+      // The script was started by hand: its pages are the devotions, so the earlier days are kept beside it, not added.
+      const days = db.plannedEpisodes.filter((x) => x.contentId === p.contentId).sort((a, b) => a.episodeNumber - b.episodeNumber);
+      if (days.length) {
+        const k = keeping();
+        days.forEach((day, i) => {
+          write(
+            k,
+            "Devotions on the earlier form",
+            `<h3>${escapeHtml(day.workingTitle || `Devotion ${i + 1}`)}${day.archivedAt ? " (taken off the list)" : ""}</h3>` +
+              [
+                day.details.scripture ? labelled("Scripture", day.details.scripture) : "",
+                day.details.keyThought ? labelled("Key thought", day.details.keyThought) : "",
+                day.details.application ? labelled("Application or closing", day.details.application) : "",
+                day.question ? labelled("Question", day.question) : "",
+                day.guest ? labelled("Guest", day.guest) : "",
+                day.notes ? labelled("Notes", day.notes) : "",
+                ...Object.entries(day.details)
+                  .filter(([key, v]) => !["scripture", "keyThought", "application"].includes(key) && v)
+                  .map(([key, v]) => labelled(key, v)),
+              ].join(""),
+          );
+          fields++;
+        });
+      }
+      const notes = form.sections.messageReview?.notes;
+      if (typeof notes === "string" && notes.trim()) {
+        write(keeping(), "Devotions on the earlier form", labelled("From the team's message review", notes.trim()));
+        fields++;
+      }
+    }
     if (formType === "devotion" && brief) {
       const days = db.plannedEpisodes.filter((x) => x.contentId === p.contentId).sort((a, b) => a.episodeNumber - b.episodeNumber);
       if (days.length) {
@@ -312,20 +368,42 @@ export function migrateDocuments(db: Database, options: DocumentMigrationOptions
     if (catalogEntry(formType, "Development", "greenlight")) {
       const judged = CRITERIA.filter((c) => form.criteria[c.key]?.met !== null || form.criteria[c.key]?.note);
       if (judged.length) {
-        const g = newDocument(p, "Development", "greenlight")!;
-        written.add(g.title);
         const list = CRITERIA.map((c) => {
           const cr = form.criteria[c.key] ?? { met: null, note: "" };
           const verdict = cr.met === true ? "Met" : cr.met === false ? "Not met" : "Not judged yet";
           return `<li><p><strong>${escapeHtml(c.label)}:</strong> ${verdict}${cr.note ? `. ${escapeHtml(cr.note)}` : ""}</p></li>`;
         }).join("");
-        const pg = pagesOf(g.id)[0];
-        if (pg) pg.bodyHtml = `<p>The six criteria:</p><ul>${list}</ul>`;
+        const g = ours("Development", "greenlight");
+        if (g) {
+          written.add(g.title);
+          const pg = pagesOf(g.id)[0];
+          if (pg) pg.bodyHtml = `<p>The six criteria:</p><ul>${list}</ul>`;
+        } else write(keeping(), "Greenlight: the six criteria", `<ul>${list}</ul>`);
         fields += judged.length;
       }
     }
 
-    // 5. The pitch and outline checkpoints become the brief's review: approved only if both were.
+    // 5. The pitch and outline checkpoints become the brief's review: approved only if both were. A brief started by
+    // hand keeps them in words (an approval there still counts for its review gate until reviewers are named on it).
+    if (late) {
+      const cps = db.reviewCheckpoints.filter(
+        (c) =>
+          c.contentId === p.contentId &&
+          !c.episodeId &&
+          (c.checkpoint === "pitch" || c.checkpoint === "outline_script") &&
+          (c.status !== "Pending" || c.reviewerIds.length || c.note),
+      );
+      for (const c of cps) {
+        write(
+          keeping(),
+          "Theological review on the earlier form",
+          `<h3>${c.checkpoint === "pitch" ? "Pitch" : "Outline or script"}: ${escapeHtml(c.status)}</h3>` +
+            (c.reviewerIds.length ? labelled("Reviewers", c.reviewerIds.map(nameOf).join(", ")) : "") +
+            (c.note ? labelled("Note", c.note) : "") +
+            (c.decidedAt ? labelled("Decided", fmtDate(c.decidedAt.slice(0, 10))) : ""),
+        );
+      }
+    }
     if (brief) {
       const cps = db.reviewCheckpoints.filter(
         (c) => c.contentId === p.contentId && !c.episodeId && (c.checkpoint === "pitch" || c.checkpoint === "outline_script"),
@@ -362,7 +440,7 @@ export function migrateDocuments(db: Database, options: DocumentMigrationOptions
     }
 
     // 6. The camera plan: the Pre-production shot list note, and the old shot list documents, become a shot list.
-    const camera = cameraPlanRows(db, p);
+    const camera = db.shotLists.some((l) => l.contentId === p.contentId && l.migrated) ? [] : cameraPlanRows(db, p);
     if (camera.length) {
       const list: ShotList = {
         id: localId("SL"),
@@ -380,12 +458,26 @@ export function migrateDocuments(db: Database, options: DocumentMigrationOptions
       written.add("Shot List");
     }
 
+    if (late && !written.size) {
+      report.lines.push({
+        contentId: p.contentId,
+        title,
+        documents: [],
+        fields: 0,
+        note: "Its brief was started by hand, and its old form was empty.",
+      });
+      continue;
+    }
     report.lines.push({
       contentId: p.contentId,
       title,
       documents: [...written],
       fields,
-      note: fields ? "" : "Its Development form was empty: its documents start blank.",
+      note: late
+        ? "Its brief had been started by hand, so it is left as it was: the old form is kept on the Earlier Development form."
+        : fields
+          ? ""
+          : "Its Development form was empty: its documents start blank.",
     });
     report.changed = true;
   }
@@ -393,6 +485,16 @@ export function migrateDocuments(db: Database, options: DocumentMigrationOptions
   // Proof that nothing was dropped: every filled field is either written or kept.
   report.unaccounted = unaccountedFields(db, report);
   return report;
+}
+
+/** A document someone only opened: its starting pages never saved, and no link, review or comment on it. */
+function onlyOpened(db: Database, documentId: string): boolean {
+  return (
+    db.documentPages.filter((pg) => pg.documentId === documentId).every((pg) => pg.version === 1 && !pg.archivedAt) &&
+    !db.documentLinks.some((l) => l.documentId === documentId) &&
+    !db.documentReviews.some((r) => r.documentId === documentId) &&
+    !db.reviewComments.some((c) => c.documentId === documentId)
+  );
 }
 
 /** A shot list's rows from a project's camera plan: its Pre-production shot list note, and any old shot list document. */

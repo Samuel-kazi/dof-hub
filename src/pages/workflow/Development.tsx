@@ -1,24 +1,20 @@
 import { useState } from "react";
-import type { Actor, CriterionKey, GreenlightOutcome } from "../../types";
-import { CRITERIA, formTypeOf } from "../../config/workflow";
-import { DEV_FORMS, type SectionDef } from "../../config/devForms";
+import type { Actor, GreenlightOutcome } from "../../types";
+import { formTypeOf } from "../../config/workflow";
+import type { SectionDef } from "../../config/devForms";
 import { getDb } from "../../data/store";
 import { isHop } from "../../services/access";
 import { can } from "../../services/wrapped/permissions";
 import { nameOf } from "../../services/wrapped/people";
 import {
   addPlannedEpisode,
-  advanceProject,
   archivePlannedEpisode,
-  assignProducer,
   decideGreenlight,
-  evaluateGate,
   formProblems,
   greenlightBlockers,
   greenlightStageOf,
   plannedOf,
   saveFormSection,
-  setCriterion,
   setReviewWindow,
   updatePlannedEpisode,
   type Project,
@@ -26,15 +22,14 @@ import {
 import { fmtDate, todayIso } from "../../services/utils";
 import { useApp } from "../../ui/AppContext";
 import { Empty, Field } from "../../ui/parts";
-import { CrewSelect, GatePanel } from "../../ui/workflow/shared";
-import { CheckpointCard, ConfigChecklist, FieldInput, useDraft, useReason } from "./common";
+import { FieldInput, useDraft, useReason } from "./common";
 
-// Development: the form, section by section, the planned episodes, the six criteria, the pitch and outline
-// review checkpoints, the review window and the greenlight decision, and the handoff to Pre-production.
+// Pieces of Development the project's documents use (src/pages/documents/): a section of the form (Project details, a
+// devotion's guest), the planned episodes, and the greenlight decision with its review window and history. The rest of
+// Development is written in the documents.
 
 // The same rules the services apply (src/services/workflow/common.ts), so the screen only offers what will work.
 const canDecideGreenlight = (actor: Actor) => isHop(actor) || can(actor, "pipeline.manage");
-const canNameProducer = (actor: Actor) => isHop(actor) || can(actor, "pipeline.assign");
 
 // ── One section of the form ──────────────────────────────────
 
@@ -265,56 +260,6 @@ export function PlannedEditor({ project, section, write }: { project: Project; s
 
 // ── Greenlight ───────────────────────────────────────────────
 
-function CriteriaPanel({ project, write }: { project: Project; write: boolean }) {
-  const { actor, attempt } = useApp();
-  const form = getDb().developmentForms.find((f) => f.contentId === project.contentId)!;
-  return (
-    <div className="stack" style={{ gap: 6 }}>
-      <h3>The six criteria</h3>
-      {CRITERIA.map((c) => {
-        const v = form.criteria[c.key] ?? { met: null, note: "" };
-        return (
-          <div key={c.key} className="task-row">
-            <span style={{ flex: "1 1 160px" }}>{c.label}</span>
-            <select
-              aria-label={c.label}
-              value={v.met === null ? "" : v.met ? "met" : "not"}
-              disabled={!write}
-              onChange={(e) =>
-                attempt(() =>
-                  setCriterion(actor, project.contentId, c.key as CriterionKey, {
-                    met: e.target.value === "" ? null : e.target.value === "met",
-                    note: v.note,
-                  }),
-                )
-              }
-            >
-              <option value="">Not assessed</option>
-              <option value="met">Met</option>
-              <option value="not">Not met</option>
-            </select>
-            <input
-              type="text"
-              className="wf-note"
-              aria-label={`Note on ${c.label}`}
-              placeholder="Note"
-              defaultValue={v.note}
-              disabled={!write}
-              onBlur={(e) =>
-                e.target.value !== v.note &&
-                attempt(
-                  () => setCriterion(actor, project.contentId, c.key as CriterionKey, { met: v.met, note: e.target.value }),
-                  "Note saved",
-                )
-              }
-            />
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 /** The greenlight decision at the project's current greenlight stage, with what blocks "Greenlight" and the history. */
 export function DecisionPanel({ project, write, active }: { project: Project; write: boolean; active: boolean }) {
   const { actor, attempt, confirm } = useApp();
@@ -430,92 +375,5 @@ export function DecisionHistory({ projectId }: { projectId: string }) {
         ))}
       </ul>
     </details>
-  );
-}
-
-// ── The tab ──────────────────────────────────────────────────
-
-export function DevelopmentTab({ project, write }: { project: Project; write: boolean }) {
-  const { actor, attempt, confirm } = useApp();
-  const form = getDb().developmentForms.find((f) => f.contentId === project.contentId);
-  if (!form) return <Empty>This project has no development form.</Empty>;
-  const inDevelopment = project.workflow.stage === "Development";
-  const sections = DEV_FORMS[form.formType];
-  const firstIncomplete = sections.find((s) => formProblems(project.contentId, 2).some((m) => m.startsWith(`${s.label}:`)))?.key;
-  const gate = evaluateGate("Development", "project", project.contentId);
-  return (
-    <div className="stack">
-      {!inDevelopment && (
-        <div className="banner">Development is done. The form is kept here as the project's record; it can still be corrected.</div>
-      )}
-      {sections.map((s) => (
-        <SectionEditor key={s.key} project={project} section={s} write={write} open={inDevelopment && s.key === firstIncomplete} />
-      ))}
-      <section className="glass panel" aria-label="Greenlight">
-        <h2>Greenlight</h2>
-        <div className="grid-2">
-          <CriteriaPanel project={project} write={write && inDevelopment} />
-          <div className="stack">
-            <h3>Theological review</h3>
-            {(["pitch", "outline_script"] as const).map((k) => (
-              <CheckpointCard key={k} id={`${project.contentId}|${k}`} canChooseReviewers={write} />
-            ))}
-          </div>
-        </div>
-        {inDevelopment ? <DecisionPanel project={project} write={write} active /> : <DecisionHistory projectId={project.contentId} />}
-      </section>
-      <section className="glass panel" aria-label="Show producer">
-        <h2>Show producer</h2>
-        <p className="muted">Named by Operations. The producer coordinates the show and assigns its other roles at Pre-production.</p>
-        <div className="row" style={{ alignItems: "end" }}>
-          <Field label="Show producer">
-            <CrewSelect
-              label="Show producer"
-              value={project.workflow.showProducerId}
-              disabled={!canNameProducer(actor) || project.archived}
-              onChange={(p) =>
-                attempt(() => assignProducer(actor, project.contentId, p), p ? `${nameOf(p)} is the show producer` : "Producer removed")
-              }
-            />
-          </Field>
-        </div>
-        {project.workflow.producerAssignedAt && (
-          <p className="muted">
-            Named by {nameOf(project.workflow.producerAssignedById)}, {fmtDate(project.workflow.producerAssignedAt.slice(0, 10))}.
-          </p>
-        )}
-      </section>
-      <ConfigChecklist
-        title="Handoff"
-        listKey="handoff"
-        ownerId={project.contentId}
-        disabled={!write || !inDevelopment}
-        auto={{
-          producer_named: [
-            !!project.workflow.showProducerId,
-            project.workflow.showProducerId ? nameOf(project.workflow.showProducerId) : "Name the producer above",
-          ],
-          project_created: [true, project.contentId],
-        }}
-      />
-      {inDevelopment && (
-        <GatePanel
-          title="Leave Development"
-          gate={gate}
-          action="Done: move to Pre-production"
-          disabled={!write}
-          onDone={async () => {
-            if (
-              await confirm({
-                title: "Move to Pre-production?",
-                body: "Development is finished for this project. It cannot move back.",
-                confirmLabel: "Move on",
-              })
-            )
-              attempt(() => advanceProject(actor, project.contentId), "Moved to Pre-production");
-          }}
-        />
-      )}
-    </div>
   );
 }

@@ -7,7 +7,28 @@ What changed in each version, newest first. How to deploy is in GO-LIVE.md.
 Being built in phases. The five stages, their names and order, the stage tracker, Content IDs and every form that
 drives the calendar, reminders, call sheets, gear, storage or overdue stay as they are.
 
-**Phase 5: the documents of Production, Post production, and Marketing and distribution** (behind the same setting)
+**The old Development screens removed** (approved)
+- Devotions, series and documentaries always open on their Project Home and documents. The "Documents (preview)"
+  setting and each person's "Earlier screens" switch are gone, and so are the old Development tab, the six-criteria
+  panel, the pitch and outline review cards and the long "Still needed" list. Nothing stored is deleted: the old forms
+  and checkpoints are kept, untouched.
+- Data version 17: on first start, after keeping a copy, every workflow project's Development form that has not been
+  moved goes into its documents, so nothing written on the old screens is left out of sight. A brief that was only
+  opened during the preview, with nothing written in it, is made again by the move. One someone wrote in is never
+  written into: the old form is kept beside it on an "Earlier Development form" document (its tile shows only where it
+  exists), which undoing the move removes exactly. The demo and the desktop app save the upgraded data at once. The same applies to a
+  Greenlight document started by hand, whose page the move used to overwrite with the six criteria; and a devotion's
+  script started by hand gains no extra pages, so no extra devotions at acceptance.
+- Leaving Development is always the short list of hard gates. A testimonial also needs its consent and release with
+  the person's agreement, as before; it can no longer be dismissed as a note, and it is never passed by hand.
+- A DOF-made documentary's second greenlight needs its shot list; its shoot budget and interview sets are written in
+  its documents.
+- New projects no longer get pitch and outline checkpoints, which nothing would show. Projects reviewed on them keep
+  that review. A new episode's reviewers start as the brief's reviewers (or, for an older project, its outline's).
+- "Waiting on" and reminders for a project in Development come from its brief's review only.
+- On a phone, a page's "Saved" line goes under its title instead of pushing the page sideways.
+
+**Phase 5: the documents of Production, Post production, and Marketing and distribution**
 - Recording Day Sheet (a documentary's Shoot Day Sheet), in Production: one for each recording session, chosen at the
   top (it opens on the session recording now, else the next one planned). Its run sheet and wrap checklist are the
   session's own forms, as before, shown as fixed cards beside the pages: a line added to the run sheet here is the

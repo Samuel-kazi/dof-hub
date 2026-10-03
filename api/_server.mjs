@@ -4462,6 +4462,166 @@ function requireWebUrl(value, what, optional = false) {
   return url2;
 }
 
+// src/config/documentCatalog.ts
+var CRITERIA_LIST = "<ul><li><p><strong>Mission fit:</strong> </p></li><li><p><strong>Message soundness:</strong> </p></li><li><p><strong>Audience need:</strong> </p></li><li><p><strong>Feasibility:</strong> </p></li><li><p><strong>Resource cost:</strong> </p></li><li><p><strong>Team strength:</strong> </p></li></ul>";
+var doc = (key2, title2, pages, extra = {}) => ({
+  key: key2,
+  title: title2,
+  kind: "document",
+  pages: pages.map((p) => typeof p === "string" ? { title: p } : p),
+  ...extra
+});
+var form = (key2, title2, tile, extra = {}) => ({
+  key: key2,
+  title: title2,
+  kind: "form",
+  form: tile,
+  ...extra
+});
+var tool = (key2, title2, which) => ({ key: key2, title: title2, kind: "tool", tool: which });
+var review = (reviews) => ({ key: "theological_review", title: "Theological Review", kind: "review", reviews });
+var IDEA_FIELDS = [
+  { section: "brief", key: "logline", label: "Logline" },
+  { section: "brief", key: "coreQuestion", label: "Core question or tension" }
+];
+var greenlight = doc("greenlight", "Greenlight", [{ title: "Decision", body: `<p>The six criteria:</p>${CRITERIA_LIST}` }]);
+var EARLIER_FORM_KEY = "earlier_form";
+var earlierForm = doc(EARLIER_FORM_KEY, "Earlier Development form", [], { onlyIfMade: true });
+function showBrief(formType2) {
+  const pages = [
+    { title: "The idea", fields: IDEA_FIELDS },
+    { title: "Scripture and source basis" },
+    { title: "Shape" },
+    { title: "Ask" }
+  ];
+  if (formType2 === "testimonial") pages.splice(3, 0, { title: "Sensitivity" });
+  if (formType2 === "sermon") pages.splice(3, 0, { title: "Outline" });
+  return doc("show_brief", "Show Brief", pages);
+}
+function documentaryBrief(formType2) {
+  const pages = [
+    { title: "The idea", fields: IDEA_FIELDS },
+    { title: "Subjects and locations" },
+    { title: "Sources and fact-checking" },
+    { title: "Ask" }
+  ];
+  if (formType2 === "documentary_pitched")
+    pages.push({ title: "Proposer readiness" }, { title: "Support asked for" }, { title: "Ownership terms" });
+  return doc("documentary_brief", "Documentary Brief", pages);
+}
+var marketing = () => [
+  doc("release_plan", "Release Plan", ["Release message", "Platform plan", "Study resources"]),
+  form("platform_status", "Platform Status", "platformStatus"),
+  doc("learning_notes", "Learning Notes", ["Against the success measures"]),
+  form("archive", "Archive", "archive")
+];
+function seriesCatalog(formType2) {
+  return {
+    Development: [
+      showBrief(formType2),
+      review("show_brief"),
+      greenlight,
+      form("planned_episodes", "Planned Episodes", "plannedEpisodes"),
+      ...formType2 === "testimonial" ? [form("consent", "Consent and Release", "consent")] : [],
+      earlierForm
+    ],
+    "Pre-production": [
+      doc("production_pack", "Production Pack", ["Set design", "Rehearsal notes"]),
+      tool("storyboard", "Storyboard", "storyboard"),
+      tool("shot_list", "Shot List", "shotList"),
+      form("roles", "Roles", "roles"),
+      form("sessions", "Sessions", "sessions"),
+      form("call_sheet", "Call Sheet", "callSheet"),
+      form("gear", "Gear", "gear")
+    ],
+    Production: [
+      doc(
+        "recording_day_sheet",
+        "Recording Day Sheet",
+        [{ title: "Run sheet", form: "runSheet" }, "Daily notes", { title: "Wrap checklist", form: "wrapChecklist" }],
+        {
+          per: "session"
+        }
+      ),
+      form("session_log", "Session Log", "sessionLog"),
+      form("storage", "Storage", "storage")
+    ],
+    "Post production": [
+      doc("edit_notes", "Edit Notes", ["Notes to the editor", "Story and theology lock", "Graphics and music"]),
+      form("episode_tracker", "Episode Tracker", "episodeTracker"),
+      doc("review_thread", "Review Thread", [], { pagePerEpisode: true })
+    ],
+    "Marketing and distribution": marketing()
+  };
+}
+function documentaryCatalog(formType2) {
+  return {
+    Development: [
+      documentaryBrief(formType2),
+      review("documentary_brief"),
+      greenlight,
+      form("planned_episodes", "Planned Parts", "plannedEpisodes"),
+      earlierForm
+    ],
+    "Pre-production": [
+      doc("treatment", "Treatment", ["Story structure", "Interview guide"]),
+      tool("storyboard", "Storyboard", "storyboard"),
+      tool("shot_list", "Shot List", "shotList"),
+      form("roles", "Roles", "roles"),
+      form("sessions", "Sessions", "sessions"),
+      form("call_sheet", "Call Sheet", "callSheet"),
+      form("gear", "Gear", "gear")
+    ],
+    Production: [
+      doc(
+        "shoot_day_sheet",
+        "Shoot Day Sheet",
+        [{ title: "Run sheet", form: "runSheet" }, "Interview notes", { title: "Wrap checklist", form: "wrapChecklist" }],
+        {
+          per: "session"
+        }
+      ),
+      form("session_log", "Session Log", "sessionLog"),
+      form("storage", "Storage", "storage")
+    ],
+    "Post production": [
+      doc("edit_notes", "Edit Notes", ["Assembly notes", "Narration", "Fact-check lock", "Graphics and music"]),
+      form("cut_tracker", "Cut Tracker", "episodeTracker"),
+      doc("review_thread", "Review Thread", [], { pagePerEpisode: true })
+    ],
+    "Marketing and distribution": marketing()
+  };
+}
+var DEVOTION_PAGES = [1, 2, 3, 4, 5].map((n) => ({ title: `Devotion ${n}`, subtitle: "" }));
+var devotionCatalog = {
+  Development: [
+    doc("devotional_script", "Devotional Script", DEVOTION_PAGES),
+    review("devotional_script"),
+    form("accept_decline", "Accept or Decline", "acceptDecline"),
+    earlierForm
+  ],
+  "Pre-production": [
+    form("devotion_episodes", "Devotions", "devotionEpisodes"),
+    doc("recording_plan", "Recording Plan", ["Cards and storage", "Notes"]),
+    form("sessions", "Recording Session", "sessions"),
+    form("call_sheet", "Call Sheet", "callSheet")
+  ],
+  Production: [form("recording_day_view", "Recording Day View", "recordingDayView"), form("storage", "Storage", "storage")],
+  "Post production": [doc("edit_notes", "Edit Notes", ["Notes to the editor"]), form("review", "Review", "review")],
+  "Marketing and distribution": [
+    doc("release_plan", "Release Plan", ["Release message", "Platform plan"]),
+    doc("study_notes", "Study Notes", ["Study notes"])
+  ]
+};
+var catalogTypeOf = (formType2) => formType2 === "devotion" ? "devotion" : formType2 === "documentary_dof" || formType2 === "documentary_pitched" ? "documentary" : "series";
+function catalogFor(formType2, stage) {
+  const type = catalogTypeOf(formType2);
+  const all = type === "devotion" ? devotionCatalog : type === "documentary" ? documentaryCatalog(formType2) : seriesCatalog(formType2);
+  return all[stage];
+}
+var catalogEntry = (formType2, stage, key2) => catalogFor(formType2, stage).find((e) => e.key === key2);
+var briefKeyOf = (formType2) => catalogTypeOf(formType2) === "devotion" ? "devotional_script" : catalogTypeOf(formType2) === "documentary" ? "documentary_brief" : "show_brief";
+
 // src/services/workflow/common.ts
 var nowStamp = () => (/* @__PURE__ */ new Date()).toISOString();
 var isWorkflowProject = (r) => !!r?.workflow;
@@ -4966,161 +5126,6 @@ var DEV_FORMS = {
 var sectionOf = (formType2, key2) => DEV_FORMS[formType2].find((s2) => s2.key === key2);
 var plannedSectionOf = (formType2) => DEV_FORMS[formType2].find((s2) => s2.planned);
 
-// src/config/documentCatalog.ts
-var CRITERIA_LIST = "<ul><li><p><strong>Mission fit:</strong> </p></li><li><p><strong>Message soundness:</strong> </p></li><li><p><strong>Audience need:</strong> </p></li><li><p><strong>Feasibility:</strong> </p></li><li><p><strong>Resource cost:</strong> </p></li><li><p><strong>Team strength:</strong> </p></li></ul>";
-var doc = (key2, title2, pages, extra = {}) => ({
-  key: key2,
-  title: title2,
-  kind: "document",
-  pages: pages.map((p) => typeof p === "string" ? { title: p } : p),
-  ...extra
-});
-var form = (key2, title2, tile, extra = {}) => ({
-  key: key2,
-  title: title2,
-  kind: "form",
-  form: tile,
-  ...extra
-});
-var tool = (key2, title2, which) => ({ key: key2, title: title2, kind: "tool", tool: which });
-var review = (reviews) => ({ key: "theological_review", title: "Theological Review", kind: "review", reviews });
-var IDEA_FIELDS = [
-  { section: "brief", key: "logline", label: "Logline" },
-  { section: "brief", key: "coreQuestion", label: "Core question or tension" }
-];
-var greenlight = doc("greenlight", "Greenlight", [{ title: "Decision", body: `<p>The six criteria:</p>${CRITERIA_LIST}` }]);
-function showBrief(formType2) {
-  const pages = [
-    { title: "The idea", fields: IDEA_FIELDS },
-    { title: "Scripture and source basis" },
-    { title: "Shape" },
-    { title: "Ask" }
-  ];
-  if (formType2 === "testimonial") pages.splice(3, 0, { title: "Sensitivity" });
-  if (formType2 === "sermon") pages.splice(3, 0, { title: "Outline" });
-  return doc("show_brief", "Show Brief", pages);
-}
-function documentaryBrief(formType2) {
-  const pages = [
-    { title: "The idea", fields: IDEA_FIELDS },
-    { title: "Subjects and locations" },
-    { title: "Sources and fact-checking" },
-    { title: "Ask" }
-  ];
-  if (formType2 === "documentary_pitched")
-    pages.push({ title: "Proposer readiness" }, { title: "Support asked for" }, { title: "Ownership terms" });
-  return doc("documentary_brief", "Documentary Brief", pages);
-}
-var marketing = () => [
-  doc("release_plan", "Release Plan", ["Release message", "Platform plan", "Study resources"]),
-  form("platform_status", "Platform Status", "platformStatus"),
-  doc("learning_notes", "Learning Notes", ["Against the success measures"]),
-  form("archive", "Archive", "archive")
-];
-function seriesCatalog(formType2) {
-  return {
-    Development: [
-      showBrief(formType2),
-      review("show_brief"),
-      greenlight,
-      form("planned_episodes", "Planned Episodes", "plannedEpisodes"),
-      ...formType2 === "testimonial" ? [form("consent", "Consent and Release", "consent")] : []
-    ],
-    "Pre-production": [
-      doc("production_pack", "Production Pack", ["Set design", "Rehearsal notes"]),
-      tool("storyboard", "Storyboard", "storyboard"),
-      tool("shot_list", "Shot List", "shotList"),
-      form("roles", "Roles", "roles"),
-      form("sessions", "Sessions", "sessions"),
-      form("call_sheet", "Call Sheet", "callSheet"),
-      form("gear", "Gear", "gear")
-    ],
-    Production: [
-      doc(
-        "recording_day_sheet",
-        "Recording Day Sheet",
-        [{ title: "Run sheet", form: "runSheet" }, "Daily notes", { title: "Wrap checklist", form: "wrapChecklist" }],
-        {
-          per: "session"
-        }
-      ),
-      form("session_log", "Session Log", "sessionLog"),
-      form("storage", "Storage", "storage")
-    ],
-    "Post production": [
-      doc("edit_notes", "Edit Notes", ["Notes to the editor", "Story and theology lock", "Graphics and music"]),
-      form("episode_tracker", "Episode Tracker", "episodeTracker"),
-      doc("review_thread", "Review Thread", [], { pagePerEpisode: true })
-    ],
-    "Marketing and distribution": marketing()
-  };
-}
-function documentaryCatalog(formType2) {
-  return {
-    Development: [
-      documentaryBrief(formType2),
-      review("documentary_brief"),
-      greenlight,
-      form("planned_episodes", "Planned Parts", "plannedEpisodes")
-    ],
-    "Pre-production": [
-      doc("treatment", "Treatment", ["Story structure", "Interview guide"]),
-      tool("storyboard", "Storyboard", "storyboard"),
-      tool("shot_list", "Shot List", "shotList"),
-      form("roles", "Roles", "roles"),
-      form("sessions", "Sessions", "sessions"),
-      form("call_sheet", "Call Sheet", "callSheet"),
-      form("gear", "Gear", "gear")
-    ],
-    Production: [
-      doc(
-        "shoot_day_sheet",
-        "Shoot Day Sheet",
-        [{ title: "Run sheet", form: "runSheet" }, "Interview notes", { title: "Wrap checklist", form: "wrapChecklist" }],
-        {
-          per: "session"
-        }
-      ),
-      form("session_log", "Session Log", "sessionLog"),
-      form("storage", "Storage", "storage")
-    ],
-    "Post production": [
-      doc("edit_notes", "Edit Notes", ["Assembly notes", "Narration", "Fact-check lock", "Graphics and music"]),
-      form("cut_tracker", "Cut Tracker", "episodeTracker"),
-      doc("review_thread", "Review Thread", [], { pagePerEpisode: true })
-    ],
-    "Marketing and distribution": marketing()
-  };
-}
-var DEVOTION_PAGES = [1, 2, 3, 4, 5].map((n) => ({ title: `Devotion ${n}`, subtitle: "" }));
-var devotionCatalog = {
-  Development: [
-    doc("devotional_script", "Devotional Script", DEVOTION_PAGES),
-    review("devotional_script"),
-    form("accept_decline", "Accept or Decline", "acceptDecline")
-  ],
-  "Pre-production": [
-    form("devotion_episodes", "Devotions", "devotionEpisodes"),
-    doc("recording_plan", "Recording Plan", ["Cards and storage", "Notes"]),
-    form("sessions", "Recording Session", "sessions"),
-    form("call_sheet", "Call Sheet", "callSheet")
-  ],
-  Production: [form("recording_day_view", "Recording Day View", "recordingDayView"), form("storage", "Storage", "storage")],
-  "Post production": [doc("edit_notes", "Edit Notes", ["Notes to the editor"]), form("review", "Review", "review")],
-  "Marketing and distribution": [
-    doc("release_plan", "Release Plan", ["Release message", "Platform plan"]),
-    doc("study_notes", "Study Notes", ["Study notes"])
-  ]
-};
-var catalogTypeOf = (formType2) => formType2 === "devotion" ? "devotion" : formType2 === "documentary_dof" || formType2 === "documentary_pitched" ? "documentary" : "series";
-function catalogFor(formType2, stage) {
-  const type = catalogTypeOf(formType2);
-  const all = type === "devotion" ? devotionCatalog : type === "documentary" ? documentaryCatalog(formType2) : seriesCatalog(formType2);
-  return all[stage];
-}
-var catalogEntry = (formType2, stage, key2) => catalogFor(formType2, stage).find((e) => e.key === key2);
-var briefKeyOf = (formType2) => catalogTypeOf(formType2) === "devotion" ? "devotional_script" : catalogTypeOf(formType2) === "documentary" ? "documentary_brief" : "show_brief";
-
 // src/services/html.ts
 import createDOMPurify from "dompurify";
 var TAGS = [
@@ -5252,7 +5257,6 @@ function moveTo(items, id2, toIndex) {
   ordered.splice(Math.max(0, Math.min(ordered.length, Math.floor(toIndex))), 0, it);
   ordered.forEach((x, i) => x.position = i);
 }
-var newDocumentsOn = (formType2) => (getDb().settings.newDocuments ?? []).includes(catalogTypeOf(formType2));
 function documentHasContent(documentId) {
   const db2 = getDb();
   if (db2.documentLinks.some((l) => l.documentId === documentId)) return true;
@@ -5310,6 +5314,7 @@ function ensureDocument(actor, contentId, stage, docKey, ownerId = null) {
   }
   const project = projectForWrite2(actor, contentId);
   const entry = entryFor(project.workflow.formType, stage, docKey);
+  if (entry.onlyIfMade) throw new RuleError(`The ${entry.title} is only made by the move from the old forms.`);
   const session = entry.per === "session" && ownerId ? getSession(ownerId) : void 0;
   if (entry.per === "session") {
     if (!session || session.contentId !== contentId) throw new RuleError("Choose one of this project's recording sessions.");
@@ -5624,6 +5629,8 @@ function hardGates(projectId) {
       overridable: true
     }),
     withOverride(reviewGate(projectId, briefKeyOf(p.workflow.formType), "brief")),
+    // A testimonial records someone telling their own story: it is not greenlit without their consent and release.
+    ...p.workflow.formType === "testimonial" ? [withOverride(consentGate(projectId))] : [],
     withOverride({
       key: "greenlight",
       label: `${first} decision recorded as Greenlight, and a show producer named`,
@@ -5633,6 +5640,16 @@ function hardGates(projectId) {
     })
   ];
 }
+function consentGate(projectId) {
+  const lacking = formProblems(projectId, 1).filter((m) => m.startsWith("Consent and release: ")).map((m) => m.slice("Consent and release: ".length));
+  return {
+    key: "consent",
+    label: "Consent and release complete, with the person's agreement",
+    met: lacking.length === 0,
+    detail: lacking.length ? lacking.join("; ") : "Complete",
+    overridable: false
+  };
+}
 var hardGatesPass = (projectId, except = []) => hardGates(projectId).every((g) => except.includes(g.key) || g.met || g.override);
 var hardGatesMissing = (projectId, except = []) => hardGates(projectId).filter((g) => !except.includes(g.key) && !g.met && !g.override).map((g) => `${g.label} (${g.detail})`);
 function setGateOverride(actor, projectId, key2, note) {
@@ -5641,7 +5658,10 @@ function setGateOverride(actor, projectId, key2, note) {
   if (p.workflow.stage !== "Development") throw new RuleError("The project has already left Development.");
   const gate = hardGates(projectId).find((g) => g.key === key2);
   if (!gate) throw new RuleError("That is not one of this project's gates.");
-  if (!gate.overridable) throw new RuleError("The greenlight decision is recorded, not passed by hand.");
+  if (!gate.overridable)
+    throw new RuleError(
+      gate.key === "consent" ? "Consent and release is given by the person, not passed by hand." : "The greenlight decision is recorded, not passed by hand."
+    );
   const form2 = formOf(projectId);
   const rest = (form2.overrides ?? []).filter((o) => o.key !== key2);
   if (note === null) {
@@ -5781,15 +5801,8 @@ function setReviewWindow(actor, projectId, date2) {
 var greenlightStageOf = (form2) => form2.greenlightStage ?? 1;
 var latestDecision = (form2, stage) => [...form2.decisions].reverse().find((d) => d.stage === stage);
 function greenlightBlockers(project, stage) {
-  if (stage === 1 && newDocumentsOn(project.workflow.formType)) return hardGatesMissing(project.contentId, ["greenlight"]);
-  const out = [];
-  for (const key2 of ["pitch", "outline_script"]) {
-    const c = checkpoint(project.contentId, key2);
-    if (c?.status !== "Approved") out.push(`The ${key2 === "pitch" ? "pitch" : "outline or script"} review checkpoint must be Approved`);
-  }
-  out.push(...formProblems(project.contentId, stage));
-  if (stage === 2) out.push(...openRequired("preProject", project.contentId).filter((l) => l.startsWith("Shot list")));
-  return out;
+  if (stage === 1) return hardGatesMissing(project.contentId, ["greenlight"]);
+  return openRequired("preProject", project.contentId).filter((l) => l.startsWith("Shot list"));
 }
 function decideGreenlight(actor, projectId, input) {
   if (!canDecide(actor))
@@ -5983,7 +5996,7 @@ function archivePlannedEpisode(actor, id2, reason) {
 
 // src/services/documents/nudges.ts
 var GATED = /* @__PURE__ */ new Set(["Brief: Logline", "Brief: Core question or tension", "Guest: Name", "Guest: Contact"]);
-var KEPT_SECTIONS = ["Entry", "Guest", "Consent and release"];
+var KEPT_SECTIONS = ["Entry", "Guest"];
 function softNudges(projectId) {
   const p = projectOf(projectId);
   const formType2 = p.workflow.formType;
@@ -6024,24 +6037,8 @@ function lateDates(project, dates) {
 }
 function developmentGate(p) {
   const late = lateDates(p, [["The Development deadline", p.stageDeadlines.Development]]);
-  if (newDocumentsOn(p.workflow.formType)) {
-    const missing2 = p.workflow.stage === "Development" ? hardGatesMissing(p.contentId) : ["The project has already left Development"];
-    return result(missing2, [...softNudges(p.contentId), ...late]);
-  }
-  const missing = [];
-  if (p.workflow.stage !== "Development") missing.push("The project has already left Development");
-  const form2 = formOf(p.contentId);
-  if (latestDecision(form2, 1)?.outcome !== "Greenlight")
-    missing.push(form2.greenlightStage ? "First greenlight decision: Greenlight" : "Greenlight decision: Greenlight");
-  missing.push(...formProblems(p.contentId, 1));
-  for (const [key2, label] of [
-    ["pitch", "Pitch"],
-    ["outline_script", "Outline or script"]
-  ])
-    if (checkpoint(p.contentId, key2)?.status !== "Approved") missing.push(`${label} review checkpoint Approved`);
-  missing.push(...openRequired("handoff", p.contentId).map((l) => `Handoff: ${l}`));
-  if (!p.workflow.showProducerId) missing.push("Handoff: Show producer named");
-  return result(missing, late);
+  const missing = p.workflow.stage === "Development" ? hardGatesMissing(p.contentId) : ["The project has already left Development"];
+  return result(missing, [...softNudges(p.contentId), ...late]);
 }
 function preProductionProjectGate(p) {
   const missing = [];
@@ -6219,7 +6216,6 @@ function startProject(actor, r, formType2, deadline) {
   const db2 = getDb();
   db2.records.push(r);
   db2.developmentForms.push(blankForm(r.contentId, formType2));
-  db2.reviewCheckpoints.push(blankCheckpoint(r.contentId, null, "pitch"), blankCheckpoint(r.contentId, null, "outline_script"));
   ensureChecklist("handoff", "project", r.contentId);
   logAudit(actor, "create", "record", r.contentId, `${formTypeOf(formType2).label}: ${r.title}`);
   return r;
@@ -6392,7 +6388,9 @@ function makeEpisode(actor, project, input, kept2) {
   r.assigneePersonId = info.editorId;
   const db2 = getDb();
   if (!kept2 || typeof kept2 === "string") db2.records.push(r);
-  const reviewers = checkpoint(project.contentId, "outline_script")?.reviewerIds ?? [];
+  const brief = documentIdOf(project.contentId, "Development", briefKeyOf(project.workflow.formType), null);
+  const briefReviewers = db2.documentReviews.filter((x) => x.documentId === brief && x.reviewerId !== "system").map((x) => x.reviewerId);
+  const reviewers = briefReviewers.length ? briefReviewers : checkpoint(project.contentId, "outline_script")?.reviewerIds ?? [];
   for (const key2 of ["rough_cut", "final"]) {
     const earlier = checkpoint(id2, key2);
     if (earlier)
@@ -8169,11 +8167,19 @@ function migrateDocuments(db2, options) {
     const form2 = db2.developmentForms.find((f2) => f2.contentId === p.contentId);
     const briefKey = briefKeyOf(formType2);
     const title2 = p.parentId && byId.get(p.parentId) ? `${byId.get(p.parentId).title}: ${p.title}` : p.title;
-    const already = db2.projectDocuments.some((d) => d.contentId === p.contentId && d.docKey === briefKey);
-    if (already) {
+    let started = db2.projectDocuments.find((d) => d.contentId === p.contentId && d.docKey === briefKey && !d.ownerId);
+    const carried = db2.projectDocuments.some((d) => d.contentId === p.contentId && d.docKey === EARLIER_FORM_KEY);
+    if (started && started.migrated || carried) {
       report.lines.push({ contentId: p.contentId, title: title2, documents: [], fields: 0, note: "It already has its documents. Left as it is." });
       continue;
     }
+    if (started && form2 && onlyOpened(db2, started.id)) {
+      const id2 = started.id;
+      db2.projectDocuments = db2.projectDocuments.filter((d) => d.id !== id2);
+      db2.documentPages = db2.documentPages.filter((pg) => pg.documentId !== id2);
+      started = void 0;
+    }
+    const late = !!started;
     if (!form2) {
       report.lines.push({
         contentId: p.contentId,
@@ -8226,13 +8232,52 @@ function migrateDocuments(db2, options) {
         fields++;
       }
     }
-    const brief = newDocument(p, "Development", briefKey);
+    let keep = null;
+    const keeping = () => {
+      keep ??= newDocument(p, "Development", EARLIER_FORM_KEY);
+      written.add(keep.title);
+      return keep;
+    };
+    const ours = (stage, key2) => {
+      const existing = db2.projectDocuments.find((d) => d.id === documentIdOf(p.contentId, stage, key2, null));
+      return existing && !existing.migrated ? null : newDocument(p, stage, key2);
+    };
+    const brief = late ? null : newDocument(p, "Development", briefKey);
     if (brief) written.add(brief.title);
     for (const { target, parts } of grouped.values()) {
-      const d = target.doc === briefKey ? brief : newDocument(p, target.stage, target.doc);
-      if (!d) continue;
-      written.add(d.title);
-      for (const [heading, blocks] of parts) write(d, target.page, `${heading ? `<h3>${escapeHtml(heading)}</h3>` : ""}${blocks.join("")}`);
+      const d = target.doc === briefKey ? brief : ours(target.stage, target.doc);
+      const docTitle = catalogEntry(formType2, target.stage, target.doc)?.title ?? target.doc;
+      const [into, pageTitle] = d ? [d, target.page] : [keeping(), `${docTitle}: ${target.page}`];
+      written.add(into.title);
+      for (const [heading, blocks] of parts)
+        write(into, pageTitle, `${heading ? `<h3>${escapeHtml(heading)}</h3>` : ""}${blocks.join("")}`);
+    }
+    if (formType2 === "devotion" && late) {
+      const days = db2.plannedEpisodes.filter((x) => x.contentId === p.contentId).sort((a, b) => a.episodeNumber - b.episodeNumber);
+      if (days.length) {
+        const k = keeping();
+        days.forEach((day, i) => {
+          write(
+            k,
+            "Devotions on the earlier form",
+            `<h3>${escapeHtml(day.workingTitle || `Devotion ${i + 1}`)}${day.archivedAt ? " (taken off the list)" : ""}</h3>` + [
+              day.details.scripture ? labelled("Scripture", day.details.scripture) : "",
+              day.details.keyThought ? labelled("Key thought", day.details.keyThought) : "",
+              day.details.application ? labelled("Application or closing", day.details.application) : "",
+              day.question ? labelled("Question", day.question) : "",
+              day.guest ? labelled("Guest", day.guest) : "",
+              day.notes ? labelled("Notes", day.notes) : "",
+              ...Object.entries(day.details).filter(([key2, v]) => !["scripture", "keyThought", "application"].includes(key2) && v).map(([key2, v]) => labelled(key2, v))
+            ].join("")
+          );
+          fields++;
+        });
+      }
+      const notes = form2.sections.messageReview?.notes;
+      if (typeof notes === "string" && notes.trim()) {
+        write(keeping(), "Devotions on the earlier form", labelled("From the team's message review", notes.trim()));
+        fields++;
+      }
     }
     if (formType2 === "devotion" && brief) {
       const days = db2.plannedEpisodes.filter((x) => x.contentId === p.contentId).sort((a, b) => a.episodeNumber - b.episodeNumber);
@@ -8273,16 +8318,30 @@ function migrateDocuments(db2, options) {
     if (catalogEntry(formType2, "Development", "greenlight")) {
       const judged = CRITERIA.filter((c) => form2.criteria[c.key]?.met !== null || form2.criteria[c.key]?.note);
       if (judged.length) {
-        const g = newDocument(p, "Development", "greenlight");
-        written.add(g.title);
         const list = CRITERIA.map((c) => {
           const cr = form2.criteria[c.key] ?? { met: null, note: "" };
           const verdict = cr.met === true ? "Met" : cr.met === false ? "Not met" : "Not judged yet";
           return `<li><p><strong>${escapeHtml(c.label)}:</strong> ${verdict}${cr.note ? `. ${escapeHtml(cr.note)}` : ""}</p></li>`;
         }).join("");
-        const pg = pagesOf2(g.id)[0];
-        if (pg) pg.bodyHtml = `<p>The six criteria:</p><ul>${list}</ul>`;
+        const g = ours("Development", "greenlight");
+        if (g) {
+          written.add(g.title);
+          const pg = pagesOf2(g.id)[0];
+          if (pg) pg.bodyHtml = `<p>The six criteria:</p><ul>${list}</ul>`;
+        } else write(keeping(), "Greenlight: the six criteria", `<ul>${list}</ul>`);
         fields += judged.length;
+      }
+    }
+    if (late) {
+      const cps = db2.reviewCheckpoints.filter(
+        (c) => c.contentId === p.contentId && !c.episodeId && (c.checkpoint === "pitch" || c.checkpoint === "outline_script") && (c.status !== "Pending" || c.reviewerIds.length || c.note)
+      );
+      for (const c of cps) {
+        write(
+          keeping(),
+          "Theological review on the earlier form",
+          `<h3>${c.checkpoint === "pitch" ? "Pitch" : "Outline or script"}: ${escapeHtml(c.status)}</h3>` + (c.reviewerIds.length ? labelled("Reviewers", c.reviewerIds.map(nameOf2).join(", ")) : "") + (c.note ? labelled("Note", c.note) : "") + (c.decidedAt ? labelled("Decided", fmtDate(c.decidedAt.slice(0, 10))) : "")
+        );
       }
     }
     if (brief) {
@@ -8308,7 +8367,7 @@ function migrateDocuments(db2, options) {
         if (!db2.documentReviews.some((x) => x.id === r.id)) db2.documentReviews.push(r);
       }
     }
-    const camera = cameraPlanRows(db2, p);
+    const camera = db2.shotLists.some((l) => l.contentId === p.contentId && l.migrated) ? [] : cameraPlanRows(db2, p);
     if (camera.length) {
       const list = {
         id: localId("SL"),
@@ -8325,17 +8384,30 @@ function migrateDocuments(db2, options) {
       camera.forEach((r, i) => db2.shotListRows.push({ ...r, id: localId("SR"), shotListId: list.id, position: i }));
       written.add("Shot List");
     }
+    if (late && !written.size) {
+      report.lines.push({
+        contentId: p.contentId,
+        title: title2,
+        documents: [],
+        fields: 0,
+        note: "Its brief was started by hand, and its old form was empty."
+      });
+      continue;
+    }
     report.lines.push({
       contentId: p.contentId,
       title: title2,
       documents: [...written],
       fields,
-      note: fields ? "" : "Its Development form was empty: its documents start blank."
+      note: late ? "Its brief had been started by hand, so it is left as it was: the old form is kept on the Earlier Development form." : fields ? "" : "Its Development form was empty: its documents start blank."
     });
     report.changed = true;
   }
   report.unaccounted = unaccountedFields(db2, report);
   return report;
+}
+function onlyOpened(db2, documentId) {
+  return db2.documentPages.filter((pg) => pg.documentId === documentId).every((pg) => pg.version === 1 && !pg.archivedAt) && !db2.documentLinks.some((l) => l.documentId === documentId) && !db2.documentReviews.some((r) => r.documentId === documentId) && !db2.reviewComments.some((c) => c.documentId === documentId);
 }
 function cameraPlanRows(db2, p) {
   const row = (rowType, description) => ({
@@ -8746,10 +8818,29 @@ function upgradeToV16(db2) {
   db2.schemaVersion = 16;
   return db2;
 }
+function upgradeToV17(db2) {
+  const at = (/* @__PURE__ */ new Date()).toISOString();
+  const report = migrateDocuments(db2, { at });
+  if (report.changed) {
+    const projects = report.lines.filter((l) => l.documents.length).length;
+    db2.audit.push({
+      id: logId("A"),
+      at,
+      byPersonId: "system",
+      action: "migrate-documents",
+      entity: "system",
+      entityId: "documents",
+      detail: `With the old Development screens gone, the Development forms of ${projects} project${projects === 1 ? "" : "s"} moved into their documents.`
+    });
+  }
+  delete db2.settings.newDocuments;
+  db2.schemaVersion = 17;
+  return db2;
+}
 
 // src/data/store.ts
 var KEY = "dof-hub-db";
-var SCHEMA_VERSION = 16;
+var SCHEMA_VERSION = 17;
 function migrate(old) {
   const gear = buildGearSeed();
   const next2 = {
@@ -8788,7 +8879,8 @@ var UPGRADES = {
   12: upgradeToV13,
   13: upgradeToV14,
   14: upgradeToV15,
-  15: upgradeToV16
+  15: upgradeToV16,
+  16: upgradeToV17
 };
 function upgradeDb(parsed) {
   let db2 = parsed.schemaVersion === 1 ? migrate(parsed) : parsed;
@@ -8813,9 +8905,18 @@ function load() {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed.schemaVersion !== SCHEMA_VERSION) keepCopy(raw, `before-v${SCHEMA_VERSION}`);
+      const older = parsed.schemaVersion !== SCHEMA_VERSION;
+      if (older) keepCopy(raw, `before-v${SCHEMA_VERSION}`);
       const up = upgradeDb(parsed);
-      if (up) return up;
+      if (up) {
+        if (older && persist) {
+          try {
+            localStorage.setItem(KEY, JSON.stringify(up));
+          } catch {
+          }
+        }
+        return up;
+      }
       keepCopy(raw, "unreadable");
     }
   } catch {
@@ -9932,7 +10033,6 @@ __export(documents_exports, {
   moveFramesTo: () => moveFramesTo,
   movePage: () => movePage,
   moveShotRow: () => moveShotRow,
-  newDocumentsOn: () => newDocumentsOn,
   pagesOf: () => pagesOf,
   removeDocumentLink: () => removeDocumentLink,
   renameShotList: () => renameShotList,
@@ -10295,8 +10395,6 @@ function makeDevotionEpisodes(actor, projectId) {
 function acceptDevotion(actor, projectId, note) {
   const p = projectForWrite2(actor, projectId);
   if (p.workflow.formType !== "devotion") throw new RuleError("Only a devotion is accepted this way.");
-  if (!newDocumentsOn("devotion"))
-    throw new RuleError("Devotions are accepted from their Development form while their documents are not in use.");
   decideGreenlight(actor, projectId, { outcome: "Greenlight", notes: note, date: todayIso() });
   advanceProject(actor, projectId);
   logAudit(actor, "devotion-accepted", "record", projectId, note.trim() ? `Accepted. ${note.trim()}` : "Accepted");
@@ -10354,10 +10452,7 @@ var waiting = (ownerId, reviews, ownerToo = true) => [
   .../* @__PURE__ */ new Set([...ownerToo && ownerId ? [ownerId] : [], ...reviews.flatMap((r) => r.reviewerIds)])
 ];
 function projectItem(p, stage, step, ownerId, gate) {
-  const reviews = stage !== "Development" ? [] : newDocumentsOn(p.workflow.formType) ? briefReview(p).reviews : pendingReviews(p.contentId, [
-    ["pitch", "Pitch review"],
-    ["outline_script", "Outline or script review"]
-  ]);
+  const reviews = stage !== "Development" ? [] : briefReview(p).reviews;
   return {
     key: `project:${p.contentId}`,
     level: "project",
@@ -10443,7 +10538,7 @@ function itemsOf(p, gates) {
   if (p.workflow.stage === "Development") {
     const outcome2 = getDb().developmentForms.find((f2) => f2.contentId === p.contentId)?.outcome;
     let step = outcome2 === "Greenlight" ? "Greenlit: handoff" : outcome2 ? outcome2 : "Form and reviews";
-    if (newDocumentsOn(p.workflow.formType) && outcome2 !== "Greenlight") {
+    if (outcome2 !== "Greenlight") {
       const { title: title2, state } = briefReview(p);
       if (state === "changes_requested") step = `Changes requested on the ${title2}`;
       else if (state === "pending") step = "Theological review";
@@ -10732,10 +10827,8 @@ var SETTINGS_EDITABLE = [
   "storageWarningThreshold",
   "checkoutReturnDays",
   "workDays",
-  "effortOverrides",
-  "newDocuments"
+  "effortOverrides"
 ];
-var DOCUMENTS_READY = ["devotion", "series", "documentary"];
 function updateSettings(actor, input) {
   requireCan(actor, "backend.settings", "change system settings");
   const patch = pickKeys(input, SETTINGS_EDITABLE);
@@ -10758,13 +10851,6 @@ function updateSettings(actor, input) {
       if (!Number.isFinite(v) || v < 0 || v > 30 || Math.round(v * 4) !== v * 4)
         throw new RuleError(`${key2.split(":")[1] ?? key2}: use a number of days from 0 to 30, in steps of a quarter day.`);
     }
-  }
-  if (patch.newDocuments !== void 0) {
-    if (!Array.isArray(patch.newDocuments)) throw new RuleError("Choose the kinds of project that use the new documents.");
-    const kinds = [...new Set(patch.newDocuments)];
-    const early = kinds.find((k) => !DOCUMENTS_READY.includes(k));
-    if (early) throw new RuleError("Choose devotions, series or documentaries.");
-    patch.newDocuments = kinds;
   }
   Object.assign(getDb().settings, patch);
   logAudit(actor, "settings", "settings", "system", Object.keys(patch).join(", "));
@@ -12476,8 +12562,7 @@ var ACTIONS = {
       storageWarningThreshold: z2.number().min(0).max(100),
       checkoutReturnDays: count(1e3),
       workDays: z2.array(z2.number().int().min(0).max(6)).max(7),
-      effortOverrides: z2.record(short(200), z2.number().min(0).max(1e3)),
-      newDocuments: z2.array(z2.enum(["devotion", "series", "documentary"])).max(3)
+      effortOverrides: z2.record(short(200), z2.number().min(0).max(1e3))
     }).partial()
   ]),
   "settings.updateWorkspaceAppearance": args([
