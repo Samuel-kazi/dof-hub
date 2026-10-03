@@ -729,6 +729,7 @@ label.field {
   color: var(--ink-2);
 }
 input[type="text"],
+input[type="url"],
 input[type="number"],
 input[type="email"],
 input[type="password"],
@@ -3534,4 +3535,319 @@ button.link:hover {
   border-radius: 10px;
   background: var(--accent-soft);
   font-size: 0.9rem;
+}
+/* Documents, phase 4: the Storyboard and the Shot List. */
+/* The boards (or lists) sit in a row above the open one, which has the full width for its grid or table. */
+.pd-toolpane {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+.pd-tool-list,
+.pd-tool-main {
+  background: var(--glass);
+  border: 1px solid var(--glass-line);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--edge);
+  padding: 12px;
+  min-width: 0;
+}
+.pd-tool-list h3 {
+  font-size: 0.95rem;
+  margin: 2px 4px 10px;
+}
+.pd-tool-list ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.pd-tool-list li button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: var(--ink-2);
+  text-align: left;
+  cursor: pointer;
+}
+.pd-tool-list li button:hover {
+  background: var(--hover);
+}
+.pd-tool-list li button.on {
+  background: color-mix(in srgb, var(--st, var(--accent)) 16%, transparent);
+  border-bottom-color: var(--st, var(--accent));
+  color: var(--ink);
+  font-weight: 600;
+}
+.pd-tool-list .pd-add {
+  width: auto;
+}
+.pd-toolpane .grow {
+  flex: 1;
+  min-width: 0;
+}
+.pd-board {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pd-board-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.pd-board-name {
+  flex: 1;
+  font-size: 1.2rem;
+  font-weight: 650;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--ink);
+  padding: 4px 8px;
+  border-radius: 8px;
+}
+.pd-board-name:hover,
+.pd-board-name:focus {
+  border-color: var(--glass-line);
+  background: var(--glass-2);
+}
+.pd-bulk {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--glass-2);
+  border: 1px solid var(--glass-line);
+}
+.pd-frames {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.pd-frame {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid var(--glass-line);
+  background: var(--glass-2);
+}
+.pd-frame.on {
+  border-color: var(--accent-hi);
+  background: var(--accent-soft);
+}
+.pd-frame-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+.pd-frame-head[draggable="true"] {
+  cursor: grab;
+}
+.pd-frame-head input.pd-scene {
+  width: 58px;
+  flex: none;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--ink);
+}
+.pd-frame-head input.pd-scene:hover,
+.pd-frame-head input.pd-scene:focus {
+  border-color: var(--glass-line);
+  background: var(--glass);
+}
+.pd-frame-n {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  color: var(--ink-2);
+}
+.pd-grip {
+  color: var(--ink-3);
+  cursor: grab;
+}
+.pd-frame .pd-card-menu {
+  border: 0;
+  border-radius: 8px;
+  height: 28px;
+}
+.pd-frame-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pd-frame-fields input {
+  width: 100%;
+}
+.pd-frame-add {
+  min-height: 160px;
+  border: 2px dashed var(--glass-line);
+  border-radius: 12px;
+  background: none;
+  color: var(--ink-2);
+  font-weight: 600;
+  cursor: pointer;
+}
+.pd-frame-add:hover {
+  background: var(--hover);
+}
+.pd-image {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--inset);
+  border: 1px dashed var(--glass-line);
+  display: grid;
+  place-items: center;
+}
+.pd-image.has {
+  border-style: solid;
+}
+.pd-image.over {
+  border-color: var(--accent-hi);
+  background: var(--accent-soft);
+}
+.pd-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.pd-image-add {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+  font-size: 0.86rem;
+}
+.pd-image-none {
+  color: var(--ink-3);
+  font-size: 0.8rem;
+}
+.pd-image-actions {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  display: flex;
+  gap: 4px;
+}
+.pd-image.compact {
+  width: 96px;
+}
+.pd-image.compact .pd-image-actions .btn {
+  padding: 2px 8px;
+}
+.pd-shots td,
+.pd-shots th {
+  vertical-align: middle;
+}
+.pd-shots input {
+  width: 100%;
+  min-width: 64px;
+  padding: 8px 9px;
+}
+.pd-shots td,
+.pd-shots th {
+  padding-left: 4px;
+  padding-right: 4px;
+}
+.pd-shots td:nth-child(5) input {
+  min-width: 150px;
+}
+.pd-cell-pick input {
+  min-width: 124px;
+}
+.pd-shots tr.on td {
+  background: var(--accent-soft);
+}
+.pd-cell-check {
+  width: 28px;
+}
+.pd-cell-grip {
+  width: 18px;
+  color: var(--ink-3);
+  cursor: grab;
+  user-select: none;
+}
+.pd-cell-num {
+  width: 48px;
+  font-weight: 700;
+  text-align: center;
+}
+.pd-cell-image {
+  width: 100px;
+}
+.pd-cell-time input {
+  min-width: 60px;
+  width: 64px;
+}
+.pd-cell-menu {
+  width: 34px;
+}
+.pd-cell-menu .pd-card-menu {
+  border: 0;
+  height: 30px;
+  border-radius: 8px;
+}
+.pd-row-wide {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.pd-row-kind {
+  flex: none;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.pd-row-setup td {
+  background: var(--glass-2);
+  font-style: italic;
+}
+.pd-row-banner td {
+  background: color-mix(in srgb, var(--st-pre) 18%, transparent);
+  font-weight: 650;
+}
+.pd-shots-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.pd-total {
+  font-size: 0.92rem;
+}
+@media (max-width: 1100px) {
+  .pd-frames {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  .pd-frames {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.pd-selectall {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }

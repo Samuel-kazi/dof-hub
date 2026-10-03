@@ -4,13 +4,13 @@ import { commit, getDb } from "../../data/store";
 import { localId } from "../../data/ids";
 import { logAudit } from "../audit";
 import { asWebUrl } from "../urls";
-import { STORED_FILE } from "../utils";
+import { MEDIA_FILE, STORED_FILE } from "../utils";
 import { getRecord } from "../access";
 import { moveTo, nowStamp, projectForView, projectForWrite, renumber } from "./common";
 
 // Storyboards and shot lists, Pre-production's two tools. Either can start as a copy of one that already exists, in
-// this project or any other the person may see, so good boards are reused. Images are stored as files; a frame or a
-// row keeps only the image's address.
+// this project or any other the person may see, so good boards are reused. Images are stored as files (on the server,
+// or in the desktop app's media folder); a frame or a row keeps only the image's address.
 
 const MAX_LINE = 500;
 /** A stored image's address, or a photo the browser has just shrunk (the server files it and keeps the address). */
@@ -19,7 +19,7 @@ const MAX_IMAGE = 2_000_000;
 
 function imageOf(value: string | null): string | null {
   if (value === null || value === "") return null;
-  if (STORED_FILE.test(value)) return value;
+  if (STORED_FILE.test(value) || MEDIA_FILE.test(value)) return value;
   if (IMAGE.test(value) && value.length <= MAX_IMAGE) return value;
   throw new RuleError("That image could not be stored. Choose a JPEG, PNG or WebP picture.");
 }

@@ -7,6 +7,27 @@ What changed in each version, newest first. How to deploy is in GO-LIVE.md.
 Being built in phases. The five stages, their names and order, the stage tracker, Content IDs and every form that
 drives the calendar, reminders, call sheets, gear, storage or overdue stay as they are.
 
+**Phase 4: the Storyboard and the Shot List** (behind the same setting)
+- Storyboard, in Pre-production: the project's boards in a row above with their frame counts, and "+ New storyboard",
+  which starts blank or as a copy of any board the person may see, in this project or another, pictures and all. A
+  board can be for the whole project or one episode. Its frames sit in a grid (three across on a wide screen): "Sc. ·
+  Frame N", a 16:9 picture (click or drop to add it, replace or remove it), description, sound effects and a video
+  link (web links only). "+ Frame" adds one; frames are dragged into order; each has a ⋮ menu (Duplicate, move earlier
+  or later, move to another storyboard, Delete); Select all, then delete or move several at once. The board's name is
+  edited in place. Everything saves as it is typed.
+- Shot List, in Pre-production: the lists in a row above with their shot counts, and "+ New shot list" (blank or a
+  copy). A table: picture, shot number (shots only: setups and banners take none), description, shot size, type and
+  movement (the usual ones offered, anything else typed), and estimated minutes, with a ⋮ menu and a checkbox per row.
+  "+ Shot", "+ Setup" (a row across the table for lighting, lens or camera notes) and "+ Banner" (a section divider).
+  Rows are dragged into order; Select all, then delete; the times add up at the foot.
+- Pictures are shrunk to a 1280-pixel long edge before they are kept. On the hosted site the server files them and the
+  frame keeps only the address. The desktop app now writes them to a media folder in its own data folder (one folder
+  per project) and keeps only the path; it may write there and nowhere else. The browser demo keeps the shrunk picture.
+- The camera plan from the old forms (moved in Phase 1) is there as a shot list.
+- A project's "Waiting on" follows the document review once its documents are on: the reviewers still to decide, who
+  are reminded, and then its owner (the Entry owner, or the producer) when changes are requested.
+- Text inputs for web addresses now follow the theme (they were white in night mode).
+
 **Phase 3: series and documentaries, the review, the greenlight and the short gates** (behind the same setting)
 - Settings, Documents (preview), now has a switch for each kind: devotions, series and documentaries. A series or
   documentary then opens on its Project Home, with its own documents (Show Brief or Documentary Brief, Theological

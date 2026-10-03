@@ -23,6 +23,7 @@
     "format:check": "prettier --check ."
   },
   "dependencies": {
+    "@tauri-apps/plugin-fs": "^2.6.0",
     "@tauri-apps/plugin-opener": "^2.7.0",
     "@tiptap/core": "^3.31.4",
     "@tiptap/extension-highlight": "^3.31.4",

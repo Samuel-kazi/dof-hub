@@ -14,6 +14,10 @@ import {
   type Project,
 } from "./workflow/common";
 import { fmtShort } from "./utils";
+import { briefKeyOf, catalogEntry } from "../config/documentCatalog";
+import { newDocumentsOn } from "./documents/common";
+import { documentOf } from "./documents/pages";
+import { reviewsOf, reviewStateOf } from "./documents/reviews";
 import type { Route } from "../ui/AppContext";
 
 // The work of the five-stage workflow as one list, at the level each stage works at (src/config/workflow.ts):
@@ -90,18 +94,42 @@ function pendingReviews(ownerId: string, keys: readonly [string, string][]): Pen
   return out;
 }
 
+/**
+ * With the documents in use, the review a project's Development waits on is the theological review of its brief (or a
+ * devotion's script): its reviewers still to decide. When they ask for changes, it waits on the owner instead.
+ */
+function briefReview(p: Project): { title: string; state: ReturnType<typeof reviewStateOf>; reviews: PendingReview[] } {
+  const key = briefKeyOf(p.workflow.formType);
+  const title = catalogEntry(p.workflow.formType, "Development", key)?.title ?? "brief";
+  const doc = documentOf(p.contentId, "Development", key);
+  const state = doc ? reviewStateOf(doc.id) : "no reviewers";
+  const pending = doc
+    ? reviewsOf(doc.id)
+        .filter((r) => r.status === "pending")
+        .map((r) => r.reviewerId)
+    : [];
+  return {
+    title,
+    state,
+    reviews:
+      doc && state === "pending" && pending.length ? [{ checkpointId: doc.id, label: "Theological review", reviewerIds: pending }] : [],
+  };
+}
+
 const waiting = (ownerId: string | null, reviews: PendingReview[], ownerToo = true): string[] => [
   ...new Set([...(ownerToo && ownerId ? [ownerId] : []), ...reviews.flatMap((r) => r.reviewerIds)]),
 ];
 
 function projectItem(p: Project, stage: WorkflowStage, step: string, ownerId: string | null, gate: GateResult | null): WorkItem {
   const reviews =
-    stage === "Development"
-      ? pendingReviews(p.contentId, [
-          ["pitch", "Pitch review"],
-          ["outline_script", "Outline or script review"],
-        ])
-      : [];
+    stage !== "Development"
+      ? []
+      : newDocumentsOn(p.workflow.formType)
+        ? briefReview(p).reviews
+        : pendingReviews(p.contentId, [
+            ["pitch", "Pitch review"],
+            ["outline_script", "Outline or script review"],
+          ]);
   return {
     key: `project:${p.contentId}`,
     level: "project",
@@ -191,7 +219,13 @@ function episodeItem(p: Project, ep: Episode, gates: boolean): WorkItem {
 function itemsOf(p: Project, gates: boolean): WorkItem[] {
   if (p.workflow.stage === "Development") {
     const outcome = getDb().developmentForms.find((f) => f.contentId === p.contentId)?.outcome;
-    const step = outcome === "Greenlight" ? "Greenlit: handoff" : outcome ? outcome : "Form and reviews";
+    let step = outcome === "Greenlight" ? "Greenlit: handoff" : outcome ? outcome : "Form and reviews";
+    if (newDocumentsOn(p.workflow.formType) && outcome !== "Greenlight") {
+      const { title, state } = briefReview(p);
+      if (state === "changes_requested") step = `Changes requested on the ${title}`;
+      else if (state === "pending") step = "Theological review";
+      else if (!outcome) step = `${title} and its review`;
+    }
     return [projectItem(p, "Development", step, developmentOwner(p), gates ? evaluateGate("Development", "project", p.contentId) : null)];
   }
   const items: WorkItem[] = [];

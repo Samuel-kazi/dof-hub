@@ -190,6 +190,11 @@ should show their documents: devotions, series, documentaries (it needs the "cha
 project of that kind then opens on its Project Home. Each person can switch a project back with "Earlier screens" at
 any time; the data is the same either way. Untick a kind to turn it off for everyone.
 
+Storyboard and shot list pictures: on the hosted site they are stored like equipment photos. In the desktop app they
+are written to a `media` folder inside the app's own data folder on that computer (for example
+`%APPDATA%\tv.dawnoffaith.productionhub\media` on Windows), one folder per project; back that folder up with the computer.
+A picture kept on one desktop computer does not show anywhere else.
+
 Turning a kind on also changes how its projects leave Development: the short list of hard gates (phase 3) instead of
 the earlier form's long list. A project already past Development is not affected. Turning the kind off again brings
 the earlier gates back.

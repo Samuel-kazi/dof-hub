@@ -10,6 +10,8 @@ import { DecisionHistory, PlannedEditor, SectionEditor } from "../workflow/Devel
 import { PreProductionTab, RolesPanel } from "../workflow/PreProduction";
 import { EpisodeTracker } from "../workflow/EpisodeTracker";
 import { DevelopmentGate } from "./DevelopmentGate";
+import { ShotListTool } from "./ShotLists";
+import { StoryboardTool } from "./Storyboards";
 
 // The forms among a project's tiles. Each keeps its screen and its behaviour as before (the calendar, reminders, call
 // sheets, gear conflicts, storage and overdue all read them); only the way to them is new.
@@ -173,7 +175,11 @@ function Note({ title, text, children }: { title: string; text: string; children
 export function FormPane({ project, entry, write }: { project: Project; entry: CatalogEntry; write: boolean }) {
   const { go } = useApp();
   if (entry.kind === "tool")
-    return <Empty>{entry.title} opens here in a later phase. Until then it is on the project's earlier screens.</Empty>;
+    return entry.tool === "storyboard" ? (
+      <StoryboardTool project={project} write={write} />
+    ) : (
+      <ShotListTool project={project} write={write} />
+    );
   switch (entry.form) {
     case "acceptDecline":
       return <DevotionAcceptance project={project} write={write} />;

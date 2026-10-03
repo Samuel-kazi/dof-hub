@@ -92,3 +92,5 @@ export function pickKeys<T extends object, K extends keyof T>(patch: T, keys: re
 
 /** A photo stored on the server (see server/layout.ts). Signed in to the server, photos are links of this form. */
 export const STORED_FILE = /^\/api\/file\?id=[a-f0-9]{32}$/;
+/** A picture the desktop app keeps in its media folder: media:<project>/<file>. Only the path is stored. */
+export const MEDIA_FILE = /^media:[A-Za-z0-9-]{1,80}\/[A-Za-z0-9_-]{1,80}\.(jpg|png|webp)$/;

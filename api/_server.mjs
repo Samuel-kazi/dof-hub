@@ -1244,6 +1244,7 @@ function pickKeys(patch, keys) {
   return out;
 }
 var STORED_FILE = /^\/api\/file\?id=[a-f0-9]{32}$/;
+var MEDIA_FILE = /^media:[A-Za-z0-9-]{1,80}\/[A-Za-z0-9_-]{1,80}\.(jpg|png|webp)$/;
 
 // src/data/seedGear.ts
 var stamp = (daysAgo, hour = 10) => {
@@ -5552,7 +5553,7 @@ function hardGates(projectId) {
       }),
       withOverride({
         key: "pages",
-        label: `At least ${DEVOTION_PAGES_NEEDED} devotion pages, each with a title, its scripture and the script`,
+        label: `At least ${DEVOTION_PAGES_NEEDED} devotion pages, each with its topic, scripture and script`,
         met: ready >= DEVOTION_PAGES_NEEDED,
         detail: `${ready} of ${DEVOTION_PAGES_NEEDED} ready`,
         overridable: true
@@ -9910,7 +9911,7 @@ var IMAGE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
 var MAX_IMAGE = 2e6;
 function imageOf(value) {
   if (value === null || value === "") return null;
-  if (STORED_FILE.test(value)) return value;
+  if (STORED_FILE.test(value) || MEDIA_FILE.test(value)) return value;
   if (IMAGE.test(value) && value.length <= MAX_IMAGE) return value;
   throw new RuleError("That image could not be stored. Choose a JPEG, PNG or WebP picture.");
 }
@@ -10175,7 +10176,7 @@ function makeDevotionEpisodes(actor, projectId) {
   const pages = script ? pagesOf(script.id).filter(countsAsDevotion) : [];
   if (!pages.length) throw new RuleError("The Devotional Script has no devotions written yet.");
   const db2 = getDb();
-  const theme = String(formOf(projectId).sections.entry?.theme ?? "");
+  const theme = String(formOf(projectId).sections.entry?.theme ?? "").trim();
   const out = { made: [], updated: [], episodes: [] };
   const at = nowStamp();
   let reserved = 0;
@@ -10188,11 +10189,13 @@ function makeDevotionEpisodes(actor, projectId) {
       const scripture = page.subtitle.trim() || String(day.details.scripture ?? "");
       const replaced = [
         day.workingTitle.trim() && day.workingTitle !== title2 ? `Title on the earlier form: ${day.workingTitle}` : "",
-        day.details.scripture && day.details.scripture !== scripture ? `Scripture on the earlier form: ${String(day.details.scripture)}` : ""
+        day.details.scripture && day.details.scripture !== scripture ? `Scripture on the earlier form: ${String(day.details.scripture)}` : "",
+        theme && day.question.trim() && day.question !== theme ? `Question on the earlier form: ${day.question}` : ""
       ].filter(Boolean);
       Object.assign(day, {
         sourcePageId: page.id,
         workingTitle: title2,
+        question: theme || day.question,
         details: { ...day.details, scripture },
         notes: [day.notes, ...replaced].filter(Boolean).join("\n"),
         updatedAt: at
@@ -10220,9 +10223,10 @@ function makeDevotionEpisodes(actor, projectId) {
       db2.plannedEpisodes.push(made);
       planned = made;
       out.made.push(id2);
-    } else if (planned.workingTitle !== title2 || planned.details.scripture !== page.subtitle) {
+    } else if (planned.workingTitle !== title2 || planned.details.scripture !== page.subtitle || theme && planned.question !== theme) {
       planned.workingTitle = title2;
       planned.details = { ...planned.details, scripture: page.subtitle };
+      if (theme) planned.question = theme;
       planned.updatedAt = at;
       out.updated.push(planned.id);
     }
@@ -10285,14 +10289,26 @@ function pendingReviews(ownerId, keys) {
   }
   return out;
 }
+function briefReview(p) {
+  const key2 = briefKeyOf(p.workflow.formType);
+  const title2 = catalogEntry(p.workflow.formType, "Development", key2)?.title ?? "brief";
+  const doc2 = documentOf(p.contentId, "Development", key2);
+  const state = doc2 ? reviewStateOf(doc2.id) : "no reviewers";
+  const pending = doc2 ? reviewsOf(doc2.id).filter((r) => r.status === "pending").map((r) => r.reviewerId) : [];
+  return {
+    title: title2,
+    state,
+    reviews: doc2 && state === "pending" && pending.length ? [{ checkpointId: doc2.id, label: "Theological review", reviewerIds: pending }] : []
+  };
+}
 var waiting = (ownerId, reviews, ownerToo = true) => [
   .../* @__PURE__ */ new Set([...ownerToo && ownerId ? [ownerId] : [], ...reviews.flatMap((r) => r.reviewerIds)])
 ];
 function projectItem(p, stage, step, ownerId, gate) {
-  const reviews = stage === "Development" ? pendingReviews(p.contentId, [
+  const reviews = stage !== "Development" ? [] : newDocumentsOn(p.workflow.formType) ? briefReview(p).reviews : pendingReviews(p.contentId, [
     ["pitch", "Pitch review"],
     ["outline_script", "Outline or script review"]
-  ]) : [];
+  ]);
   return {
     key: `project:${p.contentId}`,
     level: "project",
@@ -10377,7 +10393,13 @@ function episodeItem(p, ep, gates) {
 function itemsOf(p, gates) {
   if (p.workflow.stage === "Development") {
     const outcome2 = getDb().developmentForms.find((f2) => f2.contentId === p.contentId)?.outcome;
-    const step = outcome2 === "Greenlight" ? "Greenlit: handoff" : outcome2 ? outcome2 : "Form and reviews";
+    let step = outcome2 === "Greenlight" ? "Greenlit: handoff" : outcome2 ? outcome2 : "Form and reviews";
+    if (newDocumentsOn(p.workflow.formType) && outcome2 !== "Greenlight") {
+      const { title: title2, state } = briefReview(p);
+      if (state === "changes_requested") step = `Changes requested on the ${title2}`;
+      else if (state === "pending") step = "Theological review";
+      else if (!outcome2) step = `${title2} and its review`;
+    }
     return [projectItem(p, "Development", step, developmentOwner(p), gates ? evaluateGate("Development", "project", p.contentId) : null)];
   }
   const items = [];

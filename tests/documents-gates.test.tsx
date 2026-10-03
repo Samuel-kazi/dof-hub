@@ -23,6 +23,8 @@ import { PageEditor } from "../src/pages/documents/PageEditor";
 import { FormPane } from "../src/pages/documents/FormPanes";
 import { catalogEntry } from "../src/config/documentCatalog";
 import type { Project } from "../src/services/workflow";
+import { allWorkItems } from "../src/services/workItems";
+import { remindersFor } from "../src/services/reminders";
 
 let passed = 0;
 const t = async (name: string, fn: () => Promise<void> | void, through: "development" | "session1" = "development") => {
@@ -223,6 +225,24 @@ await t("the review on screen: who may decide, the reason sent back on the docum
   );
   const page = D.pagesOf(brief.id)[0];
   assert.match(html("crew2@dof.demo", <PageComments project={project(WOW)} doc={brief} page={page} />), /aria-label="Comment on The idea"/);
+});
+
+await t("Waiting on you follows the review: the reviewers still to decide, then the owner when changes are asked for", () => {
+  on("series");
+  const brief = D.ensureDocument(hop(), WOW, "Development", "show_brief");
+  D.setDocumentReviewers(hop(), brief.id, ["DOF-P-CRW-002"]);
+  let item = allWorkItems().find((i) => i.id === WOW)!;
+  assert.equal(item.step, "Theological review");
+  assert.ok(item.waitingOn.includes("DOF-P-CRW-002"), "the reviewer");
+  assert.ok(
+    remindersFor("DOF-P-CRW-002").some((r) => /Theological review waiting for you/.test(r.title)),
+    "and the reviewer is reminded",
+  );
+  D.decideDocumentReview(crew2(), brief.id, { status: "changes_requested", note: "Sharpen the question." });
+  item = allWorkItems().find((i) => i.id === WOW)!;
+  assert.equal(item.step, "Changes requested on the Show Brief");
+  const owner = item.ownerId!;
+  assert.ok(owner && item.waitingOn.includes(owner) && !item.waitingOn.includes("DOF-P-CRW-002"), "back with its owner");
 });
 
 await t("Project Home shows the header strip and the short gate while in Development", () => {
