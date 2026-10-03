@@ -75,7 +75,7 @@ export {
 } from "./workflow/episodes";
 export type { DistributionInput } from "./workflow/episodes";
 
-export { evaluateGate, sessionOverdue, episodeOverdue, projectSummary } from "./workflow/gates";
+export { evaluateGate, episodeOverdue, projectSummary } from "./workflow/gates";
 export type { GateLevel, GateStage, GateResult, ProjectSummary } from "./workflow/gates";
 
 export {

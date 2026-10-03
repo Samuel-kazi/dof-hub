@@ -58,7 +58,7 @@ If the site shows **The site cannot reach its data** instead of a sign-in box, i
 
 ## 4. Create the Head of Production
 
-Open the site. It shows **Set up the Production Hub**. Enter the setup code, your name, a username and a password (10 or more characters). Choose blank or sample data. This can only be done once.
+Open the site. It shows **Set up the Production Hub**. Enter the setup code, your name, a username and a password (10 or more characters). Choose blank or sample data (the sample projects start in the five-stage workflow). This can only be done once.
 
 Afterwards, delete `SETUP_TOKEN` in Vercel. Setup is then switched off completely.
 
@@ -162,6 +162,42 @@ moved. Nothing moves by itself: the Head of Production does it, once, when ready
       db.hub_meta.renameCollection("hub_meta_after_workflow")
       db.hub_items_before_workflow.renameCollection("hub_items")
       db.hub_meta_before_workflow.renameCollection("hub_meta")
+
+### Data version 16 and the Development forms into documents (documents rework, phase 1)
+
+The first time a version with data version 16 starts, it adds the empty lists for documents, pages, reviews,
+comments, storyboards and shot lists. It keeps a copy first, in `hub_items_before_v16` and `hub_meta_before_v16`;
+`npm run db:upgrade` shows what it will do, and going back is as for version 15 above, with `v16` in the names.
+
+- **The move.** "Move existing projects" (above) now also writes every project's old Development form into its new
+  documents, in the same dry run and the same all-or-nothing save. Its report lists, for each project, the documents
+  written and how many fields went onto pages, the fields kept on the form and why, and the fields not accounted
+  for, which must be zero. The old forms are not changed or removed. A project whose documents were already started
+  by hand is left alone. Running it again changes nothing.
+- **To undo only the documents,** keeping the move into the workflow:
+
+      MONGODB_URI="mongodb+srv://..." npm run migrate:workflow -- --undo-documents
+      MONGODB_URI="mongodb+srv://..." npm run migrate:workflow -- --undo-documents --apply
+
+  The first is a dry run. The second keeps a copy (`hub_items_before_undo_documents` and
+  `hub_meta_before_undo_documents`) and removes exactly the documents, pages, reviews, comments and shot lists the
+  move wrote. A document or shot list written in since the move is kept and listed; add `--force` to remove it too.
+
+### Trying the document screens (documents rework, phases 2 and 3)
+
+Nothing changes on screen until it is turned on. In Settings, Documents (preview), tick the kinds of project that
+should show their documents: devotions, series, documentaries (it needs the "change system settings" right). Each
+project of that kind then opens on its Project Home. Each person can switch a project back with "Earlier screens" at
+any time; the data is the same either way. Untick a kind to turn it off for everyone.
+
+Storyboard and shot list pictures: on the hosted site they are stored like equipment photos. In the desktop app they
+are written to a `media` folder inside the app's own data folder on that computer (for example
+`%APPDATA%\tv.dawnoffaith.productionhub\media` on Windows), one folder per project; back that folder up with the computer.
+A picture kept on one desktop computer does not show anywhere else.
+
+Turning a kind on also changes how its projects leave Development: the short list of hard gates (phase 3) instead of
+the earlier form's long list. A project already past Development is not affected. Turning the kind off again brings
+the earlier gates back.
 
 ## What this does not do yet
 

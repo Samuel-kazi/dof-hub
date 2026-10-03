@@ -7,14 +7,19 @@
 //   --series DOF-SER-002=sermon          a series' type: podcast (the default), testimonial or sermon
 //   --documentary DOF-DOC-002=pitched    a documentary pitched by others (the default is DOF-made)
 //
+// Undoing the move of the Development forms into documents (a dry run unless --apply; documents written in since the
+// move are kept unless --force):
+//   MONGODB_URI=… npm run migrate:workflow -- --undo-documents [--apply] [--force]
+//
 // MONGODB_DB names the database (default "dof", as on the server). The Head of Production can do the same from
 // Settings on the hosted site. The report gives every record's before and after, what is left for a decision by
 // hand and why, and each part's row count before and after. Running it again changes nothing.
 import { MongoClient } from "mongodb";
 import type { SeriesType } from "../src/types";
 import { storeOn } from "../server/mongo";
-import { migrateWorkflowStore, type MigrationChoices } from "../server/migrateWorkflow";
+import { migrateWorkflowStore, undoDocumentMoveStore, type MigrationChoices } from "../server/migrateWorkflow";
 import { describeMigration } from "../src/data/migrateWorkflow";
+import { describeDocumentMove } from "../src/data/moveToNewSystem";
 
 const uri = process.env.MONGODB_URI;
 if (!uri) {
@@ -36,22 +41,35 @@ for (let i = 0; i < args.length; i++) {
     if (!id || !["dof", "pitched"].includes(choice)) throw new Error(`--documentary needs ID=dof or pitched, not "${value}".`);
     picked.documentaryForms[id] = choice === "pitched" ? "documentary_pitched" : "documentary_dof";
     i++;
-  } else if (flag !== "--apply") throw new Error(`Unknown option ${flag}.`);
+  } else if (!["--apply", "--undo-documents", "--force"].includes(flag)) throw new Error(`Unknown option ${flag}.`);
 }
 const client = new MongoClient(uri, { serverSelectionTimeoutMS: 8000 });
 try {
   await client.connect();
   const store = await storeOn(client, process.env.MONGODB_DB || "dof");
-  const report = await migrateWorkflowStore(store, apply, "system", picked);
-  if (!report) console.log("This database has not been set up yet. There is nothing to move.");
-  else {
-    console.log(describeMigration(report, report.applied));
-    if (report.backup) console.log(`\nA copy of the data before the move is in ${report.backup}.`);
-    if (apply && report.changed && !report.applied) {
-      console.error("Someone saved a change while the move was being worked out, so nothing was written. Run it again.");
-      process.exitCode = 1;
+  if (args.includes("--undo-documents")) {
+    const undo = await undoDocumentMoveStore(store, apply, args.includes("--force"));
+    if (!undo) console.log("This database has not been set up yet.");
+    else {
+      console.log(`${undo.applied ? "Removed" : "Would remove"} ${undo.result.removed} document(s) and shot list(s) the move wrote.`);
+      if (undo.result.keptEdited.length)
+        console.log(`Kept, as they were written in since: ${undo.result.keptEdited.join(", ")}. Add --force to remove them too.`);
+      if (undo.backup) console.log(`A copy of the data before undoing is in ${undo.backup}.`);
+      if (!apply && undo.changed) console.log("This was a dry run. Nothing was written. Add --apply to undo.");
     }
-    if (!apply && report.changed) console.log("\nThis was a dry run. Nothing was written. Add --apply to move them.");
+  } else {
+    const report = await migrateWorkflowStore(store, apply, "system", picked);
+    if (!report) console.log("This database has not been set up yet. There is nothing to move.");
+    else {
+      console.log(describeMigration(report, report.applied));
+      console.log(`\n${describeDocumentMove(report.documents)}`);
+      if (report.backup) console.log(`\nA copy of the data before the move is in ${report.backup}.`);
+      if (apply && report.changed && !report.applied) {
+        console.error("Someone saved a change while the move was being worked out, so nothing was written. Run it again.");
+        process.exitCode = 1;
+      }
+      if (!apply && report.changed) console.log("\nThis was a dry run. Nothing was written. Add --apply to move them.");
+    }
   }
 } finally {
   await client.close();

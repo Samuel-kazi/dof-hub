@@ -6,14 +6,15 @@ import { renderToString } from "react-dom/server";
 import { AppProvider } from "../src/ui/AppContext";
 import { RecordPage } from "../src/pages/RecordPage";
 import { login } from "../src/services/auth";
-import { resetDemoData } from "../src/data/store";
+import { setDb } from "../src/data/store";
+import { buildSeed } from "../src/data/seed";
 import { getRecord } from "../src/services/access";
 import * as C from "../src/services/content";
 import { categoryOf } from "../src/config/categories";
 
 let passed = 0;
 const t = (name: string, fn: () => void) => {
-  resetDemoData();
+  setDb(buildSeed()); // the examples as they were before the workflow
   try {
     fn();
     passed++;

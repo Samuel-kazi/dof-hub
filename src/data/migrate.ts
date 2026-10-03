@@ -2,7 +2,7 @@ import type { ContentRecord, Database, DocRecord, DocRevision, DriveAllocation, 
 import { MUSIC_STAGE_MAP, categoryOf } from "../config/categories";
 import { templateOf } from "../config/docTemplates";
 import { syncRecordCounters } from "./ids";
-import { WORKFLOW_PARTS } from "./constraints";
+import { DOCUMENT_PARTS, WORKFLOW_PARTS } from "./constraints";
 import { todayIso } from "../services/utils";
 
 // Upgrades saved data from version 2 to 3. It only touches plain data, so it can run while the
@@ -381,5 +381,14 @@ export function upgradeToV15(db: Database): Database {
     r.episode ??= null;
   }
   db.schemaVersion = 15;
+  return db;
+}
+
+/** Version 16 adds the lists for project documents, storyboards and shot lists, empty. Nothing else changes. */
+export function upgradeToV16(db: Database): Database {
+  const parts = db as unknown as Record<string, unknown[] | undefined>;
+  for (const k of DOCUMENT_PARTS) parts[k] ??= [];
+  for (const p of db.plannedEpisodes ?? []) p.sourcePageId ??= null;
+  db.schemaVersion = 16;
   return db;
 }

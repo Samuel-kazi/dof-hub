@@ -2,7 +2,8 @@ import { useMemo, useState } from "react";
 import type { SeriesType } from "../../types";
 import { isRemote, migrateWorkflowRemote } from "../../data/remote";
 import { applyMoveLocally, previewMove } from "../../data/workflowMove";
-import type { AppliedMigrationReport, MigrationChoices, MigrationLine, WorkflowMigrationReport } from "../../data/migrateWorkflow";
+import type { MigrationChoices, MigrationLine } from "../../data/migrateWorkflow";
+import type { AppliedMigrationReport, MoveReport } from "../../data/moveToNewSystem";
 import { SERIES_TYPES } from "../../config/workflow";
 import { useDb } from "../../data/store";
 import { useApp } from "../../ui/AppContext";
@@ -62,7 +63,76 @@ function Lines({ lines, empty }: { lines: MigrationLine[]; empty: string }) {
   );
 }
 
-export function MigrationReportView({ report }: { report: WorkflowMigrationReport }) {
+/** The Development forms moved into documents: what each project gets, what stays on the form, and that nothing is lost. */
+function DocumentsPart({ report }: { report: MoveReport }) {
+  const d = report.documents;
+  const moved = d.lines.filter((l) => l.documents.length);
+  return (
+    <>
+      <h3>Development forms into documents ({moved.length})</h3>
+      {moved.length === 0 ? (
+        <Empty>No Development form to move.</Empty>
+      ) : (
+        <div className="wf-scroll">
+          <table className="table" aria-label="Development forms into documents">
+            <thead>
+              <tr>
+                <th>Project</th>
+                <th>Documents written</th>
+                <th>Old fields</th>
+              </tr>
+            </thead>
+            <tbody>
+              {moved.map((l) => (
+                <tr key={l.contentId}>
+                  <td>
+                    <span className="cid">{l.contentId}</span>
+                    <div className="muted" style={{ fontSize: ".84rem" }}>
+                      {l.title}
+                    </div>
+                  </td>
+                  <td>{l.documents.join(", ")}</td>
+                  <td>
+                    {l.fields}
+                    {l.note && (
+                      <div className="muted" style={{ fontSize: ".84rem" }}>
+                        {l.note}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {d.kept.length > 0 && (
+        <details>
+          <summary>Kept on the form, as structured fields ({d.kept.length})</summary>
+          <ul className="wf-missing">
+            {d.kept.map((k) => (
+              <li key={`${k.contentId}|${k.field}`}>
+                {k.contentId}, {k.field}: {k.why}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {d.extras.length > 0 && (
+        <p className="muted">
+          Written on an &ldquo;Also from the old form&rdquo; page, as the mapping does not know them:{" "}
+          {d.extras.map((e) => `${e.contentId} ${e.field}`).join("; ")}
+        </p>
+      )}
+      <p className={d.unaccounted.length ? "wf-error" : "muted"}>
+        Old fields not accounted for: {d.unaccounted.length}
+        {d.unaccounted.length ? ` (${d.unaccounted.join(", ")})` : ""}
+      </p>
+    </>
+  );
+}
+
+export function MigrationReportView({ report }: { report: MoveReport }) {
   const moved = report.lines.filter((l) => l.outcome === "moved");
   const flagged = report.lines.filter((l) => l.outcome === "flagged");
   const unchanged = report.lines.filter((l) => l.outcome === "unchanged");
@@ -103,6 +173,7 @@ export function MigrationReportView({ report }: { report: WorkflowMigrationRepor
         Rows not accounted for: {report.unexplained.length}
         {report.unexplained.length ? ` (${report.unexplained.join(", ")})` : ""}
       </p>
+      <DocumentsPart report={report} />
       {report.followUps.length > 0 && (
         <>
           <h3>To do in the app afterwards</h3>
@@ -126,7 +197,7 @@ export function MoveExistingPanel() {
   const [done, setDone] = useState<AppliedMigrationReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const picked: MigrationChoices = { seriesTypes, documentaryForms };
-  const preview = useMemo((): { report: WorkflowMigrationReport | null; problem: string | null } => {
+  const preview = useMemo((): { report: MoveReport | null; problem: string | null } => {
     void db; // the data is a dependency: the dry run follows every change, made here or anywhere else
     try {
       return { report: previewMove(actor, { seriesTypes, documentaryForms }), problem: null };
@@ -136,6 +207,13 @@ export function MoveExistingPanel() {
   }, [actor, db, seriesTypes, documentaryForms]);
   const report = preview.report;
   const moving = report ? report.lines.filter((l) => l.outcome === "moved").length : 0;
+  const forms = report ? report.documents.lines.filter((l) => l.documents.length).length : 0;
+  const label = [
+    moving ? `${moving} record${moving === 1 ? "" : "s"}` : "",
+    forms ? `${forms} Development form${forms === 1 ? "" : "s"}` : "",
+  ]
+    .filter(Boolean)
+    .join(" and ");
   const toChoose = {
     series: report?.series.filter((s) => !s.chosen || seriesTypes[s.contentId]) ?? [],
     documentaries: report?.documentaries.filter((d) => !d.chosen || documentaryForms[d.contentId]) ?? [],
@@ -144,7 +222,7 @@ export function MoveExistingPanel() {
   const move = async () => {
     if (!report) return;
     const ok = await confirm({
-      title: `Move ${moving} record${moving === 1 ? "" : "s"} to the new workflow?`,
+      title: `Move ${label} to the new system?`,
       body: `A copy of all the data is kept first, ${isRemote() ? "in the database" : "on this computer"}, and the move happens all at once or not at all. Content IDs stay the same. ${report.lines.filter((l) => l.outcome === "flagged").length} record(s) stay in the earlier pipeline for a decision by hand. Running it again later changes nothing.`,
       confirmLabel: "Move them",
     });
@@ -228,8 +306,12 @@ export function MoveExistingPanel() {
           <MigrationReportView report={report} />
           {report.changed && (
             <div>
-              <button className="btn primary" disabled={busy || report.unexplained.length > 0} onClick={() => void move()}>
-                {busy ? "Moving…" : `Move ${moving} record${moving === 1 ? "" : "s"}`}
+              <button
+                className="btn primary"
+                disabled={busy || report.unexplained.length > 0 || report.documents.unaccounted.length > 0}
+                onClick={() => void move()}
+              >
+                {busy ? "Moving…" : `Move ${label}`}
               </button>
             </div>
           )}

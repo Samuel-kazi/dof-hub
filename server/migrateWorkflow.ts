@@ -5,7 +5,9 @@ import { HttpError } from "./errors";
 import type { Authed } from "./accounts";
 import { isHop } from "../src/services/access";
 import { todayIso } from "../src/services/utils";
-import { migrateToWorkflow, type AppliedMigrationReport, type MigrationChoices } from "../src/data/migrateWorkflow";
+import type { MigrationChoices } from "../src/data/migrateWorkflow";
+import { moveToNewSystem, type AppliedMigrationReport } from "../src/data/moveToNewSystem";
+import { undoDocumentMove } from "../src/data/migrateDocuments";
 
 // Moving the existing series, devotionals and documentaries into the five-stage workflow, on the server: from the
 // command line (scripts/migrate-workflow.ts) and, for the Head of Production, from Settings on the hosted site.
@@ -38,7 +40,7 @@ export async function migrateWorkflowStore(
 ): Promise<ServerMigrationReport | null> {
   const at = new Date().toISOString();
   const r = await changeAllData(store, apply, "before_workflow", (db) =>
-    migrateToWorkflow(db, { ...picked, today: todayIso(), at, byPersonId }),
+    moveToNewSystem(db, { ...picked, today: todayIso(), at, byPersonId }),
   );
   if (!r) return null;
   // The counts come from the database itself, part by part, so they include what people are not sent.
@@ -48,6 +50,14 @@ export async function migrateWorkflowStore(
     applied: r.applied,
     backup: r.backup,
   };
+}
+
+/**
+ * Undoes the move of the Development forms into documents (src/data/migrateDocuments.ts): removes what it wrote, and
+ * nothing else. A document written in since is kept unless `force`. A copy of all the data is kept first, as for the move.
+ */
+export async function undoDocumentMoveStore(store: Store, apply: boolean, force = false) {
+  return changeAllData(store, apply, "before_undo_documents", (db) => undoDocumentMove(db, force));
 }
 
 /** POST /api/migrate-workflow: the Head of Production only. `apply: true` moves; anything else is a dry run. */

@@ -33,8 +33,8 @@ type NewReminder = Omit<Reminder, "overdue" | "sessionId"> & { sessionId?: strin
 /**
  * The five-stage workflow's reminders (src/services/workItems.ts): a project's stage deadline to its owner, a
  * session's date to its producer, an episode's stage deadline to whoever moves it on, and a waiting review to each
- * reviewer named on it. Only sessions and episodes are ever overdue (assumption A5), so a project's deadline is
- * shown until its day and then dropped, and a waiting review of a project is never late.
+ * reviewer named on it. Only episodes are ever overdue, so a project's deadline and a session's day are shown until
+ * that day and then dropped, and a waiting review of a project is never late.
  */
 function workflowReminders(personId: string, asOf: string, add: (r: NewReminder) => void): void {
   const sheets = getDb().callSheets;
@@ -63,15 +63,16 @@ function workflowReminders(personId: string, asOf: string, add: (r: NewReminder)
         date: item.due,
       });
     if (item.level === "session") {
-      // Someone on the session's call sheet is already reminded of the day as a shoot, until the day has passed.
+      // A session is never overdue: it is a reminder of its day, until that day. Someone on its call sheet is already
+      // reminded of the day as a shoot.
       const sheet = sheets.find((c) => c.id === getDb().recordingSessions.find((s) => s.id === item.id)?.callSheetId);
-      if (item.due >= asOf && sheet?.crewPersonIds.includes(personId)) continue;
+      if (item.due < asOf || sheet?.crewPersonIds.includes(personId)) continue;
       add({
         ...base,
         key: `session:${item.id}`,
         kind: "session",
-        title: `${item.context}: ${item.title.toLowerCase()} ${item.overdue ? "not closed" : "recording"}`,
-        detail: `${item.id}. ${item.overdue ? "Its date has passed: close it, or move it to a new date." : item.step}.`,
+        title: `${item.context}: ${item.title.toLowerCase()} recording`,
+        detail: `${item.id}. ${item.step}.`,
         date: item.due,
         sessionId: item.id,
       });

@@ -8,13 +8,14 @@ import { AppProvider } from "../src/ui/AppContext";
 import { CalendarPage } from "../src/pages/Calendar";
 import { CalendarWeek } from "../src/pages/CalendarWeek";
 import { login } from "../src/services/auth";
-import { resetDemoData, getDb } from "../src/data/store";
+import { getDb, setDb } from "../src/data/store";
+import { buildSeed } from "../src/data/seed";
 import { calendarEvents, type CalEvent } from "../src/services/calendarView";
 import { layoutWeek, textOn } from "../src/services/calendarBars";
 
 let passed = 0;
 const t = (name: string, fn: () => void) => {
-  resetDemoData();
+  setDb(buildSeed()); // the examples as they were before the workflow
   try {
     fn();
     passed++;

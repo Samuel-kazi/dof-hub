@@ -121,6 +121,23 @@ const runSheetItem = z.object({
 });
 const logFields = { itemLabel: short(), guest: short(), status: logStatus.nullable(), notesForPost: text() };
 const webLink = z.string().max(2048);
+const workflowStage = z.enum(["Development", "Pre-production", "Production", "Post production", "Marketing and distribution"]);
+/** A storyboard or shot list's picture: a stored file's address, or a photo just shrunk in the browser (filed by the server). */
+const image = z.string().max(2_000_000).nullable();
+const newBoard = z.object({ name: short(500), episodeId: id.nullable().optional(), copyFrom: id.nullable().optional() });
+const frameEdit = z
+  .object({ scene: short(40), imagePath: image, description: short(500), soundEffects: short(500), videoLink: webLink })
+  .partial();
+const rowEdit = z
+  .object({
+    imagePath: image,
+    description: short(500),
+    shotSize: short(60),
+    shotType: short(60),
+    movement: short(60),
+    estMinutes: z.number().min(0).max(600).nullable(),
+  })
+  .partial();
 const distribution = z.object({
   platform: short(100),
   status: z.enum(["Planned", "Scheduled", "Published"]),
@@ -452,6 +469,7 @@ export const ACTIONS: Record<string, ActionSpec> = {
         checkoutReturnDays: count(1000),
         workDays: z.array(z.number().int().min(0).max(6)).max(7),
         effortOverrides: z.record(short(200), z.number().min(0).max(1000)),
+        newDocuments: z.array(z.enum(["devotion", "series", "documentary"])).max(3),
       })
       .partial(),
   ]),
@@ -554,6 +572,45 @@ export const ACTIONS: Record<string, ActionSpec> = {
   // Share links. A link with a token is made by POST /api/share-links, never by an action.
   "workflow.copyShareLink": args([id], [short(500)]),
   "workflow.revokeShareLink": args([id]),
+
+  // ── Project documents, storyboards and shot lists (src/services/documents.ts) ──
+  "documents.ensureDocument": args([id, workflowStage, short(60)], [compound.nullable()]),
+  "documents.syncReviewThread": args([id]),
+  "documents.addPage": args([compound], [z.object({ title: short(300), subtitle: short(300), afterPageId: id.nullable() }).partial()]),
+  // A page body can be long; the service refuses anything over its limit (MAX_PAGE_HTML) with a clear message.
+  "documents.savePage": args([
+    id,
+    z.object({ title: short(300), subtitle: short(300), bodyHtml: z.string().max(450_000) }).partial(),
+    version,
+  ]),
+  "documents.movePage": args([id, count(10_000)]),
+  "documents.archivePage": args([id]),
+  "documents.restorePage": args([id]),
+  "documents.addDocumentLink": args([compound, webLink, short(300)]),
+  "documents.removeDocumentLink": args([id]),
+  "documents.setDocumentReviewers": args([compound, ids(10)]),
+  "documents.decideDocumentReview": args([compound, z.object({ status: z.enum(["approved", "changes_requested"]), note: text(5000) })]),
+  "documents.addReviewComment": args([id, text(5000)]),
+  "documents.resolveReviewComment": args([id], [z.boolean()]),
+  "documents.createStoryboard": args([id, newBoard]),
+  "documents.renameStoryboard": args([id, short(500)]),
+  "documents.addFrame": args([id], [frameEdit]),
+  "documents.updateFrame": args([id, frameEdit]),
+  "documents.moveFrame": args([id, count(10_000)]),
+  "documents.duplicateFrame": args([id]),
+  "documents.deleteFrames": args([ids(500)]),
+  "documents.moveFramesTo": args([ids(500), id]),
+  "documents.createShotList": args([id, newBoard]),
+  "documents.renameShotList": args([id, short(500)]),
+  "documents.addShotRow": args([id, z.enum(["shot", "setup", "banner"])], [rowEdit]),
+  "documents.updateShotRow": args([id, rowEdit]),
+  "documents.moveShotRow": args([id, count(10_000)]),
+  "documents.duplicateShotRow": args([id]),
+  "documents.deleteShotRows": args([ids(500)]),
+  "documents.makeDevotionEpisodes": args([id]),
+  "documents.acceptDevotion": args([id, text(2000)]),
+  "documents.askForReviewAgain": args([compound]),
+  "documents.setGateOverride": args([id, z.enum(["idea", "review", "greenlight", "guest", "pages"]), short(300).nullable()]),
 };
 
 /**

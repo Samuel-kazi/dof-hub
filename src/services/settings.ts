@@ -1,4 +1,4 @@
-import type { Actor, Settings } from "../types";
+import type { Actor, DocumentProjectType, Settings } from "../types";
 import { RuleError } from "../types";
 import { commit, getDb } from "../data/store";
 import { requireCan } from "./permissions";
@@ -17,7 +17,11 @@ export const SETTINGS_EDITABLE = [
   "checkoutReturnDays",
   "workDays",
   "effortOverrides",
+  "newDocuments",
 ] as const;
+
+// The kinds of project that can use the new documents.
+const DOCUMENTS_READY: DocumentProjectType[] = ["devotion", "series", "documentary"];
 
 export function updateSettings(actor: Actor, input: Partial<Pick<Settings, (typeof SETTINGS_EDITABLE)[number]>>): void {
   requireCan(actor, "backend.settings", "change system settings");
@@ -47,6 +51,13 @@ export function updateSettings(actor: Actor, input: Partial<Pick<Settings, (type
       if (!Number.isFinite(v) || v < 0 || v > 30 || Math.round(v * 4) !== v * 4)
         throw new RuleError(`${key.split(":")[1] ?? key}: use a number of days from 0 to 30, in steps of a quarter day.`);
     }
+  }
+  if (patch.newDocuments !== undefined) {
+    if (!Array.isArray(patch.newDocuments)) throw new RuleError("Choose the kinds of project that use the new documents.");
+    const kinds = [...new Set(patch.newDocuments)];
+    const early = kinds.find((k) => !DOCUMENTS_READY.includes(k));
+    if (early) throw new RuleError("Choose devotions, series or documentaries.");
+    patch.newDocuments = kinds;
   }
   Object.assign(getDb().settings, patch);
   logAudit(actor, "settings", "settings", "system", Object.keys(patch).join(", "));

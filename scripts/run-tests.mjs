@@ -22,7 +22,11 @@ const env = { ...process.env, TZ: process.env.TZ || "Africa/Nairobi" };
 const run = (file) =>
   new Promise((done) => {
     const started = Date.now();
-    const child = spawn(process.execPath, ["--import", "tsx", "--import", "./tests/setup/clock.mjs", `tests/${file}`], { cwd: root, env });
+    const child = spawn(
+      process.execPath,
+      ["--import", "tsx", "--import", "./tests/setup/clock.mjs", "--import", "./tests/setup/html.ts", `tests/${file}`],
+      { cwd: root, env },
+    );
     let out = "";
     child.stdout.on("data", (d) => (out += d));
     child.stderr.on("data", (d) => (out += d));

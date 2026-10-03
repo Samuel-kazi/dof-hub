@@ -65,6 +65,11 @@ interface Ctx {
   shareLink: (r?: Route) => string;
   /** Copies a shareable link to the clipboard and confirms with a toast. */
   copyLink: (r?: Route) => Promise<void>;
+  /**
+   * A screen with words not yet saved (a page of writing) sets this. Before going to another screen, the app calls
+   * it: it saves what it can and returns null, or says what would be lost, and the person is asked first.
+   */
+  setLeaveGuard: (guard: (() => string | null) | null) => void;
 }
 
 export interface AppNote {
@@ -105,8 +110,18 @@ export function AppProvider({ actor, onLogout, children }: { actor: Actor; onLog
   }, []);
   const [printing, setPrinting] = useState<ReportDoc | null>(null);
 
-  const go = useCallback((r: Route) => setStack((s) => [...s, r]), []);
-  const back = useCallback(() => setStack((s) => (s.length > 1 ? s.slice(0, -1) : s)), []);
+  const leaveGuard = useRef<(() => string | null) | null>(null);
+  const setLeaveGuard = useCallback((guard: (() => string | null) | null) => {
+    leaveGuard.current = guard;
+  }, []);
+  const [leaving, setLeaving] = useState<{ why: string; then: () => void } | null>(null);
+  const guarded = useCallback((then: () => void) => {
+    const why = leaveGuard.current?.() ?? null;
+    if (why) setLeaving({ why, then });
+    else then();
+  }, []);
+  const go = useCallback((r: Route) => guarded(() => setStack((s) => [...s, r])), [guarded]);
+  const back = useCallback(() => guarded(() => setStack((s) => (s.length > 1 ? s.slice(0, -1) : s))), [guarded]);
   const toast = useCallback((msg: string, kind: "info" | "error" | "success" = "info") => {
     const id = ++idRef.current;
     setToasts((t) => [...t, { id, msg, kind }]);
@@ -207,15 +222,35 @@ export function AppProvider({ actor, onLogout, children }: { actor: Actor; onLog
       attempt,
       confirm,
       menu,
-      logout: onLogout,
+      logout: () => guarded(onLogout),
       notify,
       notifications: notes,
       clearNotifications: () => setNotes([]),
       printReport,
       shareLink,
       copyLink,
+      setLeaveGuard,
     }),
-    [actor, me, route, stack, go, back, toast, attempt, confirm, menu, onLogout, notify, notes, printReport, shareLink, copyLink],
+    [
+      actor,
+      me,
+      route,
+      stack,
+      go,
+      back,
+      guarded,
+      toast,
+      attempt,
+      confirm,
+      menu,
+      onLogout,
+      notify,
+      notes,
+      printReport,
+      shareLink,
+      copyLink,
+      setLeaveGuard,
+    ],
   );
 
   return (
@@ -274,6 +309,32 @@ export function AppProvider({ actor, onLogout, children }: { actor: Actor; onLog
           }
         >
           <p className="sub">{confirmState.body}</p>
+        </Modal>
+      )}
+      {leaving && (
+        <Modal
+          title="Leave without saving?"
+          onClose={() => setLeaving(null)}
+          actions={
+            <>
+              <button className="btn" onClick={() => setLeaving(null)} autoFocus>
+                Stay here
+              </button>
+              <button
+                className="btn danger"
+                onClick={() => {
+                  const { then } = leaving;
+                  leaveGuard.current = null;
+                  setLeaving(null);
+                  then();
+                }}
+              >
+                Leave anyway
+              </button>
+            </>
+          }
+        >
+          <p className="sub">{leaving.why}</p>
         </Modal>
       )}
       {printing &&

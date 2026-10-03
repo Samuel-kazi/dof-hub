@@ -3,7 +3,7 @@ import { getDb } from "../data/store";
 import { categoryOf } from "../config/categories";
 import { WORKFLOW_STAGES } from "../config/workflow";
 import { canView, getRecord } from "./access";
-import { episodeOverdue, evaluateGate, sessionOverdue, type GateResult } from "./workflow/gates";
+import { episodeOverdue, evaluateGate, type GateResult } from "./workflow/gates";
 import {
   episodesOf,
   isDocumentary,
@@ -14,6 +14,10 @@ import {
   type Project,
 } from "./workflow/common";
 import { fmtShort } from "./utils";
+import { briefKeyOf, catalogEntry } from "../config/documentCatalog";
+import { newDocumentsOn } from "./documents/common";
+import { documentOf } from "./documents/pages";
+import { reviewsOf, reviewStateOf } from "./documents/reviews";
 import type { Route } from "../ui/AppContext";
 
 // The work of the five-stage workflow as one list, at the level each stage works at (src/config/workflow.ts):
@@ -21,8 +25,8 @@ import type { Route } from "../ui/AppContext";
 // production and Marketing and distribution. The board, calendar, reminders, dashboard, reports and workload all
 // read it, so they agree. It is worked out on every render from what is stored, and nothing here is saved.
 //
-// Overdue follows assumption A5: a session once its date has passed and it is not closed, an episode once the
-// deadline of the stage it is in has passed. A project is never overdue itself.
+// Overdue is worked out for episodes only: once the deadline of the stage an episode is in has passed. A session,
+// season, series or project is never overdue itself.
 
 export type WorkLevel = "project" | "session" | "episode";
 
@@ -52,7 +56,6 @@ export interface WorkItem {
   done: boolean; // a closed session or a published episode
   gate: GateResult | null; // what its next Done button still needs; null while it waits on reviewers or has no button
   callSheetId: string | null; // a session's call sheet, once it has one
-  lateSessions: number; // a project's planned sessions whose date has passed: theirs to be overdue, shown on its card
   open: Route;
 }
 
@@ -91,18 +94,42 @@ function pendingReviews(ownerId: string, keys: readonly [string, string][]): Pen
   return out;
 }
 
+/**
+ * With the documents in use, the review a project's Development waits on is the theological review of its brief (or a
+ * devotion's script): its reviewers still to decide. When they ask for changes, it waits on the owner instead.
+ */
+function briefReview(p: Project): { title: string; state: ReturnType<typeof reviewStateOf>; reviews: PendingReview[] } {
+  const key = briefKeyOf(p.workflow.formType);
+  const title = catalogEntry(p.workflow.formType, "Development", key)?.title ?? "brief";
+  const doc = documentOf(p.contentId, "Development", key);
+  const state = doc ? reviewStateOf(doc.id) : "no reviewers";
+  const pending = doc
+    ? reviewsOf(doc.id)
+        .filter((r) => r.status === "pending")
+        .map((r) => r.reviewerId)
+    : [];
+  return {
+    title,
+    state,
+    reviews:
+      doc && state === "pending" && pending.length ? [{ checkpointId: doc.id, label: "Theological review", reviewerIds: pending }] : [],
+  };
+}
+
 const waiting = (ownerId: string | null, reviews: PendingReview[], ownerToo = true): string[] => [
   ...new Set([...(ownerToo && ownerId ? [ownerId] : []), ...reviews.flatMap((r) => r.reviewerIds)]),
 ];
 
 function projectItem(p: Project, stage: WorkflowStage, step: string, ownerId: string | null, gate: GateResult | null): WorkItem {
   const reviews =
-    stage === "Development"
-      ? pendingReviews(p.contentId, [
-          ["pitch", "Pitch review"],
-          ["outline_script", "Outline or script review"],
-        ])
-      : [];
+    stage !== "Development"
+      ? []
+      : newDocumentsOn(p.workflow.formType)
+        ? briefReview(p).reviews
+        : pendingReviews(p.contentId, [
+            ["pitch", "Pitch review"],
+            ["outline_script", "Outline or script review"],
+          ]);
   return {
     key: `project:${p.contentId}`,
     level: "project",
@@ -122,7 +149,6 @@ function projectItem(p: Project, stage: WorkflowStage, step: string, ownerId: st
     done: false,
     gate,
     callSheetId: null,
-    lateSessions: 0,
     open: { n: "record", id: p.contentId },
   };
 }
@@ -144,11 +170,10 @@ function sessionItem(p: Project, s: RecordingSession, gates: boolean): WorkItem 
     waitingOn: s.status === "Closed" ? [] : waiting(ownerId, []),
     due: s.scheduledDate,
     start: dateOf(s.createdAt),
-    overdue: sessionOverdue(s),
+    overdue: false,
     done: s.status === "Closed",
     gate: !gates || s.status === "Closed" ? null : evaluateGate(s.status === "Planned" ? "Pre-production" : "Production", "session", s.id),
     callSheetId: s.callSheetId && getDb().callSheets.some((c) => c.id === s.callSheetId) ? s.callSheetId : null,
-    lateSessions: 0,
     open: { n: "session", id: s.id },
   };
 }
@@ -187,7 +212,6 @@ function episodeItem(p: Project, ep: Episode, gates: boolean): WorkItem {
     done: published,
     gate,
     callSheetId: null,
-    lateSessions: 0,
     open: { n: "record", id: ep.contentId },
   };
 }
@@ -195,7 +219,13 @@ function episodeItem(p: Project, ep: Episode, gates: boolean): WorkItem {
 function itemsOf(p: Project, gates: boolean): WorkItem[] {
   if (p.workflow.stage === "Development") {
     const outcome = getDb().developmentForms.find((f) => f.contentId === p.contentId)?.outcome;
-    const step = outcome === "Greenlight" ? "Greenlit: handoff" : outcome ? outcome : "Form and reviews";
+    let step = outcome === "Greenlight" ? "Greenlit: handoff" : outcome ? outcome : "Form and reviews";
+    if (newDocumentsOn(p.workflow.formType) && outcome !== "Greenlight") {
+      const { title, state } = briefReview(p);
+      if (state === "changes_requested") step = `Changes requested on the ${title}`;
+      else if (state === "pending") step = "Theological review";
+      else if (!outcome) step = `${title} and its review`;
+    }
     return [projectItem(p, "Development", step, developmentOwner(p), gates ? evaluateGate("Development", "project", p.contentId) : null)];
   }
   const items: WorkItem[] = [];
@@ -234,8 +264,6 @@ function itemsOf(p: Project, gates: boolean): WorkItem[] {
         );
     }
   }
-  const late = sessions.filter((s) => s.status === "Planned" && sessionOverdue(s)).length;
-  for (const i of items) i.lateSessions = late;
   for (const s of sessions) items.push(sessionItem(p, s, gates));
   for (const ep of episodes) items.push(episodeItem(p, ep, gates));
   return items;
@@ -244,7 +272,7 @@ function itemsOf(p: Project, gates: boolean): WorkItem[] {
 const nextSession = (planned: RecordingSession[]): string => {
   const s = planned[0];
   const more = planned.length > 1 ? `, and ${planned.length - 1} more` : "";
-  const when = s.scheduledDate ? ` on ${fmtShort(s.scheduledDate)}${sessionOverdue(s) ? ", now past" : ""}` : ", no date yet";
+  const when = s.scheduledDate ? ` on ${fmtShort(s.scheduledDate)}` : ", no date yet";
   return `Next: session ${s.sessionNumber}${when}${more}`;
 };
 

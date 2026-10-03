@@ -2,7 +2,7 @@ import type { Actor, CheckpointStatus, ReviewCheckpoint } from "../../types";
 import { RuleError } from "../../types";
 import { commit, getDb } from "../../data/store";
 import { logAudit } from "../audit";
-import { canDecide, canManageTeam, checkpoint, isHop, nowStamp, projectForWrite, requireCrew, requireEpisode } from "./common";
+import { canDecide, canManageTeam, checkpoint, isHop, joinProject, nowStamp, projectForWrite, requireCrew, requireEpisode } from "./common";
 
 // Theological review checkpoints: the pitch and the outline or script on the project, the rough cut and the final
 // on each episode. Reviewers are chosen from the crew list. Sending something back always needs a reason.
@@ -20,7 +20,11 @@ export function setCheckpointReviewers(actor: Actor, checkpointId: string, revie
     throw new RuleError("Only the show producer or the Head of Production can choose who reviews.");
   const ids = [...new Set(reviewerIds)];
   if (ids.length > 10) throw new RuleError("Choose up to 10 reviewers.");
-  for (const id of ids) requireCrew(id, "A reviewer");
+  // A reviewer joins the project, so they can read it and decide.
+  for (const id of ids) {
+    requireCrew(id, "A reviewer");
+    joinProject(actor, id, p);
+  }
   c.reviewerIds = ids;
   c.updatedAt = nowStamp();
   logAudit(actor, "checkpoint-reviewers", "record", c.episodeId ?? c.contentId, `${c.checkpoint}: ${ids.join(", ") || "none"}`);

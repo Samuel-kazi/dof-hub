@@ -38,7 +38,7 @@ const canNameProducer = (actor: Actor) => isHop(actor) || can(actor, "pipeline.a
 
 // ── One section of the form ──────────────────────────────────
 
-function SectionEditor({ project, section, write, open }: { project: Project; section: SectionDef; write: boolean; open: boolean }) {
+export function SectionEditor({ project, section, write, open }: { project: Project; section: SectionDef; write: boolean; open: boolean }) {
   const { actor, attempt } = useApp();
   const form = getDb().developmentForms.find((f) => f.contentId === project.contentId);
   const stored = (form?.sections[section.key] ?? {}) as Record<string, unknown>;
@@ -187,7 +187,7 @@ function PlannedRow({ id, section, write }: { id: string; section: SectionDef; w
   );
 }
 
-function PlannedEditor({ project, section, write }: { project: Project; section: SectionDef; write: boolean }) {
+export function PlannedEditor({ project, section, write }: { project: Project; section: SectionDef; write: boolean }) {
   const { actor, attempt } = useApp();
   const [title, setTitle] = useState("");
   const planned = plannedOf(project.contentId);

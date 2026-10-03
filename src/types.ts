@@ -221,8 +221,18 @@ export interface DevelopmentForm {
   decisionDate: string | null; // YYYY-MM-DD
   reviewWindowDate: string | null; // YYYY-MM-DD: no decision by then moves the project to Hold
   decisions: GreenlightDecision[];
+  // A hard gate of the documents (src/services/documents/gates.ts) passed by hand, with the reason. Absent on forms
+  // made before the documents; none means none.
+  overrides?: GateOverride[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface GateOverride {
+  key: string; // which hard gate
+  note: string; // why it was passed by hand
+  byPersonId: string;
+  at: string;
 }
 
 /** An episode as planned at Development. A real episode is made from it when a session that recorded it closes. */
@@ -238,6 +248,7 @@ export interface PlannedEpisode {
   // An episode made before the workflow and not recorded yet: the Content ID it keeps when it is recorded. Its old
   // record waits, archived with that reason, and becomes the episode when a session that recorded it closes.
   reservedId: string | null;
+  sourcePageId: string | null; // a devotion's: the page of its Devotional Script it was made from
   createdAt: string;
   updatedAt: string;
   archivedAt: string | null;
@@ -343,6 +354,128 @@ export interface ShareLink {
   createdAt: string;
   revokedAt: string | null;
   sharedWithNote: string;
+}
+
+// ── Project documents (the documents rework) ─────────────────
+// Narrative work is written as documents of pages, one set per project, chosen by its type and stage
+// (src/config/documentCatalog.ts). Anything that drives the calendar, reminders, call sheets, gear, storage or
+// overdue stays a structured form.
+
+/** One document of a project, made the first time it is opened from the catalogue. */
+export interface ProjectDocument {
+  id: string; // {contentId}|{stage}|{docKey}, and |{ownerId} for one of a session or episode: one each
+  contentId: string;
+  stage: WorkflowStage;
+  docKey: string;
+  ownerId: string | null; // the session or episode it is for (a Recording Day Sheet), or null for the whole project
+  title: string;
+  migrated: boolean; // written by the move from the old Development form: undoing the move removes exactly these
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A page of a document: a title, a subtitle (a scripture or a note) and a rich-text body. */
+export interface DocumentPage {
+  id: string;
+  documentId: string;
+  position: number;
+  title: string;
+  subtitle: string;
+  bodyHtml: string; // cleaned to an allow-list on every save and every load
+  version: number; // a save based on an older version is refused, so two people never overwrite each other unawares
+  archivedAt: string | null; // a deleted page is kept, archived, so no writing is ever lost
+  updatedAt: string;
+  updatedBy: string;
+  // The episode a page is about: a Review Thread has one page for each episode. Absent or null on every other page.
+  episodeId?: string | null;
+}
+
+/** A link kept with a document: a Google Doc, a Drive folder, a WhatsApp thread. The file stays where it is. */
+export interface DocumentLink {
+  id: string;
+  documentId: string;
+  url: string; // http or https only
+  label: string;
+  addedBy: string;
+  addedAt: string;
+}
+
+export type DocumentReviewStatus = "pending" | "approved" | "changes_requested";
+
+/** A named reviewer's decision on a whole document: one Approve, or Request changes with a reason. */
+export interface DocumentReview {
+  id: string; // {documentId}|{reviewerId}
+  documentId: string;
+  reviewerId: string;
+  status: DocumentReviewStatus;
+  note: string; // required when changes are requested
+  decidedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A reviewer's comment beside one page. Resolved, it stays, marked resolved. */
+export interface ReviewComment {
+  id: string;
+  documentId: string;
+  pageId: string;
+  authorId: string;
+  body: string;
+  resolved: boolean;
+  resolvedBy: string | null;
+  createdAt: string;
+}
+
+/** A storyboard of a project, or of one of its episodes. */
+export interface Storyboard {
+  id: string;
+  contentId: string;
+  episodeId: string | null;
+  name: string;
+  position: number;
+  copiedFrom: string | null; // the storyboard it was started from, if any
+  migrated: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StoryboardFrame {
+  id: string;
+  storyboardId: string;
+  position: number;
+  scene: string; // "Sc. 2"
+  imagePath: string | null; // the stored image's address: never the image itself
+  description: string;
+  soundEffects: string;
+  videoLink: string; // http or https, or empty
+}
+
+export interface ShotList {
+  id: string;
+  contentId: string;
+  episodeId: string | null;
+  name: string;
+  position: number;
+  copiedFrom: string | null; // the shot list it was started from, if any
+  migrated: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ShotRowType = "shot" | "setup" | "banner";
+
+/** A row of a shot list. Only shot rows are numbered; a setup row holds lighting, lens or camera notes and a banner divides sections. */
+export interface ShotListRow {
+  id: string;
+  shotListId: string;
+  position: number;
+  rowType: ShotRowType;
+  imagePath: string | null;
+  description: string;
+  shotSize: string;
+  shotType: string;
+  movement: string;
+  estMinutes: number | null;
 }
 
 /** One line of a live show's run of show. */
@@ -577,7 +710,12 @@ export interface Settings {
   // Workspace-wide look and feel, set by the Head of Production. Per-user preferences (font size,
   // density, photo) live on the Person record instead, since each person sets their own.
   appearance?: { accent: AccentKey; fontPairing: FontPairingKey };
+  // The kinds of project that show their documents (the documents rework) instead of the earlier screens. Turned on
+  // in Settings, one kind at a time; absent means none.
+  newDocuments?: DocumentProjectType[];
 }
+
+export type DocumentProjectType = "devotion" | "series" | "documentary";
 
 /** A reminder that was sent, or opened in the mail or messages app, so it is not sent twice by accident. */
 export interface OutboxEntry {
@@ -619,6 +757,16 @@ export interface Database {
   sessionLogEntries: SessionLogEntry[];
   reviewCheckpoints: ReviewCheckpoint[];
   shareLinks: ShareLink[];
+  // Project documents, storyboards and shot lists (see the interfaces above)
+  projectDocuments: ProjectDocument[];
+  documentPages: DocumentPage[];
+  documentLinks: DocumentLink[];
+  documentReviews: DocumentReview[];
+  reviewComments: ReviewComment[];
+  storyboards: Storyboard[];
+  storyboardFrames: StoryboardFrame[];
+  shotLists: ShotList[];
+  shotListRows: ShotListRow[];
   settings: Settings;
   counters: Record<string, number>; // ID sequences, keyed by prefix
 }

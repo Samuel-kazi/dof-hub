@@ -7,11 +7,11 @@ import type { Database } from "../src/types";
 import { RuleError } from "../src/types";
 import { CATEGORIES, categoryOf } from "../src/config/categories";
 import { CHECKLISTS, FORM_TYPES, WORKFLOW_STAGES, isWorkflowCategory } from "../src/config/workflow";
-import { WORKFLOW_PARTS, integrityProblems, uniqueViolations } from "../src/data/constraints";
+import { DOCUMENT_PARTS, WORKFLOW_PARTS, integrityProblems, uniqueViolations } from "../src/data/constraints";
 import { buildWorkflowFixture } from "../src/data/seedWorkflow";
 import { buildSeed } from "../src/data/seed";
 import { upgradeDb, CURRENT_SCHEMA, commit, enableRollback, getDb, setDb, transaction } from "../src/data/store";
-import { upgradeToV15 } from "../src/data/migrate";
+import { upgradeToV15, upgradeToV16 } from "../src/data/migrate";
 import { codeNumber, episodeCode, episodeCounter, plannedEpisodeId, plannedCounter, sessionCode, sessionCounter } from "../src/data/ids";
 import { addDaysIso, dateInNairobi, hoursUntilEndOfDay, isIsoDate, todayIso } from "../src/services/utils";
 
@@ -243,31 +243,34 @@ t("date arithmetic is by the calendar: months, years and leap days", () => {
 
 // ── Saved data from before the workflow ──────────────────────
 
-t("upgrading to version 15 adds the workflow's lists and fields, changes nothing else, and can run twice", () => {
-  const old = buildSeed() as unknown as Record<string, unknown>;
-  for (const k of WORKFLOW_PARTS) delete old[k];
-  for (const r of old.records as Record<string, unknown>[]) {
-    delete r.seriesType;
-    delete r.workflow;
-    delete r.episode;
-  }
-  old.schemaVersion = 14;
-  const before = JSON.stringify(old);
-  const up = upgradeDb(JSON.parse(before) as Database)!;
-  assert.equal(up.schemaVersion, CURRENT_SCHEMA);
-  assert.equal(CURRENT_SCHEMA, 15);
-  for (const k of WORKFLOW_PARTS) assert.deepEqual(up[k], []);
-  const was = JSON.parse(before) as Database;
-  assert.deepEqual(
-    up.records.map(({ seriesType, workflow, episode, ...rest }) => [rest, seriesType, workflow, episode]),
-    was.records.map((r) => [r, null, null, null]),
-    "every record is exactly as it was, plus three empty fields",
-  );
-  const twice = JSON.stringify(upgradeToV15(structuredClone(up)));
-  assert.equal(twice, JSON.stringify(up), "running it again changes nothing");
-  assert.equal(upgradeDb(up), up, "data already at version 15 is left alone");
-  assert.equal(upgradeDb({ ...up, schemaVersion: 99 }), null, "a version this app does not know is refused, not guessed at");
-});
+t(
+  "upgrading to versions 15 and 16 adds the workflow's and the documents' lists and fields, changes nothing else, and can run twice",
+  () => {
+    const old = buildSeed() as unknown as Record<string, unknown>;
+    for (const k of WORKFLOW_PARTS) delete old[k];
+    for (const r of old.records as Record<string, unknown>[]) {
+      delete r.seriesType;
+      delete r.workflow;
+      delete r.episode;
+    }
+    old.schemaVersion = 14;
+    const before = JSON.stringify(old);
+    const up = upgradeDb(JSON.parse(before) as Database)!;
+    assert.equal(up.schemaVersion, CURRENT_SCHEMA);
+    assert.equal(CURRENT_SCHEMA, 16);
+    for (const k of [...WORKFLOW_PARTS, ...DOCUMENT_PARTS]) assert.deepEqual(up[k], []);
+    const was = JSON.parse(before) as Database;
+    assert.deepEqual(
+      up.records.map(({ seriesType, workflow, episode, ...rest }) => [rest, seriesType, workflow, episode]),
+      was.records.map((r) => [r, null, null, null]),
+      "every record is exactly as it was, plus three empty fields",
+    );
+    const twice = JSON.stringify(upgradeToV16(upgradeToV15(structuredClone(up))));
+    assert.equal(twice, JSON.stringify(up), "running it again changes nothing");
+    assert.equal(upgradeDb(up), up, "data already at the current version is left alone");
+    assert.equal(upgradeDb({ ...up, schemaVersion: 99 }), null, "a version this app does not know is refused, not guessed at");
+  },
+);
 
 // ── All or nothing ───────────────────────────────────────────
 

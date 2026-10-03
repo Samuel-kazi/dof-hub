@@ -20,6 +20,9 @@ import {
   type Project,
 } from "./common";
 import { formProblems, latestDecision } from "./forms";
+import { newDocumentsOn } from "../documents/common";
+import { hardGatesMissing } from "../documents/gates";
+import { softNudges } from "../documents/nudges";
 
 // One function decides whether anything may move on: evaluateGate. Every Done button calls it and moves only if
 // it passes; the screens show its `missing` list. Dates in the wrong order are warnings, never blockers.
@@ -61,6 +64,12 @@ function lateDates(project: ContentRecord, dates: [string, string | null | undef
 }
 
 function developmentGate(p: Project): GateResult {
+  const late = lateDates(p, [["The Development deadline", p.stageDeadlines.Development]]);
+  // A project whose documents are in use: the short list of hard gates, and everything else as nudges.
+  if (newDocumentsOn(p.workflow.formType)) {
+    const missing = p.workflow.stage === "Development" ? hardGatesMissing(p.contentId) : ["The project has already left Development"];
+    return result(missing, [...softNudges(p.contentId), ...late]);
+  }
   const missing: string[] = [];
   if (p.workflow.stage !== "Development") missing.push("The project has already left Development");
   const form = formOf(p.contentId);
@@ -74,7 +83,7 @@ function developmentGate(p: Project): GateResult {
     if (checkpoint(p.contentId, key)?.status !== "Approved") missing.push(`${label} review checkpoint Approved`);
   missing.push(...openRequired("handoff", p.contentId).map((l) => `Handoff: ${l}`));
   if (!p.workflow.showProducerId) missing.push("Handoff: Show producer named");
-  return result(missing, lateDates(p, [["The Development deadline", p.stageDeadlines.Development]]));
+  return result(missing, late);
 }
 
 /** The project's own part of every session's Pre-production gate. */
@@ -179,11 +188,7 @@ export function evaluateGate(stage: GateStage, level: GateLevel, id: string): Ga
   return result([`${stage} has no gate at the ${level} level`]);
 }
 
-// ── Overdue (sessions and episodes only, never a project) ────
-
-/** A session is overdue once its date has passed and it is not closed. */
-export const sessionOverdue = (s: RecordingSession, today: string = todayIso()): boolean =>
-  s.status !== "Closed" && !s.archivedAt && !!s.scheduledDate && s.scheduledDate < today;
+// ── Overdue (episodes only: never a session, season, series or project) ──
 
 /** An episode is overdue once the deadline of the stage it is in has passed, until it is published. */
 export function episodeOverdue(ep: ContentRecord, today: string = todayIso()): boolean {

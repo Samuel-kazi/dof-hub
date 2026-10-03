@@ -40,9 +40,16 @@ export function nextPlanned(projectId: string): { id: string; n: number } {
 
 /** The next episode of a project. Episodes made before the workflow count too, so numbering carries on from them. */
 export function nextEpisode(projectId: string): { id: string; n: number } {
-  const used = getDb()
-    .records.filter((r) => r.parentId === projectId)
-    .map((r) => r.episode?.episodeNumber ?? codeNumber(r.contentId, projectId, EPISODE_TOKEN));
+  const db = getDb();
+  const used = [
+    ...db.records
+      .filter((r) => r.parentId === projectId)
+      .map((r) => r.episode?.episodeNumber ?? codeNumber(r.contentId, projectId, EPISODE_TOKEN)),
+    // Codes already given out ahead of recording count too.
+    ...db.plannedEpisodes
+      .filter((p) => p.contentId === projectId && p.reservedId)
+      .map((p) => codeNumber(p.reservedId!, projectId, EPISODE_TOKEN)),
+  ];
   const n = next(episodeCounter(projectId), used);
   return { id: claimId(episodeCode(projectId, n)), n };
 }

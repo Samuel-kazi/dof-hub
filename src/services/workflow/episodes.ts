@@ -33,11 +33,18 @@ export interface NewEpisode {
  * Given `kept`, an episode made before the workflow that was waiting to be recorded, it becomes that record instead,
  * so its Content ID, documents and notes stay as they were. The caller saves.
  */
-export function makeEpisode(actor: Actor, project: Project, input: NewEpisode, kept?: ContentRecord): Episode {
+export function makeEpisode(actor: Actor, project: Project, input: NewEpisode, kept?: ContentRecord | string): Episode {
   let id: string;
   let n: number;
   let r: ContentRecord;
-  if (kept) {
+  if (typeof kept === "string") {
+    // A Content ID given out ahead of recording (a devotion's, in Pre-production): the episode is made under it.
+    id = kept;
+    n = codeNumber(id, project.contentId, EPISODE_TOKEN);
+    if (Number.isNaN(n) || getDb().records.some((x) => x.contentId === id))
+      throw new RuleError(`${id} cannot become an episode of ${project.contentId}.`);
+    r = blankRecord(id, project.category, input.title, project.contentId, project.hierarchyLevel + 1);
+  } else if (kept) {
     id = kept.contentId;
     n = codeNumber(id, project.contentId, EPISODE_TOKEN);
     if (kept.parentId !== project.contentId || (kept.episode && !kept.archived) || Number.isNaN(n))
@@ -72,14 +79,14 @@ export function makeEpisode(actor: Actor, project: Project, input: NewEpisode, k
   r.scheduledDate = input.scheduledDate;
   // A kept record's earlier stage deadlines stay alongside, unread by the workflow, as the rest of its old fields do.
   r.stageDeadlines = {
-    ...(kept ? r.stageDeadlines : {}),
+    ...(kept && typeof kept !== "string" ? r.stageDeadlines : {}),
     "Post production": addDaysIso(todayIso(), POST_DAYS),
     "Marketing and distribution": addDaysIso(todayIso(), MARKETING_DAYS),
   };
   r.stageEnteredAt = todayIso();
   r.assigneePersonId = info.editorId;
   const db = getDb();
-  if (!kept) db.records.push(r);
+  if (!kept || typeof kept === "string") db.records.push(r);
   // The episode's reviewers start as whoever reviewed the project's outline.
   const reviewers = checkpoint(project.contentId, "outline_script")?.reviewerIds ?? [];
   for (const key of ["rough_cut", "final"] as const) {

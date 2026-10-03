@@ -8,12 +8,13 @@ import { AppProvider } from "../src/ui/AppContext";
 import { RecordPage } from "../src/pages/RecordPage";
 import { Pipeline } from "../src/pages/Pipeline";
 import { login } from "../src/services/auth";
-import { resetDemoData, getDb } from "../src/data/store";
+import { getDb, setDb } from "../src/data/store";
+import { buildSeed } from "../src/data/seed";
 import * as C from "../src/services/content";
 
 let passed = 0;
 const t = (name: string, fn: () => void) => {
-  resetDemoData();
+  setDb(buildSeed()); // the examples as they were before the workflow
   try {
     fn();
     passed++;

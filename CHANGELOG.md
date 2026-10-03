@@ -2,6 +2,145 @@
 
 What changed in each version, newest first. How to deploy is in GO-LIVE.md.
 
+## Unreleased: documents for each stage (the documents rework)
+
+Being built in phases. The five stages, their names and order, the stage tracker, Content IDs and every form that
+drives the calendar, reminders, call sheets, gear, storage or overdue stay as they are.
+
+**Phase 5: the documents of Production, Post production, and Marketing and distribution** (behind the same setting)
+- Recording Day Sheet (a documentary's Shoot Day Sheet), in Production: one for each recording session, chosen at the
+  top (it opens on the session recording now, else the next one planned). Its run sheet and wrap checklist are the
+  session's own forms, as before, shown as fixed cards beside the pages: a line added to the run sheet here is the
+  session's, and still sets the call sheet's call time; a closed session's run sheet is as it was; the wrap opens
+  once recording starts. The notes (Daily notes, or Interview notes) are pages like any other, and start with the
+  daily log already written on the session. Once a session has its day sheet, the session's screen shows those notes
+  as its daily log, so they are written in one place.
+- Review Thread, in Post production: a page for each episode (or cut), added when the thread is opened after a session
+  closes, and never taken away (an archived episode keeps its page; a page deleted by hand stays deleted and can be
+  restored). Above each page, where that episode's review stands: its post-production step, editor, rough cut and
+  final review with their notes, why it was sent back, its review link, and the way to the episode. Comments sit
+  beside each page and can be resolved.
+- Edit Notes, Release Plan, Learning Notes and a devotion's Study Notes are written like the other documents. The
+  forms of these stages (Session Log, Storage, Episode or Cut Tracker, Platform Status, Archive, a devotion's Recording
+  Day View and Review) keep their screens and behaviour.
+- A day sheet's tile shows it has content when any session's sheet has some.
+
+**Phase 4: the Storyboard and the Shot List** (behind the same setting)
+- Storyboard, in Pre-production: the project's boards in a row above with their frame counts, and "+ New storyboard",
+  which starts blank or as a copy of any board the person may see, in this project or another, pictures and all. A
+  board can be for the whole project or one episode. Its frames sit in a grid (three across on a wide screen): "Sc. ·
+  Frame N", a 16:9 picture (click or drop to add it, replace or remove it), description, sound effects and a video
+  link (web links only). "+ Frame" adds one; frames are dragged into order; each has a ⋮ menu (Duplicate, move earlier
+  or later, move to another storyboard, Delete); Select all, then delete or move several at once. The board's name is
+  edited in place. Everything saves as it is typed.
+- Shot List, in Pre-production: the lists in a row above with their shot counts, and "+ New shot list" (blank or a
+  copy). A table: picture, shot number (shots only: setups and banners take none), description, shot size, type and
+  movement (the usual ones offered, anything else typed), and estimated minutes, with a ⋮ menu and a checkbox per row.
+  "+ Shot", "+ Setup" (a row across the table for lighting, lens or camera notes) and "+ Banner" (a section divider).
+  Rows are dragged into order; Select all, then delete; the times add up at the foot.
+- Pictures are shrunk to a 1280-pixel long edge before they are kept. On the hosted site the server files them and the
+  frame keeps only the address. The desktop app now writes them to a media folder in its own data folder (one folder
+  per project) and keeps only the path; it may write there and nowhere else. The browser demo keeps the shrunk picture.
+- The camera plan from the old forms (moved in Phase 1) is there as a shot list.
+- A project's "Waiting on" follows the document review once its documents are on: the reviewers still to decide, who
+  are reminded, and then its owner (the Entry owner, or the producer) when changes are requested.
+- Text inputs for web addresses now follow the theme (they were white in night mode).
+
+**Phase 3: series and documentaries, the review, the greenlight and the short gates** (behind the same setting)
+- Settings, Documents (preview), now has a switch for each kind: devotions, series and documentaries. A series or
+  documentary then opens on its Project Home, with its own documents (Show Brief or Documentary Brief, Theological
+  Review, Greenlight, Planned Episodes or Parts, and the later stages' documents and forms).
+- The short gates out of Development, for a kind whose documents are on, replacing the long "Still needed" list:
+  - Series and documentary: the logline and core question written (two fields at the top of The idea); the
+    theological review of the brief approved; the greenlight decision recorded as Greenlight and a show producer named.
+  - Devotion: the guest's name and contact; at least five devotion pages each with a title, scripture and script; the
+    theological review of the script approved.
+  - A project reviewed on the earlier screens keeps that review when its kind is turned on: both earlier checkpoints
+    approved count, until reviewers are named on the document.
+  - Everything else is a note that never blocks, and each can be dismissed (remembered in the person's browser).
+  - The Head of Production, or someone given "Create projects", can pass a gate by hand with a short note, kept with
+    the project and in the activity log, and can take it back. The greenlight decision itself is recorded, never
+    passed by hand.
+  - "Done: move to Pre-production" stays, enabled when the gates pass. A greenlight needs only the first two.
+- Theological Review: the brief or script read-only, page by page, with a comment box beside each page. The show
+  producer or the Head of Production names the reviewers; each named reviewer approves the whole document or requests
+  changes with a reason; the Head of Production can decide for everyone. The reason shows on the document for its
+  writers, who resolve comments and "Ask for review again". The review is kept as it was once the project leaves
+  Development; comments can still be added.
+- Greenlight: the six-criteria page, with the recorded decision, its date and notes and the show producer above it,
+  as structured fields, and the gate below.
+- Devotions: Accept or Decline. Accept records the decision, moves the devotion to Pre-production and lists its
+  devotions from the script, each with its Content ID and its page, in one change. Decline needs a reason and closes
+  and archives the devotion, never deleting it.
+- Project Home shows the header strip (Project details: entry, a devotion's guest, a sermon's delivery) and, while in
+  Development, the gate with its button.
+- Testimonial and sermon briefs gain the logline and core question, optional on the earlier form so its gate is as it
+  was.
+- Devotions share one theme, set once in Project details; each devotion has its own topic, the title of its page
+  (labelled Topic). The Devotional Script shows the shared theme, and the Devotions list shows each topic beside it.
+  A change of theme reaches every devotion when the list is brought up to date.
+- Form tiles open their screens as before: Planned Episodes, Consent and Release, Roles, Sessions, Call Sheet, Gear,
+  Session Log, Storage, Episode Tracker, Platform Status and Archive.
+
+**Phase 2: the document screens and the editor** (devotions first, behind a setting that starts off)
+- Settings, Documents (preview): "Devotions show their documents". Off until someone with the system settings right
+  turns it on. Series and documentaries cannot be turned on yet. Everyone can still switch a project back with
+  "Earlier screens" (remembered in their own browser).
+- Project Home: one coloured row per stage, the stage's name on the left and a tile for each document, tool or form.
+  A tile shows a small dot when its document has something in it, worked out from its pages and links, never set by
+  hand. The stage tracker stays at the top.
+- A tile opens full width in three panes: the stage's documents on the left (forms tagged "form"), the document's pages
+  as cards in the middle with "+ Add page", and the page on the right. Stage tabs along the top jump between stages,
+  and "Project home" comes back. Pages can be reordered (drag, or the ⋮ menu), deleted and restored.
+- The page: a plain title and subtitle (a devotion's scripture), a rich-text body (TipTap) with a sticky toolbar
+  (undo, redo, block style, text size, bold, italic, underline, strikethrough, colour, highlight, alignment, bullet,
+  numbered and check lists, indent, outdent, link, clear formatting) and the usual shortcuts (Ctrl or Cmd with B, I,
+  U, Z, Shift+Z and K). The writing sits on paper, light in both themes, so colours read the same on screen and
+  printed. A Links box for files kept in Google Docs, Drive or WhatsApp, opened in the person's own browser.
+- Saving: 800 ms after the writer stops, "Saving…" then "Saved @ hh:mm". On the hosted site, "Saved" waits until the
+  server has the save. A save that fails, or meets someone else's newer save, keeps the words on screen with Keep
+  mine (or Save again), Copy my words, or Use theirs; until it is saved, a copy stays in the browser and is offered
+  back next time. Leaving the page, the app screen or the browser tab with words not saved asks first.
+- A paste from Google Docs, Word or the web keeps bold, italic, headings, lists and links and drops everything else.
+  Every page is cleaned again when it is opened.
+- Print page or Print document: the pages alone, without the app, each page on its own sheet.
+- Forms keep their screens: the Accept or Decline tile shows the Development form as before (guest, review, decision
+  and the move to Pre-production) until the next phase; Recording Session, Call Sheet, Recording Day View, Storage
+  and Review open the same screens as before. Devotions (Pre-production) lists the devotions from the script, each with
+  its Content ID; days already listed on the earlier form are taken over in order, never listed twice.
+- The editor is downloaded only when a page is opened (about 130 KB), so the app's first load is not slower.
+
+**Phase 1: the data, the services and the move** (data version 16; no new screens yet)
+- New lists: project documents, their pages, links, theological reviews and review comments, storyboards with
+  their frames, and shot lists with their rows. All start empty. Which documents, tools and forms each kind of
+  project has at each stage is set in one place, `src/config/documentCatalog.ts`. A document is made from it the
+  first time it is opened, with its starting pages; people add, rename, reorder and delete pages. A deleted page is
+  kept, archived, and can be restored.
+- Page writing is stored as HTML cleaned to the editor's allow-list (DOMPurify) on every save, in the browser and on
+  the server alike: no scripts, no event handlers, links to http, https and mailto only. A page save carries the
+  version it started from; one made from an older version is refused, and the writer's words stay on screen.
+- Theological Review: named reviewers from the crew list, each with one decision on the whole document (Approve, or
+  Request changes with the reason); comments beside a page that can be resolved and stay. The show producer or the
+  Head of Production names the reviewers, and a reviewer joins the project so they can read it and decide. The same
+  now holds for the workflow's review checkpoints: before, a reviewer who was not on the project could not decide.
+- Storyboards and shot lists, per project or per episode. A new one can start as a copy of an existing one from any
+  project the person can see, so frames and shots can be reused.
+- Devotions: the Devotional Script has one page per devotion (title, scripture, script). In Pre-production its pages
+  become the devotion's list of episodes, each given its Content ID there and then; the episode is made under that
+  ID when its recording session closes.
+- Sessions are never overdue. Overdue is worked out for episodes only (and a devotion's episodes); the session
+  badges, reminders and dashboard counts for late sessions are gone.
+- The move: every field of the old Development forms is written onto a page of the new documents (the six criteria
+  onto Greenlight, a devotion's message-review notes as a review comment, the camera plan into a shot list), or kept
+  on the form: the header strip, consent and release, and the fields a gate or a later stage reads (the logline,
+  the core question, a sermon's delivery). A field the mapping does not know goes onto "Also from the old form", so nothing is lost; the report counts fields
+  not accounted for, which is always zero. The old forms are left exactly as they were. It runs as part of "Move
+  existing projects" (Settings, or `npm run migrate:workflow`), with the same dry run, copy first and all-or-nothing
+  save; running it again changes nothing. `npm run migrate:workflow -- --undo-documents` undoes it, keeping any
+  document or shot list written in since unless `--force` is given. How: GO-LIVE.md.
+- Upgrading saved data keeps a copy first: `hub_items_before_v16` and `hub_meta_before_v16` in MongoDB, and
+  `dof-hub-db-before-v16` in the desktop app and demo.
+
 ## Unreleased: the five-stage workflow for series, devotions and documentaries
 
 Being built in phases. Live Shows and Music work exactly as before. Series, devotionals and documentaries made
@@ -99,6 +238,17 @@ before the workflow keep their earlier stages until the existing data is moved o
   session's day before its call sheet exists, editing up to the Post production deadline, and release work up to the
   Marketing and distribution deadline. The per-episode estimates can be changed in Settings.
 - A workflow series' page and the tree no longer show an empty "0 of 0 complete" progress.
+
+**Phase 6: the sample data moved, and the QA report** (as approved)
+- The built-in sample data starts in the five-stage workflow: the demo, the desktop app and a new site set up with
+  sample data begin with Whispers of Why, Morning Light and Samburu Stories already moved (by the same move a live site
+  runs from Settings), their Development forms in their documents. Live Shows and Music are exactly as before.
+  Settings, "Move existing projects", has nothing to move there. A live site's own data still moves only when its
+  Head of Production presses Move.
+- The demo's data is now read the first time it is needed rather than when the app's files load, so building the
+  moved sample cannot meet code that is still loading.
+- QA-REPORT.md: every item of the workflow brief's tests and acceptance, with the tests that cover it and the
+  results.
 
 **Phase 5: moving existing projects** (no change until the Head of Production moves them)
 - Series, devotionals and documentaries made before the workflow can be moved into it, from Settings (the Head of

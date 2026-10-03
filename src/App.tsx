@@ -5,6 +5,7 @@ import { Shell } from "./ui/Shell";
 import { Login, MustChange, RemoteLogin, Setup, Unavailable } from "./pages/Login";
 import { actorOf, hydrate, probe, signOut, startSync, syncEvents, type SessionInfo, type SessionUser } from "./data/remote";
 import { startLocalDailyChecks } from "./data/localChecks";
+import { enableDesktopMedia } from "./pages/documents/images";
 
 type Boot = { kind: "loading" } | { kind: "local" } | { kind: "remote"; info: SessionInfo };
 
@@ -28,6 +29,8 @@ export default function App() {
     syncEvents.onSignedOut = () => window.location.reload();
     void probe().then(async (info) => {
       if (!info) {
+        // The desktop app on its own keeps pictures in a media folder on that computer.
+        if ("__TAURI_INTERNALS__" in window) await enableDesktopMedia();
         setBoot({ kind: "local" });
         return;
       }

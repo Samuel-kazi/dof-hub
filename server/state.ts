@@ -1,6 +1,8 @@
+import "./html"; // rich text is cleaned on the server too (src/services/html.ts)
 import type { Actor, AuditEntry, Database, DocRevision, Person } from "../src/types";
 import { CURRENT_SCHEMA, getDb, setDb, setPersist, upgradeDb } from "../src/data/store";
 import { buildSeed } from "../src/data/seed";
+import { buildSampleData } from "../src/data/sampleData";
 import { assertIntegrity } from "../src/data/constraints";
 import { canViewDoc } from "../src/services/docs";
 import { can } from "../src/services/permissions";
@@ -41,10 +43,12 @@ export function newDatabase(hop: { name: string; username: string }, withSamples
     createdAt: new Date().toISOString(),
   };
   if (withSamples) {
+    // The examples, already moved into the five-stage workflow and its documents (src/data/sampleData.ts).
+    const sample = buildSampleData();
     const db: Database = {
-      ...seed,
+      ...sample,
       users: [],
-      people: seed.people.map((p) => (p.personId === person.personId ? person : { ...p, hasLogin: false })),
+      people: sample.people.map((p) => (p.personId === person.personId ? person : { ...p, hasLogin: false })),
     };
     return { db, hop: person };
   }
@@ -419,6 +423,13 @@ export async function snapshotFor(store: Store, actor: Actor): Promise<{ revisio
     const docIds = new Set(docs.map((d) => d.id));
     const sessions = db.recordingSessions.filter((x) => ids.has(x.contentId));
     const sessionIds = new Set(sessions.map((x) => x.id));
+    // Project documents, storyboards and shot lists go with the projects they belong to.
+    const documents = (db.projectDocuments ?? []).filter((d) => ids.has(d.contentId));
+    const documentIds = new Set(documents.map((d) => d.id));
+    const boards = (db.storyboards ?? []).filter((b) => ids.has(b.contentId));
+    const boardIds = new Set(boards.map((b) => b.id));
+    const lists = (db.shotLists ?? []).filter((l) => ids.has(l.contentId));
+    const listIds = new Set(lists.map((l) => l.id));
     const settings = { ...db.settings };
     if (!hop)
       settings.permissions = {
@@ -456,6 +467,15 @@ export async function snapshotFor(store: Store, actor: Actor): Promise<{ revisio
       sessionLogEntries: db.sessionLogEntries.filter((e) => sessionIds.has(e.sessionId)),
       reviewCheckpoints: db.reviewCheckpoints.filter((c) => ids.has(c.contentId) && (c.episodeId === null || ids.has(c.episodeId))),
       shareLinks: db.shareLinks.filter((l) => ids.has(l.episodeId)),
+      projectDocuments: documents,
+      documentPages: (db.documentPages ?? []).filter((p) => documentIds.has(p.documentId)),
+      documentLinks: (db.documentLinks ?? []).filter((l) => documentIds.has(l.documentId)),
+      documentReviews: (db.documentReviews ?? []).filter((r) => documentIds.has(r.documentId)),
+      reviewComments: (db.reviewComments ?? []).filter((c) => documentIds.has(c.documentId)),
+      storyboards: boards,
+      storyboardFrames: (db.storyboardFrames ?? []).filter((f) => boardIds.has(f.storyboardId)),
+      shotLists: lists,
+      shotListRows: (db.shotListRows ?? []).filter((r) => listIds.has(r.shotListId)),
       outbox: can(actor, "reminders.sendOthers") ? db.outbox : db.outbox.filter((o) => o.personId === actor.personId),
       settings,
       counters: db.counters,

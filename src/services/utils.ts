@@ -72,6 +72,9 @@ export const fromDayNumber = (n: number): string => new Date(n * 86400000).toISO
 /** 1200 becomes "1.20 TB", 350 becomes "350 GB". */
 export const fmtSize = (gb: number): string => (gb >= 1000 ? `${(gb / 1000).toFixed(2)} TB` : `${Math.round(gb)} GB`);
 
+/** The time of a moment in Nairobi, as hh:mm. */
+export const fmtTime = (iso: string): string =>
+  new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: TIME_ZONE });
 export const fmtDateTime = (iso: string): string =>
   new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
@@ -89,3 +92,5 @@ export function pickKeys<T extends object, K extends keyof T>(patch: T, keys: re
 
 /** A photo stored on the server (see server/layout.ts). Signed in to the server, photos are links of this form. */
 export const STORED_FILE = /^\/api\/file\?id=[a-f0-9]{32}$/;
+/** A picture the desktop app keeps in its media folder: media:<project>/<file>. Only the path is stored. */
+export const MEDIA_FILE = /^media:[A-Za-z0-9-]{1,80}\/[A-Za-z0-9_-]{1,80}\.(jpg|png|webp)$/;

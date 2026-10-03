@@ -1,6 +1,7 @@
 import * as callsheets from "../src/services/callsheets";
 import * as content from "../src/services/content";
 import * as docs from "../src/services/docs";
+import * as documents from "../src/services/documents";
 import * as equipment from "../src/services/equipment";
 import * as people from "../src/services/people";
 import * as permissions from "../src/services/permissions";
@@ -16,6 +17,7 @@ const modules: Record<string, Record<string, unknown>> = {
   callsheets,
   content,
   docs,
+  documents,
   equipment,
   people,
   permissions,
