@@ -58,7 +58,7 @@ If the site shows **The site cannot reach its data** instead of a sign-in box, i
 
 ## 4. Create the Head of Production
 
-Open the site. It shows **Set up the Production Hub**. Enter the setup code, your name, a username and a password (10 or more characters). Choose blank or sample data. This can only be done once.
+Open the site. It shows **Set up the Production Hub**. Enter the setup code, your name, a username and a password (10 or more characters). Choose blank or sample data (the sample projects start in the five-stage workflow). This can only be done once.
 
 Afterwards, delete `SETUP_TOKEN` in Vercel. Setup is then switched off completely.
 

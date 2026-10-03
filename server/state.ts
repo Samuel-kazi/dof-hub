@@ -2,6 +2,7 @@ import "./html"; // rich text is cleaned on the server too (src/services/html.ts
 import type { Actor, AuditEntry, Database, DocRevision, Person } from "../src/types";
 import { CURRENT_SCHEMA, getDb, setDb, setPersist, upgradeDb } from "../src/data/store";
 import { buildSeed } from "../src/data/seed";
+import { buildSampleData } from "../src/data/sampleData";
 import { assertIntegrity } from "../src/data/constraints";
 import { canViewDoc } from "../src/services/docs";
 import { can } from "../src/services/permissions";
@@ -42,10 +43,12 @@ export function newDatabase(hop: { name: string; username: string }, withSamples
     createdAt: new Date().toISOString(),
   };
   if (withSamples) {
+    // The examples, already moved into the five-stage workflow and its documents (src/data/sampleData.ts).
+    const sample = buildSampleData();
     const db: Database = {
-      ...seed,
+      ...sample,
       users: [],
-      people: seed.people.map((p) => (p.personId === person.personId ? person : { ...p, hasLogin: false })),
+      people: sample.people.map((p) => (p.personId === person.personId ? person : { ...p, hasLogin: false })),
     };
     return { db, hop: person };
   }

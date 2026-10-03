@@ -197,6 +197,17 @@ before the workflow keep their earlier stages until the existing data is moved o
   Marketing and distribution deadline. The per-episode estimates can be changed in Settings.
 - A workflow series' page and the tree no longer show an empty "0 of 0 complete" progress.
 
+**Phase 6: the sample data moved, and the QA report** (as approved)
+- The built-in sample data starts in the five-stage workflow: the demo, the desktop app and a new site set up with
+  sample data begin with Whispers of Why, Morning Light and Samburu Stories already moved (by the same move a live site
+  runs from Settings), their Development forms in their documents. Live Shows and Music are exactly as before.
+  Settings, "Move existing projects", has nothing to move there. A live site's own data still moves only when its
+  Head of Production presses Move.
+- The demo's data is now read the first time it is needed rather than when the app's files load, so building the
+  moved sample cannot meet code that is still loading.
+- QA-REPORT.md: every item of the workflow brief's tests and acceptance, with the tests that cover it and the
+  results.
+
 **Phase 5: moving existing projects** (no change until the Head of Production moves them)
 - Series, devotionals and documentaries made before the workflow can be moved into it, from Settings (the Head of
   Production only) or with `npm run migrate:workflow`. A dry run comes first: every record with its before and

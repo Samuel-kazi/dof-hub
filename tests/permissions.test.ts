@@ -1,7 +1,8 @@
 // Run with: npx tsx tests/permissions.test.ts
 // What people can see and do, and how the Head of Production changes it.
 import assert from "node:assert/strict";
-import { getDb, resetDemoData } from "../src/data/store";
+import { getDb, setDb } from "../src/data/store";
+import { buildSeed } from "../src/data/seed";
 import { RuleError } from "../src/types";
 import { login } from "../src/services/auth";
 import * as P from "../src/services/permissions";
@@ -16,7 +17,7 @@ import { getPerson } from "../src/services/people";
 
 let passed = 0;
 const t = (name: string, fn: () => void) => {
-  resetDemoData();
+  setDb(buildSeed()); // the examples as they were before the workflow
   try {
     fn();
     passed++;

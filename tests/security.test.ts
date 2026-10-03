@@ -1,6 +1,7 @@
 // Run with: npm test -- security
 // The attacks from the October 2026 code review, replayed against the real server over HTTP with data in
 // memory. Each one worked before it was fixed; each test checks that it no longer does.
+import { putBackEarlierExamples } from "./support/earlier-examples";
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -72,6 +73,7 @@ async function setupHop() {
     samples: true,
   });
   assert.equal(r.status, 200, JSON.stringify(r.json));
+  await putBackEarlierExamples(store);
   return c;
 }
 async function loginFor(hop: Client, personId: string, username: string) {

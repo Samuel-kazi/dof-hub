@@ -4,6 +4,7 @@
 // running it twice; an old episode keeping its Content ID when it is finally recorded; and the three ways it runs
 // (MongoDB and the server, the HTTP address for the Head of Production, and the desktop app and demo), each with a
 // dry run that writes nothing and a copy of the data kept before applying.
+import { putBackEarlierExamples } from "./support/earlier-examples";
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -36,6 +37,8 @@ const { createHandler, memoryStore } = await import("../server/index");
 const { initDatabase, loadDb } = await import("../server/state");
 const { migrateWorkflowStore } = await import("../server/migrateWorkflow");
 const { prepareSession, tickAll } = await import("./support/wow-walkthrough");
+const { buildSampleData } = await import("../src/data/sampleData");
+const { moveToNewSystem } = await import("../src/data/moveToNewSystem");
 
 let passed = 0;
 const t = async (name: string, fn: () => Promise<void> | void) => {
@@ -402,6 +405,7 @@ await t("over HTTP: only the Head of Production, choices checked, a dry run unle
       password: "correct horse battery",
       samples: true,
     });
+    await putBackEarlierExamples(store); // the examples as they were before the workflow, to be moved
     const kev = setup.cookie;
     assert.equal((await post("/api/migrate-workflow", {})).status, 401, "signed out");
     const made = await post("/api/accounts/create", { personId: "DOF-P-CRW-002", username: "brian" }, kev);
@@ -456,6 +460,7 @@ await t("over HTTP: a session closed on a screen keeps the waiting episode's Con
       password: "correct horse battery",
       samples: true,
     });
+    await putBackEarlierExamples(store); // the examples as they were before the workflow, to be moved
     const live = await act("content.createRecord", { category: "general", title: "Old placeholder" });
     await act("content.deleteRecord", live.contentId);
     assert.equal((await req("POST", "/api/migrate-workflow", { apply: true })).json.report.applied, true);
@@ -521,6 +526,65 @@ await t("in the desktop app and the demo: the Head of Production only, with a co
   assert.equal(saved.get("dof-hub-db-before-workflow"), before, "the copy is the data as it was");
   assert.ok(find(getDb(), SEASON).workflow);
   assert.equal(applyMoveLocally(hop(), {}).applied, false, "running it again changes nothing");
+});
+
+// ── The sample data, moved (as approved) ─────────────────────
+
+await t("the demo's and a new site's sample data start in the new workflow; Live Shows and Music are as before", () => {
+  const sample = buildSampleData();
+  const earlier = buildSeed();
+  for (const id of ["DOF-SER-001-S1", "DOF-DEV-001", "DOF-DOC-001"]) assert.ok(find(sample, id).workflow, `${id} is in the workflow`);
+  assert.equal(find(sample, "DOF-SER-001").seriesType, "podcast");
+  assert.deepEqual(
+    sample.records.filter((r) => r.category === "live" || r.category === "music"),
+    earlier.records.filter((r) => r.category === "live" || r.category === "music"),
+    "Live Shows and Music are exactly as before",
+  );
+  assert.ok(sample.projectDocuments.length >= 3, "with the Development forms in their documents");
+  assert.deepEqual(sample.audit, earlier.audit, "nothing in the activity log about a move nobody made");
+  assert.deepEqual(integrityProblems(sample), []);
+  const again = moveToNewSystem(structuredClone(sample), {
+    today: "2026-10-03",
+    at: "2026-10-03T06:00:00.000Z",
+    byPersonId: "DOF-P-HOP-001",
+  });
+  assert.equal(again.changed, false, "nothing left to move");
+});
+
+await t("over HTTP: a new site set up with samples has nothing left to move", async () => {
+  const store = memoryStore();
+  const server: Server = createServer(createHandler(async () => store));
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  try {
+    const setup = await fetch(`${base}/api/setup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        token: process.env.SETUP_TOKEN,
+        name: "Kevin Mwangi",
+        username: "kev",
+        password: "correct horse battery",
+        samples: true,
+      }),
+    });
+    assert.equal(setup.status, 200);
+    const cookie = setup.headers
+      .getSetCookie()
+      .find((c) => c.startsWith("dof_session="))!
+      .split(";")[0];
+    const dry = await fetch(`${base}/api/migrate-workflow`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: "{}",
+    });
+    const report = (await dry.json()).report;
+    assert.equal(report.changed, false, JSON.stringify(report).slice(0, 200));
+    const state = await (await fetch(`${base}/api/state`, { headers: { Cookie: cookie } })).json();
+    assert.ok(state.db.records.find((r: { contentId: string }) => r.contentId === SEASON).workflow, "the season is a workflow project");
+  } finally {
+    server.close();
+  }
 });
 
 console.log(`\n${passed} passed`);

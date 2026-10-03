@@ -2,6 +2,7 @@
 // How the server keeps data: the storage contract against the in-memory store, then the server end to end over
 // HTTP for what the October 2026 review found (H2): every request loading everything, saves colliding, and
 // photos, the activity log and document history making the download ever larger.
+import { putBackEarlierExamples } from "./support/earlier-examples";
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -46,7 +47,9 @@ await storageContract(
 
 let server: Server | undefined;
 let base = "";
+let served: Store;
 async function serve(store: Store) {
+  served = store;
   server?.close();
   server = createServer(createHandler(async () => store));
   await new Promise<void>((r) => server!.listen(0, "127.0.0.1", r));
@@ -101,6 +104,7 @@ async function setupHop(samples = true) {
     samples,
   });
   assert.equal(r.status, 200, JSON.stringify(r.json));
+  if (samples) await putBackEarlierExamples(served);
   return c;
 }
 const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";

@@ -3,7 +3,8 @@
 import assert from "node:assert/strict";
 import React from "react";
 import { renderToString } from "react-dom/server";
-import { getDb, resetDemoData } from "../src/data/store";
+import { getDb, setDb } from "../src/data/store";
+import { buildSeed } from "../src/data/seed";
 import { RuleError } from "../src/types";
 import { login } from "../src/services/auth";
 import { isoDay } from "../src/data/seed";
@@ -22,7 +23,7 @@ import { RecordPage } from "../src/pages/RecordPage";
 
 let passed = 0;
 const t = (name: string, fn: () => void) => {
-  resetDemoData();
+  setDb(buildSeed()); // the examples as they were before the workflow
   try {
     fn();
     passed++;

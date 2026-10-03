@@ -1,7 +1,8 @@
 // Run with: npx tsx tests/reminders.test.ts
 // Reminders, the calendar file and the messages that go out.
 import assert from "node:assert/strict";
-import { getDb, resetDemoData } from "../src/data/store";
+import { getDb, setDb } from "../src/data/store";
+import { buildSeed } from "../src/data/seed";
 import { RuleError } from "../src/types";
 import { login } from "../src/services/auth";
 import * as R from "../src/services/reminders";
@@ -12,7 +13,7 @@ import { isoDay } from "../src/data/seed";
 
 let passed = 0;
 const t = (name: string, fn: () => void) => {
-  resetDemoData();
+  setDb(buildSeed()); // the examples as they were before the workflow
   try {
     fn();
     passed++;

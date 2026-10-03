@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type { Database } from "../types";
-import { buildSeed } from "./seed";
+import { buildSampleData } from "./sampleData";
 import { buildGearSeed } from "./seedGear";
 import { assertIntegrity } from "./constraints";
 import {
@@ -124,16 +124,19 @@ function load(): Database {
       keepCopy(raw, "unreadable");
     }
   } catch {
-    /* fall through to seed data */
+    /* fall through to the sample data */
   }
-  return buildSeed();
+  return buildSampleData();
 }
 
-let db: Database = load();
+// Loaded on first use, not when this file loads: the sample data is built by the move into the workflow, whose own
+// files may still be loading at that moment.
+let db: Database | undefined;
+const data = (): Database => (db ??= load());
 let tick = 0;
 const listeners = new Set<() => void>();
 
-export const getDb = (): Database => db;
+export const getDb = (): Database => data();
 
 let saveFailed = false;
 /** True when the last save to this device failed, usually because photos filled the space. */
@@ -170,12 +173,12 @@ let dirty = false;
 /** Turns on going back after a failed change. The browser does; the server has its own way. */
 export function enableRollback(): void {
   rollback = true;
-  committed = JSON.stringify(db);
+  committed = JSON.stringify(data());
 }
 
 function restore(): void {
   if (!rollback || committed === null) return;
-  if (JSON.stringify(db) === committed) return; // nothing was changed, so nothing to undo or redraw
+  if (JSON.stringify(data()) === committed) return; // nothing was changed, so nothing to undo or redraw
   db = JSON.parse(committed) as Database;
   tick++;
   listeners.forEach((l) => l());
@@ -190,7 +193,7 @@ export function transaction<T>(fn: () => T): T {
     // Kept on this device, this is the whole of the data, so the data's own rules are checked before it is
     // saved. Signed in to the server, the server checks them against everything, including what this person
     // is not sent.
-    if (dirty && persist) assertIntegrity(db);
+    if (dirty && persist) assertIntegrity(data());
   } catch (e) {
     depth = 0;
     dirty = false;
@@ -212,7 +215,7 @@ export function commit(): void {
 
 function save(): void {
   tick++;
-  const json = persist || rollback ? JSON.stringify(db) : null;
+  const json = persist || rollback ? JSON.stringify(data()) : null;
   if (persist && json !== null) {
     try {
       localStorage.setItem(KEY, json);
@@ -226,13 +229,14 @@ function save(): void {
 }
 
 export function resetDemoData(): void {
-  db = buildSeed();
+  db = buildSampleData();
   commit();
 }
 
 export function nextCounter(name: string): number {
-  db.counters[name] = (db.counters[name] ?? 0) + 1;
-  return db.counters[name];
+  const counters = data().counters;
+  counters[name] = (counters[name] ?? 0) + 1;
+  return counters[name];
 }
 
 const subscribe = (l: () => void) => {
@@ -247,5 +251,5 @@ export function useDb(): Database {
     () => tick,
     () => tick,
   );
-  return db;
+  return data();
 }

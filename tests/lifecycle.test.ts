@@ -1,7 +1,8 @@
 // Run with: npx tsx tests/lifecycle.test.ts
 // Deleting a project clears everything attached to its Content ID.
 import assert from "node:assert/strict";
-import { getDb, resetDemoData } from "../src/data/store";
+import { getDb, setDb } from "../src/data/store";
+import { buildSeed } from "../src/data/seed";
 import { RuleError } from "../src/types";
 import { login } from "../src/services/auth";
 import { isoDay } from "../src/data/seed";
@@ -15,7 +16,7 @@ import { getRecord } from "../src/services/access";
 
 let passed = 0;
 const t = (name: string, fn: () => void) => {
-  resetDemoData();
+  setDb(buildSeed()); // the examples as they were before the workflow
   try {
     fn();
     passed++;

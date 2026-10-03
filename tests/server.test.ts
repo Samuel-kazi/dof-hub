@@ -1,6 +1,7 @@
 // Run with: npx tsx tests/server.test.ts
 // The server, end to end over real HTTP, with data kept in memory: setup, passwords, sessions, lockout,
 // who can see and do what, and the optional Google link (with Google itself pretended).
+import { putBackEarlierExamples } from "./support/earlier-examples";
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -75,6 +76,7 @@ async function setupHop(samples = false) {
   const c = new Client();
   const r = await c.post("/api/setup", { token: process.env.SETUP_TOKEN, name: "Kevin Mwangi", username: "kev", password: PW, samples });
   assert.equal(r.status, 200, JSON.stringify(r.json));
+  if (samples) await putBackEarlierExamples(store);
   return c;
 }
 /** Head of Production makes a login for a person and signs them in. Returns their client. */
