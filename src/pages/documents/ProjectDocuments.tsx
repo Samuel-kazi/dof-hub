@@ -2,31 +2,31 @@ import { useRef, useState, type ReactNode } from "react";
 import type { DocumentPage, ProjectDocument, WorkflowStage } from "../../types";
 import { catalogEntry, catalogFor, type CatalogEntry } from "../../config/documentCatalog";
 import { WORKFLOW_STAGE_NAMES } from "../../config/workflow";
-import { getDb, useDb } from "../../data/store";
+import { useDb } from "../../data/store";
 import { textOf } from "../../services/html";
 import {
   addPage,
   archivePage,
+  commentsOf,
   documentHasContent,
   documentOf,
   ensureDocument,
-  makeDevotionEpisodes,
   movePage,
   pagesOf,
   restorePage,
   storyboardsOf,
   shotListsOf,
 } from "../../services/wrapped/documents";
-import { plannedOf, sessionsOf, type Project } from "../../services/wrapped/workflow";
-import { fmtDate } from "../../services/utils";
+import type { Project } from "../../services/wrapped/workflow";
 import { useApp } from "../../ui/AppContext";
 import { Empty } from "../../ui/parts";
 import { IconBack, IconCalendar, IconCam, IconCheck, IconDoc, IconDrive, IconFilm, IconSheet, IconUsers } from "../../ui/Icons";
-import { DevelopmentTab } from "../workflow/Development";
-import { PreProductionTab } from "../workflow/PreProduction";
-import { EpisodeTracker } from "../workflow/EpisodeTracker";
-import { CheckpointCard } from "../workflow/common";
+import { DecisionHistory, DecisionPanel } from "../workflow/Development";
+import { DevelopmentGate, ProducerField } from "./DevelopmentGate";
+import { FormPane } from "./FormPanes";
 import { LinksBox } from "./LinksBox";
+import { FormFields, pageFields, ProjectDetails } from "./ProjectDetails";
+import { PageComments, ReviewBanner, ReviewPanes } from "./ReviewView";
 import { PageEditor, type PageEditorHandle } from "./PageEditor";
 import { usePrintDocument } from "./printDocument";
 
@@ -89,10 +89,20 @@ const subtitleLabelOf = (docKey: string) => (docKey === "devotional_script" ? "S
 
 // ── Project Home ─────────────────────────────────────────────
 
-export function ProjectHome({ project, onOpen }: { project: Project; onOpen: (stage: WorkflowStage, key: string) => void }) {
+export function ProjectHome({
+  project,
+  write,
+  onOpen,
+}: {
+  project: Project;
+  write: boolean;
+  onOpen: (stage: WorkflowStage, key: string) => void;
+}) {
   const current = project.workflow.stage;
   return (
     <div className="pd-home" aria-label="Project home">
+      <ProjectDetails project={project} write={write} />
+      <DevelopmentGate project={project} write={write} />
       {WORKFLOW_STAGE_NAMES.map((stage) => (
         <section key={stage} className={`pd-row st-${STAGE_CLASS[stage]}`} aria-label={stage}>
           <div className="pd-label">
@@ -239,162 +249,20 @@ function PageList({
   );
 }
 
-// ── Forms: their screens as they were ────────────────────────
+// ── The greenlight, above the Greenlight document's page ─────
 
-/** A devotion's episodes, made in Pre-production from its script's pages, each with its Content ID. */
-function DevotionEpisodes({ project, write }: { project: Project; write: boolean }) {
-  const { actor, attempt, toast } = useApp();
-  const planned = plannedOf(project.contentId).filter((p) => !p.archivedAt);
-  const recordedId = (plannedId: string) =>
-    getDb().records.find((r) => r.episode?.plannedEpisodeId === plannedId && !r.archived)?.contentId ?? null;
-  const pre = project.workflow.stage === "Pre-production";
+/** The recorded decision, its date and notes, and the show producer: structured, as before. Then the gate to move on. */
+function GreenlightPanel({ project, write }: { project: Project; write: boolean }) {
+  const inDevelopment = project.workflow.stage === "Development";
   return (
-    <section className="glass panel" aria-label="Devotions">
-      <h2>Devotions</h2>
-      <p className="muted">
-        Each page of the Devotional Script becomes one devotion here, by its title and the project's theme, with its own Content ID. The ID
-        never changes: the episode is made under it when its recording session closes.
-      </p>
-      {planned.length === 0 ? (
-        <Empty>No devotions listed yet.</Empty>
-      ) : (
-        <div className="wf-scroll">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Content ID</th>
-                <th>Devotion</th>
-                <th>Scripture</th>
-                <th>Theme</th>
-              </tr>
-            </thead>
-            <tbody>
-              {planned.map((p) => (
-                <tr key={p.id}>
-                  <td className="cid">{recordedId(p.id) ?? p.reservedId ?? p.id}</td>
-                  <td>{p.workingTitle}</td>
-                  <td>{String(p.details.scripture ?? "")}</td>
-                  <td>{p.question}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {write && (
-        <div className="row" style={{ marginTop: 10 }}>
-          <button
-            className="btn primary"
-            disabled={!pre || project.archived}
-            title={pre ? undefined : "The devotions are listed in Pre-production, once the script is accepted."}
-            onClick={() => {
-              const r = attempt(() => makeDevotionEpisodes(actor, project.contentId));
-              if (r)
-                toast(
-                  r.made.length || r.updated.length
-                    ? `${r.made.length} listed, ${r.updated.length} brought up to date from the script`
-                    : "The list already matches the script",
-                  "success",
-                );
-            }}
-          >
-            {planned.some((p) => p.sourcePageId) ? "Bring the list up to date from the script" : "List the devotions from the script"}
-          </button>
-        </div>
-      )}
-    </section>
-  );
-}
-
-/** The project's sessions, each opening its own screen: run sheet, call sheet and recording day. */
-function SessionShortcuts({ project, what }: { project: Project; what: "callSheet" | "recordingDay" }) {
-  const { go } = useApp();
-  const sessions = sessionsOf(project.contentId).filter((s) => !s.archivedAt);
-  return (
-    <section className="glass panel" aria-label={what === "callSheet" ? "Call sheets" : "Recording day"}>
-      <h2>{what === "callSheet" ? "Call sheets" : "Recording day"}</h2>
-      <p className="muted">
-        {what === "callSheet"
-          ? "A call sheet is made from its recording session, filled in from the session's date. It works as before."
-          : "Each session's recording day: the run sheet, the log and the wrap, as before."}
-      </p>
-      {sessions.length === 0 ? (
-        <Empty>No recording sessions yet. Schedule one under Recording Session in Pre-production.</Empty>
-      ) : (
-        <ul className="pd-session-list">
-          {sessions.map((s) => (
-            <li key={s.id}>
-              <span className="cid">{s.id}</span>
-              <span className="grow">{s.scheduledDate ? fmtDate(s.scheduledDate) : "No date yet"}</span>
-              {what === "callSheet" && s.callSheetId && (
-                <button className="btn small" onClick={() => go({ n: "callsheet", id: s.callSheetId! })}>
-                  Open call sheet
-                </button>
-              )}
-              <button className="btn small" onClick={() => go({ n: "session", id: s.id })}>
-                {what === "callSheet" ? (s.callSheetId ? "Open session" : "Make it from the session") : "Open recording day"}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-function FormPane({ project, entry, write }: { project: Project; entry: CatalogEntry; write: boolean }) {
-  const { go } = useApp();
-  if (entry.kind === "review")
-    return (
-      <section className="glass panel" aria-label="Theological review">
-        <h2>Theological Review</h2>
-        <p className="muted">The review checkpoints, as before. Reviewing the document page by page comes in the next phase.</p>
-        <div className="stack">
-          {(["pitch", "outline_script"] as const).map((k) => (
-            <CheckpointCard key={k} id={`${project.contentId}|${k}`} canChooseReviewers={write} />
-          ))}
-        </div>
+    <div className="stack">
+      <section className="pd-greenlight" aria-label="Greenlight decision">
+        {inDevelopment ? <DecisionPanel project={project} write={write} active /> : <DecisionHistory projectId={project.contentId} />}
+        <ProducerField project={project} />
       </section>
-    );
-  if (entry.kind === "tool")
-    return <Empty>{entry.title} opens here in a later phase. Until then it is on the project's earlier screens.</Empty>;
-  switch (entry.form) {
-    case "acceptDecline":
-      return (
-        <div className="stack">
-          <div className="banner">
-            <span className="grow">
-              Until the next phase, the guest, the review, the decision and the move to Pre-production are on the form below, as before.
-            </span>
-          </div>
-          <DevelopmentTab project={project} write={write} />
-        </div>
-      );
-    case "devotionEpisodes":
-      return <DevotionEpisodes project={project} write={write} />;
-    case "sessions":
-    case "roles":
-      return <PreProductionTab project={project} write={write} />;
-    case "callSheet":
-      return <SessionShortcuts project={project} what="callSheet" />;
-    case "recordingDayView":
-      return <SessionShortcuts project={project} what="recordingDay" />;
-    case "review":
-    case "episodeTracker":
-      return <EpisodeTracker project={project} />;
-    case "storage":
-      return (
-        <section className="glass panel" aria-label="Storage">
-          <h2>Storage</h2>
-          <p className="muted">Where the recordings are kept, on the Storage screen, as before.</p>
-          <button className="btn" onClick={() => go({ n: "storage" })}>
-            Open Storage
-          </button>
-        </section>
-      );
-    default:
-      return <Empty>{entry.title} is on the project's earlier screens until a later phase.</Empty>;
-  }
+      <DevelopmentGate project={project} write={write} />
+    </div>
+  );
 }
 
 // ── An open document (three panes) ───────────────────────────
@@ -424,16 +292,27 @@ function DocumentView({
   const doc = entry?.kind === "document" ? documentOf(project.contentId, opened.stage, opened.key) : undefined;
   const pages = doc ? pagesOf(doc.id) : [];
   const page = pages.find((p) => p.id === pageId) ?? pages[0];
+  // The document this one's theological review is of, if it is reviewed.
+  const reviewEntry = entries.find((e) => e.kind === "review" && e.reviews === opened.key);
+  const showComments = !!doc && (!!reviewEntry || commentsOf(doc.id).length > 0);
+  // The catalogue page that carries the brief's structured fields (the logline and core question): the page of that
+  // title, or the first page if it has been renamed.
+  const fieldsPage = entry?.pages?.find((p) => p.fields?.length);
+  const fieldsTarget = fieldsPage ? (pages.find((p) => p.title === fieldsPage.title) ?? pages[0]) : undefined;
+  const reviewed = entry?.kind === "review" && entry.reviews ? documentOf(project.contentId, "Development", entry.reviews) : undefined;
   const printJob = (only?: DocumentPage) => {
     if (!doc) return;
-    leaveThen(() =>
+    leaveThen(() => {
+      const all = pagesOf(doc.id);
+      const chosen = only ? all.filter((p) => p.id === only.id) : all;
       print({
         projectTitle: project.title,
         contentId: project.contentId,
         doc,
-        pages: only ? [pagesOf(doc.id).find((p) => p.id === only.id)!] : pagesOf(doc.id),
-      }),
-    );
+        pages: chosen,
+        fields: Object.fromEntries(chosen.map((p) => [p.id, pageFields(project, doc, p, all)])),
+      });
+    });
   };
   return (
     <div className="pd-open">
@@ -458,7 +337,7 @@ function DocumentView({
           ))}
         </nav>
       </div>
-      <div className={`pd-panes${entry?.kind === "document" ? "" : " wide"}`}>
+      <div className={`pd-panes${entry?.kind === "document" || entry?.kind === "review" ? "" : " wide"}`}>
         <nav className={`pd-docs st-${STAGE_CLASS[opened.stage]}`} aria-label={`${opened.stage} documents`}>
           <h2>{opened.stage}</h2>
           <ul>
@@ -479,6 +358,15 @@ function DocumentView({
         </nav>
         {!entry ? (
           <Empty>This document is not part of this kind of project.</Empty>
+        ) : entry.kind === "review" ? (
+          <ReviewPanes
+            project={project}
+            doc={reviewed}
+            title={catalogFor(formType, "Development").find((e) => e.key === entry.reviews)?.title ?? "document"}
+            write={write}
+            pageId={pageId}
+            onSelectPage={setPageId}
+          />
         ) : entry.kind !== "document" ? (
           <div className="pd-form">
             <FormPane project={project} entry={entry} write={write} />
@@ -518,8 +406,22 @@ function DocumentView({
                   Print document
                 </button>
               </div>
+              {reviewEntry && <ReviewBanner doc={doc} write={write} />}
+              {opened.key === "greenlight" && <GreenlightPanel project={project} write={write} />}
+              {page && fieldsPage?.fields && page.id === fieldsTarget?.id && (
+                <FormFields
+                  project={project}
+                  sectionKey={fieldsPage.fields[0].section}
+                  keys={fieldsPage.fields.map((f) => f.key)}
+                  write={write && !project.archived}
+                  label="Logline and core question"
+                />
+              )}
               {page ? (
-                <PageEditor key={page.id} ref={editor} doc={doc} page={page} write={write} subtitleLabel={subtitleLabelOf(doc.docKey)} />
+                <div className={showComments ? "pd-with-comments" : undefined}>
+                  <PageEditor key={page.id} ref={editor} doc={doc} page={page} write={write} subtitleLabel={subtitleLabelOf(doc.docKey)} />
+                  {showComments && <PageComments project={project} doc={doc} page={page} />}
+                </div>
               ) : (
                 <Empty>This document has no pages.</Empty>
               )}
@@ -554,7 +456,7 @@ export function ProjectDocuments({ project, write }: { project: Project; write: 
       editor.current = null;
       setOpened({ stage, key });
     });
-  if (!opened) return <ProjectHome project={project} onOpen={open} />;
+  if (!opened) return <ProjectHome project={project} write={write} onOpen={open} />;
   return (
     <DocumentView
       key={`${opened.stage}|${opened.key}`}

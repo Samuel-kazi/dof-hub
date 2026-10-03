@@ -63,12 +63,14 @@ export const RPC_NAMES: Record<string, string[]> = {
     "saveDoc"
   ],
   "documents": [
+    "acceptDevotion",
     "addDocumentLink",
     "addFrame",
     "addPage",
     "addReviewComment",
     "addShotRow",
     "archivePage",
+    "askForReviewAgain",
     "createShotList",
     "createStoryboard",
     "decideDocumentReview",
@@ -89,6 +91,7 @@ export const RPC_NAMES: Record<string, string[]> = {
     "restorePage",
     "savePage",
     "setDocumentReviewers",
+    "setGateOverride",
     "updateFrame",
     "updateShotRow"
   ],

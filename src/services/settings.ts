@@ -20,8 +20,8 @@ export const SETTINGS_EDITABLE = [
   "newDocuments",
 ] as const;
 
-// The kinds of project that can use the new documents so far. Series and documentaries follow in the next phase.
-const DOCUMENTS_READY: DocumentProjectType[] = ["devotion"];
+// The kinds of project that can use the new documents.
+const DOCUMENTS_READY: DocumentProjectType[] = ["devotion", "series", "documentary"];
 
 export function updateSettings(actor: Actor, input: Partial<Pick<Settings, (typeof SETTINGS_EDITABLE)[number]>>): void {
   requireCan(actor, "backend.settings", "change system settings");
@@ -56,7 +56,7 @@ export function updateSettings(actor: Actor, input: Partial<Pick<Settings, (type
     if (!Array.isArray(patch.newDocuments)) throw new RuleError("Choose the kinds of project that use the new documents.");
     const kinds = [...new Set(patch.newDocuments)];
     const early = kinds.find((k) => !DOCUMENTS_READY.includes(k));
-    if (early) throw new RuleError("Only devotions can use the new documents for now. Series and documentaries follow next.");
+    if (early) throw new RuleError("Choose devotions, series or documentaries.");
     patch.newDocuments = kinds;
   }
   Object.assign(getDb().settings, patch);

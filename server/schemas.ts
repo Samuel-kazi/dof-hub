@@ -607,6 +607,9 @@ export const ACTIONS: Record<string, ActionSpec> = {
   "documents.duplicateShotRow": args([id]),
   "documents.deleteShotRows": args([ids(500)]),
   "documents.makeDevotionEpisodes": args([id]),
+  "documents.acceptDevotion": args([id, text(2000)]),
+  "documents.askForReviewAgain": args([compound]),
+  "documents.setGateOverride": args([id, z.enum(["idea", "review", "greenlight", "guest", "pages"]), short(300).nullable()]),
 };
 
 /**

@@ -143,6 +143,9 @@ export const DEV_FORMS: Record<FormType, SectionDef[]> = {
       label: "Brief",
       fields: [
         req("person", "The person"),
+        // Read by the documents' first gate; optional here, so the earlier form's gate is as it was.
+        f("logline", "Logline", "longtext"),
+        f("coreQuestion", "Core question or tension", "longtext"),
         req("storyCore", "The core of their story", "longtext"),
         req("audience", "Audience"),
         req("formatDuration", "Format and duration"),
@@ -201,6 +204,9 @@ export const DEV_FORMS: Record<FormType, SectionDef[]> = {
       label: "Brief",
       fields: [
         req("speaker", "Speaker"),
+        // Read by the documents' first gate; optional here, so the earlier form's gate is as it was.
+        f("logline", "Logline", "longtext"),
+        f("coreQuestion", "Core question or tension", "longtext"),
         req("seriesTheme", "Series theme"),
         req("mainScripture", "Main scripture"),
         req("audience", "Audience"),

@@ -8,17 +8,17 @@ var __export = (target, all) => {
 // server/dbproblem.ts
 function describeDbProblem(e) {
   const name = e instanceof Error ? e.name : "";
-  const text2 = e instanceof Error ? `${e.message} ${e.cause?.message ?? ""}` : String(e);
+  const text3 = e instanceof Error ? `${e.message} ${e.cause?.message ?? ""}` : String(e);
   const code = e.code;
-  if (code === 18 || /bad auth|authentication failed|AuthenticationFailed/i.test(text2))
+  if (code === 18 || /bad auth|authentication failed|AuthenticationFailed/i.test(text3))
     return "MongoDB refused the username or password in MONGODB_URI. If the password has symbols such as @ : / ? # or %, they must be URL-encoded. The simplest fix is to reset the database user's password to letters and numbers only, then update MONGODB_URI in Vercel and redeploy.";
-  if (name === "MongoParseError" || /invalid scheme|invalid connection string|must be a string|URI malformed|Invalid namespace/i.test(text2))
+  if (name === "MongoParseError" || /invalid scheme|invalid connection string|must be a string|URI malformed|Invalid namespace/i.test(text3))
     return "MONGODB_URI is not a valid connection string. It should start with mongodb+srv:// and be copied whole from Atlas (Connect, Drivers), with <password> replaced by the real password and no spaces or quotes.";
-  if (/ENOTFOUND|querySrv|EBADNAME/i.test(text2))
+  if (/ENOTFOUND|querySrv|EBADNAME/i.test(text3))
     return "The cluster address in MONGODB_URI was not found. Copy the connection string again from Atlas (Connect, Drivers).";
-  if (name === "MongoServerSelectionError" || /ECONNREFUSED|ETIMEDOUT|timed out|Server selection/i.test(text2))
+  if (name === "MongoServerSelectionError" || /ECONNREFUSED|ETIMEDOUT|timed out|Server selection/i.test(text3))
     return "The server could not reach MongoDB. In Atlas, Network Access must allow 0.0.0.0/0 (Vercel's addresses change), and the cluster must not be paused. Wait a minute after changing either, then try again.";
-  if (/not authorized|Unauthorized|requires authentication/i.test(text2))
+  if (/not authorized|Unauthorized|requires authentication/i.test(text3))
     return 'The database user in MONGODB_URI is not allowed to use this database. In Atlas, Database Access, give the user the role "Read and write to any database", or read and write on the database named in MONGODB_DB.';
   return `The database could not be reached${name ? ` (${name})` : ""}. The details are in the Vercel logs for this deployment.`;
 }
@@ -951,9 +951,9 @@ function uniqueIndexFor(rule) {
 }
 function duplicateError(e) {
   const err = e;
-  const text2 = String(err?.message ?? "");
-  if (err?.code !== 11e3 && err?.writeErrors?.[0]?.code !== 11e3 && !text2.includes("E11000")) return null;
-  const index = /index: (unique_\w+)/.exec(text2)?.[1];
+  const text3 = String(err?.message ?? "");
+  if (err?.code !== 11e3 && err?.writeErrors?.[0]?.code !== 11e3 && !text3.includes("E11000")) return null;
+  const index = /index: (unique_\w+)/.exec(text3)?.[1];
   const rule = UNIQUE_RULES.find((r) => `unique_${r.name}` === index);
   return new RuleError(rule?.message ?? "That would make a duplicate. Reload and try again.");
 }
@@ -3260,9 +3260,9 @@ function cleanHtml(html) {
 function textOf(html) {
   return html.replace(/<(br|\/p|\/h[1-3]|\/li|\/div)>/gi, " ").replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, " ").trim();
 }
-function textToHtml(text2) {
+function textToHtml(text3) {
   const esc = (s2) => s2.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-  return text2.split(/\n{2,}/).map((para) => para.trim()).filter(Boolean).map((para) => `<p>${esc(para).replace(/\n/g, "<br>")}</p>`).join("");
+  return text3.split(/\n{2,}/).map((para) => para.trim()).filter(Boolean).map((para) => `<p>${esc(para).replace(/\n/g, "<br>")}</p>`).join("");
 }
 var escapeHtml = (s2) => s2.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
@@ -5960,6 +5960,9 @@ var DEV_FORMS = {
       label: "Brief",
       fields: [
         req("person", "The person"),
+        // Read by the documents' first gate; optional here, so the earlier form's gate is as it was.
+        f("logline", "Logline", "longtext"),
+        f("coreQuestion", "Core question or tension", "longtext"),
         req("storyCore", "The core of their story", "longtext"),
         req("audience", "Audience"),
         req("formatDuration", "Format and duration"),
@@ -6017,6 +6020,9 @@ var DEV_FORMS = {
       label: "Brief",
       fields: [
         req("speaker", "Speaker"),
+        // Read by the documents' first gate; optional here, so the earlier form's gate is as it was.
+        f("logline", "Logline", "longtext"),
+        f("coreQuestion", "Core question or tension", "longtext"),
         req("seriesTheme", "Series theme"),
         req("mainScripture", "Main scripture"),
         req("audience", "Audience"),
@@ -6241,6 +6247,575 @@ var DEV_FORMS = {
 var sectionOf = (formType2, key2) => DEV_FORMS[formType2].find((s2) => s2.key === key2);
 var plannedSectionOf = (formType2) => DEV_FORMS[formType2].find((s2) => s2.planned);
 
+// src/config/documentCatalog.ts
+var CRITERIA_LIST = "<ul><li><p><strong>Mission fit:</strong> </p></li><li><p><strong>Message soundness:</strong> </p></li><li><p><strong>Audience need:</strong> </p></li><li><p><strong>Feasibility:</strong> </p></li><li><p><strong>Resource cost:</strong> </p></li><li><p><strong>Team strength:</strong> </p></li></ul>";
+var doc = (key2, title2, pages, extra = {}) => ({
+  key: key2,
+  title: title2,
+  kind: "document",
+  pages: pages.map((p) => typeof p === "string" ? { title: p } : p),
+  ...extra
+});
+var form = (key2, title2, tile, extra = {}) => ({
+  key: key2,
+  title: title2,
+  kind: "form",
+  form: tile,
+  ...extra
+});
+var tool = (key2, title2, which) => ({ key: key2, title: title2, kind: "tool", tool: which });
+var review = (reviews) => ({ key: "theological_review", title: "Theological Review", kind: "review", reviews });
+var IDEA_FIELDS = [
+  { section: "brief", key: "logline", label: "Logline" },
+  { section: "brief", key: "coreQuestion", label: "Core question or tension" }
+];
+var greenlight = doc("greenlight", "Greenlight", [{ title: "Decision", body: `<p>The six criteria:</p>${CRITERIA_LIST}` }]);
+function showBrief(formType2) {
+  const pages = [
+    { title: "The idea", fields: IDEA_FIELDS },
+    { title: "Scripture and source basis" },
+    { title: "Shape" },
+    { title: "Ask" }
+  ];
+  if (formType2 === "testimonial") pages.splice(3, 0, { title: "Sensitivity" });
+  if (formType2 === "sermon") pages.splice(3, 0, { title: "Outline" });
+  return doc("show_brief", "Show Brief", pages);
+}
+function documentaryBrief(formType2) {
+  const pages = [
+    { title: "The idea", fields: IDEA_FIELDS },
+    { title: "Subjects and locations" },
+    { title: "Sources and fact-checking" },
+    { title: "Ask" }
+  ];
+  if (formType2 === "documentary_pitched")
+    pages.push({ title: "Proposer readiness" }, { title: "Support asked for" }, { title: "Ownership terms" });
+  return doc("documentary_brief", "Documentary Brief", pages);
+}
+var marketing = () => [
+  doc("release_plan", "Release Plan", ["Release message", "Platform plan", "Study resources"]),
+  form("platform_status", "Platform Status", "platformStatus"),
+  doc("learning_notes", "Learning Notes", ["Against the success measures"]),
+  form("archive", "Archive", "archive")
+];
+function seriesCatalog(formType2) {
+  return {
+    Development: [
+      showBrief(formType2),
+      review("show_brief"),
+      greenlight,
+      form("planned_episodes", "Planned Episodes", "plannedEpisodes"),
+      ...formType2 === "testimonial" ? [form("consent", "Consent and Release", "consent")] : []
+    ],
+    "Pre-production": [
+      doc("production_pack", "Production Pack", ["Set design", "Rehearsal notes"]),
+      tool("storyboard", "Storyboard", "storyboard"),
+      tool("shot_list", "Shot List", "shotList"),
+      form("roles", "Roles", "roles"),
+      form("sessions", "Sessions", "sessions"),
+      form("call_sheet", "Call Sheet", "callSheet"),
+      form("gear", "Gear", "gear")
+    ],
+    Production: [
+      doc(
+        "recording_day_sheet",
+        "Recording Day Sheet",
+        [{ title: "Run sheet", form: "runSheet" }, "Daily notes", { title: "Wrap checklist", form: "wrapChecklist" }],
+        {
+          per: "session"
+        }
+      ),
+      form("session_log", "Session Log", "sessionLog"),
+      form("storage", "Storage", "storage")
+    ],
+    "Post production": [
+      doc("edit_notes", "Edit Notes", ["Notes to the editor", "Story and theology lock", "Graphics and music"]),
+      form("episode_tracker", "Episode Tracker", "episodeTracker"),
+      doc("review_thread", "Review Thread", [], { pagePerEpisode: true })
+    ],
+    "Marketing and distribution": marketing()
+  };
+}
+function documentaryCatalog(formType2) {
+  return {
+    Development: [
+      documentaryBrief(formType2),
+      review("documentary_brief"),
+      greenlight,
+      form("planned_episodes", "Planned Parts", "plannedEpisodes")
+    ],
+    "Pre-production": [
+      doc("treatment", "Treatment", ["Story structure", "Interview guide"]),
+      tool("storyboard", "Storyboard", "storyboard"),
+      tool("shot_list", "Shot List", "shotList"),
+      form("roles", "Roles", "roles"),
+      form("sessions", "Sessions", "sessions"),
+      form("call_sheet", "Call Sheet", "callSheet"),
+      form("gear", "Gear", "gear")
+    ],
+    Production: [
+      doc(
+        "shoot_day_sheet",
+        "Shoot Day Sheet",
+        [{ title: "Run sheet", form: "runSheet" }, "Interview notes", { title: "Wrap checklist", form: "wrapChecklist" }],
+        {
+          per: "session"
+        }
+      ),
+      form("session_log", "Session Log", "sessionLog"),
+      form("storage", "Storage", "storage")
+    ],
+    "Post production": [
+      doc("edit_notes", "Edit Notes", ["Assembly notes", "Narration", "Fact-check lock", "Graphics and music"]),
+      form("cut_tracker", "Cut Tracker", "episodeTracker"),
+      doc("review_thread", "Review Thread", [], { pagePerEpisode: true })
+    ],
+    "Marketing and distribution": marketing()
+  };
+}
+var DEVOTION_PAGES = [1, 2, 3, 4, 5].map((n) => ({ title: `Devotion ${n}`, subtitle: "" }));
+var devotionCatalog = {
+  Development: [
+    doc("devotional_script", "Devotional Script", DEVOTION_PAGES),
+    review("devotional_script"),
+    form("accept_decline", "Accept or Decline", "acceptDecline")
+  ],
+  "Pre-production": [
+    form("devotion_episodes", "Devotions", "devotionEpisodes"),
+    doc("recording_plan", "Recording Plan", ["Cards and storage", "Notes"]),
+    form("sessions", "Recording Session", "sessions"),
+    form("call_sheet", "Call Sheet", "callSheet")
+  ],
+  Production: [form("recording_day_view", "Recording Day View", "recordingDayView"), form("storage", "Storage", "storage")],
+  "Post production": [doc("edit_notes", "Edit Notes", ["Notes to the editor"]), form("review", "Review", "review")],
+  "Marketing and distribution": [
+    doc("release_plan", "Release Plan", ["Release message", "Platform plan"]),
+    doc("study_notes", "Study Notes", ["Study notes"])
+  ]
+};
+var catalogTypeOf = (formType2) => formType2 === "devotion" ? "devotion" : formType2 === "documentary_dof" || formType2 === "documentary_pitched" ? "documentary" : "series";
+function catalogFor(formType2, stage) {
+  const type = catalogTypeOf(formType2);
+  const all = type === "devotion" ? devotionCatalog : type === "documentary" ? documentaryCatalog(formType2) : seriesCatalog(formType2);
+  return all[stage];
+}
+var catalogEntry = (formType2, stage, key2) => catalogFor(formType2, stage).find((e) => e.key === key2);
+var briefKeyOf = (formType2) => catalogTypeOf(formType2) === "devotion" ? "devotional_script" : catalogTypeOf(formType2) === "documentary" ? "documentary_brief" : "show_brief";
+
+// src/services/documents/common.ts
+function projectOf(contentId) {
+  const r = getRecord(contentId);
+  if (!isWorkflowProject(r)) throw new RuleError("Project not found.");
+  return r;
+}
+function projectForWrite2(actor, contentId) {
+  const p = projectOf(contentId);
+  if (!canWrite(actor, p)) throw new RuleError("You have view-only access to this project.");
+  if (p.archived) throw new RuleError("This project is closed. It is kept as it was and cannot be changed.");
+  return p;
+}
+function projectForView(actor, contentId) {
+  const p = projectOf(contentId);
+  if (!canView(actor, p)) throw new RuleError("Project not found.");
+  return p;
+}
+var mayComment = (actor, r) => canComment(actor, r);
+var getDocument = (id2) => getDb().projectDocuments.find((d) => d.id === id2);
+function requireDocument(id2) {
+  const d = getDocument(id2);
+  if (!d) throw new RuleError("Document not found.");
+  return d;
+}
+function documentForWrite(actor, id2) {
+  const doc2 = requireDocument(id2);
+  return { doc: doc2, project: projectForWrite2(actor, doc2.contentId) };
+}
+function pageForWrite(actor, pageId) {
+  const page = getDb().documentPages.find((p) => p.id === pageId);
+  if (!page) throw new RuleError("That page no longer exists.");
+  const { doc: doc2, project } = documentForWrite(actor, page.documentId);
+  return { page, doc: doc2, project };
+}
+var pagesOf = (documentId, includeArchived = false) => getDb().documentPages.filter((p) => p.documentId === documentId && (includeArchived || !p.archivedAt)).sort((a, b) => a.position - b.position);
+function renumber(items) {
+  items.sort((a, b) => a.position - b.position).forEach((it, i) => it.position = i);
+}
+function moveTo(items, id2, toIndex) {
+  const ordered = [...items].sort((a, b) => a.position - b.position);
+  const from = ordered.findIndex((x) => x.id === id2);
+  if (from === -1) throw new RuleError("That item is not in this list.");
+  const [it] = ordered.splice(from, 1);
+  ordered.splice(Math.max(0, Math.min(ordered.length, Math.floor(toIndex))), 0, it);
+  ordered.forEach((x, i) => x.position = i);
+}
+var newDocumentsOn = (formType2) => (getDb().settings.newDocuments ?? []).includes(catalogTypeOf(formType2));
+function documentHasContent(documentId) {
+  const db2 = getDb();
+  if (db2.documentLinks.some((l) => l.documentId === documentId)) return true;
+  return pagesOf(documentId).some(
+    (p) => (p.version > 1 || p.updatedBy === "migration") && (textOf(p.bodyHtml) !== "" || p.subtitle.trim() !== "")
+  );
+}
+
+// src/services/documents/pages.ts
+var MAX_PAGE_HTML = 4e5;
+var MAX_LINE = 300;
+function entryFor(formType2, stage, docKey) {
+  const entry = catalogEntry(formType2, stage, docKey);
+  if (!entry || entry.kind !== "document") throw new RuleError("This kind of project has no such document at that stage.");
+  return entry;
+}
+var documentOf = (contentId, stage, docKey, ownerId = null) => getDb().projectDocuments.find((d) => d.id === documentIdOf(contentId, stage, docKey, ownerId));
+function makeDocument(contentId, stage, entry, ownerId, by, migrated = false) {
+  const at = nowStamp();
+  const doc2 = {
+    id: documentIdOf(contentId, stage, entry.key, ownerId),
+    contentId,
+    stage,
+    docKey: entry.key,
+    ownerId,
+    title: entry.title,
+    migrated,
+    createdAt: at,
+    updatedAt: at
+  };
+  const db2 = getDb();
+  db2.projectDocuments.push(doc2);
+  (entry.pages ?? []).forEach(
+    (p, i) => db2.documentPages.push({
+      id: localId("PG"),
+      documentId: doc2.id,
+      position: i,
+      title: p.title,
+      subtitle: p.subtitle ?? "",
+      bodyHtml: p.body ? cleanHtml(p.body) : "",
+      version: 1,
+      archivedAt: null,
+      updatedAt: at,
+      updatedBy: by
+    })
+  );
+  return doc2;
+}
+function ensureDocument(actor, contentId, stage, docKey, ownerId = null) {
+  if (!WORKFLOW_STAGE_NAMES.includes(stage)) throw new RuleError("That is not a stage of the workflow.");
+  const existing = documentOf(contentId, stage, docKey, ownerId);
+  if (existing) {
+    projectForView(actor, contentId);
+    return existing;
+  }
+  const project = projectForWrite2(actor, contentId);
+  const entry = entryFor(project.workflow.formType, stage, docKey);
+  if (entry.per === "session") {
+    const s2 = ownerId ? getSession(ownerId) : void 0;
+    if (!s2 || s2.contentId !== contentId) throw new RuleError("Choose one of this project's recording sessions.");
+  } else if (entry.per === "episode") {
+    const ep = ownerId ? getRecord(ownerId) : void 0;
+    if (!ep?.episode || ep.parentId !== contentId) throw new RuleError("Choose one of this project's episodes.");
+  } else if (ownerId) throw new RuleError("This document is for the whole project.");
+  const doc2 = makeDocument(contentId, stage, entry, ownerId, actor.personId);
+  logAudit(actor, "document", "record", contentId, `${entry.title} started`);
+  commit();
+  return doc2;
+}
+function addPage(actor, documentId, input = {}) {
+  const { doc: doc2 } = documentForWrite(actor, documentId);
+  const pages = pagesOf(doc2.id);
+  const at = nowStamp();
+  const after = input.afterPageId ? pages.findIndex((p) => p.id === input.afterPageId) : pages.length - 1;
+  const page = {
+    id: localId("PG"),
+    documentId: doc2.id,
+    position: after + 0.5,
+    title: (input.title ?? "").trim().slice(0, MAX_LINE) || "New page",
+    subtitle: (input.subtitle ?? "").trim().slice(0, MAX_LINE),
+    bodyHtml: "",
+    version: 1,
+    archivedAt: null,
+    updatedAt: at,
+    updatedBy: actor.personId
+  };
+  getDb().documentPages.push(page);
+  renumber(pagesOf(doc2.id));
+  doc2.updatedAt = at;
+  logAudit(actor, "document-page", "record", doc2.contentId, `${doc2.title}: page "${page.title}" added`);
+  commit();
+  return page;
+}
+function savePage(actor, pageId, edit, baseVersion) {
+  const { page, doc: doc2 } = pageForWrite(actor, pageId);
+  if (page.archivedAt) throw new RuleError("This page was deleted. Restore it to write in it.");
+  if (page.version !== baseVersion)
+    throw new ConflictError(
+      "Someone else saved this page while you were writing. Your words are kept here: copy them, then reload the page."
+    );
+  if (edit.title !== void 0) page.title = edit.title.trim().slice(0, MAX_LINE) || "Untitled page";
+  if (edit.subtitle !== void 0) page.subtitle = edit.subtitle.trim().slice(0, MAX_LINE);
+  if (edit.bodyHtml !== void 0) {
+    if (edit.bodyHtml.length > MAX_PAGE_HTML) throw new RuleError("This page is too long to save. Split it over two pages.");
+    page.bodyHtml = cleanHtml(edit.bodyHtml);
+  }
+  page.version += 1;
+  page.updatedAt = nowStamp();
+  page.updatedBy = actor.personId;
+  doc2.updatedAt = page.updatedAt;
+  commit();
+  return page;
+}
+function movePage(actor, pageId, toIndex) {
+  const { page, doc: doc2 } = pageForWrite(actor, pageId);
+  moveTo(pagesOf(doc2.id), page.id, toIndex);
+  commit();
+  return page;
+}
+function archivePage(actor, pageId) {
+  const { page, doc: doc2 } = pageForWrite(actor, pageId);
+  if (page.archivedAt) return page;
+  page.archivedAt = nowStamp();
+  renumber(pagesOf(doc2.id));
+  logAudit(actor, "document-page", "record", doc2.contentId, `${doc2.title}: page "${page.title}" deleted (kept, archived)`);
+  commit();
+  return page;
+}
+function restorePage(actor, pageId) {
+  const { page, doc: doc2 } = pageForWrite(actor, pageId);
+  if (!page.archivedAt) return page;
+  page.archivedAt = null;
+  page.position = pagesOf(doc2.id).length;
+  logAudit(actor, "document-page", "record", doc2.contentId, `${doc2.title}: page "${page.title}" restored`);
+  commit();
+  return page;
+}
+var linksOf = (documentId) => getDb().documentLinks.filter((l) => l.documentId === documentId);
+function addDocumentLink(actor, documentId, url2, label) {
+  const { doc: doc2 } = documentForWrite(actor, documentId);
+  const link = {
+    id: localId("DL"),
+    documentId: doc2.id,
+    url: requireWebUrl(url2, "The link"),
+    label: label.trim().slice(0, MAX_LINE),
+    addedBy: actor.personId,
+    addedAt: nowStamp()
+  };
+  getDb().documentLinks.push(link);
+  logAudit(actor, "document-link", "record", doc2.contentId, `${doc2.title}: ${link.label || link.url}`);
+  commit();
+  return link;
+}
+function removeDocumentLink(actor, linkId) {
+  const db2 = getDb();
+  const link = db2.documentLinks.find((l) => l.id === linkId);
+  if (!link) throw new RuleError("That link no longer exists.");
+  const { doc: doc2 } = documentForWrite(actor, link.documentId);
+  db2.documentLinks = db2.documentLinks.filter((l) => l.id !== linkId);
+  logAudit(actor, "document-link", "record", doc2.contentId, `${doc2.title}: removed ${link.label || link.url}`);
+  commit();
+}
+
+// src/services/documents/reviews.ts
+var reviewsOf = (documentId) => getDb().documentReviews.filter((r) => r.documentId === documentId);
+function reviewStateOf(documentId) {
+  const rows = reviewsOf(documentId);
+  if (!rows.length) return "no reviewers";
+  if (rows.some((r) => r.status === "changes_requested")) return "changes_requested";
+  return rows.every((r) => r.status === "approved") ? "approved" : "pending";
+}
+function setDocumentReviewers(actor, documentId, reviewerIds) {
+  const { doc: doc2, project } = documentForWrite(actor, documentId);
+  if (!canManageTeam(actor, project) && !canDecide(actor))
+    throw new RuleError("Only the show producer or the Head of Production chooses the reviewers.");
+  const ids2 = [...new Set(reviewerIds)];
+  if (ids2.length > 10) throw new RuleError("Choose up to 10 reviewers.");
+  for (const id2 of ids2) {
+    requireCrew(id2, "A reviewer");
+    joinProject(actor, id2, project);
+  }
+  const db2 = getDb();
+  const at = nowStamp();
+  db2.documentReviews = db2.documentReviews.filter((r) => r.documentId !== doc2.id || ids2.includes(r.reviewerId));
+  for (const reviewerId of ids2)
+    if (!db2.documentReviews.some((r) => r.documentId === doc2.id && r.reviewerId === reviewerId))
+      db2.documentReviews.push({
+        id: `${doc2.id}|${reviewerId}`,
+        documentId: doc2.id,
+        reviewerId,
+        status: "pending",
+        note: "",
+        decidedAt: null,
+        createdAt: at,
+        updatedAt: at
+      });
+  logAudit(actor, "document-reviewers", "record", doc2.contentId, `${doc2.title}: ${ids2.length} reviewer${ids2.length === 1 ? "" : "s"}`);
+  commit();
+  return reviewsOf(doc2.id);
+}
+function decideDocumentReview(actor, documentId, decision) {
+  const { doc: doc2 } = documentForWrite(actor, documentId);
+  const note = decision.note.trim();
+  if (decision.status === "changes_requested" && !note)
+    throw new RuleError("Write what needs to change. The reason goes back to the writer.");
+  const mine = reviewsOf(doc2.id).filter((r) => r.reviewerId === actor.personId || isHop(actor));
+  if (!reviewsOf(doc2.id).length) throw new RuleError("Name a reviewer first.");
+  if (!mine.length) throw new RuleError("Only a reviewer named on this document, or the Head of Production, can decide it.");
+  const at = nowStamp();
+  for (const r of mine) Object.assign(r, { status: decision.status, note, decidedAt: at, updatedAt: at });
+  logAudit(
+    actor,
+    "document-review",
+    "record",
+    doc2.contentId,
+    `${doc2.title}: ${decision.status === "approved" ? "approved" : `changes requested: ${note}`}`
+  );
+  commit();
+  return reviewsOf(doc2.id);
+}
+function askForReviewAgain(actor, documentId) {
+  const { doc: doc2 } = documentForWrite(actor, documentId);
+  const sentBack = reviewsOf(doc2.id).filter((r) => r.status === "changes_requested");
+  if (!sentBack.length) throw new RuleError("No reviewer has asked for changes.");
+  const at = nowStamp();
+  for (const r of sentBack) Object.assign(r, { status: "pending", decidedAt: null, updatedAt: at });
+  logAudit(actor, "document-review", "record", doc2.contentId, `${doc2.title}: changes made, review asked for again`);
+  commit();
+  return reviewsOf(doc2.id);
+}
+var commentsOf = (documentId) => getDb().reviewComments.filter((c) => c.documentId === documentId).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+function addReviewComment(actor, pageId, body) {
+  const page = getDb().documentPages.find((p) => p.id === pageId);
+  if (!page) throw new RuleError("That page no longer exists.");
+  const doc2 = requireDocument(page.documentId);
+  const project = projectForView(actor, doc2.contentId);
+  if (!mayComment(actor, project)) throw new RuleError("You can read this document but not comment on it.");
+  const text3 = body.trim();
+  if (!text3) throw new RuleError("Write the comment first.");
+  const c = {
+    id: localId("RC"),
+    documentId: doc2.id,
+    pageId: page.id,
+    authorId: actor.personId,
+    body: text3.slice(0, 5e3),
+    resolved: false,
+    resolvedBy: null,
+    createdAt: nowStamp()
+  };
+  getDb().reviewComments.push(c);
+  logAudit(actor, "document-comment", "record", doc2.contentId, `${doc2.title}, ${page.title}: ${text3.slice(0, 60)}`);
+  commit();
+  return c;
+}
+function resolveReviewComment(actor, commentId, resolved = true) {
+  const c = getDb().reviewComments.find((x) => x.id === commentId);
+  if (!c) throw new RuleError("That comment no longer exists.");
+  documentForWrite(actor, c.documentId);
+  c.resolved = resolved;
+  c.resolvedBy = resolved ? actor.personId : null;
+  commit();
+  return c;
+}
+
+// src/services/documents/gates.ts
+var DEVOTION_PAGES_NEEDED = 5;
+var NOTE_MAX = 300;
+var text = (v) => typeof v === "string" ? v.trim() : "";
+var latestFirstDecision = (form2) => [...form2.decisions].reverse().find((d) => d.stage === 1);
+function reviewGate(projectId, docKey, what) {
+  const doc2 = documentOf(projectId, "Development", docKey);
+  const state = doc2 ? reviewStateOf(doc2.id) : "no reviewers";
+  const rows = doc2 ? reviewsOf(doc2.id) : [];
+  const earlier = ["pitch", "outline_script"].every((k) => checkpoint(projectId, k)?.status === "Approved");
+  if (state === "no reviewers" && earlier)
+    return {
+      key: "review",
+      label: `Theological review of the ${what} approved`,
+      met: true,
+      detail: "Approved on the earlier review checkpoints",
+      overridable: true
+    };
+  const detail = state === "approved" ? `Approved by ${rows.length === 1 ? "its reviewer" : `all ${rows.length} reviewers`}` : state === "no reviewers" ? "No reviewer named yet" : state === "changes_requested" ? "Changes requested" : `${rows.filter((r) => r.status === "approved").length} of ${rows.length} reviewers have approved`;
+  return { key: "review", label: `Theological review of the ${what} approved`, met: state === "approved", detail, overridable: true };
+}
+var devotionPageReady = (p) => p.title.trim() !== "" && p.subtitle.trim() !== "" && textOf(p.bodyHtml) !== "";
+function hardGates(projectId) {
+  const p = projectOf(projectId);
+  const form2 = formOf(projectId);
+  const overrides = form2.overrides ?? [];
+  const withOverride = (g) => ({
+    ...g,
+    override: g.overridable && !g.met ? overrides.find((o) => o.key === g.key) ?? null : null
+  });
+  if (catalogTypeOf(p.workflow.formType) === "devotion") {
+    const guest = form2.sections.guest ?? {};
+    const lacking = [!text(guest.name) && "name", !text(guest.contact) && "contact"].filter(Boolean);
+    const script = documentOf(projectId, "Development", "devotional_script");
+    const ready = script ? pagesOf(script.id).filter(devotionPageReady).length : 0;
+    return [
+      withOverride({
+        key: "guest",
+        label: "The guest's name and contact filled in",
+        met: lacking.length === 0,
+        detail: lacking.length ? `The guest's ${lacking.join(" and ")} ${lacking.length === 2 ? "are" : "is"} missing` : String(guest.name),
+        overridable: true
+      }),
+      withOverride({
+        key: "pages",
+        label: `At least ${DEVOTION_PAGES_NEEDED} devotion pages, each with a title, its scripture and the script`,
+        met: ready >= DEVOTION_PAGES_NEEDED,
+        detail: `${ready} of ${DEVOTION_PAGES_NEEDED} ready`,
+        overridable: true
+      }),
+      withOverride(reviewGate(projectId, "devotional_script", "script"))
+    ];
+  }
+  const brief = form2.sections.brief ?? {};
+  const missingIdea = [!text(brief.logline) && "the logline", !text(brief.coreQuestion) && "the core question"].filter(Boolean);
+  const decision = latestFirstDecision(form2);
+  const greenlit = decision?.outcome === "Greenlight";
+  const producer = !!p.workflow.showProducerId;
+  const first = form2.greenlightStage ? "First greenlight" : "Greenlight";
+  return [
+    withOverride({
+      key: "idea",
+      label: "The logline and the core question written in the brief",
+      met: missingIdea.length === 0,
+      detail: missingIdea.length ? `Write ${missingIdea.join(" and ")} at the top of The idea` : "Both written",
+      overridable: true
+    }),
+    withOverride(reviewGate(projectId, briefKeyOf(p.workflow.formType), "brief")),
+    withOverride({
+      key: "greenlight",
+      label: `${first} decision recorded as Greenlight, and a show producer named`,
+      met: greenlit && producer,
+      detail: [greenlit ? "" : decision ? `The decision is ${decision.outcome}` : "No decision yet", producer ? "" : "No show producer named yet"].filter(Boolean).join("; ") || "Greenlit, with a show producer",
+      overridable: false
+    })
+  ];
+}
+var hardGatesPass = (projectId, except = []) => hardGates(projectId).every((g) => except.includes(g.key) || g.met || g.override);
+var hardGatesMissing = (projectId, except = []) => hardGates(projectId).filter((g) => !except.includes(g.key) && !g.met && !g.override).map((g) => `${g.label} (${g.detail})`);
+function setGateOverride(actor, projectId, key2, note) {
+  const p = projectForWrite2(actor, projectId);
+  if (!canDecide(actor)) throw new RuleError('Only the Head of Production, or someone given "Create projects", can pass a gate by hand.');
+  if (p.workflow.stage !== "Development") throw new RuleError("The project has already left Development.");
+  const gate = hardGates(projectId).find((g) => g.key === key2);
+  if (!gate) throw new RuleError("That is not one of this project's gates.");
+  if (!gate.overridable) throw new RuleError("The greenlight decision is recorded, not passed by hand.");
+  const form2 = formOf(projectId);
+  const rest = (form2.overrides ?? []).filter((o) => o.key !== key2);
+  if (note === null) {
+    form2.overrides = rest;
+    logAudit(actor, "gate-override", "record", projectId, `Taken back: ${gate.label}`);
+  } else {
+    const why = note.trim().slice(0, NOTE_MAX);
+    if (!why) throw new RuleError("Write a short note of why this gate is passed by hand. It is kept with the project.");
+    if (gate.met) throw new RuleError("This gate is already met.");
+    form2.overrides = [...rest, { key: key2, note: why, byPersonId: actor.personId, at: nowStamp() }];
+    logAudit(actor, "gate-override", "record", projectId, `Passed by hand: ${gate.label}. ${why}`);
+  }
+  form2.updatedAt = nowStamp();
+  commit();
+  return p;
+}
+
 // src/services/workflow/forms.ts
 var OPTIONAL_DATE = z.union([z.literal(""), z.string().refine(isIsoDate, "Expected a date written YYYY-MM-DD.")]);
 function fieldSchema(f2) {
@@ -6363,6 +6938,7 @@ function setReviewWindow(actor, projectId, date2) {
 var greenlightStageOf = (form2) => form2.greenlightStage ?? 1;
 var latestDecision = (form2, stage) => [...form2.decisions].reverse().find((d) => d.stage === stage);
 function greenlightBlockers(project, stage) {
+  if (stage === 1 && newDocumentsOn(project.workflow.formType)) return hardGatesMissing(project.contentId, ["greenlight"]);
   const out = [];
   for (const key2 of ["pitch", "outline_script"]) {
     const c = checkpoint(project.contentId, key2);
@@ -6439,10 +7015,162 @@ var reviewWindowsDue = (today = todayIso()) => getDb().developmentForms.some(
   (f2) => !!f2.reviewWindowDate && f2.reviewWindowDate < today && f2.outcome === null && !!getDb().records.find((r) => r.contentId === f2.contentId && r.workflow && !r.archived)
 );
 
+// src/services/workflow/ids.ts
+function next(key2, used) {
+  const db2 = getDb();
+  const n = Math.max(db2.counters[key2] ?? 0, ...used.filter((x) => !Number.isNaN(x))) + 1;
+  db2.counters[key2] = n;
+  return n;
+}
+function nextSession(projectId) {
+  const used = getDb().recordingSessions.filter((s2) => s2.contentId === projectId).map((s2) => s2.sessionNumber);
+  const n = next(sessionCounter(projectId), used);
+  return { id: claimId(sessionCode(projectId, n)), n };
+}
+function nextPlanned(projectId) {
+  const used = getDb().plannedEpisodes.filter((p) => p.contentId === projectId).map((p) => p.episodeNumber);
+  const n = next(plannedCounter(projectId), used);
+  return { id: claimId(plannedEpisodeId(projectId, n)), n };
+}
+function nextEpisode(projectId) {
+  const db2 = getDb();
+  const used = [
+    ...db2.records.filter((r) => r.parentId === projectId).map((r) => r.episode?.episodeNumber ?? codeNumber(r.contentId, projectId, EPISODE_TOKEN)),
+    // Codes already given out ahead of recording count too.
+    ...db2.plannedEpisodes.filter((p) => p.contentId === projectId && p.reservedId).map((p) => codeNumber(p.reservedId, projectId, EPISODE_TOKEN))
+  ];
+  const n = next(episodeCounter(projectId), used);
+  return { id: claimId(episodeCode(projectId, n)), n };
+}
+
+// src/services/workflow/status.ts
+function refreshProjectStatus(p) {
+  if (p.archived || p.workflow.stage !== "Pre-production") return;
+  const eps = episodesOf(p.contentId);
+  const planned = getDb().plannedEpisodes.filter((x) => x.contentId === p.contentId && !x.archivedAt);
+  const published = (plannedId) => eps.some((e) => e.episode.plannedEpisodeId === plannedId && e.episode.mdStage === "Published");
+  const done = eps.length > 0 && eps.every((e) => e.episode.mdStage === "Published") && planned.every((x) => published(x.id));
+  const next2 = done ? "Completed" : "Active";
+  if (p.workflow.status !== next2) {
+    p.workflow.status = next2;
+    p.version += 1;
+  }
+}
+
+// src/services/workflow/planned.ts
+var PLANNED_EDITABLE = ["workingTitle", "question", "guest", "notes", "details"];
+function checkDetails(projectId, details) {
+  if (!details) return {};
+  const form2 = formOf(projectId);
+  const parsed = plannedDetailsSchema(form2.formType).safeParse(details);
+  if (!parsed.success)
+    throw new RuleError(
+      explain(parsed.error, (k) => plannedSectionOf(form2.formType)?.planned?.details.find((d) => d.key === k)?.label ?? k)
+    );
+  return Object.fromEntries(
+    Object.entries(parsed.data).filter((e) => e[1] !== void 0)
+  );
+}
+var plannedOf = (projectId, includeArchived = false) => getDb().plannedEpisodes.filter((p) => p.contentId === projectId && (includeArchived || !p.archivedAt)).sort((a, b) => a.episodeNumber - b.episodeNumber);
+function addPlannedEpisode(actor, projectId, input) {
+  const project = projectForWrite(actor, projectId);
+  const section = plannedSectionOf(project.workflow.formType);
+  if (!section?.planned) throw new RuleError("This kind of project has no planned episodes.");
+  const max = section.planned.max;
+  if (max !== void 0 && plannedOf(projectId).length >= max) throw new RuleError(`${section.planned.label} has ${max} already.`);
+  const details = checkDetails(projectId, input.details);
+  const { id: id2, n } = nextPlanned(projectId);
+  const at = nowStamp();
+  const p = {
+    id: id2,
+    contentId: projectId,
+    episodeNumber: n,
+    workingTitle: input.workingTitle.trim(),
+    question: (input.question ?? "").trim(),
+    guest: (input.guest ?? "").trim(),
+    notes: (input.notes ?? "").trim(),
+    details,
+    createdAt: at,
+    updatedAt: at,
+    archivedAt: null,
+    archivedReason: null,
+    reservedId: null,
+    sourcePageId: null
+  };
+  getDb().plannedEpisodes.push(p);
+  refreshProjectStatus(project);
+  logAudit(actor, "planned-add", "record", projectId, `${id2}: ${p.workingTitle}`);
+  commit();
+  return p;
+}
+function updatePlannedEpisode(actor, id2, input) {
+  const p = getDb().plannedEpisodes.find((x) => x.id === id2);
+  if (!p) throw new RuleError("Planned episode not found.");
+  projectForWrite(actor, p.contentId);
+  if (p.archivedAt) throw new RuleError("This planned episode is archived.");
+  const patch = pickKeys(input, PLANNED_EDITABLE);
+  if (patch.details !== void 0) p.details = { ...p.details, ...checkDetails(p.contentId, patch.details) };
+  for (const k of ["workingTitle", "question", "guest", "notes"]) if (patch[k] !== void 0) p[k] = patch[k].trim();
+  p.updatedAt = nowStamp();
+  logAudit(actor, "planned-update", "record", p.contentId, `${id2}: ${Object.keys(patch).join(", ")}`);
+  commit();
+  return p;
+}
+function archivePlannedEpisode(actor, id2, reason) {
+  const p = getDb().plannedEpisodes.find((x) => x.id === id2);
+  if (!p) throw new RuleError("Planned episode not found.");
+  const project = projectForWrite(actor, p.contentId);
+  if (p.archivedAt) throw new RuleError("This planned episode is already archived.");
+  if (!reason.trim()) throw new RuleError("Write why this episode is coming off the plan.");
+  const db2 = getDb();
+  if (db2.records.some((r) => r.episode?.plannedEpisodeId === id2 && !r.archived))
+    throw new RuleError("This episode has been recorded, so it stays.");
+  const row = db2.sessionLogEntries.find(
+    (e) => e.plannedEpisodeId === id2 && db2.recordingSessions.some((s2) => s2.id === e.sessionId && !s2.archivedAt && s2.status !== "Closed")
+  );
+  if (row) throw new RuleError(`It is planned into session ${row.sessionId}. Take it off that session's log first.`);
+  p.archivedAt = nowStamp();
+  p.archivedReason = reason.trim();
+  p.updatedAt = p.archivedAt;
+  refreshProjectStatus(project);
+  logAudit(actor, "planned-archive", "record", p.contentId, `${id2}: ${reason.trim()}`);
+  commit();
+  return p;
+}
+
+// src/services/documents/nudges.ts
+var GATED = /* @__PURE__ */ new Set(["Brief: Logline", "Brief: Core question or tension", "Guest: Name", "Guest: Contact"]);
+var KEPT_SECTIONS = ["Entry", "Guest", "Consent and release"];
+function softNudges(projectId) {
+  const p = projectOf(projectId);
+  const formType2 = p.workflow.formType;
+  const out = [];
+  for (const problem of formProblems(projectId, 1)) {
+    if (GATED.has(problem)) continue;
+    if (KEPT_SECTIONS.some((s2) => problem.startsWith(`${s2}:`))) out.push(`${problem} not filled in yet`);
+  }
+  const briefKey = briefKeyOf(formType2);
+  const brief = documentOf(projectId, "Development", briefKey);
+  const briefTitle = catalogEntry(formType2, "Development", briefKey)?.title ?? "brief";
+  if (catalogTypeOf(formType2) === "devotion") {
+    if (!brief) out.push(`The ${briefTitle} is not started yet`);
+    return out;
+  }
+  if (!brief) out.push(`The ${briefTitle} is not started yet`);
+  else
+    for (const page of pagesOf(brief.id)) if (!textOf(page.bodyHtml)) out.push(`${brief.title}: ${page.title || "a page"} not written yet`);
+  const greenlight2 = documentOf(projectId, "Development", "greenlight");
+  if (!greenlight2 || !documentHasContent(greenlight2.id)) out.push("Greenlight: the six criteria not written up yet");
+  if (plannedOf(projectId).length === 0)
+    out.push(catalogTypeOf(formType2) === "documentary" ? "No planned parts listed yet" : "No planned episodes listed yet");
+  out.push(...openRequired("handoff", projectId).map((l) => `Handoff: ${l} not ticked yet`));
+  return out;
+}
+
 // src/services/workflow/gates.ts
 var result = (missing, warnings = []) => ({ passed: missing.length === 0, missing, warnings });
 var gateError = (stage, missing) => new RuleError(`Not ready to leave ${stage}. Still needed: ${missing.join("; ")}.`);
-var projectOf = (id2) => {
+var projectOf2 = (id2) => {
   const r = getRecord(id2);
   return r?.workflow ? r : null;
 };
@@ -6452,6 +7180,11 @@ function lateDates(project, dates) {
   return dates.filter(([, d]) => !!d && d > publish).map(([what, d]) => `${what} (${d}) is after the publish date (${publish})`);
 }
 function developmentGate(p) {
+  const late = lateDates(p, [["The Development deadline", p.stageDeadlines.Development]]);
+  if (newDocumentsOn(p.workflow.formType)) {
+    const missing2 = p.workflow.stage === "Development" ? hardGatesMissing(p.contentId) : ["The project has already left Development"];
+    return result(missing2, [...softNudges(p.contentId), ...late]);
+  }
   const missing = [];
   if (p.workflow.stage !== "Development") missing.push("The project has already left Development");
   const form2 = formOf(p.contentId);
@@ -6465,7 +7198,7 @@ function developmentGate(p) {
     if (checkpoint(p.contentId, key2)?.status !== "Approved") missing.push(`${label} review checkpoint Approved`);
   missing.push(...openRequired("handoff", p.contentId).map((l) => `Handoff: ${l}`));
   if (!p.workflow.showProducerId) missing.push("Handoff: Show producer named");
-  return result(missing, lateDates(p, [["The Development deadline", p.stageDeadlines.Development]]));
+  return result(missing, late);
 }
 function preProductionProjectGate(p) {
   const missing = [];
@@ -6535,7 +7268,7 @@ function marketingGate(ep, p) {
 }
 function evaluateGate(stage, level2, id2) {
   if (level2 === "project") {
-    const p = projectOf(id2);
+    const p = projectOf2(id2);
     if (!p) return result(["Project not found"]);
     if (p.archived) return result(["The project is closed"]);
     if (stage === "Development") return developmentGate(p);
@@ -6543,7 +7276,7 @@ function evaluateGate(stage, level2, id2) {
   }
   if (level2 === "session") {
     const s2 = getSession(id2);
-    const p = s2 ? projectOf(s2.contentId) : null;
+    const p = s2 ? projectOf2(s2.contentId) : null;
     if (!s2 || !p) return result(["Session not found"]);
     if (p.archived || s2.archivedAt) return result(["The session is closed"]);
     if (stage === "Pre-production") return preProductionSessionGate(s2, p);
@@ -6551,7 +7284,7 @@ function evaluateGate(stage, level2, id2) {
   }
   if (level2 === "episode") {
     const r = getRecord(id2);
-    const p = r?.episode ? projectOf(r.parentId ?? "") : null;
+    const p = r?.episode ? projectOf2(r.parentId ?? "") : null;
     if (!r?.episode || !p) return result(["Episode not found"]);
     if (r.archived || p.archived) return result(["The episode is archived"]);
     const ep = r;
@@ -6760,48 +7493,6 @@ function advanceProject(actor, projectId) {
   return p;
 }
 var projectLabelOf = (p) => categoryOf(p.category).workflow?.projectLabel ?? "Project";
-
-// src/services/workflow/ids.ts
-function next(key2, used) {
-  const db2 = getDb();
-  const n = Math.max(db2.counters[key2] ?? 0, ...used.filter((x) => !Number.isNaN(x))) + 1;
-  db2.counters[key2] = n;
-  return n;
-}
-function nextSession(projectId) {
-  const used = getDb().recordingSessions.filter((s2) => s2.contentId === projectId).map((s2) => s2.sessionNumber);
-  const n = next(sessionCounter(projectId), used);
-  return { id: claimId(sessionCode(projectId, n)), n };
-}
-function nextPlanned(projectId) {
-  const used = getDb().plannedEpisodes.filter((p) => p.contentId === projectId).map((p) => p.episodeNumber);
-  const n = next(plannedCounter(projectId), used);
-  return { id: claimId(plannedEpisodeId(projectId, n)), n };
-}
-function nextEpisode(projectId) {
-  const db2 = getDb();
-  const used = [
-    ...db2.records.filter((r) => r.parentId === projectId).map((r) => r.episode?.episodeNumber ?? codeNumber(r.contentId, projectId, EPISODE_TOKEN)),
-    // Codes already given out ahead of recording count too.
-    ...db2.plannedEpisodes.filter((p) => p.contentId === projectId && p.reservedId).map((p) => codeNumber(p.reservedId, projectId, EPISODE_TOKEN))
-  ];
-  const n = next(episodeCounter(projectId), used);
-  return { id: claimId(episodeCode(projectId, n)), n };
-}
-
-// src/services/workflow/status.ts
-function refreshProjectStatus(p) {
-  if (p.archived || p.workflow.stage !== "Pre-production") return;
-  const eps = episodesOf(p.contentId);
-  const planned = getDb().plannedEpisodes.filter((x) => x.contentId === p.contentId && !x.archivedAt);
-  const published = (plannedId) => eps.some((e) => e.episode.plannedEpisodeId === plannedId && e.episode.mdStage === "Published");
-  const done = eps.length > 0 && eps.every((e) => e.episode.mdStage === "Published") && planned.every((x) => published(x.id));
-  const next2 = done ? "Completed" : "Active";
-  if (p.workflow.status !== next2) {
-    p.workflow.status = next2;
-    p.version += 1;
-  }
-}
 
 // src/services/workflow/episodes.ts
 var POST_DAYS = 14;
@@ -7907,21 +8598,21 @@ function getBlockedOnUser(actor) {
 function getComments(contentId, callSheetId = null) {
   return getDb().comments.filter((c) => c.contentId === contentId && c.callSheetId === callSheetId).sort((a, b) => a.at.localeCompare(b.at));
 }
-function addComment(actor, contentId, text2, callSheetId = null) {
+function addComment(actor, contentId, text3, callSheetId = null) {
   const r = getRecord(contentId);
   if (!r || !canView(actor, r)) throw new RuleError("Record not found.");
   if (!canComment(actor, r)) throw new RuleError("You can view this project but not comment on it.");
-  if (!text2.trim()) throw new RuleError("Write a comment first.");
+  if (!text3.trim()) throw new RuleError("Write a comment first.");
   const c = {
     id: logId("C"),
     contentId,
     callSheetId,
     byPersonId: actor.personId,
-    text: text2.trim(),
+    text: text3.trim(),
     at: (/* @__PURE__ */ new Date()).toISOString()
   };
   getDb().comments.push(c);
-  logAudit(actor, "comment", "record", contentId, text2.slice(0, 60));
+  logAudit(actor, "comment", "record", contentId, text3.slice(0, 60));
   commit();
   return c;
 }
@@ -8181,19 +8872,23 @@ function runOfShowTotals(cs) {
 // src/services/documents.ts
 var documents_exports = {};
 __export(documents_exports, {
+  DEVOTION_PAGES_NEEDED: () => DEVOTION_PAGES_NEEDED,
   MAX_PAGE_HTML: () => MAX_PAGE_HTML,
+  acceptDevotion: () => acceptDevotion,
   addDocumentLink: () => addDocumentLink,
   addFrame: () => addFrame,
   addPage: () => addPage,
   addReviewComment: () => addReviewComment,
   addShotRow: () => addShotRow,
   archivePage: () => archivePage,
+  askForReviewAgain: () => askForReviewAgain,
   commentsOf: () => commentsOf,
   createShotList: () => createShotList,
   createStoryboard: () => createStoryboard,
   decideDocumentReview: () => decideDocumentReview,
   deleteFrames: () => deleteFrames,
   deleteShotRows: () => deleteShotRows,
+  devotionPageReady: () => devotionPageReady,
   documentHasContent: () => documentHasContent,
   documentOf: () => documentOf,
   duplicateFrame: () => duplicateFrame,
@@ -8202,6 +8897,8 @@ __export(documents_exports, {
   estimatedMinutes: () => estimatedMinutes,
   framesOf: () => framesOf,
   getDocument: () => getDocument,
+  hardGates: () => hardGates,
+  hardGatesPass: () => hardGatesPass,
   linksOf: () => linksOf,
   makeDevotionEpisodes: () => makeDevotionEpisodes,
   moveFrame: () => moveFrame,
@@ -8220,468 +8917,14 @@ __export(documents_exports, {
   rowsOfShotList: () => rowsOfShotList,
   savePage: () => savePage,
   setDocumentReviewers: () => setDocumentReviewers,
+  setGateOverride: () => setGateOverride,
   shotListsOf: () => shotListsOf,
   shotNumbers: () => shotNumbers,
+  softNudges: () => softNudges,
   storyboardsOf: () => storyboardsOf,
   updateFrame: () => updateFrame,
   updateShotRow: () => updateShotRow
 });
-
-// src/config/documentCatalog.ts
-var CRITERIA_LIST = "<ul><li><p><strong>Mission fit:</strong> </p></li><li><p><strong>Message soundness:</strong> </p></li><li><p><strong>Audience need:</strong> </p></li><li><p><strong>Feasibility:</strong> </p></li><li><p><strong>Resource cost:</strong> </p></li><li><p><strong>Team strength:</strong> </p></li></ul>";
-var doc = (key2, title2, pages, extra = {}) => ({
-  key: key2,
-  title: title2,
-  kind: "document",
-  pages: pages.map((p) => typeof p === "string" ? { title: p } : p),
-  ...extra
-});
-var form = (key2, title2, tile, extra = {}) => ({
-  key: key2,
-  title: title2,
-  kind: "form",
-  form: tile,
-  ...extra
-});
-var tool = (key2, title2, which) => ({ key: key2, title: title2, kind: "tool", tool: which });
-var review = (reviews) => ({ key: "theological_review", title: "Theological Review", kind: "review", reviews });
-var IDEA_FIELDS = [
-  { section: "brief", key: "logline", label: "Logline" },
-  { section: "brief", key: "coreQuestion", label: "Core question or tension" }
-];
-var greenlight = doc("greenlight", "Greenlight", [{ title: "Decision", body: `<p>The six criteria:</p>${CRITERIA_LIST}` }]);
-function showBrief(formType2) {
-  const pages = [
-    { title: "The idea", fields: IDEA_FIELDS },
-    { title: "Scripture and source basis" },
-    { title: "Shape" },
-    { title: "Ask" }
-  ];
-  if (formType2 === "testimonial") pages.splice(3, 0, { title: "Sensitivity" });
-  if (formType2 === "sermon") pages.splice(3, 0, { title: "Outline" });
-  return doc("show_brief", "Show Brief", pages);
-}
-function documentaryBrief(formType2) {
-  const pages = [
-    { title: "The idea", fields: IDEA_FIELDS },
-    { title: "Subjects and locations" },
-    { title: "Sources and fact-checking" },
-    { title: "Ask" }
-  ];
-  if (formType2 === "documentary_pitched")
-    pages.push({ title: "Proposer readiness" }, { title: "Support asked for" }, { title: "Ownership terms" });
-  return doc("documentary_brief", "Documentary Brief", pages);
-}
-var marketing = () => [
-  doc("release_plan", "Release Plan", ["Release message", "Platform plan", "Study resources"]),
-  form("platform_status", "Platform Status", "platformStatus"),
-  doc("learning_notes", "Learning Notes", ["Against the success measures"]),
-  form("archive", "Archive", "archive")
-];
-function seriesCatalog(formType2) {
-  return {
-    Development: [
-      showBrief(formType2),
-      review("show_brief"),
-      greenlight,
-      form("planned_episodes", "Planned Episodes", "plannedEpisodes"),
-      ...formType2 === "testimonial" ? [form("consent", "Consent and Release", "consent")] : []
-    ],
-    "Pre-production": [
-      doc("production_pack", "Production Pack", ["Set design", "Rehearsal notes"]),
-      tool("storyboard", "Storyboard", "storyboard"),
-      tool("shot_list", "Shot List", "shotList"),
-      form("roles", "Roles", "roles"),
-      form("sessions", "Sessions", "sessions"),
-      form("call_sheet", "Call Sheet", "callSheet"),
-      form("gear", "Gear", "gear")
-    ],
-    Production: [
-      doc(
-        "recording_day_sheet",
-        "Recording Day Sheet",
-        [{ title: "Run sheet", form: "runSheet" }, "Daily notes", { title: "Wrap checklist", form: "wrapChecklist" }],
-        {
-          per: "session"
-        }
-      ),
-      form("session_log", "Session Log", "sessionLog"),
-      form("storage", "Storage", "storage")
-    ],
-    "Post production": [
-      doc("edit_notes", "Edit Notes", ["Notes to the editor", "Story and theology lock", "Graphics and music"]),
-      form("episode_tracker", "Episode Tracker", "episodeTracker"),
-      doc("review_thread", "Review Thread", [], { pagePerEpisode: true })
-    ],
-    "Marketing and distribution": marketing()
-  };
-}
-function documentaryCatalog(formType2) {
-  return {
-    Development: [
-      documentaryBrief(formType2),
-      review("documentary_brief"),
-      greenlight,
-      form("planned_episodes", "Planned Parts", "plannedEpisodes")
-    ],
-    "Pre-production": [
-      doc("treatment", "Treatment", ["Story structure", "Interview guide"]),
-      tool("storyboard", "Storyboard", "storyboard"),
-      tool("shot_list", "Shot List", "shotList"),
-      form("roles", "Roles", "roles"),
-      form("sessions", "Sessions", "sessions"),
-      form("call_sheet", "Call Sheet", "callSheet"),
-      form("gear", "Gear", "gear")
-    ],
-    Production: [
-      doc(
-        "shoot_day_sheet",
-        "Shoot Day Sheet",
-        [{ title: "Run sheet", form: "runSheet" }, "Interview notes", { title: "Wrap checklist", form: "wrapChecklist" }],
-        {
-          per: "session"
-        }
-      ),
-      form("session_log", "Session Log", "sessionLog"),
-      form("storage", "Storage", "storage")
-    ],
-    "Post production": [
-      doc("edit_notes", "Edit Notes", ["Assembly notes", "Narration", "Fact-check lock", "Graphics and music"]),
-      form("cut_tracker", "Cut Tracker", "episodeTracker"),
-      doc("review_thread", "Review Thread", [], { pagePerEpisode: true })
-    ],
-    "Marketing and distribution": marketing()
-  };
-}
-var DEVOTION_PAGES = [1, 2, 3, 4, 5].map((n) => ({ title: `Devotion ${n}`, subtitle: "" }));
-var devotionCatalog = {
-  Development: [
-    doc("devotional_script", "Devotional Script", DEVOTION_PAGES),
-    review("devotional_script"),
-    form("accept_decline", "Accept or Decline", "acceptDecline")
-  ],
-  "Pre-production": [
-    form("devotion_episodes", "Devotions", "devotionEpisodes"),
-    doc("recording_plan", "Recording Plan", ["Cards and storage", "Notes"]),
-    form("sessions", "Recording Session", "sessions"),
-    form("call_sheet", "Call Sheet", "callSheet")
-  ],
-  Production: [form("recording_day_view", "Recording Day View", "recordingDayView"), form("storage", "Storage", "storage")],
-  "Post production": [doc("edit_notes", "Edit Notes", ["Notes to the editor"]), form("review", "Review", "review")],
-  "Marketing and distribution": [
-    doc("release_plan", "Release Plan", ["Release message", "Platform plan"]),
-    doc("study_notes", "Study Notes", ["Study notes"])
-  ]
-};
-var catalogTypeOf = (formType2) => formType2 === "devotion" ? "devotion" : formType2 === "documentary_dof" || formType2 === "documentary_pitched" ? "documentary" : "series";
-function catalogFor(formType2, stage) {
-  const type = catalogTypeOf(formType2);
-  const all = type === "devotion" ? devotionCatalog : type === "documentary" ? documentaryCatalog(formType2) : seriesCatalog(formType2);
-  return all[stage];
-}
-var catalogEntry = (formType2, stage, key2) => catalogFor(formType2, stage).find((e) => e.key === key2);
-var briefKeyOf = (formType2) => catalogTypeOf(formType2) === "devotion" ? "devotional_script" : catalogTypeOf(formType2) === "documentary" ? "documentary_brief" : "show_brief";
-
-// src/services/documents/common.ts
-function projectOf2(contentId) {
-  const r = getRecord(contentId);
-  if (!isWorkflowProject(r)) throw new RuleError("Project not found.");
-  return r;
-}
-function projectForWrite2(actor, contentId) {
-  const p = projectOf2(contentId);
-  if (!canWrite(actor, p)) throw new RuleError("You have view-only access to this project.");
-  if (p.archived) throw new RuleError("This project is closed. It is kept as it was and cannot be changed.");
-  return p;
-}
-function projectForView(actor, contentId) {
-  const p = projectOf2(contentId);
-  if (!canView(actor, p)) throw new RuleError("Project not found.");
-  return p;
-}
-var mayComment = (actor, r) => canComment(actor, r);
-var getDocument = (id2) => getDb().projectDocuments.find((d) => d.id === id2);
-function requireDocument(id2) {
-  const d = getDocument(id2);
-  if (!d) throw new RuleError("Document not found.");
-  return d;
-}
-function documentForWrite(actor, id2) {
-  const doc2 = requireDocument(id2);
-  return { doc: doc2, project: projectForWrite2(actor, doc2.contentId) };
-}
-function pageForWrite(actor, pageId) {
-  const page = getDb().documentPages.find((p) => p.id === pageId);
-  if (!page) throw new RuleError("That page no longer exists.");
-  const { doc: doc2, project } = documentForWrite(actor, page.documentId);
-  return { page, doc: doc2, project };
-}
-var pagesOf = (documentId, includeArchived = false) => getDb().documentPages.filter((p) => p.documentId === documentId && (includeArchived || !p.archivedAt)).sort((a, b) => a.position - b.position);
-function renumber(items) {
-  items.sort((a, b) => a.position - b.position).forEach((it, i) => it.position = i);
-}
-function moveTo(items, id2, toIndex) {
-  const ordered = [...items].sort((a, b) => a.position - b.position);
-  const from = ordered.findIndex((x) => x.id === id2);
-  if (from === -1) throw new RuleError("That item is not in this list.");
-  const [it] = ordered.splice(from, 1);
-  ordered.splice(Math.max(0, Math.min(ordered.length, Math.floor(toIndex))), 0, it);
-  ordered.forEach((x, i) => x.position = i);
-}
-var newDocumentsOn = (formType2) => (getDb().settings.newDocuments ?? []).includes(catalogTypeOf(formType2));
-function documentHasContent(documentId) {
-  const db2 = getDb();
-  if (db2.documentLinks.some((l) => l.documentId === documentId)) return true;
-  return pagesOf(documentId).some(
-    (p) => (p.version > 1 || p.updatedBy === "migration") && (textOf(p.bodyHtml) !== "" || p.subtitle.trim() !== "")
-  );
-}
-
-// src/services/documents/pages.ts
-var MAX_PAGE_HTML = 4e5;
-var MAX_LINE = 300;
-function entryFor(formType2, stage, docKey) {
-  const entry = catalogEntry(formType2, stage, docKey);
-  if (!entry || entry.kind !== "document") throw new RuleError("This kind of project has no such document at that stage.");
-  return entry;
-}
-var documentOf = (contentId, stage, docKey, ownerId = null) => getDb().projectDocuments.find((d) => d.id === documentIdOf(contentId, stage, docKey, ownerId));
-function makeDocument(contentId, stage, entry, ownerId, by, migrated = false) {
-  const at = nowStamp();
-  const doc2 = {
-    id: documentIdOf(contentId, stage, entry.key, ownerId),
-    contentId,
-    stage,
-    docKey: entry.key,
-    ownerId,
-    title: entry.title,
-    migrated,
-    createdAt: at,
-    updatedAt: at
-  };
-  const db2 = getDb();
-  db2.projectDocuments.push(doc2);
-  (entry.pages ?? []).forEach(
-    (p, i) => db2.documentPages.push({
-      id: localId("PG"),
-      documentId: doc2.id,
-      position: i,
-      title: p.title,
-      subtitle: p.subtitle ?? "",
-      bodyHtml: p.body ? cleanHtml(p.body) : "",
-      version: 1,
-      archivedAt: null,
-      updatedAt: at,
-      updatedBy: by
-    })
-  );
-  return doc2;
-}
-function ensureDocument(actor, contentId, stage, docKey, ownerId = null) {
-  if (!WORKFLOW_STAGE_NAMES.includes(stage)) throw new RuleError("That is not a stage of the workflow.");
-  const existing = documentOf(contentId, stage, docKey, ownerId);
-  if (existing) {
-    projectForView(actor, contentId);
-    return existing;
-  }
-  const project = projectForWrite2(actor, contentId);
-  const entry = entryFor(project.workflow.formType, stage, docKey);
-  if (entry.per === "session") {
-    const s2 = ownerId ? getSession(ownerId) : void 0;
-    if (!s2 || s2.contentId !== contentId) throw new RuleError("Choose one of this project's recording sessions.");
-  } else if (entry.per === "episode") {
-    const ep = ownerId ? getRecord(ownerId) : void 0;
-    if (!ep?.episode || ep.parentId !== contentId) throw new RuleError("Choose one of this project's episodes.");
-  } else if (ownerId) throw new RuleError("This document is for the whole project.");
-  const doc2 = makeDocument(contentId, stage, entry, ownerId, actor.personId);
-  logAudit(actor, "document", "record", contentId, `${entry.title} started`);
-  commit();
-  return doc2;
-}
-function addPage(actor, documentId, input = {}) {
-  const { doc: doc2 } = documentForWrite(actor, documentId);
-  const pages = pagesOf(doc2.id);
-  const at = nowStamp();
-  const after = input.afterPageId ? pages.findIndex((p) => p.id === input.afterPageId) : pages.length - 1;
-  const page = {
-    id: localId("PG"),
-    documentId: doc2.id,
-    position: after + 0.5,
-    title: (input.title ?? "").trim().slice(0, MAX_LINE) || "New page",
-    subtitle: (input.subtitle ?? "").trim().slice(0, MAX_LINE),
-    bodyHtml: "",
-    version: 1,
-    archivedAt: null,
-    updatedAt: at,
-    updatedBy: actor.personId
-  };
-  getDb().documentPages.push(page);
-  renumber(pagesOf(doc2.id));
-  doc2.updatedAt = at;
-  logAudit(actor, "document-page", "record", doc2.contentId, `${doc2.title}: page "${page.title}" added`);
-  commit();
-  return page;
-}
-function savePage(actor, pageId, edit, baseVersion) {
-  const { page, doc: doc2 } = pageForWrite(actor, pageId);
-  if (page.archivedAt) throw new RuleError("This page was deleted. Restore it to write in it.");
-  if (page.version !== baseVersion)
-    throw new ConflictError(
-      "Someone else saved this page while you were writing. Your words are kept here: copy them, then reload the page."
-    );
-  if (edit.title !== void 0) page.title = edit.title.trim().slice(0, MAX_LINE) || "Untitled page";
-  if (edit.subtitle !== void 0) page.subtitle = edit.subtitle.trim().slice(0, MAX_LINE);
-  if (edit.bodyHtml !== void 0) {
-    if (edit.bodyHtml.length > MAX_PAGE_HTML) throw new RuleError("This page is too long to save. Split it over two pages.");
-    page.bodyHtml = cleanHtml(edit.bodyHtml);
-  }
-  page.version += 1;
-  page.updatedAt = nowStamp();
-  page.updatedBy = actor.personId;
-  doc2.updatedAt = page.updatedAt;
-  commit();
-  return page;
-}
-function movePage(actor, pageId, toIndex) {
-  const { page, doc: doc2 } = pageForWrite(actor, pageId);
-  moveTo(pagesOf(doc2.id), page.id, toIndex);
-  commit();
-  return page;
-}
-function archivePage(actor, pageId) {
-  const { page, doc: doc2 } = pageForWrite(actor, pageId);
-  if (page.archivedAt) return page;
-  page.archivedAt = nowStamp();
-  renumber(pagesOf(doc2.id));
-  logAudit(actor, "document-page", "record", doc2.contentId, `${doc2.title}: page "${page.title}" deleted (kept, archived)`);
-  commit();
-  return page;
-}
-function restorePage(actor, pageId) {
-  const { page, doc: doc2 } = pageForWrite(actor, pageId);
-  if (!page.archivedAt) return page;
-  page.archivedAt = null;
-  page.position = pagesOf(doc2.id).length;
-  logAudit(actor, "document-page", "record", doc2.contentId, `${doc2.title}: page "${page.title}" restored`);
-  commit();
-  return page;
-}
-var linksOf = (documentId) => getDb().documentLinks.filter((l) => l.documentId === documentId);
-function addDocumentLink(actor, documentId, url2, label) {
-  const { doc: doc2 } = documentForWrite(actor, documentId);
-  const link = {
-    id: localId("DL"),
-    documentId: doc2.id,
-    url: requireWebUrl(url2, "The link"),
-    label: label.trim().slice(0, MAX_LINE),
-    addedBy: actor.personId,
-    addedAt: nowStamp()
-  };
-  getDb().documentLinks.push(link);
-  logAudit(actor, "document-link", "record", doc2.contentId, `${doc2.title}: ${link.label || link.url}`);
-  commit();
-  return link;
-}
-function removeDocumentLink(actor, linkId) {
-  const db2 = getDb();
-  const link = db2.documentLinks.find((l) => l.id === linkId);
-  if (!link) throw new RuleError("That link no longer exists.");
-  const { doc: doc2 } = documentForWrite(actor, link.documentId);
-  db2.documentLinks = db2.documentLinks.filter((l) => l.id !== linkId);
-  logAudit(actor, "document-link", "record", doc2.contentId, `${doc2.title}: removed ${link.label || link.url}`);
-  commit();
-}
-
-// src/services/documents/reviews.ts
-var reviewsOf = (documentId) => getDb().documentReviews.filter((r) => r.documentId === documentId);
-function reviewStateOf(documentId) {
-  const rows = reviewsOf(documentId);
-  if (!rows.length) return "no reviewers";
-  if (rows.some((r) => r.status === "changes_requested")) return "changes_requested";
-  return rows.every((r) => r.status === "approved") ? "approved" : "pending";
-}
-function setDocumentReviewers(actor, documentId, reviewerIds) {
-  const { doc: doc2, project } = documentForWrite(actor, documentId);
-  if (!canManageTeam(actor, project) && !canDecide(actor))
-    throw new RuleError("Only the show producer or the Head of Production chooses the reviewers.");
-  const ids2 = [...new Set(reviewerIds)];
-  if (ids2.length > 10) throw new RuleError("Choose up to 10 reviewers.");
-  for (const id2 of ids2) {
-    requireCrew(id2, "A reviewer");
-    joinProject(actor, id2, project);
-  }
-  const db2 = getDb();
-  const at = nowStamp();
-  db2.documentReviews = db2.documentReviews.filter((r) => r.documentId !== doc2.id || ids2.includes(r.reviewerId));
-  for (const reviewerId of ids2)
-    if (!db2.documentReviews.some((r) => r.documentId === doc2.id && r.reviewerId === reviewerId))
-      db2.documentReviews.push({
-        id: `${doc2.id}|${reviewerId}`,
-        documentId: doc2.id,
-        reviewerId,
-        status: "pending",
-        note: "",
-        decidedAt: null,
-        createdAt: at,
-        updatedAt: at
-      });
-  logAudit(actor, "document-reviewers", "record", doc2.contentId, `${doc2.title}: ${ids2.length} reviewer${ids2.length === 1 ? "" : "s"}`);
-  commit();
-  return reviewsOf(doc2.id);
-}
-function decideDocumentReview(actor, documentId, decision) {
-  const { doc: doc2 } = documentForWrite(actor, documentId);
-  const note = decision.note.trim();
-  if (decision.status === "changes_requested" && !note)
-    throw new RuleError("Write what needs to change. The reason goes back to the writer.");
-  const mine = reviewsOf(doc2.id).filter((r) => r.reviewerId === actor.personId || isHop(actor));
-  if (!reviewsOf(doc2.id).length) throw new RuleError("Name a reviewer first.");
-  if (!mine.length) throw new RuleError("Only a reviewer named on this document, or the Head of Production, can decide it.");
-  const at = nowStamp();
-  for (const r of mine) Object.assign(r, { status: decision.status, note, decidedAt: at, updatedAt: at });
-  logAudit(
-    actor,
-    "document-review",
-    "record",
-    doc2.contentId,
-    `${doc2.title}: ${decision.status === "approved" ? "approved" : `changes requested: ${note}`}`
-  );
-  commit();
-  return reviewsOf(doc2.id);
-}
-var commentsOf = (documentId) => getDb().reviewComments.filter((c) => c.documentId === documentId).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-function addReviewComment(actor, pageId, body) {
-  const page = getDb().documentPages.find((p) => p.id === pageId);
-  if (!page) throw new RuleError("That page no longer exists.");
-  const doc2 = requireDocument(page.documentId);
-  const project = projectForView(actor, doc2.contentId);
-  if (!mayComment(actor, project)) throw new RuleError("You can read this document but not comment on it.");
-  const text2 = body.trim();
-  if (!text2) throw new RuleError("Write the comment first.");
-  const c = {
-    id: localId("RC"),
-    documentId: doc2.id,
-    pageId: page.id,
-    authorId: actor.personId,
-    body: text2.slice(0, 5e3),
-    resolved: false,
-    resolvedBy: null,
-    createdAt: nowStamp()
-  };
-  getDb().reviewComments.push(c);
-  logAudit(actor, "document-comment", "record", doc2.contentId, `${doc2.title}, ${page.title}: ${text2.slice(0, 60)}`);
-  commit();
-  return c;
-}
-function resolveReviewComment(actor, commentId, resolved = true) {
-  const c = getDb().reviewComments.find((x) => x.id === commentId);
-  if (!c) throw new RuleError("That comment no longer exists.");
-  documentForWrite(actor, c.documentId);
-  c.resolved = resolved;
-  c.resolvedBy = resolved ? actor.personId : null;
-  commit();
-  return c;
-}
 
 // src/services/documents/boards.ts
 var MAX_LINE2 = 500;
@@ -8945,14 +9188,13 @@ function deleteShotRows(actor, rowIds) {
 }
 
 // src/services/documents/devotions.ts
+var countsAsDevotion = (pg) => textOf(pg.bodyHtml) !== "" || pg.subtitle.trim() !== "" || pg.version > 1 || pg.updatedBy === "migration";
 function makeDevotionEpisodes(actor, projectId) {
   const p = projectForWrite2(actor, projectId);
   if (p.workflow.formType !== "devotion") throw new RuleError("Only a devotion makes its episodes from its script.");
   if (p.workflow.stage !== "Pre-production") throw new RuleError("The episodes are listed in Pre-production, once the script is accepted.");
   const script = documentOf(projectId, "Development", "devotional_script");
-  const pages = script ? pagesOf(script.id).filter(
-    (pg) => textOf(pg.bodyHtml) !== "" || pg.subtitle.trim() !== "" || pg.version > 1 || pg.updatedBy === "migration"
-  ) : [];
+  const pages = script ? pagesOf(script.id).filter(countsAsDevotion) : [];
   if (!pages.length) throw new RuleError("The Devotional Script has no devotions written yet.");
   const db2 = getDb();
   const theme = String(formOf(projectId).sections.entry?.theme ?? "");
@@ -9018,6 +9260,18 @@ function makeDevotionEpisodes(actor, projectId) {
     commit();
   }
   return out;
+}
+function acceptDevotion(actor, projectId, note) {
+  const p = projectForWrite2(actor, projectId);
+  if (p.workflow.formType !== "devotion") throw new RuleError("Only a devotion is accepted this way.");
+  if (!newDocumentsOn("devotion"))
+    throw new RuleError("Devotions are accepted from their Development form while their documents are not in use.");
+  decideGreenlight(actor, projectId, { outcome: "Greenlight", notes: note, date: todayIso() });
+  advanceProject(actor, projectId);
+  logAudit(actor, "devotion-accepted", "record", projectId, note.trim() ? `Accepted. ${note.trim()}` : "Accepted");
+  const script = documentOf(projectId, "Development", "devotional_script");
+  const written = script ? pagesOf(script.id).filter(countsAsDevotion) : [];
+  return written.length ? makeDevotionEpisodes(actor, projectId) : { made: [], updated: [], episodes: [] };
 }
 
 // src/services/reminders.ts
@@ -9432,7 +9686,7 @@ var SETTINGS_EDITABLE = [
   "effortOverrides",
   "newDocuments"
 ];
-var DOCUMENTS_READY = ["devotion"];
+var DOCUMENTS_READY = ["devotion", "series", "documentary"];
 function updateSettings(actor, input) {
   requireCan(actor, "backend.settings", "change system settings");
   const patch = pickKeys(input, SETTINGS_EDITABLE);
@@ -9460,7 +9714,7 @@ function updateSettings(actor, input) {
     if (!Array.isArray(patch.newDocuments)) throw new RuleError("Choose the kinds of project that use the new documents.");
     const kinds = [...new Set(patch.newDocuments)];
     const early = kinds.find((k) => !DOCUMENTS_READY.includes(k));
-    if (early) throw new RuleError("Only devotions can use the new documents for now. Series and documentaries follow next.");
+    if (early) throw new RuleError("Choose devotions, series or documentaries.");
     patch.newDocuments = kinds;
   }
   Object.assign(getDb().settings, patch);
@@ -9918,87 +10172,6 @@ __export(workflow_exports, {
   updateRunSheetItem: () => updateRunSheetItem,
   updateSession: () => updateSession
 });
-
-// src/services/workflow/planned.ts
-var PLANNED_EDITABLE = ["workingTitle", "question", "guest", "notes", "details"];
-function checkDetails(projectId, details) {
-  if (!details) return {};
-  const form2 = formOf(projectId);
-  const parsed = plannedDetailsSchema(form2.formType).safeParse(details);
-  if (!parsed.success)
-    throw new RuleError(
-      explain(parsed.error, (k) => plannedSectionOf(form2.formType)?.planned?.details.find((d) => d.key === k)?.label ?? k)
-    );
-  return Object.fromEntries(
-    Object.entries(parsed.data).filter((e) => e[1] !== void 0)
-  );
-}
-var plannedOf = (projectId, includeArchived = false) => getDb().plannedEpisodes.filter((p) => p.contentId === projectId && (includeArchived || !p.archivedAt)).sort((a, b) => a.episodeNumber - b.episodeNumber);
-function addPlannedEpisode(actor, projectId, input) {
-  const project = projectForWrite(actor, projectId);
-  const section = plannedSectionOf(project.workflow.formType);
-  if (!section?.planned) throw new RuleError("This kind of project has no planned episodes.");
-  const max = section.planned.max;
-  if (max !== void 0 && plannedOf(projectId).length >= max) throw new RuleError(`${section.planned.label} has ${max} already.`);
-  const details = checkDetails(projectId, input.details);
-  const { id: id2, n } = nextPlanned(projectId);
-  const at = nowStamp();
-  const p = {
-    id: id2,
-    contentId: projectId,
-    episodeNumber: n,
-    workingTitle: input.workingTitle.trim(),
-    question: (input.question ?? "").trim(),
-    guest: (input.guest ?? "").trim(),
-    notes: (input.notes ?? "").trim(),
-    details,
-    createdAt: at,
-    updatedAt: at,
-    archivedAt: null,
-    archivedReason: null,
-    reservedId: null,
-    sourcePageId: null
-  };
-  getDb().plannedEpisodes.push(p);
-  refreshProjectStatus(project);
-  logAudit(actor, "planned-add", "record", projectId, `${id2}: ${p.workingTitle}`);
-  commit();
-  return p;
-}
-function updatePlannedEpisode(actor, id2, input) {
-  const p = getDb().plannedEpisodes.find((x) => x.id === id2);
-  if (!p) throw new RuleError("Planned episode not found.");
-  projectForWrite(actor, p.contentId);
-  if (p.archivedAt) throw new RuleError("This planned episode is archived.");
-  const patch = pickKeys(input, PLANNED_EDITABLE);
-  if (patch.details !== void 0) p.details = { ...p.details, ...checkDetails(p.contentId, patch.details) };
-  for (const k of ["workingTitle", "question", "guest", "notes"]) if (patch[k] !== void 0) p[k] = patch[k].trim();
-  p.updatedAt = nowStamp();
-  logAudit(actor, "planned-update", "record", p.contentId, `${id2}: ${Object.keys(patch).join(", ")}`);
-  commit();
-  return p;
-}
-function archivePlannedEpisode(actor, id2, reason) {
-  const p = getDb().plannedEpisodes.find((x) => x.id === id2);
-  if (!p) throw new RuleError("Planned episode not found.");
-  const project = projectForWrite(actor, p.contentId);
-  if (p.archivedAt) throw new RuleError("This planned episode is already archived.");
-  if (!reason.trim()) throw new RuleError("Write why this episode is coming off the plan.");
-  const db2 = getDb();
-  if (db2.records.some((r) => r.episode?.plannedEpisodeId === id2 && !r.archived))
-    throw new RuleError("This episode has been recorded, so it stays.");
-  const row = db2.sessionLogEntries.find(
-    (e) => e.plannedEpisodeId === id2 && db2.recordingSessions.some((s2) => s2.id === e.sessionId && !s2.archivedAt && s2.status !== "Closed")
-  );
-  if (row) throw new RuleError(`It is planned into session ${row.sessionId}. Take it off that session's log first.`);
-  p.archivedAt = nowStamp();
-  p.archivedReason = reason.trim();
-  p.updatedAt = p.archivedAt;
-  refreshProjectStatus(project);
-  logAudit(actor, "planned-archive", "record", p.contentId, `${id2}: ${reason.trim()}`);
-  commit();
-  return p;
-}
 
 // src/services/workflow/team.ts
 function assignRole(actor, projectId, roleKey2, who) {
@@ -10693,12 +10866,14 @@ var RPC_NAMES = {
     "saveDoc"
   ],
   "documents": [
+    "acceptDevotion",
     "addDocumentLink",
     "addFrame",
     "addPage",
     "addReviewComment",
     "addShotRow",
     "archivePage",
+    "askForReviewAgain",
     "createShotList",
     "createStoryboard",
     "decideDocumentReview",
@@ -10719,6 +10894,7 @@ var RPC_NAMES = {
     "restorePage",
     "savePage",
     "setDocumentReviewers",
+    "setGateOverride",
     "updateFrame",
     "updateShotRow"
   ],
@@ -10855,7 +11031,7 @@ var id = z2.string().min(1).max(120);
 var ref = z2.string().max(120);
 var ids = (max = 500) => z2.array(id).max(max);
 var short = (max = 300) => z2.string().max(max);
-var text = (max = 2e4) => z2.string().max(max);
+var text2 = (max = 2e4) => z2.string().max(max);
 var date = z2.string().regex(/^(\d{4}-\d{2}-\d{2}(T[\d:.]+Z?)?)?$/, "Expected a date.");
 var time = z2.string().max(20);
 var version = z2.number().int().min(0);
@@ -10903,7 +11079,7 @@ var recordFields = {
   scheduledDate: date.nullable(),
   deadline: date.nullable(),
   assigneePersonId: ref.nullable(),
-  notes: text(),
+  notes: text2(),
   productionLevel: level.nullable(),
   showStart: date.nullable(),
   showEnd: date.nullable()
@@ -10919,9 +11095,9 @@ var sectionValues = z2.record(z2.string().max(60), z2.union([z2.string().max(2e4
 var plannedDetails = z2.record(z2.string().max(60), z2.string().max(2e4));
 var plannedFields = {
   workingTitle: short(),
-  question: text(2e3),
+  question: text2(2e3),
   guest: short(),
-  notes: text(5e3),
+  notes: text2(5e3),
   details: plannedDetails
 };
 var runSheetItem = z2.object({
@@ -10929,9 +11105,9 @@ var runSheetItem = z2.object({
   title: short(),
   durationMin: count(600),
   ownerPersonId: ref.nullable().optional(),
-  notes: text(2e3).optional()
+  notes: text2(2e3).optional()
 });
-var logFields = { itemLabel: short(), guest: short(), status: logStatus.nullable(), notesForPost: text() };
+var logFields = { itemLabel: short(), guest: short(), status: logStatus.nullable(), notesForPost: text2() };
 var webLink = z2.string().max(2048);
 var workflowStage = z2.enum(["Development", "Pre-production", "Production", "Post production", "Marketing and distribution"]);
 var image = z2.string().max(2e6).nullable();
@@ -10962,7 +11138,7 @@ var ACTIONS = {
       callTime: time.optional(),
       crewPersonIds: ids(200).optional(),
       format: short().optional(),
-      notes: text().optional()
+      notes: text2().optional()
     })
   ]),
   "callsheets.openOrCreateForRecord": args([id]),
@@ -10977,7 +11153,7 @@ var ACTIONS = {
         callTime: time.optional(),
         crewPersonIds: ids(200).optional(),
         format: short().optional(),
-        notes: text().optional(),
+        notes: text2().optional(),
         date: date.optional()
       })
     ],
@@ -10989,7 +11165,7 @@ var ACTIONS = {
   "callsheets.deleteCallSheet": args([id]),
   "callsheets.addRunItem": args([
     id,
-    z2.object({ time, title: short(), durationMin: count(600), ownerPersonId: ref.nullable().optional(), notes: text(2e3).optional() })
+    z2.object({ time, title: short(), durationMin: count(600), ownerPersonId: ref.nullable().optional(), notes: text2(2e3).optional() })
   ]),
   "callsheets.updateRunItem": args([
     id,
@@ -10999,7 +11175,7 @@ var ACTIONS = {
       title: short().optional(),
       durationMin: count(600).optional(),
       ownerPersonId: ref.nullable().optional(),
-      notes: text(2e3).optional()
+      notes: text2(2e3).optional()
     })
   ]),
   "callsheets.removeRunItem": args([id, id]),
@@ -11023,8 +11199,8 @@ var ACTIONS = {
         cardStorage: short(500),
         publishDate: date.nullable(),
         recordingDurationMin: amount(1e5).nullable(),
-        recordingNotes: text(),
-        editorNotes: text()
+        recordingNotes: text2(),
+        editorNotes: text2()
       }).partial()
     ],
     [version]
@@ -11035,10 +11211,10 @@ var ACTIONS = {
   "content.advanceStage": args([id], [version]),
   "content.sendBackStage": args([id], [version]),
   "content.approveGuestReview": args([id, short()], [version]),
-  "content.closeDevotional": args([id, text(5e3)], [version]),
+  "content.closeDevotional": args([id, text2(5e3)], [version]),
   "content.setDevotionalReadyForReview": args([id, z2.boolean()], [version]),
   "content.approveDevotionalReview": args([id], [version]),
-  "content.sendBackDevotionalToEditing": args([id, text(5e3)], [version]),
+  "content.sendBackDevotionalToEditing": args([id, text2(5e3)], [version]),
   "content.addStageOwner": args([id, short(100), id, roles], [version]),
   "content.setOwnerRoles": args([id, short(100), id, roles]),
   "content.removeStageOwner": args([id, short(100), id]),
@@ -11074,18 +11250,18 @@ var ACTIONS = {
     z2.object({
       stage: short(100).optional(),
       kind: z2.enum(["review", "final", "analysis", "reference"]),
-      links: z2.array(z2.object({ url: short(2e3).optional(), note: text(5e3).optional() })).max(50)
+      links: z2.array(z2.object({ url: short(2e3).optional(), note: text2(5e3).optional() })).max(50)
     })
   ]),
   "content.removeLink": args([id, id]),
   "content.deleteRecord": args([id]),
-  "content.addComment": args([id, text(5e3)], [ref.nullable()]),
+  "content.addComment": args([id, text2(5e3)], [ref.nullable()]),
   // Documents
   "docs.createDoc": args([
-    z2.object({ contentId: id, title: short().optional(), templateKey: ref.nullable().optional(), body: text(25e4).optional() })
+    z2.object({ contentId: id, title: short().optional(), templateKey: ref.nullable().optional(), body: text2(25e4).optional() })
   ]),
   "docs.attachDoc": args([id, id]),
-  "docs.saveDoc": args([id, z2.object({ title: short().optional(), body: text(25e4).optional() }), version]),
+  "docs.saveDoc": args([id, z2.object({ title: short().optional(), body: text2(25e4).optional() }), version]),
   "docs.restoreRevision": args([id, id]),
   "docs.archiveDoc": args([id]),
   // Equipment
@@ -11106,7 +11282,7 @@ var ACTIONS = {
       condition,
       packaging: short(2e3),
       accessories: short(2e3),
-      info: text(5e3)
+      info: text2(5e3)
     })
   ]),
   "equipment.createSerializedUnits": args([
@@ -11121,7 +11297,7 @@ var ACTIONS = {
       condition,
       packaging: short(2e3),
       accessories: short(2e3),
-      info: text(5e3),
+      info: text2(5e3),
       units: z2.array(z2.object({ serialNumber: short(200), label: short(100).optional() })).min(1).max(200)
     })
   ]),
@@ -11134,7 +11310,7 @@ var ACTIONS = {
       vendor: short(),
       packaging: short(2e3),
       accessories: short(2e3),
-      info: text(5e3),
+      info: text2(5e3),
       unitCost: amount(),
       purchaseDate: date.nullable(),
       serialNumber: short(200).nullable(),
@@ -11150,9 +11326,9 @@ var ACTIONS = {
   ]),
   "equipment.addAttachment": args([id, z2.enum(["photo", "receipt"]), photo]),
   "equipment.removeAttachment": args([id, id]),
-  "equipment.startRepair": args([id, text(5e3)]),
-  "equipment.finishRepair": args([id, condition, text(5e3)]),
-  "equipment.retireItem": args([id, z2.enum(["retired", "lost"]), text(5e3)]),
+  "equipment.startRepair": args([id, text2(5e3)]),
+  "equipment.finishRepair": args([id, condition, text2(5e3)]),
+  "equipment.retireItem": args([id, z2.enum(["retired", "lost"]), text2(5e3)]),
   "equipment.reinstateItem": args([id]),
   "equipment.deleteItem": args([id]),
   "equipment.createManifest": args([
@@ -11164,7 +11340,7 @@ var ACTIONS = {
       status: z2.enum(["assigned", "checked-out"]),
       responsiblePersonId: ref.optional(),
       lines: z2.array(line2).max(500),
-      notes: text(5e3).optional(),
+      notes: text2(5e3).optional(),
       callSheetId: ref.nullable().optional()
     })
   ]),
@@ -11189,7 +11365,7 @@ var ACTIONS = {
         damaged: count(1e5),
         lost: count(1e5),
         conditionIn: condition.optional(),
-        description: text(5e3).optional(),
+        description: text2(5e3).optional(),
         sendToRepair: z2.boolean().optional(),
         photos: z2.array(photo).max(20).optional()
       })
@@ -11242,7 +11418,7 @@ var ACTIONS = {
   "permissions.setPersonGrant": args([id, capability, z2.boolean().nullable()]),
   "permissions.resetPermissions": args([]),
   // Reminders
-  "reminders.logSent": args([id, z2.enum(["email", "calendar", "text"]), short(500), text(2e4), z2.array(short(300)).max(500)]),
+  "reminders.logSent": args([id, z2.enum(["email", "calendar", "text"]), short(500), text2(2e4), z2.array(short(300)).max(500)]),
   // Settings
   "settings.updateSettings": args([
     z2.object({
@@ -11259,11 +11435,11 @@ var ACTIONS = {
   ]),
   // Storage
   "storage.createDrive": args([
-    z2.object({ name: short(), capacityGB: amount(1e8), otherUsedGB: amount(1e8).optional(), notes: text(5e3).optional() })
+    z2.object({ name: short(), capacityGB: amount(1e8), otherUsedGB: amount(1e8).optional(), notes: text2(5e3).optional() })
   ]),
   "storage.updateDrive": args([
     id,
-    z2.object({ name: short(), capacityGB: amount(1e8), otherUsedGB: amount(1e8), notes: text(5e3) }).partial()
+    z2.object({ name: short(), capacityGB: amount(1e8), otherUsedGB: amount(1e8), notes: text2(5e3) }).partial()
   ]),
   "storage.deleteDrive": args([id]),
   "storage.addAllocation": args([
@@ -11272,7 +11448,7 @@ var ACTIONS = {
       contentId: ref.nullable(),
       sizeGB: amount(1e8),
       kind: z2.enum(["raw", "project", "delivered", "other"]),
-      note: text(5e3).optional(),
+      note: text2(5e3).optional(),
       label: short().optional()
     })
   ]),
@@ -11281,7 +11457,7 @@ var ACTIONS = {
     z2.object({
       sizeGB: amount(1e8),
       kind: z2.enum(["raw", "project", "delivered", "other"]),
-      note: text(5e3),
+      note: text2(5e3),
       label: short(),
       driveId: id
     }).partial()
@@ -11301,25 +11477,25 @@ var ACTIONS = {
     })
   ]),
   "workflow.assignProducer": args([id, ref.nullable()]),
-  "workflow.closeProject": args([id, text(2e3)]),
+  "workflow.closeProject": args([id, text2(2e3)]),
   "workflow.setWorkflowDeadline": args([id, short(60), date.nullable()]),
   "workflow.advanceProject": args([id]),
   "workflow.saveFormSection": args([id, short(60), sectionValues]),
-  "workflow.setCriterion": args([id, criterion, z2.object({ met: z2.boolean().nullable(), note: text(2e3) })]),
+  "workflow.setCriterion": args([id, criterion, z2.object({ met: z2.boolean().nullable(), note: text2(2e3) })]),
   "workflow.setReviewWindow": args([id, date.nullable()]),
-  "workflow.decideGreenlight": args([id, z2.object({ outcome, notes: text(5e3), date: date.nullable().optional() })]),
+  "workflow.decideGreenlight": args([id, z2.object({ outcome, notes: text2(5e3), date: date.nullable().optional() })]),
   "workflow.addPlannedEpisode": args([id, z2.object(plannedFields).partial().required({ workingTitle: true })]),
   "workflow.updatePlannedEpisode": args([id, z2.object(plannedFields).partial()]),
-  "workflow.archivePlannedEpisode": args([id, text(2e3)]),
+  "workflow.archivePlannedEpisode": args([id, text2(2e3)]),
   "workflow.setCheckpointReviewers": args([compound, ids(10)]),
-  "workflow.decideCheckpoint": args([compound, z2.object({ status: z2.enum(["Approved", "Changes requested"]), note: text(5e3) })]),
+  "workflow.decideCheckpoint": args([compound, z2.object({ status: z2.enum(["Approved", "Changes requested"]), note: text2(5e3) })]),
   // Pre-production
   "workflow.assignRole": args([id, roleKey, z2.object({ crewId: ref.nullable().optional(), guestName: short(120).nullable().optional() })]),
   "workflow.removeRole": args([compound]),
-  "workflow.setChecklistItem": args([compound, z2.object({ done: z2.boolean().optional(), note: text(2e3).optional() })]),
+  "workflow.setChecklistItem": args([compound, z2.object({ done: z2.boolean().optional(), note: text2(2e3).optional() })]),
   "workflow.createSession": args([id], [z2.object({ scheduledDate: date.nullable().optional(), venue: short().optional() })]),
-  "workflow.updateSession": args([id, z2.object({ scheduledDate: date.nullable(), venue: short(), dailyLog: text() }).partial()]),
-  "workflow.archiveSession": args([id, text(2e3)]),
+  "workflow.updateSession": args([id, z2.object({ scheduledDate: date.nullable(), venue: short(), dailyLog: text2() }).partial()]),
+  "workflow.archiveSession": args([id, text2(2e3)]),
   "workflow.resetRunSheet": args([id], [count(240)]),
   "workflow.addRunSheetItem": args([id, runSheetItem]),
   "workflow.updateRunSheetItem": args([id, id, runSheetItem.partial()]),
@@ -11345,7 +11521,7 @@ var ACTIONS = {
   "workflow.addDistribution": args([id, distribution]),
   "workflow.updateDistribution": args([id, id, distribution]),
   "workflow.removeDistribution": args([id, id]),
-  "workflow.setLearningNotes": args([id, text()]),
+  "workflow.setLearningNotes": args([id, text2()]),
   // Share links. A link with a token is made by POST /api/share-links, never by an action.
   "workflow.copyShareLink": args([id], [short(500)]),
   "workflow.revokeShareLink": args([id]),
@@ -11364,8 +11540,8 @@ var ACTIONS = {
   "documents.addDocumentLink": args([compound, webLink, short(300)]),
   "documents.removeDocumentLink": args([id]),
   "documents.setDocumentReviewers": args([compound, ids(10)]),
-  "documents.decideDocumentReview": args([compound, z2.object({ status: z2.enum(["approved", "changes_requested"]), note: text(5e3) })]),
-  "documents.addReviewComment": args([id, text(5e3)]),
+  "documents.decideDocumentReview": args([compound, z2.object({ status: z2.enum(["approved", "changes_requested"]), note: text2(5e3) })]),
+  "documents.addReviewComment": args([id, text2(5e3)]),
   "documents.resolveReviewComment": args([id], [z2.boolean()]),
   "documents.createStoryboard": args([id, newBoard]),
   "documents.renameStoryboard": args([id, short(500)]),
@@ -11382,7 +11558,10 @@ var ACTIONS = {
   "documents.moveShotRow": args([id, count(1e4)]),
   "documents.duplicateShotRow": args([id]),
   "documents.deleteShotRows": args([ids(500)]),
-  "documents.makeDevotionEpisodes": args([id])
+  "documents.makeDevotionEpisodes": args([id]),
+  "documents.acceptDevotion": args([id, text2(2e3)]),
+  "documents.askForReviewAgain": args([compound]),
+  "documents.setGateOverride": args([id, z2.enum(["idea", "review", "greenlight", "guest", "pages"]), short(300).nullable()])
 };
 
 // server/registry.ts
@@ -12723,8 +12902,8 @@ function cameraPlanRows(db2, p) {
       }
       if (line3.startsWith("|")) {
         const cells = line3.split("|").map((c) => c.trim()).filter(Boolean);
-        const text2 = (cells.length > 1 && /^\d+$/.test(cells[0]) ? cells.slice(1) : cells).join(", ");
-        if (text2) out.push(row("shot", text2));
+        const text3 = (cells.length > 1 && /^\d+$/.test(cells[0]) ? cells.slice(1) : cells).join(", ");
+        if (text3) out.push(row("shot", text3));
         continue;
       }
       const item2 = /^-\s+(\[[ xX]\]\s+)?(.*)$/.exec(line3);
@@ -12739,7 +12918,7 @@ function unaccountedFields(db2, report) {
   for (const form2 of db2.developmentForms) {
     const p = db2.records.find((r) => r.contentId === form2.contentId);
     if (!p?.workflow) continue;
-    const text2 = db2.documentPages.filter((pg) => pg.documentId.startsWith(`${p.contentId}|`)).map((pg) => `${pg.title} ${pg.subtitle} ${pg.bodyHtml}`).join(" ");
+    const text3 = db2.documentPages.filter((pg) => pg.documentId.startsWith(`${p.contentId}|`)).map((pg) => `${pg.title} ${pg.subtitle} ${pg.bodyHtml}`).join(" ");
     const comments = db2.reviewComments.filter((c) => c.documentId.startsWith(`${p.contentId}|`)).map((c) => c.body).join(" ");
     for (const section of DEV_FORMS[form2.formType]) {
       for (const [key2, v] of Object.entries(form2.sections[section.key] ?? {})) {
@@ -12748,7 +12927,7 @@ function unaccountedFields(db2, report) {
         const name = `${section.label}: ${def?.label ?? key2}`;
         if (kept2.has(`${p.contentId}|${name}`) || def?.type === "crew" || def?.type === "date" || def?.type === "yesno") continue;
         const words = escapeHtml(v.trim().split("\n")[0]);
-        if (!text2.includes(words) && !comments.includes(v.trim())) out.push(`${p.contentId}: ${name}`);
+        if (!text3.includes(words) && !comments.includes(v.trim())) out.push(`${p.contentId}: ${name}`);
       }
     }
   }

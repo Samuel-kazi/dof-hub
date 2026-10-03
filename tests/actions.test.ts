@@ -484,6 +484,9 @@ await t("every action accepts the arguments its screen sends", async () => {
   await must("documents.renameShotList", list, "Session 1 shots");
   await must("documents.deleteShotRows", [shot2]);
   await call("documents.makeDevotionEpisodes", wfDoc); // refused (not a devotion), but its arguments are accepted
+  await call("documents.acceptDevotion", wfDoc, "Ready"); // refused (not a devotion), but its arguments are accepted
+  await call("documents.askForReviewAgain", brief); // refused (nobody asked for changes), but its arguments are accepted
+  await call("documents.setGateOverride", wow.project, "idea", "Agreed in the planning meeting"); // its arguments are accepted
 
   const missed = Object.keys(ACTIONS).filter((n) => !covered.has(n));
   assert.deepEqual(missed, [], `Add a call for: ${missed.join(", ")}`);

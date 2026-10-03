@@ -183,12 +183,16 @@ comments, storyboards and shot lists. It keeps a copy first, in `hub_items_befor
   `hub_meta_before_undo_documents`) and removes exactly the documents, pages, reviews, comments and shot lists the
   move wrote. A document or shot list written in since the move is kept and listed; add `--force` to remove it too.
 
-### Trying the document screens (documents rework, phase 2)
+### Trying the document screens (documents rework, phases 2 and 3)
 
-Nothing changes on screen until it is turned on. In Settings, Documents (preview), tick "Devotions show their
-documents" (it needs the "change system settings" right). Every devotion then opens on its Project Home. Each person
-can switch a project back with "Earlier screens" at any time; the data is the same either way. Untick it to turn it
-off for everyone. Series and documentaries follow in the next phase.
+Nothing changes on screen until it is turned on. In Settings, Documents (preview), tick the kinds of project that
+should show their documents: devotions, series, documentaries (it needs the "change system settings" right). Each
+project of that kind then opens on its Project Home. Each person can switch a project back with "Earlier screens" at
+any time; the data is the same either way. Untick a kind to turn it off for everyone.
+
+Turning a kind on also changes how its projects leave Development: the short list of hard gates (phase 3) instead of
+the earlier form's long list. A project already past Development is not affected. Turning the kind off again brings
+the earlier gates back.
 
 ## What this does not do yet
 

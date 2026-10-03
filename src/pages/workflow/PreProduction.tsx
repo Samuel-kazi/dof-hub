@@ -28,7 +28,7 @@ import { DecisionPanel } from "./Development";
 const canManageTeam = (actor: Actor, p: Project) =>
   isHop(actor) || can(actor, "pipeline.assign") || p.workflow.showProducerId === actor.personId;
 
-function RolesPanel({ project, write }: { project: Project; write: boolean }) {
+export function RolesPanel({ project, write }: { project: Project; write: boolean }) {
   const { actor, attempt } = useApp();
   const [guestCrew, setGuestCrew] = useState<string | null>(null);
   const [guestName, setGuestName] = useState("");

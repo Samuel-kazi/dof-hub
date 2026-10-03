@@ -13,6 +13,8 @@ export interface PrintJob {
   contentId: string;
   doc: ProjectDocument;
   pages: DocumentPage[];
+  /** Structured fields printed at the top of a page, by page: the brief's logline and core question. */
+  fields?: Record<string, [string, string][]>;
 }
 
 function PrintedDocument({ job }: { job: PrintJob }) {
@@ -30,6 +32,11 @@ function PrintedDocument({ job }: { job: PrintJob }) {
         <section key={p.id} className="pd-print-page">
           <h1>{p.title}</h1>
           {p.subtitle && <p className="pd-print-sub">{p.subtitle}</p>}
+          {(job.fields?.[p.id] ?? []).map(([label, value]) => (
+            <p key={label} className="pd-print-field">
+              <strong>{label}:</strong> {value || "Not written yet"}
+            </p>
+          ))}
           {/* Cleaned to the editor's allow-list, as on every load. */}
           <div className="pd-prose" dangerouslySetInnerHTML={{ __html: cleanHtml(p.bodyHtml) }} />
         </section>

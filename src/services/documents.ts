@@ -20,6 +20,7 @@ export type { PageInput, PageEdit } from "./documents/pages";
 export {
   setDocumentReviewers,
   decideDocumentReview,
+  askForReviewAgain,
   addReviewComment,
   resolveReviewComment,
   reviewsOf,
@@ -53,7 +54,11 @@ export {
 } from "./documents/boards";
 export type { NewBoard, FrameEdit, RowEdit } from "./documents/boards";
 
-export { makeDevotionEpisodes } from "./documents/devotions";
+export { makeDevotionEpisodes, acceptDevotion } from "./documents/devotions";
+
+export { hardGates, hardGatesPass, setGateOverride, devotionPageReady, DEVOTION_PAGES_NEEDED } from "./documents/gates";
+export type { HardGate, HardGateKey } from "./documents/gates";
+export { softNudges } from "./documents/nudges";
 export type { DevotionList } from "./documents/devotions";
 
 export { pagesOf, getDocument, newDocumentsOn, documentHasContent } from "./documents/common";

@@ -80,6 +80,21 @@ export function decideDocumentReview(actor: Actor, documentId: string, decision:
   return reviewsOf(doc.id);
 }
 
+/**
+ * After changes were requested, the writer asks the reviewers to look again: each request for changes goes back to
+ * pending (its reason stays in the activity log). Approvals stand.
+ */
+export function askForReviewAgain(actor: Actor, documentId: string): DocumentReview[] {
+  const { doc } = documentForWrite(actor, documentId);
+  const sentBack = reviewsOf(doc.id).filter((r) => r.status === "changes_requested");
+  if (!sentBack.length) throw new RuleError("No reviewer has asked for changes.");
+  const at = nowStamp();
+  for (const r of sentBack) Object.assign(r, { status: "pending", decidedAt: null, updatedAt: at });
+  logAudit(actor, "document-review", "record", doc.contentId, `${doc.title}: changes made, review asked for again`);
+  commit();
+  return reviewsOf(doc.id);
+}
+
 export const commentsOf = (documentId: string): ReviewComment[] =>
   getDb()
     .reviewComments.filter((c) => c.documentId === documentId)

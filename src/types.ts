@@ -221,8 +221,18 @@ export interface DevelopmentForm {
   decisionDate: string | null; // YYYY-MM-DD
   reviewWindowDate: string | null; // YYYY-MM-DD: no decision by then moves the project to Hold
   decisions: GreenlightDecision[];
+  // A hard gate of the documents (src/services/documents/gates.ts) passed by hand, with the reason. Absent on forms
+  // made before the documents; none means none.
+  overrides?: GateOverride[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface GateOverride {
+  key: string; // which hard gate
+  note: string; // why it was passed by hand
+  byPersonId: string;
+  at: string;
 }
 
 /** An episode as planned at Development. A real episode is made from it when a session that recorded it closes. */

@@ -106,16 +106,15 @@ await t("what the editor makes survives the cleaner: checklists, colours, highli
 
 // ── The setting ──────────────────────────────────────────────
 
-await t("devotions can be set to show their documents; series and documentaries not yet; only with the settings right", () => {
+await t("each kind of project can be set to show its documents; only with the settings right", () => {
   assert.equal(D.newDocumentsOn("devotion"), false, "off to start");
   S.updateSettings(hop(), { newDocuments: ["devotion", "devotion"] });
   assert.deepEqual(getDb().settings.newDocuments, ["devotion"]);
   assert.equal(D.newDocumentsOn("devotion"), true);
   assert.equal(D.newDocumentsOn("podcast"), false);
-  assert.throws(
-    () => S.updateSettings(hop(), { newDocuments: ["devotion", "series"] }),
-    (e) => e instanceof RuleError && /Only devotions/.test(e.message),
-  );
+  S.updateSettings(hop(), { newDocuments: ["devotion", "series", "documentary"] });
+  assert.equal(D.newDocumentsOn("sermon"), true);
+  assert.equal(D.newDocumentsOn("documentary_pitched"), true);
   assert.throws(() => S.updateSettings(login("crew2@dof.demo", "demo"), { newDocuments: [] }), RuleError);
   S.updateSettings(hop(), { newDocuments: [] });
   assert.equal(D.newDocumentsOn("devotion"), false);
@@ -194,13 +193,13 @@ await t("with it on, a devotion opens on Project Home: five stage rows of tiles,
   ])
     assert.ok(page.includes(`aria-label="${tile}`), tile);
   assert.ok(!page.includes('aria-label="Show Brief') && !page.includes('aria-label="Greenlight'));
-  // A series is not affected yet.
+  // A series is not affected while series are off.
   assert.match(html("hop@dof.demo", <RecordPage id={WOW} />), /aria-label="Stages of this project"/);
 });
 
 await t("a tile shows a dot once its document has content, worked out from the pages", () => {
   devotionsOn();
-  const home = () => html("hop@dof.demo", <ProjectHome project={project(DEV)} onOpen={() => {}} />);
+  const home = () => html("hop@dof.demo", <ProjectHome project={project(DEV)} write onOpen={() => {}} />);
   assert.ok(!home().includes("has content"));
   const script = D.ensureDocument(hop(), DEV, "Development", "devotional_script");
   const first = D.pagesOf(script.id)[0];

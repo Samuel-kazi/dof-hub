@@ -7,6 +7,39 @@ What changed in each version, newest first. How to deploy is in GO-LIVE.md.
 Being built in phases. The five stages, their names and order, the stage tracker, Content IDs and every form that
 drives the calendar, reminders, call sheets, gear, storage or overdue stay as they are.
 
+**Phase 3: series and documentaries, the review, the greenlight and the short gates** (behind the same setting)
+- Settings, Documents (preview), now has a switch for each kind: devotions, series and documentaries. A series or
+  documentary then opens on its Project Home, with its own documents (Show Brief or Documentary Brief, Theological
+  Review, Greenlight, Planned Episodes or Parts, and the later stages' documents and forms).
+- The short gates out of Development, for a kind whose documents are on, replacing the long "Still needed" list:
+  - Series and documentary: the logline and core question written (two fields at the top of The idea); the
+    theological review of the brief approved; the greenlight decision recorded as Greenlight and a show producer named.
+  - Devotion: the guest's name and contact; at least five devotion pages each with a title, scripture and script; the
+    theological review of the script approved.
+  - A project reviewed on the earlier screens keeps that review when its kind is turned on: both earlier checkpoints
+    approved count, until reviewers are named on the document.
+  - Everything else is a note that never blocks, and each can be dismissed (remembered in the person's browser).
+  - The Head of Production, or someone given "Create projects", can pass a gate by hand with a short note, kept with
+    the project and in the activity log, and can take it back. The greenlight decision itself is recorded, never
+    passed by hand.
+  - "Done: move to Pre-production" stays, enabled when the gates pass. A greenlight needs only the first two.
+- Theological Review: the brief or script read-only, page by page, with a comment box beside each page. The show
+  producer or the Head of Production names the reviewers; each named reviewer approves the whole document or requests
+  changes with a reason; the Head of Production can decide for everyone. The reason shows on the document for its
+  writers, who resolve comments and "Ask for review again". The review is kept as it was once the project leaves
+  Development; comments can still be added.
+- Greenlight: the six-criteria page, with the recorded decision, its date and notes and the show producer above it,
+  as structured fields, and the gate below.
+- Devotions: Accept or Decline. Accept records the decision, moves the devotion to Pre-production and lists its
+  devotions from the script, each with its Content ID and its page, in one change. Decline needs a reason and closes
+  and archives the devotion, never deleting it.
+- Project Home shows the header strip (Project details: entry, a devotion's guest, a sermon's delivery) and, while in
+  Development, the gate with its button.
+- Testimonial and sermon briefs gain the logline and core question, optional on the earlier form so its gate is as it
+  was.
+- Form tiles open their screens as before: Planned Episodes, Consent and Release, Roles, Sessions, Call Sheet, Gear,
+  Session Log, Storage, Episode Tracker, Platform Status and Archive.
+
 **Phase 2: the document screens and the editor** (devotions first, behind a setting that starts off)
 - Settings, Documents (preview): "Devotions show their documents". Off until someone with the system settings right
   turns it on. Series and documentaries cannot be turned on yet. Everyone can still switch a project back with

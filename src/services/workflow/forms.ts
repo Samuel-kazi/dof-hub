@@ -17,6 +17,8 @@ import {
   requireProject,
   type Project,
 } from "./common";
+import { newDocumentsOn } from "../documents/common";
+import { hardGatesMissing } from "../documents/gates";
 
 // The development form: its sections, checked against src/config/devForms.ts every time they are saved, the six
 // greenlight criteria, the review window and the greenlight decision.
@@ -190,6 +192,8 @@ export const latestDecision = (form: DevelopmentForm, stage: 1 | 2): GreenlightD
 
 /** What stops "Greenlight" being chosen now, as sentences. */
 export function greenlightBlockers(project: Project, stage: 1 | 2): string[] {
+  // With the documents in use, the first greenlight needs only the hard gates before the decision (src/services/documents/gates.ts).
+  if (stage === 1 && newDocumentsOn(project.workflow.formType)) return hardGatesMissing(project.contentId, ["greenlight"]);
   const out: string[] = [];
   for (const key of ["pitch", "outline_script"] as const) {
     const c = checkpoint(project.contentId, key);

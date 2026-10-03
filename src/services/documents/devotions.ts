@@ -1,12 +1,15 @@
-import type { Actor, PlannedEpisode } from "../../types";
+import type { Actor, DocumentPage, PlannedEpisode } from "../../types";
 import { RuleError } from "../../types";
 import { commit, getDb } from "../../data/store";
 import { logAudit } from "../audit";
 import { textOf } from "../html";
 import { nextEpisode, nextPlanned } from "../workflow/ids";
 import { formOf } from "../workflow/common";
+import { decideGreenlight } from "../workflow/forms";
+import { advanceProject } from "../workflow/projects";
+import { todayIso } from "../utils";
 import { documentOf } from "./pages";
-import { nowStamp, pagesOf, projectForWrite } from "./common";
+import { newDocumentsOn, nowStamp, pagesOf, projectForWrite } from "./common";
 
 // A devotion's writers type every devotion they will record as a page of its Devotional Script, in Development: a
 // title, the scripture, and the script. In Pre-production those pages become the list of separate episodes, by
@@ -19,19 +22,18 @@ export interface DevotionList {
   episodes: { plannedId: string; contentId: string; title: string }[];
 }
 
+// A page counts once something is written on it (its script, its scripture or a title of its own), or once the move
+// from the earlier form wrote it. The starting pages ("Devotion 3", empty) do not.
+const countsAsDevotion = (pg: DocumentPage): boolean =>
+  textOf(pg.bodyHtml) !== "" || pg.subtitle.trim() !== "" || pg.version > 1 || pg.updatedBy === "migration";
+
 /** Makes, or brings up to date, the list of a devotion's episodes from its script. Running it again only adds pages written since. */
 export function makeDevotionEpisodes(actor: Actor, projectId: string): DevotionList {
   const p = projectForWrite(actor, projectId);
   if (p.workflow.formType !== "devotion") throw new RuleError("Only a devotion makes its episodes from its script.");
   if (p.workflow.stage !== "Pre-production") throw new RuleError("The episodes are listed in Pre-production, once the script is accepted.");
   const script = documentOf(projectId, "Development", "devotional_script");
-  // A page counts once something is written on it (its script, its scripture or a title of its own), or once the move
-  // from the earlier form wrote it. The starting pages ("Devotion 3", empty) do not.
-  const pages = script
-    ? pagesOf(script.id).filter(
-        (pg) => textOf(pg.bodyHtml) !== "" || pg.subtitle.trim() !== "" || pg.version > 1 || pg.updatedBy === "migration",
-      )
-    : [];
+  const pages = script ? pagesOf(script.id).filter(countsAsDevotion) : [];
   if (!pages.length) throw new RuleError("The Devotional Script has no devotions written yet.");
   const db = getDb();
   const theme = String(formOf(projectId).sections.entry?.theme ?? "");
@@ -104,4 +106,22 @@ export function makeDevotionEpisodes(actor: Actor, projectId: string): DevotionL
     commit();
   }
   return out;
+}
+
+/**
+ * Accepts a devotion, once its hard gates are met or passed by hand (./gates.ts): the decision is recorded, the devotion
+ * moves to Pre-production, and its devotions are listed from the script, each with its Content ID. One change: all of
+ * it, or none. Declining is the greenlight decision "Decline", which closes and archives it with the reason.
+ */
+export function acceptDevotion(actor: Actor, projectId: string, note: string): DevotionList {
+  const p = projectForWrite(actor, projectId);
+  if (p.workflow.formType !== "devotion") throw new RuleError("Only a devotion is accepted this way.");
+  if (!newDocumentsOn("devotion"))
+    throw new RuleError("Devotions are accepted from their Development form while their documents are not in use.");
+  decideGreenlight(actor, projectId, { outcome: "Greenlight", notes: note, date: todayIso() });
+  advanceProject(actor, projectId);
+  logAudit(actor, "devotion-accepted", "record", projectId, note.trim() ? `Accepted. ${note.trim()}` : "Accepted");
+  const script = documentOf(projectId, "Development", "devotional_script");
+  const written = script ? pagesOf(script.id).filter(countsAsDevotion) : [];
+  return written.length ? makeDevotionEpisodes(actor, projectId) : { made: [], updated: [], episodes: [] };
 }
