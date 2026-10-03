@@ -19,6 +19,9 @@ import * as W from "../src/services/wrapped/workflow";
 import { AppProvider } from "../src/ui/AppContext";
 import { ProjectHome } from "../src/pages/documents/ProjectDocuments";
 import { PageComments, ReviewBanner, ReviewPanes } from "../src/pages/documents/ReviewView";
+import { PageEditor } from "../src/pages/documents/PageEditor";
+import { FormPane } from "../src/pages/documents/FormPanes";
+import { catalogEntry } from "../src/config/documentCatalog";
 import type { Project } from "../src/services/workflow";
 
 let passed = 0;
@@ -332,6 +335,41 @@ await t("a devotion's Project Home offers Accept and Decline, enabled for the He
   commit();
   assert.match(home(), /<button class="btn primary">Accept<\/button>/);
   assert.match(home(), /3 of 3 ready/);
+});
+
+await t("a devotion's pages are its topics, under one theme every devotion shares; the Devotions list shows both", () => {
+  on("devotion");
+  W.saveFormSection(hop(), DEV, "guest", { contact: "mary@example.org" });
+  const script = writeFive();
+  approveBrief(DEV, "devotional_script");
+  D.acceptDevotion(hop(), DEV, "");
+  const page = D.pagesOf(script.id)[0];
+  assert.match(
+    html("hop@dof.demo", <PageEditor doc={script} page={page} write subtitleLabel="Scripture" titleLabel="Topic" />),
+    /aria-label="Topic"/,
+  );
+  const list = html(
+    "hop@dof.demo",
+    <FormPane project={project(DEV)} entry={catalogEntry("devotion", "Pre-production", "devotion_episodes")!} write />,
+  );
+  assert.match(list, /<th>Topic<\/th>/);
+  assert.match(list, /<th>Shared theme<\/th>/);
+  const rows = getDb().plannedEpisodes.filter((p) => p.contentId === DEV && p.sourcePageId);
+  assert.deepEqual([...new Set(rows.map((p) => p.question))], ["Grace in the ordinary"], "every devotion carries the one theme");
+  assert.equal(new Set(rows.map((p) => p.workingTitle)).size, rows.length, "each with its own topic");
+  W.saveFormSection(hop(), DEV, "entry", { theme: "Light for the way" });
+  D.makeDevotionEpisodes(hop(), DEV);
+  assert.deepEqual(
+    [
+      ...new Set(
+        getDb()
+          .plannedEpisodes.filter((p) => p.contentId === DEV && p.sourcePageId)
+          .map((p) => p.question),
+      ),
+    ],
+    ["Light for the way"],
+    "a new theme reaches every devotion when the list is brought up to date",
+  );
 });
 
 console.log(`\n${passed} passed`);

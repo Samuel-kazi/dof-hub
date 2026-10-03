@@ -26,8 +26,8 @@ function DevotionEpisodes({ project, write }: { project: Project; write: boolean
     <section className="glass panel" aria-label="Devotions">
       <h2>Devotions</h2>
       <p className="muted">
-        Each page of the Devotional Script becomes one devotion here, by its title and the project's theme, with its own Content ID. The ID
-        never changes: the episode is made under it when its recording session closes.
+        Each page of the Devotional Script becomes one devotion here, with its own topic (the page's title) under the theme every devotion
+        shares, and its own Content ID. The ID never changes: the episode is made under it when its recording session closes.
       </p>
       {planned.length === 0 ? (
         <Empty>{pre ? "No devotions listed yet." : "The devotions are listed here once the devotion is accepted."}</Empty>
@@ -37,9 +37,9 @@ function DevotionEpisodes({ project, write }: { project: Project; write: boolean
             <thead>
               <tr>
                 <th>Content ID</th>
-                <th>Devotion</th>
+                <th>Topic</th>
                 <th>Scripture</th>
-                <th>Theme</th>
+                <th>Shared theme</th>
                 <th>Script</th>
               </tr>
             </thead>

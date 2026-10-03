@@ -2,7 +2,7 @@ import { useRef, useState, type ReactNode } from "react";
 import type { DocumentPage, ProjectDocument, WorkflowStage } from "../../types";
 import { catalogEntry, catalogFor, type CatalogEntry } from "../../config/documentCatalog";
 import { WORKFLOW_STAGE_NAMES } from "../../config/workflow";
-import { useDb } from "../../data/store";
+import { getDb, useDb } from "../../data/store";
 import { textOf } from "../../services/html";
 import {
   addPage,
@@ -86,6 +86,24 @@ function hasContent(project: Project, stage: WorkflowStage, entry: CatalogEntry)
 
 /** The subtitle under a page's title: a devotion's scripture, or a note. */
 const subtitleLabelOf = (docKey: string) => (docKey === "devotional_script" ? "Scripture" : "Subtitle or note");
+/** A page's title: each devotion's own topic, under the theme every devotion shares. */
+const titleLabelOf = (docKey: string) => (docKey === "devotional_script" ? "Topic" : "Page title");
+
+/** The theme every devotion shares, set once for the devotion in its Project details. */
+function SharedTheme({ project }: { project: Project }) {
+  const theme = String(getDb().developmentForms.find((f) => f.contentId === project.contentId)?.sections.entry?.theme ?? "").trim();
+  return (
+    <p className="pd-theme">
+      {theme ? (
+        <>
+          Theme, shared by every devotion: <b>{theme}</b>. Each page is one devotion, with its own topic.
+        </>
+      ) : (
+        "No theme yet: set the theme every devotion shares in Project details. Each page is one devotion, with its own topic."
+      )}
+    </p>
+  );
+}
 
 // ── Project Home ─────────────────────────────────────────────
 
@@ -406,6 +424,7 @@ function DocumentView({
                   Print document
                 </button>
               </div>
+              {doc.docKey === "devotional_script" && <SharedTheme project={project} />}
               {reviewEntry && <ReviewBanner doc={doc} write={write} />}
               {opened.key === "greenlight" && <GreenlightPanel project={project} write={write} />}
               {page && fieldsPage?.fields && page.id === fieldsTarget?.id && (
@@ -419,7 +438,15 @@ function DocumentView({
               )}
               {page ? (
                 <div className={showComments ? "pd-with-comments" : undefined}>
-                  <PageEditor key={page.id} ref={editor} doc={doc} page={page} write={write} subtitleLabel={subtitleLabelOf(doc.docKey)} />
+                  <PageEditor
+                    key={page.id}
+                    ref={editor}
+                    doc={doc}
+                    page={page}
+                    write={write}
+                    subtitleLabel={subtitleLabelOf(doc.docKey)}
+                    titleLabel={titleLabelOf(doc.docKey)}
+                  />
                   {showComments && <PageComments project={project} doc={doc} page={page} />}
                 </div>
               ) : (

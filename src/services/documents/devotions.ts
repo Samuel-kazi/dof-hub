@@ -11,10 +11,11 @@ import { todayIso } from "../utils";
 import { documentOf } from "./pages";
 import { newDocumentsOn, nowStamp, pagesOf, projectForWrite } from "./common";
 
-// A devotion's writers type every devotion they will record as a page of its Devotional Script, in Development: a
-// title, the scripture, and the script. In Pre-production those pages become the list of separate episodes, by
-// title and theme, and each is given its Content ID there and then ({projectId}-E01, -E02, …). The episode itself is
-// made under that same ID when the session that records it closes, so the ID never changes.
+// A devotion's writers type every devotion they will record as a page of its Devotional Script, in Development: its
+// topic (the page's title), the scripture, and the script. In Pre-production those pages become the list of separate
+// episodes, each by its own topic under the theme every devotion shares, and each is given its Content ID there and
+// then ({projectId}-E01, -E02, …). The episode itself is made under that same ID when the session that records it
+// closes, so the ID never changes.
 
 export interface DevotionList {
   made: string[]; // planned episodes made from new pages
@@ -36,7 +37,8 @@ export function makeDevotionEpisodes(actor: Actor, projectId: string): DevotionL
   const pages = script ? pagesOf(script.id).filter(countsAsDevotion) : [];
   if (!pages.length) throw new RuleError("The Devotional Script has no devotions written yet.");
   const db = getDb();
-  const theme = String(formOf(projectId).sections.entry?.theme ?? "");
+  // One theme for every devotion, set once in the devotion's entry; each devotion has its own topic (its page's title).
+  const theme = String(formOf(projectId).sections.entry?.theme ?? "").trim();
   const out: DevotionList = { made: [], updated: [], episodes: [] };
   const at = nowStamp();
   let reserved = 0;
@@ -56,10 +58,12 @@ export function makeDevotionEpisodes(actor: Actor, projectId: string): DevotionL
         day.details.scripture && day.details.scripture !== scripture
           ? `Scripture on the earlier form: ${String(day.details.scripture)}`
           : "",
+        theme && day.question.trim() && day.question !== theme ? `Question on the earlier form: ${day.question}` : "",
       ].filter(Boolean);
       Object.assign(day, {
         sourcePageId: page.id,
         workingTitle: title,
+        question: theme || day.question,
         details: { ...day.details, scripture },
         notes: [day.notes, ...replaced].filter(Boolean).join("\n"),
         updatedAt: at,
@@ -87,9 +91,10 @@ export function makeDevotionEpisodes(actor: Actor, projectId: string): DevotionL
       db.plannedEpisodes.push(made);
       planned = made;
       out.made.push(id);
-    } else if (planned.workingTitle !== title || planned.details.scripture !== page.subtitle) {
+    } else if (planned.workingTitle !== title || planned.details.scripture !== page.subtitle || (theme && planned.question !== theme)) {
       planned.workingTitle = title;
       planned.details = { ...planned.details, scripture: page.subtitle };
+      if (theme) planned.question = theme; // the shared theme, if it has changed since
       planned.updatedAt = at;
       out.updated.push(planned.id);
     }

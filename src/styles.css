@@ -3528,3 +3528,10 @@ button.link:hover {
 .pd-print-field {
   margin: 0 0 6pt;
 }
+.pd-theme {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  font-size: 0.9rem;
+}

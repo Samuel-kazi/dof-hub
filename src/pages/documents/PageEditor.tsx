@@ -78,9 +78,14 @@ interface Props {
   page: DocumentPage;
   write: boolean;
   subtitleLabel: string;
+  /** What the page's title is: "Page title", or a devotion's "Topic". */
+  titleLabel?: string;
 }
 
-export const PageEditor = forwardRef<PageEditorHandle, Props>(function PageEditor({ doc, page, write, subtitleLabel }, ref) {
+export const PageEditor = forwardRef<PageEditorHandle, Props>(function PageEditor(
+  { doc, page, write, subtitleLabel, titleLabel = "Page title" },
+  ref,
+) {
   const { actor, setLeaveGuard, toast } = useApp();
   // Cleaned again on the way in, whatever is stored.
   const initialHtml = useMemo(() => cleanHtml(page.bodyHtml), [page.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -300,11 +305,11 @@ export const PageEditor = forwardRef<PageEditorHandle, Props>(function PageEdito
       <div className="pd-page-head">
         <input
           className="pd-title"
-          aria-label="Page title"
+          aria-label={titleLabel}
           value={title}
           readOnly={!write}
           maxLength={MAX_LINE}
-          placeholder="Page title"
+          placeholder={titleLabel}
           onChange={(e) => {
             setTitle(e.target.value);
             typed();

@@ -37,6 +37,9 @@ drives the calendar, reminders, call sheets, gear, storage or overdue stay as th
   Development, the gate with its button.
 - Testimonial and sermon briefs gain the logline and core question, optional on the earlier form so its gate is as it
   was.
+- Devotions share one theme, set once in Project details; each devotion has its own topic, the title of its page
+  (labelled Topic). The Devotional Script shows the shared theme, and the Devotions list shows each topic beside it.
+  A change of theme reaches every devotion when the list is brought up to date.
 - Form tiles open their screens as before: Planned Episodes, Consent and Release, Roles, Sessions, Call Sheet, Gear,
   Session Log, Storage, Episode Tracker, Platform Status and Archive.
 

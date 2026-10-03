@@ -16,7 +16,7 @@ import { reviewsOf, reviewStateOf } from "./reviews";
 //                            2. the theological review of the brief approved
 //                            3. the greenlight decision recorded as Greenlight, and a show producer named
 //   Devotion                 1. the guest's name and contact filled in
-//                            2. at least five devotion pages, each with a title, its scripture and the script
+//                            2. at least five devotion pages, each with its topic (the title), scripture and script
 //                            3. the theological review of the script approved
 //
 // The Head of Production, or someone given "Create projects", can pass a gate by hand with a short note: kept with the
@@ -95,7 +95,7 @@ export function hardGates(projectId: string): HardGate[] {
       }),
       withOverride({
         key: "pages",
-        label: `At least ${DEVOTION_PAGES_NEEDED} devotion pages, each with a title, its scripture and the script`,
+        label: `At least ${DEVOTION_PAGES_NEEDED} devotion pages, each with its topic, scripture and script`,
         met: ready >= DEVOTION_PAGES_NEEDED,
         detail: `${ready} of ${DEVOTION_PAGES_NEEDED} ready`,
         overridable: true,
