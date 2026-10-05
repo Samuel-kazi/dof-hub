@@ -490,6 +490,20 @@ await t("every action accepts the arguments its screen sends", async () => {
   await call("documents.askForReviewAgain", brief); // refused (nobody asked for changes), but its arguments are accepted
   await call("documents.setGateOverride", wow.project, "idea", "Agreed in the planning meeting"); // its arguments are accepted
 
+  // The Recording Plan (a devotion's, built on any project's roles and sessions) and where its footage is kept.
+  await call("workflow.startPlanRoles", wow.project); // refused (the season has left Pre-production), but its arguments are accepted
+  await call("workflow.addPlanRole", wow.project, "Lighting");
+  await call("workflow.renamePlanRole", `${wow.project}|director`, "Director");
+  await call("workflow.setRolePerson", `${wow.project}|director`, "DOF-P-CRW-001");
+  await call("workflow.assignDevotion", `${wow.project}-P10`, null);
+  await must("workflow.setSessionBoards", wow.session2, { storyboardId: board, shotListId: list });
+  const footageDrive = (await must("storage.createDrive", { name: "Footage", capacityGB: 4000, otherUsedGB: 0, notes: "" })).id;
+  await must("workflow.setProjectDrive", wow.project, footageDrive);
+  await must("workflow.setSessionDrive", wow.session2, null);
+  await must("workflow.setSessionFootage", wow.session2, 120.5);
+  await must("workflow.setEpisodeAssets", e01, { sizeGB: 40 });
+  await must("workflow.setEpisodeAssets", e01, { driveId: footageDrive, sizeGB: 45 });
+
   const missed = Object.keys(ACTIONS).filter((n) => !covered.has(n));
   assert.deepEqual(missed, [], `Add a call for: ${missed.join(", ")}`);
 });

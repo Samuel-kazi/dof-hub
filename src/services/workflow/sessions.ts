@@ -1,12 +1,12 @@
-import type { Actor, CallSheet, LogStatus, RecordingSession, RunItem, SessionLogEntry } from "../../types";
+import type { Actor, CallSheet, LogStatus, RecordingSession, RunItem, SessionLabel, SessionLogEntry } from "../../types";
 import { RuleError } from "../../types";
 import { commit, getDb } from "../../data/store";
 import { localId } from "../../data/ids";
 import { categoryOf } from "../../config/categories";
-import { formTypeOf } from "../../config/workflow";
+import { SESSION_LABELS, formTypeOf } from "../../config/workflow";
 import { createCallSheet } from "../callsheets";
 import { displayTitle } from "../content";
-import { rootOf } from "../access";
+import { getRecord, rootOf } from "../access";
 import { getPerson } from "../people";
 import { logAudit } from "../audit";
 import { isIsoDate, pickKeys, todayIso } from "../utils";
@@ -16,6 +16,7 @@ import {
   episodesOf,
   isDocumentary,
   nowStamp,
+  plannedTitle,
   projectForWrite,
   rowsOf,
   sessionForWrite,
@@ -43,8 +44,12 @@ const hhmm = (min: number): string => `${String(Math.floor(min / 60)).padStart(2
  * each episode with a changeover after it (a longer spot check after the first, lunch after the third when
  * there are four or more), and wrap. For five 58-minute episodes it is the brief's timeline exactly.
  */
-export function runSheetTemplate(episodes: number, minutes = 58): Omit<RunItem, "id">[] {
-  if (!Number.isInteger(episodes) || episodes < 1 || episodes > 12) throw new RuleError("A recording day can hold from 1 to 12 episodes.");
+export function runSheetTemplate(episodes: number | string[], minutes = 58): Omit<RunItem, "id">[] {
+  // Given titles (a devotion's recording plan), each recording row is "Record: <title>", and there may be none yet.
+  const titles = typeof episodes === "number" ? null : episodes;
+  const count = titles ? titles.length : (episodes as number);
+  if (titles ? count > 12 : !Number.isInteger(count) || count < 1 || count > 12)
+    throw new RuleError(titles ? "A recording day can hold up to 12 episodes." : "A recording day can hold from 1 to 12 episodes.");
   if (!Number.isInteger(minutes) || minutes < 5 || minutes > 240) throw new RuleError("An episode's length must be from 5 to 240 minutes.");
   const out: Omit<RunItem, "id">[] = [];
   let t = 7 * 60;
@@ -56,11 +61,11 @@ export function runSheetTemplate(episodes: number, minutes = 58): Omit<RunItem, 
   add("Setup", 90, "Cameras, lighting, audio, set dressing; take a reference photo of the set");
   add("Technical check", 30, "Mic levels, camera sync, color match, storage and battery, short mock recording");
   add("Talent arrival, mic-up, start routine", 10, "Quiet room, phones off");
-  for (let i = 1; i <= episodes; i++) {
-    add(`Episode ${i}`, minutes, i === 1 ? "Slate with the episode ID" : "");
-    if (i === episodes) break;
+  for (let i = 1; i <= count; i++) {
+    add(titles ? `Record: ${titles[i - 1]}` : `Episode ${i}`, minutes, i === 1 ? "Slate with the episode ID" : "");
+    if (i === count) break;
     if (i === 1) add("Spot check and changeover", 22, "Review Ep 1 for audio, focus and sync; reset set, water; brief the next guest");
-    else if (i === 3 && episodes >= 4) add("Lunch", 44, "Media offload can run while everyone eats");
+    else if (i === 3 && count >= 4) add("Lunch", 44, "Media offload can run while everyone eats");
     else add("Changeover", 20, i % 2 === 0 ? "Log timestamps for any pickups" : "Check battery and card capacity");
   }
   add("Wrap", 59, "See wrap checklist");
@@ -86,11 +91,53 @@ export interface SessionInput {
   scheduledDate?: string | null;
   venue?: string;
   dailyLog?: string;
+  name?: string;
+  label?: SessionLabel | null;
+  startTime?: string | null;
+  endTime?: string | null;
 }
 
 const checkDate = (d: string | null | undefined): void => {
   if (d !== null && d !== undefined && d !== "" && !isIsoDate(d)) throw new RuleError("Pick the session's date.");
 };
+
+const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+function checkPlanFields(input: SessionInput): void {
+  if (input.name !== undefined && input.name.trim().length > 120) throw new RuleError("Keep the session's name under 120 characters.");
+  if (input.label !== undefined && input.label !== null && !SESSION_LABELS.includes(input.label))
+    throw new RuleError("Choose Morning, Afternoon, Evening, Late night or Full day.");
+  for (const t of [input.startTime, input.endTime])
+    if (t !== undefined && t !== null && t !== "" && !TIME.test(t))
+      throw new RuleError("Enter the time as hours and minutes, for example 09:30.");
+}
+
+const isDevotion = (projectId: string): boolean => getRecord(projectId)?.workflow?.formType === "devotion";
+
+/** The devotions (or episodes) on a session, in the order of the plan, by their titles as they stand. */
+export function recordTitles(sessionId: string): string[] {
+  const db = getDb();
+  return rowsOf(sessionId)
+    .map((r) => db.plannedEpisodes.find((p) => p.id === r.plannedEpisodeId))
+    .filter((p): p is NonNullable<typeof p> => !!p)
+    .sort((a, b) => a.episodeNumber - b.episodeNumber)
+    .map(plannedTitle);
+}
+
+/**
+ * A devotion's session has its call sheet as soon as it has a date: made from the session as before, and kept on the
+ * session's date while it is a draft. A final sheet is left as it was issued (the session's gate shows a mismatch).
+ */
+function keepCallSheet(actor: Actor, session: RecordingSession): void {
+  if (!isDevotion(session.contentId) || !session.scheduledDate || session.archivedAt || session.status === "Closed") return;
+  const sheet = session.callSheetId ? getDb().callSheets.find((c) => c.id === session.callSheetId) : undefined;
+  if (!sheet) createSessionCallSheet(actor, session.id);
+  else if (sheet.status === "draft" && sheet.date !== session.scheduledDate) {
+    sheet.date = session.scheduledDate;
+    sheet.version += 1;
+    logAudit(actor, "update", "callsheet", sheet.id, `date ${session.scheduledDate}, with its session`);
+  }
+}
 
 /** Schedules a recording session. Sessions are planned at Pre-production, once the project is greenlit and handed off. */
 export function createSession(actor: Actor, projectId: string, input: SessionInput = {}): RecordingSession {
@@ -98,6 +145,7 @@ export function createSession(actor: Actor, projectId: string, input: SessionInp
   if (p.workflow.stage !== "Pre-production")
     throw new RuleError("Sessions are scheduled at Pre-production, once the project is greenlit and handed off.");
   checkDate(input.scheduledDate);
+  checkPlanFields(input);
   const { id, n } = nextSession(projectId);
   const at = nowStamp();
   const s: RecordingSession = {
@@ -109,34 +157,49 @@ export function createSession(actor: Actor, projectId: string, input: SessionInp
     status: "Planned",
     closedAt: null,
     callSheetId: null,
-    runSheet: withIds(runSheetTemplate(5, plannedMinutes(projectId))),
+    // A devotion's sessions start with no devotions on them: the run sheet gains a recording row for each one ticked.
+    runSheet: withIds(runSheetTemplate(isDevotion(projectId) ? [] : 5, plannedMinutes(projectId))),
     dailyLog: "",
     createdAt: at,
     updatedAt: at,
     archivedAt: null,
     archivedReason: null,
+    name: (input.name ?? "").trim(),
+    label: input.label ?? null,
+    startTime: input.startTime || null,
+    endTime: input.endTime || null,
+    storyboardId: null,
+    shotListId: null,
+    storageDriveId: null,
   };
   getDb().recordingSessions.push(s);
   ensureChecklist("preSession", "session", id);
   logAudit(actor, "create", "session", id, s.scheduledDate ?? "no date yet");
+  keepCallSheet(actor, s);
   commit();
   return s;
 }
 
-export const SESSION_EDITABLE = ["scheduledDate", "venue", "dailyLog"] as const;
+export const SESSION_EDITABLE = ["scheduledDate", "venue", "dailyLog", "name", "label", "startTime", "endTime"] as const;
 
 export function updateSession(actor: Actor, sessionId: string, input: SessionInput): RecordingSession {
   const { session } = sessionForWrite(actor, sessionId);
   if (session.status === "Closed") throw new RuleError("This session is closed. Reopen it to change it.");
   const patch = pickKeys(input, SESSION_EDITABLE);
   checkDate(patch.scheduledDate);
+  checkPlanFields(patch);
   if (patch.venue !== undefined && patch.venue.length > 300) throw new RuleError("Keep the venue under 300 characters.");
   if (patch.dailyLog !== undefined && patch.dailyLog.length > 20_000) throw new RuleError("Keep the daily log under 20,000 characters.");
   if (patch.scheduledDate !== undefined) session.scheduledDate = patch.scheduledDate || null;
   if (patch.venue !== undefined) session.venue = patch.venue.trim();
   if (patch.dailyLog !== undefined) session.dailyLog = patch.dailyLog.trim();
+  if (patch.name !== undefined) session.name = patch.name.trim();
+  if (patch.label !== undefined) session.label = patch.label || null;
+  if (patch.startTime !== undefined) session.startTime = patch.startTime || null;
+  if (patch.endTime !== undefined) session.endTime = patch.endTime || null;
   session.updatedAt = nowStamp();
   logAudit(actor, "update", "session", sessionId, Object.keys(patch).join(", "));
+  keepCallSheet(actor, session);
   commit();
   return session;
 }
@@ -184,12 +247,44 @@ const editableRunSheet = (actor: Actor, sessionId: string): RecordingSession => 
 /** Starts the run sheet again from the template, for as many episodes as the log plans (five if none yet). */
 export function resetRunSheet(actor: Actor, sessionId: string, minutes?: number): RecordingSession {
   const session = editableRunSheet(actor, sessionId);
+  const length = minutes ?? plannedMinutes(session.contentId);
+  // A devotion's: one recording row for each devotion on the session, by its title. Others: the planned count, or five.
+  const titles = isDevotion(session.contentId) ? recordTitles(sessionId) : null;
   const planned = rowsOf(sessionId).filter((r) => r.plannedEpisodeId).length;
-  session.runSheet = withIds(runSheetTemplate(planned || 5, minutes ?? plannedMinutes(session.contentId)));
+  session.runSheet = withIds(runSheetTemplate(titles ?? (planned || 5), length));
   session.updatedAt = nowStamp();
-  logAudit(actor, "run-sheet-reset", "session", sessionId, `${planned || 5} episodes`);
+  logAudit(actor, "run-sheet-reset", "session", sessionId, titles ? `${titles.length} devotions` : `${planned || 5} episodes`);
   commit();
   return session;
+}
+
+/** Whether a session's run sheet is still the template's for these titles: nothing on it changed by hand. */
+function isTemplate(session: RecordingSession, titles: string[]): boolean {
+  let tpl: Omit<RunItem, "id">[];
+  try {
+    tpl = runSheetTemplate(titles, plannedMinutes(session.contentId));
+  } catch {
+    return false;
+  }
+  const strip = (i: Omit<RunItem, "id">) => [i.time, i.title, i.durationMin, i.ownerPersonId ?? null, i.notes];
+  return JSON.stringify(session.runSheet.map(strip)) === JSON.stringify(tpl.map(strip));
+}
+
+/**
+ * A devotion's run sheet follows the devotions ticked on its session while no one has changed it by hand: rebuilt with
+ * a recording row for each. Once changed, it is left as it is, and "Rebuild from episodes" brings it up to date.
+ */
+export function followRunSheet(sessionId: string, before: string[]): void {
+  const session = getDb().recordingSessions.find((s) => s.id === sessionId);
+  if (!session || session.status === "Closed" || !isDevotion(session.contentId)) return;
+  const after = recordTitles(sessionId);
+  if (after.join("\n") === before.join("\n") || !isTemplate(session, before)) return;
+  try {
+    session.runSheet = withIds(runSheetTemplate(after, plannedMinutes(session.contentId)));
+    session.updatedAt = nowStamp();
+  } catch {
+    // More devotions than a day holds: the run sheet is left for the producer to split.
+  }
 }
 
 export function addRunSheetItem(actor: Actor, sessionId: string, input: RunSheetItemInput): RunItem {
@@ -260,15 +355,20 @@ export function createSessionCallSheet(actor: Actor, sessionId: string): CallShe
       ),
     ),
   ];
-  const lines = rowsOf(sessionId).map((r) => {
-    const planned = db.plannedEpisodes.find((p) => p.id === r.plannedEpisodeId);
-    const what = planned ? `${planned.id} ${planned.workingTitle}` : r.itemLabel;
-    return `- ${what}${r.guest ? ` (guest: ${r.guest})` : ""}`;
-  });
+  // A devotion's call sheet lists its devotions live from the session (the Recording Plan), so they are not copied
+  // into its notes, where they would go out of date when one moves to another session.
+  const devotion = isDevotion(project.contentId);
+  const lines = devotion
+    ? []
+    : rowsOf(sessionId).map((r) => {
+        const planned = db.plannedEpisodes.find((p) => p.id === r.plannedEpisodeId);
+        const what = planned ? `${planned.id} ${planned.workingTitle}` : r.itemLabel;
+        return `- ${what}${r.guest ? ` (guest: ${r.guest})` : ""}`;
+      });
   const sheet = createCallSheet(actor, {
     contentId: rootOf(project).contentId,
     date: session.scheduledDate,
-    title: `${displayTitle(project)}: ${session.id}`,
+    title: `${displayTitle(project)}: ${session.name?.trim() || session.id}`,
     location: session.venue,
     callTime: [...session.runSheet].sort((a, b) => a.time.localeCompare(b.time))[0]?.time ?? "07:00",
     crewPersonIds: crew,

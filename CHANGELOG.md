@@ -7,6 +7,44 @@ What changed in each version, newest first. How to deploy is in GO-LIVE.md.
 Being built in phases. The five stages, their names and order, the stage tracker, Content IDs and every form that
 drives the calendar, reminders, call sheets, gear, storage or overdue stay as they are.
 
+**Phase 6: a devotion's Recording Plan** (section 7A)
+- A devotion's Pre-production is now the Recording Plan, plus a Storyboard and a Shot List (any number of each, for the
+  whole project). The separate Devotions, Recording Session and Call Sheet tiles are gone: the plan holds them.
+- The plan opens on four section cards before its pages (Cards and storage, Notes), each saying where it stands:
+  - **Project roles**: Director, Camera, Audio, Lighting, Floor manager and Editor are listed when the devotion is
+    accepted. Each is renamed by typing over its name, more are added, any is removed, and each takes someone from the
+    crew. Before recording, every role needs a person; the devotion's guest is its host. Series and documentaries keep
+    their required roles.
+  - **Devotions**: read from the script as it stands (renaming a page renames its devotion at once), with "x of y
+    assigned" and "Needs a session" for any not on one. "Bring the list up to date from the script" is still there.
+  - **Recording sessions**: name, label (Morning, Afternoon, Evening, Late night, Full day), date, hours and venue, and a
+    tick box for each devotion. A devotion is on one session: ticking it on another moves it there. Only sessions still
+    being planned can gain or lose one; a devotion recorded, or on a session that has started, stays. Removing a
+    session asks why, keeps it archived, and its devotions need a session again. A devotion with no session is a note
+    on the gate, never a block.
+  - **Call sheets**: a tab per session. A session's call sheet is made as soon as it has a date, and keeps to the
+    session's date while it is a draft. Each shows the call sheet's own fields, crew, gear and comments; the crew call,
+    talent arrival, start of recording and wrap, read from its run sheet; the role holders with their phones (where the
+    privacy rules let the viewer see them) and the guest; the roles; the session's devotions in order; the run sheet,
+    with who does each line, "+ Row", and "Rebuild from episodes" (it asks first); and the storyboard and shot list
+    chosen for the session, shown read only with a way to each.
+- A devotion session's run sheet starts from the template with no recording rows, and gains "Record: <topic>" for each
+  devotion ticked, in order, until someone changes it by hand.
+- **Printing**: "Print call sheet" and "Print run sheet only", for anyone who can see the project: one clean page,
+  black on white, headed with the project, the session's name, label and date. Downloading a report still needs
+  "Export reports".
+- **Where the footage is kept**: above Cards and storage, the drive the devotion's footage goes on. In Production,
+  Storage lists each session with its drive (the plan's, or another) and, once recording has started, the size of its
+  footage in GB, kept as a raw entry on that drive. In Post production, each episode has its edit assets: the drive
+  and the size in GB, changed as the edit grows. These are entries on the Storage screen, so the drives' free space,
+  warnings and forecast include them. Drives are chosen by those who may use storage (crew and the Head of Production,
+  unless changed); removing a drive clears any plan that chose it.
+- The calendar is as before: it reads each session's date, and shows no label or hours.
+- Data version 18: on first start, after keeping a copy, sessions gain their new fields, empty, and roles their order.
+  A devotion in Pre-production whose call sheets have no session (made before the workflow or by hand) gets a planned
+  session for each, on the sheet's date, with its location, run of show and the sheet itself, unchanged. No devotion
+  is guessed onto it: each shows "Needs a session" until ticked.
+
 **The old Development screens removed** (approved)
 - Devotions, series and documentaries always open on their Project Home and documents. The "Documents (preview)"
   setting and each person's "Earlier screens" switch are gone, and so are the old Development tab, the six-criteria

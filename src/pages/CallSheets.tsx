@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { CallSheet } from "../types";
+import type { CallSheet, ContentRecord } from "../types";
 import { useApp } from "../ui/AppContext";
 import { getDb, useDb } from "../data/store";
 import { canComment, canWrite, getRecord, visibleCallSheets, visibleRecords } from "../services/access";
@@ -313,11 +313,9 @@ function AttachSheetModal({ sheet, onClose }: { sheet: CallSheet; onClose: () =>
 export function CallSheetPage({ id }: { id: string }) {
   const { actor, go, back, attempt, confirm } = useApp();
   useDb();
-  const [comment, setComment] = useState("");
   const [duplicating, setDuplicating] = useState(false);
   const cs = getCallSheet(id);
   const root = cs ? getRecord(cs.contentId) : undefined;
-  const [draft, setDraft] = useState<Partial<CallSheet> | null>(null);
 
   if (!cs || !root)
     return (
@@ -327,32 +325,6 @@ export function CallSheetPage({ id }: { id: string }) {
     );
 
   const write = canWrite(actor, root);
-  const editable = write && cs.status === "draft";
-  const mm = getMismatches(cs);
-  const drift = mm.moved.length + mm.unlinked.length > 0;
-  const clashes = crewConflicts(cs);
-  const value = <K extends keyof CallSheet>(k: K): CallSheet[K] => (draft && k in draft ? draft[k] : cs[k]) as CallSheet[K];
-  const set = (patch: Partial<CallSheet>) => setDraft((d) => ({ ...(d ?? {}), ...patch }));
-  const dirty = !!draft && Object.keys(draft).length > 0;
-
-  const db = getDb();
-  const projectMemberIds = new Set(db.members.filter((m) => m.projectContentId === cs.contentId).map((m) => m.personId));
-  const candidates = db.people.filter(
-    (p) => p.status === "active" && projectMemberIds.has(p.personId) && (p.category === "CRW" || p.category === "VOL"),
-  );
-  const comments = getComments(cs.contentId, cs.id);
-  // A sheet made for a recording session lists the episodes planned for it (the five-stage workflow).
-  const session = db.recordingSessions.find((s) => s.callSheetId === cs.id);
-  const sessionRows = session ? db.sessionLogEntries.filter((e) => e.sessionId === session.id) : [];
-
-  const save = () => {
-    if (!draft) return;
-    if (attempt(() => updateCallSheet(actor, cs.id, draft, cs.version), "Saved")) setDraft(null);
-  };
-  const toggleCrew = (pid: string, on: boolean) => {
-    const next = on ? [...cs.crewPersonIds, pid] : cs.crewPersonIds.filter((x) => x !== pid);
-    attempt(() => updateCallSheet(actor, cs.id, { crewPersonIds: next }, cs.version));
-  };
 
   return (
     <div className="page">
@@ -412,6 +384,75 @@ export function CallSheetPage({ id }: { id: string }) {
         )}
       </div>
 
+      <CallSheetBody cs={cs} root={root} />
+      {duplicating && (
+        <DuplicateModal
+          sheet={cs}
+          onClose={() => setDuplicating(false)}
+          onCreated={(n) => {
+            setDuplicating(false);
+            go({ n: "callsheet", id: n.id });
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * A call sheet's own sections: the warnings, its shoot details, the crew, the run of show, the gear and the comments.
+ * Its page shows them under its header; a devotion's Recording Plan shows them on a session's tab (`embedded`), where
+ * the session's devotions are listed by the plan itself.
+ */
+/**
+ * A call sheet's sections. Embedded (in a devotion's Recording Plan), the plan shows the session and its devotions, so
+ * those are left out here; what the plan adds (roles, devotions, run sheet, storyboard and shot list) goes after the
+ * crew, before the gear and comments.
+ */
+export function CallSheetBody({
+  cs,
+  root,
+  embedded = false,
+  children,
+}: {
+  cs: CallSheet;
+  root: ContentRecord;
+  embedded?: boolean;
+  children?: React.ReactNode;
+}) {
+  const { actor, go, attempt } = useApp();
+  const [comment, setComment] = useState("");
+  const [draft, setDraft] = useState<Partial<CallSheet> | null>(null);
+  const write = canWrite(actor, root);
+  const editable = write && cs.status === "draft";
+  const mm = getMismatches(cs);
+  const drift = mm.moved.length + mm.unlinked.length > 0;
+  const clashes = crewConflicts(cs);
+  const value = <K extends keyof CallSheet>(k: K): CallSheet[K] => (draft && k in draft ? draft[k] : cs[k]) as CallSheet[K];
+  const set = (patch: Partial<CallSheet>) => setDraft((d) => ({ ...(d ?? {}), ...patch }));
+  const dirty = !!draft && Object.keys(draft).length > 0;
+
+  const db = getDb();
+  const projectMemberIds = new Set(db.members.filter((m) => m.projectContentId === cs.contentId).map((m) => m.personId));
+  const candidates = db.people.filter(
+    (p) => p.status === "active" && projectMemberIds.has(p.personId) && (p.category === "CRW" || p.category === "VOL"),
+  );
+  const comments = getComments(cs.contentId, cs.id);
+  // A sheet made for a recording session lists the episodes planned for it (the five-stage workflow).
+  const session = db.recordingSessions.find((s) => s.callSheetId === cs.id);
+  const sessionRows = session ? db.sessionLogEntries.filter((e) => e.sessionId === session.id) : [];
+
+  const save = () => {
+    if (!draft) return;
+    if (attempt(() => updateCallSheet(actor, cs.id, draft, cs.version), "Saved")) setDraft(null);
+  };
+  const toggleCrew = (pid: string, on: boolean) => {
+    const next = on ? [...cs.crewPersonIds, pid] : cs.crewPersonIds.filter((x) => x !== pid);
+    attempt(() => updateCallSheet(actor, cs.id, { crewPersonIds: next }, cs.version));
+  };
+
+  return (
+    <>
       {drift && (
         <div className="banner warn" role="alert">
           <div className="grow">
@@ -439,7 +480,7 @@ export function CallSheetPage({ id }: { id: string }) {
         </div>
       )}
 
-      {session && (
+      {session && !embedded && (
         <section className="glass panel" aria-label="Recording session">
           <div className="wf-head">
             <h2>Recording session {session.id}</h2>
@@ -510,43 +551,44 @@ export function CallSheetPage({ id }: { id: string }) {
         </div>
       </section>
 
-      <div className="grid-2">
-        <section className="glass panel">
-          <h2>{root?.category === "live" ? "Days on this sheet" : "Episodes on this sheet"}</h2>
-          {cs.linkedEpisodeIds.length === 0 ? (
-            <Empty>No episodes were scheduled for this date when the sheet was created.</Empty>
-          ) : (
-            <div className="list">
-              {cs.linkedEpisodeIds.map((eid) => {
-                const r = getRecord(eid);
-                return r ? (
-                  <div key={eid} className="list-item" onClick={() => go({ n: "record", id: eid })}>
-                    <div className="grow">
-                      <div className="title">{r.category === "live" ? `${root?.title ?? ""}, ${r.title}` : r.title}</div>
-                      <span className="cid">{eid}</span>
-                      {(() => {
-                        const f = featuredFor(r);
-                        const hosts = [...f.inherited.map((x) => x.person), ...f.own.filter((x) => x.kind === "host")];
-                        const guests = f.own.filter((x) => x.kind === "guest");
-                        return hosts.length + guests.length > 0 ? (
-                          <div className="muted" style={{ fontSize: ".84rem" }}>
-                            {hosts.length > 0 && `Host: ${hosts.map((h) => h.name).join(", ")}. `}
-                            {guests.length > 0 && `Guest: ${guests.map((g) => g.name).join(", ")}.`}
-                          </div>
-                        ) : null;
-                      })()}
+      <div className={embedded ? undefined : "grid-2"}>
+        {!embedded && (
+          <section className="glass panel">
+            <h2>{root?.category === "live" ? "Days on this sheet" : "Episodes on this sheet"}</h2>
+            {cs.linkedEpisodeIds.length === 0 ? (
+              <Empty>No episodes were scheduled for this date when the sheet was created.</Empty>
+            ) : (
+              <div className="list">
+                {cs.linkedEpisodeIds.map((eid) => {
+                  const r = getRecord(eid);
+                  return r ? (
+                    <div key={eid} className="list-item" onClick={() => go({ n: "record", id: eid })}>
+                      <div className="grow">
+                        <div className="title">{r.category === "live" ? `${root?.title ?? ""}, ${r.title}` : r.title}</div>
+                        <span className="cid">{eid}</span>
+                        {(() => {
+                          const f = featuredFor(r);
+                          const hosts = [...f.inherited.map((x) => x.person), ...f.own.filter((x) => x.kind === "host")];
+                          const guests = f.own.filter((x) => x.kind === "guest");
+                          return hosts.length + guests.length > 0 ? (
+                            <div className="muted" style={{ fontSize: ".84rem" }}>
+                              {hosts.length > 0 && `Host: ${hosts.map((h) => h.name).join(", ")}. `}
+                              {guests.length > 0 && `Guest: ${guests.map((g) => g.name).join(", ")}.`}
+                            </div>
+                          ) : null;
+                        })()}
+                      </div>
+                      {r.scheduledDate !== cs.date && <span className="badge warn">Now {fmtDate(r.scheduledDate)}</span>}
                     </div>
-                    {r.scheduledDate !== cs.date && <span className="badge warn">Now {fmtDate(r.scheduledDate)}</span>}
-                  </div>
-                ) : null;
-              })}
-            </div>
-          )}
-          <p className="muted" style={{ marginTop: 10, fontSize: ".84rem" }}>
-            Linked when the sheet was created. Changing an episode's date later flags a mismatch instead of changing this list.
-          </p>
-        </section>
-
+                  ) : null;
+                })}
+              </div>
+            )}
+            <p className="muted" style={{ marginTop: 10, fontSize: ".84rem" }}>
+              Linked when the sheet was created. Changing an episode's date later flags a mismatch instead of changing this list.
+            </p>
+          </section>
+        )}
         <section className="glass panel">
           <h2>Crew</h2>
           {candidates.length === 0 ? (
@@ -576,7 +618,9 @@ export function CallSheetPage({ id }: { id: string }) {
         </section>
       </div>
 
-      <RunOfShowPanel cs={cs} editable={editable} />
+      {children}
+
+      {!embedded && <RunOfShowPanel cs={cs} editable={editable} />}
 
       <GearPanel cs={cs} editable={editable} />
 
@@ -614,17 +658,7 @@ export function CallSheetPage({ id }: { id: string }) {
           </p>
         )}
       </section>
-      {duplicating && (
-        <DuplicateModal
-          sheet={cs}
-          onClose={() => setDuplicating(false)}
-          onCreated={(n) => {
-            setDuplicating(false);
-            go({ n: "callsheet", id: n.id });
-          }}
-        />
-      )}
-    </div>
+    </>
   );
 }
 

@@ -163,6 +163,7 @@ export interface ProjectWorkflow {
   producerAssignedAt: string | null; // timestamp
   sermonFormat: SermonFormat | null; // sermon series only
   migrated: boolean; // moved across from the earlier pipeline: gates it passed there count as met
+  storageDriveId?: string | null; // the drive its footage is planned to go on (the Recording Plan's Cards and storage)
 }
 
 export type PostStage = "Not started" | "Editing" | "Rough cut review" | "Final review" | "Approved";
@@ -255,7 +256,7 @@ export interface PlannedEpisode {
   archivedReason: string | null;
 }
 
-export type RoleKey = "director" | "dop" | "audio_engineer" | "camera_operator" | "continuity" | "editor" | "host_guest";
+export type RoleKey = "director" | "dop" | "audio_engineer" | "camera_operator" | "continuity" | "editor" | "host_guest" | "custom";
 
 /** A person's role on one project. The show producer is held on the project itself (ProjectWorkflow). */
 export interface ProjectRole {
@@ -269,6 +270,10 @@ export interface ProjectRole {
   assignedAt: string;
   createdAt: string;
   updatedAt: string;
+  // A Recording Plan's roles are the project's own list: named as the producer likes (empty: the role's usual name), in
+  // the order they set, and listed before anyone is chosen (no crewId and no guestName yet).
+  label?: string;
+  position?: number;
 }
 
 export type ChecklistOwner = "project" | "session" | "episode";
@@ -291,6 +296,7 @@ export interface WorkflowChecklistItem {
 }
 
 export type SessionStatus = "Planned" | "Open" | "Closed";
+export type SessionLabel = "Morning" | "Afternoon" | "Evening" | "Late night" | "Full day";
 
 /** One recording session. Pre-production while Planned, Production while Open; closing it makes the episodes. */
 export interface RecordingSession {
@@ -308,6 +314,16 @@ export interface RecordingSession {
   updatedAt: string;
   archivedAt: string | null;
   archivedReason: string | null;
+  // Set in a devotion's Recording Plan (and open to any project): what the session is called, its part of the day and
+  // its hours, the storyboard and shot list chosen for it, and the drive its footage goes on if not the project's.
+  name?: string;
+  label?: SessionLabel | null;
+  startTime?: string | null; // HH:MM
+  endTime?: string | null; // HH:MM
+  storyboardId?: string | null;
+  shotListId?: string | null;
+  storageDriveId?: string | null;
+  fromCallSheet?: boolean; // made by the move to data version 18, for a devotion's call sheet that had no session
 }
 
 export type LogStatus = "Recorded" | "Pickup needed" | "Not recorded";
@@ -659,6 +675,7 @@ export interface DriveAllocation {
   kind: "raw" | "project" | "delivered" | "other";
   note: string;
   updatedAt: string;
+  sessionId?: string | null; // a recording session's footage, entered after it was recorded
 }
 
 export interface StorageSnapshot {

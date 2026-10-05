@@ -13,7 +13,7 @@ import {
   shotListsOf,
   syncReviewThread,
 } from "../../services/wrapped/documents";
-import type { Project } from "../../services/wrapped/workflow";
+import { sessionsOf, type Project } from "../../services/wrapped/workflow";
 import { useApp } from "../../ui/AppContext";
 import { Empty } from "../../ui/parts";
 import { IconBack, IconCalendar, IconCam, IconCheck, IconDoc, IconDrive, IconFilm, IconSheet, IconUsers } from "../../ui/Icons";
@@ -25,6 +25,7 @@ import { FormFields, pageFields, ProjectDetails } from "./ProjectDetails";
 import { PageComments, ReviewBanner, ReviewPanes } from "./ReviewView";
 import { PageEditor, type PageEditorHandle } from "./PageEditor";
 import { PageList } from "./PageList";
+import { PlanSectionView, PlannedDrive, planCards, type PlanSection } from "./RecordingPlan";
 import { DaySheetForm, EpisodeStrip, SessionPicker, defaultSession, formCards } from "./StagePanes";
 import { usePrintDocument } from "./printDocument";
 
@@ -84,6 +85,8 @@ function hasContent(project: Project, stage: WorkflowStage, entry: CatalogEntry)
         (d) => d.contentId === project.contentId && d.stage === stage && d.docKey === entry.key && documentHasContent(d.id),
       );
     const doc = documentOf(project.contentId, stage, entry.key);
+    // A Recording Plan has content once it has a session, as well as when something is written in it.
+    if (entry.plan && sessionsOf(project.contentId).some((s) => !s.archivedAt)) return true;
     return !!doc && documentHasContent(doc.id);
   }
   if (entry.tool === "storyboard") return storyboardsOf(project.contentId).length > 0;
@@ -201,7 +204,9 @@ function DocumentView({
   // session's own forms, as fixed cards beside the pages.
   const perSession = entry?.kind === "document" && entry.per === "session";
   const [sessionId, setSessionId] = useState<string | null>(() => (perSession ? defaultSession(project.contentId) : null));
-  const cards = perSession && entry ? formCards(entry) : [];
+  // A Recording Plan's sections (roles, devotions, sessions, call sheets) are fixed cards before its pages.
+  const plan = entry?.kind === "document" && !!entry.plan;
+  const cards = perSession && entry ? formCards(entry) : plan ? planCards(project.contentId) : [];
   const [pageId, setPageId] = useState<string | null>(() => cards.find((c) => c.at === "start")?.id ?? null);
   const [print, printNode] = usePrintDocument();
   const ownerId = perSession ? sessionId : null;
@@ -209,7 +214,8 @@ function DocumentView({
     entry?.kind === "document" && (!perSession || ownerId) ? documentOf(project.contentId, opened.stage, opened.key, ownerId) : undefined;
   const pages = doc ? pagesOf(doc.id) : [];
   const formOpen = pageId?.startsWith("form:") ? pageId.slice("form:".length) : null;
-  const page = formOpen ? undefined : (pages.find((p) => p.id === pageId) ?? pages[0]);
+  const planOpen = pageId?.startsWith("plan:") ? (pageId.slice("plan:".length) as PlanSection) : null;
+  const page = formOpen || planOpen ? undefined : (pages.find((p) => p.id === pageId) ?? pages[0]);
   // A session's day sheet is made the first time someone who may write in it opens it, as other documents are.
   useEffect(() => {
     if (perSession && write && sessionId && !documentOf(project.contentId, opened.stage, opened.key, sessionId))
@@ -222,6 +228,9 @@ function DocumentView({
   // title, or the first page if it has been renamed.
   const fieldsPage = entry?.pages?.find((p) => p.fields?.length);
   const fieldsTarget = fieldsPage ? (pages.find((p) => p.title === fieldsPage.title) ?? pages[0]) : undefined;
+  // The page the footage drive is chosen above (a Recording Plan's Cards and storage), found the same way.
+  const storagePage = entry?.pages?.find((p) => p.storage);
+  const storageTarget = storagePage ? (pages.find((p) => p.title === storagePage.title) ?? pages[0]) : undefined;
   const reviewed = entry?.kind === "review" && entry.reviews ? documentOf(project.contentId, "Development", entry.reviews) : undefined;
   const printJob = (only?: DocumentPage) => {
     if (!doc) return;
@@ -300,7 +309,7 @@ function DocumentView({
           <div className="pd-write">
             <Empty>No recording sessions yet. They are scheduled in Pre-production, under Sessions.</Empty>
           </div>
-        ) : !doc && !perSession ? (
+        ) : !doc && !perSession && !plan ? (
           <>
             <div className="pd-pages">
               <ol aria-label="Pages">
@@ -325,7 +334,7 @@ function DocumentView({
             <PageList
               doc={doc ?? null}
               pages={pages}
-              selected={formOpen ? pageId : (page?.id ?? null)}
+              selected={formOpen || planOpen ? pageId : (page?.id ?? null)}
               write={write}
               fixed={cards}
               emptyText={
@@ -333,7 +342,9 @@ function DocumentView({
                   ? "No episodes yet: each episode gets its page here once its session closes."
                   : doc
                     ? undefined
-                    : "Nothing has been written for this session yet."
+                    : plan
+                      ? "Nothing has been written yet."
+                      : "Nothing has been written for this session yet."
               }
               onSelect={(id) => leaveThen(() => setPageId(id))}
               head={
@@ -352,13 +363,19 @@ function DocumentView({
                 )
               }
             />
-            {formOpen && sessionId ? (
+            {planOpen ? (
+              <div className="pd-write">
+                <PlanSectionView project={project} section={planOpen} write={write} onOpenTool={(key) => onOpen(opened.stage, key)} />
+              </div>
+            ) : formOpen && sessionId ? (
               <div className="pd-write">
                 <DaySheetForm project={project} sessionId={sessionId} form={formOpen} />
               </div>
             ) : !doc ? (
               <div className="pd-write">
-                <Empty>Nothing has been written for this session yet.</Empty>
+                <Empty>
+                  {plan ? `Nothing has been written in the ${entry.title} yet.` : "Nothing has been written for this session yet."}
+                </Empty>
               </div>
             ) : (
               <div className="pd-write">
@@ -384,6 +401,7 @@ function DocumentView({
                   />
                 )}
                 {page?.episodeId && <EpisodeStrip episodeId={page.episodeId} />}
+                {page && page.id === storageTarget?.id && <PlannedDrive project={project} write={write} />}
                 {page ? (
                   <div className={showComments ? "pd-with-comments" : undefined}>
                     <PageEditor

@@ -7,6 +7,7 @@ import { nextEpisode, nextPlanned } from "../workflow/ids";
 import { formOf } from "../workflow/common";
 import { decideGreenlight } from "../workflow/forms";
 import { advanceProject } from "../workflow/projects";
+import { seedPlanRoles } from "../workflow/plan";
 import { todayIso } from "../utils";
 import { documentOf } from "./pages";
 import { nowStamp, pagesOf, projectForWrite } from "./common";
@@ -123,6 +124,7 @@ export function acceptDevotion(actor: Actor, projectId: string, note: string): D
   if (p.workflow.formType !== "devotion") throw new RuleError("Only a devotion is accepted this way.");
   decideGreenlight(actor, projectId, { outcome: "Greenlight", notes: note, date: todayIso() });
   advanceProject(actor, projectId);
+  seedPlanRoles(projectId, actor.personId); // the Recording Plan's usual roles, no one chosen yet
   logAudit(actor, "devotion-accepted", "record", projectId, note.trim() ? `Accepted. ${note.trim()}` : "Accepted");
   const script = documentOf(projectId, "Development", "devotional_script");
   const written = script ? pagesOf(script.id).filter(countsAsDevotion) : [];

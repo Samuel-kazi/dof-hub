@@ -205,6 +205,26 @@ are written to a `media` folder inside the app's own data folder on that compute
 `%APPDATA%\tv.dawnoffaith.productionhub\media` on Windows), one folder per project; back that folder up with the computer.
 A picture kept on one desktop computer does not show anywhere else.
 
+### Data version 18: a devotion's Recording Plan
+
+A devotion's Pre-production is its Recording Plan: roles, devotions, sessions and a call sheet for each session, with
+printing. Sessions gain a name, a label (Morning, Afternoon, Evening, Late night, Full day) and hours; drives can be
+chosen for a devotion's footage, each session's footage size is entered once recording starts, and each episode's edit
+assets in Post production. Those sizes are ordinary entries on the Storage screen.
+
+The first time a version with data version 18 starts, it keeps a copy (`hub_items_before_v18` and
+`hub_meta_before_v18`; in the demo and desktop app, `dof-hub-db-before-v18`), adds the new fields, empty, and gives a
+devotion in Pre-production a planned session for each of its call sheets that has none (on the sheet's date, with its
+location and run of show; the sheet itself is not changed). Those sessions are marked `fromCallSheet`, and an audit
+entry ("migrate-call-sheets") lists them. No devotion is put on them: the plan shows each as "Needs a session" until
+someone ticks it. Running it again changes nothing. `npm run db:upgrade` shows what it will do; going back is as for
+version 15 above, with `v18` in the names. Nothing has to be turned on.
+
+Who can do what: anyone who can see a devotion can print its call sheets and run sheets; downloading a report still
+needs "Export reports". Choosing a drive needs "Use storage" (crew and the Head of Production have it unless changed),
+since drives are only sent to people who have it. Roles are changed by the show producer, the Head of Production, or
+someone given "Assign other people's work", as before.
+
 ## What this does not do yet
 
 - The **desktop app** is the local demo. The hosted site is the real one.

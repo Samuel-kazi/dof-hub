@@ -131,7 +131,17 @@ var PROJECT_ROLE_DEFS = [
   { key: "host_guest", label: "Host or guest", exclusive: false }
 ];
 var REQUIRED_ROLES = ["director", "dop", "audio_engineer", "editor", "host_guest"];
-var roleLabel = (key2) => PROJECT_ROLE_DEFS.find((r) => r.key === key2)?.label ?? key2;
+var roleLabel = (key2) => key2 === "custom" ? "Role" : PROJECT_ROLE_DEFS.find((r) => r.key === key2)?.label ?? key2;
+var roleName = (role) => role.label?.trim() || roleLabel(role.roleKey);
+var PLAN_ROLE_SEEDS = [
+  { key: "director", label: "Director" },
+  { key: "dop", label: "Camera" },
+  { key: "audio_engineer", label: "Audio" },
+  { key: "custom", label: "Lighting" },
+  { key: "custom", label: "Floor manager" },
+  { key: "editor", label: "Editor" }
+];
+var SESSION_LABELS = ["Morning", "Afternoon", "Evening", "Late night", "Full day"];
 var item = (key2, label, extra = {}) => ({
   key: key2,
   label,
@@ -672,7 +682,8 @@ function integrityProblems(db2) {
   for (const r of db2.projectRoles ?? []) {
     project(r.contentId, `Role ${r.id}`);
     person2(r.crewId, `Role ${r.id}`);
-    if (r.exclusive !== (r.roleKey !== "host_guest")) out.push(`Role ${r.id}: only hosts and guests may be held by several people.`);
+    const several = r.roleKey === "host_guest" || r.roleKey === "custom";
+    if (r.exclusive === several) out.push(`Role ${r.id}: only hosts, guests and roles added by hand may be held by several people.`);
   }
   for (const c of db2.workflowChecklistItems ?? []) {
     const exists = c.ownerType === "session" ? sessions.has(c.ownerId) : records.has(c.ownerId);
@@ -745,6 +756,21 @@ function integrityProblems(db2) {
     if (b.episodeId !== null && !records.has(b.episodeId)) missing("episode", b.episodeId, b.id);
   }
   for (const f2 of db2.storyboardFrames ?? []) if (!boards.has(f2.storyboardId)) missing("storyboard", f2.storyboardId, `Frame ${f2.id}`);
+  const boardProject = new Map([...db2.storyboards ?? [], ...db2.shotLists ?? []].map((b) => [b.id, b.contentId]));
+  const drives = new Set((db2.drives ?? []).map((d) => d.id));
+  for (const s2 of db2.recordingSessions ?? []) {
+    for (const [what, id2] of [
+      ["storyboard", s2.storyboardId],
+      ["shot list", s2.shotListId]
+    ])
+      if (id2 && boardProject.get(id2) !== s2.contentId) out.push(`Session ${s2.id} shows a ${what} that is not its project's: ${id2}.`);
+    if (s2.storageDriveId && !drives.has(s2.storageDriveId)) missing("drive", s2.storageDriveId, `Session ${s2.id}`);
+  }
+  for (const r of db2.records)
+    if (r.workflow?.storageDriveId && !drives.has(r.workflow.storageDriveId))
+      missing("drive", r.workflow.storageDriveId, `Project ${r.contentId}`);
+  for (const a of db2.allocations ?? [])
+    if (a.sessionId && !sessions.has(a.sessionId)) missing("session", a.sessionId, `Storage entry ${a.id}`);
   for (const r of db2.shotListRows ?? []) if (!lists.has(r.shotListId)) missing("shot list", r.shotListId, `Row ${r.id}`);
   return out;
 }
@@ -4600,11 +4626,12 @@ var devotionCatalog = {
     form("accept_decline", "Accept or Decline", "acceptDecline"),
     earlierForm
   ],
+  // The Recording Plan holds the roles, the devotions, the sessions they are recorded in and each session's call sheet;
+  // a session's call sheet shows one storyboard and one shot list of the project's, chosen from these.
   "Pre-production": [
-    form("devotion_episodes", "Devotions", "devotionEpisodes"),
-    doc("recording_plan", "Recording Plan", ["Cards and storage", "Notes"]),
-    form("sessions", "Recording Session", "sessions"),
-    form("call_sheet", "Call Sheet", "callSheet")
+    doc("recording_plan", "Recording Plan", [{ title: "Cards and storage", storage: true }, "Notes"], { plan: true }),
+    tool("storyboard", "Storyboard", "storyboard"),
+    tool("shot_list", "Shot List", "shotList")
   ],
   Production: [form("recording_day_view", "Recording Day View", "recordingDayView"), form("storage", "Storage", "storage")],
   "Post production": [doc("edit_notes", "Edit Notes", ["Notes to the editor"]), form("review", "Review", "review")],
@@ -4666,6 +4693,12 @@ function formOf(projectId) {
   return f2;
 }
 var rowsOf = (sessionId) => getDb().sessionLogEntries.filter((e) => e.sessionId === sessionId);
+var sourcePage = (p) => p.sourcePageId ? getDb().documentPages.find((pg) => pg.id === p.sourcePageId) : void 0;
+var plannedTitle = (p) => sourcePage(p)?.title.trim() || p.workingTitle || p.id;
+var plannedScripture = (p) => {
+  const page = sourcePage(p);
+  return page ? page.subtitle.trim() : String(p.details.scripture ?? "");
+};
 var sessionsOf = (projectId) => getDb().recordingSessions.filter((s2) => s2.contentId === projectId).sort((a, b) => a.sessionNumber - b.sessionNumber);
 var episodesOf = (projectId, includeArchived = false) => getDb().records.filter((r) => !!r.episode && r.parentId === projectId && (includeArchived || !r.archived)).sort((a, b) => a.episode.episodeNumber - b.episode.episodeNumber);
 var isDocumentary = (p) => p.workflow.formType === "documentary_dof" || p.workflow.formType === "documentary_pitched";
@@ -5407,6 +5440,12 @@ function savePage(actor, pageId, edit, baseVersion) {
   page.updatedAt = nowStamp();
   page.updatedBy = actor.personId;
   doc2.updatedAt = page.updatedAt;
+  for (const planned of getDb().plannedEpisodes)
+    if (planned.sourcePageId === page.id && !getDb().records.some((r) => r.episode?.plannedEpisodeId === planned.id)) {
+      if (page.title.trim()) planned.workingTitle = page.title.trim();
+      planned.details = { ...planned.details, scripture: page.subtitle };
+      planned.updatedAt = page.updatedAt;
+    }
   commit();
   return page;
 }
@@ -5871,6 +5910,552 @@ var reviewWindowsDue = (today = todayIso()) => getDb().developmentForms.some(
   (f2) => !!f2.reviewWindowDate && f2.reviewWindowDate < today && f2.outcome === null && !!getDb().records.find((r) => r.contentId === f2.contentId && r.workflow && !r.archived)
 );
 
+// src/services/storage.ts
+var storage_exports = {};
+__export(storage_exports, {
+  addAllocation: () => addAllocation,
+  allDriveUsage: () => allDriveUsage,
+  allocationsForRecord: () => allocationsForRecord,
+  clearRecordFromDrives: () => clearRecordFromDrives,
+  createDrive: () => createDrive,
+  deleteDrive: () => deleteDrive,
+  driveReportText: () => driveReportText,
+  driveUsage: () => driveUsage,
+  fleetReportText: () => fleetReportText,
+  fleetTotals: () => fleetTotals,
+  forecast: () => forecast,
+  getDrive: () => getDrive,
+  hasStorageAccess: () => hasStorageAccess,
+  isNearlyFull: () => isNearlyFull,
+  moveAllocation: () => moveAllocation,
+  recordSnapshot: () => recordSnapshot,
+  removeAllocation: () => removeAllocation,
+  standaloneAllocations: () => standaloneAllocations,
+  updateAllocation: () => updateAllocation,
+  updateDrive: () => updateDrive
+});
+var hasStorageAccess = (actor) => can(actor, "storage.use");
+function requireStorageAccess(actor) {
+  if (!hasStorageAccess(actor)) throw new RuleError("Storage is managed by crew and the Head of Production.");
+}
+function validateDrive(input, selfId) {
+  if (!input.name.trim()) throw new RuleError("Give the drive a name.");
+  if (getDb().drives.some((d) => d.id !== selfId && d.name.toLowerCase() === input.name.trim().toLowerCase()))
+    throw new RuleError("A drive with that name already exists.");
+  if (!Number.isFinite(input.capacityGB) || input.capacityGB <= 0) throw new RuleError("Capacity must be more than zero.");
+  if (input.otherUsedGB !== void 0 && (!Number.isFinite(input.otherUsedGB) || input.otherUsedGB < 0))
+    throw new RuleError("Other used space cannot be negative.");
+}
+function createDrive(actor, input) {
+  requireCan(actor, "storage.admin", "add drives");
+  validateDrive(input);
+  const d = {
+    id: claimId(`DRV-${pad(nextCounter("drive"))}`),
+    name: input.name.trim(),
+    capacityGB: input.capacityGB,
+    otherUsedGB: input.otherUsedGB ?? 0,
+    notes: input.notes ?? ""
+  };
+  if (d.otherUsedGB > d.capacityGB) throw new RuleError("Used space is larger than the drive.");
+  getDb().drives.push(d);
+  logAudit(actor, "create", "drive", d.id, d.name);
+  recordSnapshot();
+  commit();
+  return d;
+}
+function updateDrive(actor, id2, patch) {
+  requireStorageAccess(actor);
+  const d = getDrive(id2);
+  if (!d) throw new RuleError("Drive not found.");
+  const structural = patch.name !== void 0 || patch.capacityGB !== void 0;
+  if (structural) requireCan(actor, "storage.admin", "rename a drive or change its capacity");
+  const next2 = {
+    name: patch.name ?? d.name,
+    capacityGB: patch.capacityGB ?? d.capacityGB,
+    otherUsedGB: patch.otherUsedGB ?? d.otherUsedGB,
+    notes: patch.notes ?? d.notes
+  };
+  validateDrive(next2, id2);
+  const allocated = getDb().allocations.filter((a) => a.driveId === id2).reduce((n, a) => n + a.sizeGB, 0);
+  if (allocated + next2.otherUsedGB > next2.capacityGB)
+    throw new RuleError(`That would put ${fmtSize(allocated + next2.otherUsedGB)} on a ${fmtSize(next2.capacityGB)} drive.`);
+  Object.assign(d, { name: next2.name.trim(), capacityGB: next2.capacityGB, otherUsedGB: next2.otherUsedGB, notes: next2.notes });
+  logAudit(actor, "update", "drive", id2, Object.keys(patch).join(", "));
+  recordSnapshot();
+  commit();
+  return d;
+}
+function deleteDrive(actor, id2) {
+  requireCan(actor, "storage.admin", "remove drives");
+  const d = getDrive(id2);
+  if (!d) throw new RuleError("Drive not found.");
+  if (getDb().allocations.some((a) => a.driveId === id2))
+    throw new RuleError("Projects are still recorded on this drive. Remove them first.");
+  getDb().drives = getDb().drives.filter((x) => x.id !== id2);
+  for (const r of getDb().records) if (r.workflow?.storageDriveId === id2) r.workflow.storageDriveId = null;
+  for (const s2 of getDb().recordingSessions) if (s2.storageDriveId === id2) s2.storageDriveId = null;
+  logAudit(actor, "delete", "drive", id2, d.name);
+  recordSnapshot();
+  commit();
+}
+function requireProjectWrite(actor, contentId) {
+  const rec2 = getRecord(contentId);
+  if (!rec2) throw new RuleError("Choose the project this footage belongs to.");
+  if (!canWrite(actor, rec2)) throw new RuleError("You are not attached to this project.");
+  return rec2;
+}
+function requireLabel(label) {
+  const l = (label ?? "").trim();
+  if (!l)
+    throw new RuleError(
+      "Give this entry a short label, for example the project or shoot it is holding footage for, since it is not tied to a project yet."
+    );
+  return l;
+}
+function addAllocation(actor, input) {
+  requireStorageAccess(actor);
+  const drive = getDrive(input.driveId);
+  if (!drive) throw new RuleError("Drive not found.");
+  const label = input.contentId === null ? requireLabel(input.label) : (input.label ?? "").trim();
+  if (input.contentId !== null) requireProjectWrite(actor, input.contentId);
+  if (!Number.isFinite(input.sizeGB) || input.sizeGB <= 0) throw new RuleError("Enter the size in GB.");
+  const u = driveUsage(drive);
+  if (input.sizeGB > u.freeGB + 1e-6) throw new RuleError(`${drive.name} has only ${fmtSize(u.freeGB)} free.`);
+  const a = {
+    id: claimId(`ALC-${pad(nextCounter("allocation"), 4)}`),
+    driveId: drive.id,
+    contentId: input.contentId,
+    label,
+    sizeGB: input.sizeGB,
+    kind: input.kind,
+    note: input.note ?? "",
+    updatedAt: todayIso()
+  };
+  getDb().allocations.push(a);
+  logAudit(actor, "allocate", "drive", drive.id, `${input.contentId ?? label} ${fmtSize(a.sizeGB)}`);
+  recordSnapshot();
+  commit();
+  return a;
+}
+var ALLOCATION_EDITABLE = ["sizeGB", "kind", "note", "label", "driveId"];
+var ALLOCATION_KINDS = ["raw", "project", "delivered", "other"];
+function updateAllocation(actor, id2, input) {
+  requireStorageAccess(actor);
+  const patch = pickKeys(input, ALLOCATION_EDITABLE);
+  const a = getDb().allocations.find((x) => x.id === id2);
+  if (!a) throw new RuleError("Entry not found.");
+  if (patch.kind !== void 0 && !ALLOCATION_KINDS.includes(patch.kind)) throw new RuleError("Choose raw, project, delivered or other.");
+  const rec2 = a.contentId !== null ? requireProjectWrite(actor, a.contentId) : null;
+  if (rec2 && a.kind === "raw" && patch.kind && patch.kind !== "raw" && !isHop(actor) && leavesUnder(rec2).some((l) => !isComplete(l))) {
+    throw new RuleError(`Raw footage for ${rec2.title} stays marked as raw until everything under it is Delivered.`);
+  }
+  const label = a.contentId === null ? requireLabel(patch.label ?? a.label) : patch.label ?? a.label;
+  const target = getDrive(patch.driveId ?? a.driveId);
+  if (!target) throw new RuleError("Drive not found.");
+  const newSize = patch.sizeGB ?? a.sizeGB;
+  if (!Number.isFinite(newSize) || newSize <= 0) throw new RuleError("Enter the size in GB.");
+  const u = driveUsage(target);
+  const alreadyThere = target.id === a.driveId ? a.sizeGB : 0;
+  if (newSize - alreadyThere > u.freeGB + 1e-6) throw new RuleError(`${target.name} has only ${fmtSize(u.freeGB + alreadyThere)} free.`);
+  Object.assign(a, patch, { label, updatedAt: todayIso() });
+  logAudit(actor, "update", "allocation", id2, Object.keys(patch).join(", "));
+  recordSnapshot();
+  commit();
+  return a;
+}
+function moveAllocation(actor, id2, contentId) {
+  requireStorageAccess(actor);
+  const a = getDb().allocations.find((x) => x.id === id2);
+  if (!a) throw new RuleError("Entry not found.");
+  if (a.contentId === contentId) throw new RuleError("This entry is already attached here.");
+  const target = getRecord(contentId);
+  if (!target) throw new RuleError("Project not found.");
+  const current3 = a.contentId ? getRecord(a.contentId) : null;
+  if (!canWrite(actor, target) || (current3 ? !canWrite(actor, current3) : !isHop(actor)))
+    throw new RuleError("You are not attached to both projects.");
+  const from = a.contentId ?? a.label;
+  a.contentId = contentId;
+  a.updatedAt = todayIso();
+  logAudit(actor, "update", "allocation", id2, `moved from ${from} to ${contentId}`);
+  commit();
+  return a;
+}
+function removeAllocation(actor, id2) {
+  requireStorageAccess(actor);
+  const a = getDb().allocations.find((x) => x.id === id2);
+  if (!a) throw new RuleError("Entry not found.");
+  if (a.contentId !== null) {
+    const rec2 = requireProjectWrite(actor, a.contentId);
+    if (a.kind === "raw") {
+      const leaves = leavesUnder(rec2);
+      if (leaves.some((l) => !isComplete(l)))
+        throw new RuleError(`Raw footage for ${rec2.title} cannot be removed until everything under it is Delivered.`);
+    }
+  }
+  getDb().allocations = getDb().allocations.filter((x) => x.id !== id2);
+  logAudit(actor, "deallocate", "drive", a.driveId, `${a.contentId ?? a.label} ${fmtSize(a.sizeGB)}`);
+  recordSnapshot();
+  commit();
+}
+function standaloneAllocations(actor) {
+  requireStorageAccess(actor);
+  return getDb().allocations.filter((a) => a.contentId === null);
+}
+function clearRecordFromDrives(actor, contentId) {
+  requireStorageAccess(actor);
+  const rec2 = requireProjectWrite(actor, contentId);
+  const mine = getDb().allocations.filter((a) => a.contentId === contentId);
+  if (!mine.length) throw new RuleError("Nothing is recorded on drives for this item.");
+  if (mine.some((a) => a.kind === "raw") && leavesUnder(rec2).some((l) => !isComplete(l)))
+    throw new RuleError(`Raw footage for ${rec2.title} cannot be cleared until everything under it is Delivered.`);
+  const gb = mine.reduce((n, a) => n + a.sizeGB, 0);
+  for (const a of mine) logAudit(actor, "deallocate", "drive", a.driveId, `${contentId} ${fmtSize(a.sizeGB)}`);
+  getDb().allocations = getDb().allocations.filter((a) => a.contentId !== contentId);
+  recordSnapshot();
+  commit();
+  return { count: mine.length, gb };
+}
+function descendantIds2(r) {
+  return [r.contentId, ...getChildren(r.contentId, true).flatMap(descendantIds2)];
+}
+function allocationsForRecord(record2) {
+  const ids2 = /* @__PURE__ */ new Set([...descendantIds2(record2), ...selfAndAncestors(record2).map((r) => r.contentId)]);
+  return getDb().allocations.filter((a) => a.contentId !== null && ids2.has(a.contentId));
+}
+function forecast(horizonDays = 90) {
+  const t2 = fleetTotals();
+  const snaps = getDb().snapshots.slice(-16);
+  const history = snaps.map((s2) => ({ date: s2.date, usedGB: s2.usedGB }));
+  const thresholdGB = t2.capacity * getDb().settings.storageWarningThreshold / 100;
+  let slope = 0;
+  if (snaps.length >= 2) {
+    const xs = snaps.map((s2) => dayNumber(s2.date));
+    const ys = snaps.map((s2) => s2.usedGB);
+    const mx = xs.reduce((a, b) => a + b, 0) / xs.length;
+    const my = ys.reduce((a, b) => a + b, 0) / ys.length;
+    const den = xs.reduce((n, x) => n + (x - mx) ** 2, 0);
+    slope = den ? xs.reduce((n, x, i) => n + (x - mx) * (ys[i] - my), 0) / den : 0;
+  }
+  const today = dayNumber(todayIso());
+  const projected = [{ date: todayIso(), usedGB: t2.used }];
+  if (slope > 0)
+    for (let d = 7; d <= horizonDays; d += 7)
+      projected.push({ date: fromDayNumber(today + d), usedGB: Math.min(t2.capacity * 1.05, t2.used + slope * d) });
+  let fillDate = null;
+  if (slope > 0 && t2.used < thresholdGB) fillDate = fromDayNumber(today + Math.ceil((thresholdGB - t2.used) / slope));
+  else if (t2.used >= thresholdGB) fillDate = todayIso();
+  return { history, projected, capacityGB: t2.capacity, thresholdGB, slopeGBPerDay: slope, fillDate };
+}
+function driveReportText(driveId) {
+  const d = getDrive(driveId);
+  if (!d) throw new RuleError("Drive not found.");
+  const u = driveUsage(d);
+  const lines = [
+    `Drive report: ${d.name}`,
+    `Date: ${fmtDate(todayIso())}`,
+    `Capacity ${fmtSize(d.capacityGB)}, used ${fmtSize(u.usedGB)} (${u.pct.toFixed(1)}%), free ${fmtSize(u.freeGB)}`,
+    "",
+    "Projects on this drive:",
+    ...u.projects.length ? u.projects.map(
+      (p) => `  ${p.contentId ?? "No project yet"}  ${p.contentId ? getRecord(p.contentId)?.title ?? "" : p.label}  ${fmtSize(p.gb)}  (${p.kinds.join(", ")})`
+    ) : ["  None recorded"],
+    ...u.otherGB ? [`  Other files  ${fmtSize(u.otherGB)}`] : []
+  ];
+  return lines.join("\n");
+}
+function fleetReportText() {
+  const t2 = fleetTotals();
+  const rows = allDriveUsage();
+  return [
+    "Storage report: all drives",
+    `Date: ${fmtDate(todayIso())}`,
+    `Total capacity ${fmtSize(t2.capacity)}, used ${fmtSize(t2.used)}, free ${fmtSize(t2.capacity - t2.used)}`,
+    "",
+    ...rows.map(
+      (u) => `${u.drive.name}: ${fmtSize(u.usedGB)} of ${fmtSize(u.drive.capacityGB)} (${u.pct.toFixed(0)}%)${u.projects.length ? `. Projects: ${u.projects.map((p) => `${p.contentId ?? p.label} ${fmtSize(p.gb)}`).join(", ")}` : ""}`
+    )
+  ].join("\n");
+}
+
+// src/services/callsheets.ts
+var callsheets_exports = {};
+__export(callsheets_exports, {
+  SHEET_EDITABLE: () => SHEET_EDITABLE,
+  addRunItem: () => addRunItem,
+  attachCallSheet: () => attachCallSheet,
+  callSheetForRecord: () => callSheetForRecord,
+  createCallSheet: () => createCallSheet,
+  crewConflicts: () => crewConflicts,
+  daysOf: () => daysOf,
+  deleteCallSheet: () => deleteCallSheet,
+  duplicateCallSheet: () => duplicateCallSheet,
+  duplicateOf: () => duplicateOf,
+  episodesOnDate: () => episodesOnDate,
+  finalizeCallSheet: () => finalizeCallSheet,
+  getCallSheet: () => getCallSheet,
+  getMismatches: () => getMismatches,
+  openOrCreateForRecord: () => openOrCreateForRecord,
+  removeRunItem: () => removeRunItem,
+  reopenCallSheet: () => reopenCallSheet,
+  resolveMismatches: () => resolveMismatches,
+  runOfShowRequired: () => runOfShowRequired,
+  runOfShowTotals: () => runOfShowTotals,
+  sheetLevel: () => sheetLevel,
+  sortedRunOfShow: () => sortedRunOfShow,
+  updateCallSheet: () => updateCallSheet,
+  updateRunItem: () => updateRunItem
+});
+var getCallSheet = (id2) => getDb().callSheets.find((c) => c.id === id2);
+function episodesOnDate(projectId, date2) {
+  const root = getRecord(projectId);
+  if (!root) return [];
+  return leavesUnder(root).filter((r) => r.scheduledDate === date2);
+}
+function callSheetForRecord(record2) {
+  const rootId = rootOf(record2).contentId;
+  return getDb().callSheets.find(
+    (cs) => cs.contentId === rootId && (cs.linkedEpisodeIds.includes(record2.contentId) || record2.scheduledDate !== null && cs.date === record2.scheduledDate)
+  );
+}
+function createCallSheet(actor, input) {
+  const root = getRecord(input.contentId);
+  if (!root) throw new RuleError("Project not found.");
+  if (!canWrite(actor, root)) throw new RuleError("You are not assigned to this project.");
+  if (!input.date) throw new RuleError("Pick a date for the call sheet.");
+  const cs = {
+    id: claimId(`DOF-CS-${pad(nextCounter("callsheet"))}`),
+    contentId: root.contentId,
+    title: input.title?.trim() || `${root.title}: ${input.date}`,
+    date: input.date,
+    location: input.location ?? "",
+    callTime: input.callTime ?? "08:00",
+    linkedEpisodeIds: episodesOnDate(root.contentId, input.date).map((r) => r.contentId),
+    // fixed at creation
+    crewPersonIds: input.crewPersonIds ?? [],
+    equipmentIds: [],
+    runOfShow: [],
+    format: input.format ?? "",
+    notes: input.notes ?? "",
+    status: "draft",
+    version: 1,
+    createdAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  getDb().callSheets.push(cs);
+  logAudit(actor, "create", "callsheet", cs.id, `${cs.linkedEpisodeIds.length} linked`);
+  commit();
+  return cs;
+}
+function openOrCreateForRecord(actor, recordId) {
+  const rec2 = getRecord(recordId);
+  if (!rec2) throw new RuleError("Record not found.");
+  const existing = callSheetForRecord(rec2);
+  if (existing) return { sheet: existing, created: false };
+  if (!rec2.scheduledDate) throw new RuleError("Set a shoot date on this record before creating a call sheet.");
+  const root = rootOf(rec2);
+  return { sheet: createCallSheet(actor, { contentId: root.contentId, date: rec2.scheduledDate }), created: true };
+}
+function duplicateCallSheet(actor, id2, newDate) {
+  const src = getCallSheet(id2);
+  if (!src) throw new RuleError("Call sheet not found.");
+  const copy = createCallSheet(actor, {
+    contentId: src.contentId,
+    date: newDate,
+    title: `${src.title.replace(/:.*$/, "")}: ${newDate}`,
+    location: src.location,
+    callTime: src.callTime,
+    crewPersonIds: [...src.crewPersonIds],
+    format: src.format,
+    notes: src.notes
+  });
+  copy.runOfShow = src.runOfShow.map((x) => ({ ...x, id: localId("RS") }));
+  const gear = copyGearBetweenSheets(actor, src.id, { id: copy.id, contentId: copy.contentId, date: copy.date });
+  logAudit(actor, "duplicate", "callsheet", copy.id, `from ${src.id}`);
+  commit();
+  return { sheet: copy, gear };
+}
+function getMismatches(cs) {
+  const linked = cs.linkedEpisodeIds.map((id2) => getRecord(id2)).filter((r) => !!r);
+  const moved = linked.filter((r) => r.scheduledDate !== cs.date || r.archived);
+  const unlinked = episodesOnDate(cs.contentId, cs.date).filter((r) => !cs.linkedEpisodeIds.includes(r.contentId));
+  return { moved, unlinked };
+}
+function resolveMismatches(actor, id2, expectedVersion) {
+  const cs = loadSheet(actor, id2, expectedVersion);
+  cs.linkedEpisodeIds = episodesOnDate(cs.contentId, cs.date).map((r) => r.contentId);
+  cs.version += 1;
+  logAudit(actor, "resolve-mismatch", "callsheet", id2, `${cs.linkedEpisodeIds.length} linked`);
+  commit();
+  return cs;
+}
+function loadSheet(actor, id2, expectedVersion) {
+  const cs = getCallSheet(id2);
+  if (!cs) throw new RuleError("Call sheet not found.");
+  const root = getRecord(cs.contentId);
+  if (!root || !canWrite(actor, root)) throw new RuleError("You have view-only access to this project.");
+  if (expectedVersion !== void 0 && cs.version !== expectedVersion) throw new ConflictError();
+  return cs;
+}
+var SHEET_EDITABLE = ["title", "location", "callTime", "crewPersonIds", "format", "notes", "date"];
+function updateCallSheet(actor, id2, input, expectedVersion) {
+  const patch = pickKeys(input, SHEET_EDITABLE);
+  const cs = loadSheet(actor, id2, expectedVersion);
+  if (cs.status === "final") throw new RuleError("This call sheet is final. Reopen it to make changes.");
+  if (patch.date !== void 0 && patch.date !== cs.date) {
+    if (!patch.date) throw new RuleError("Pick a date for the call sheet.");
+    rebookSheetGear(actor, cs.id, patch.date);
+  }
+  Object.assign(cs, patch);
+  cs.version += 1;
+  logAudit(actor, "update", "callsheet", id2, Object.keys(patch).join(", "));
+  commit();
+  return cs;
+}
+function attachCallSheet(actor, id2, contentId, expectedVersion) {
+  const cs = loadSheet(actor, id2, expectedVersion);
+  if (cs.contentId === contentId) throw new RuleError("This call sheet is already attached here.");
+  const target = getRecord(contentId);
+  if (!target) throw new RuleError("Project not found.");
+  if (!canWrite(actor, target)) throw new RuleError("You are not attached to that project.");
+  const from = cs.contentId;
+  cs.contentId = contentId;
+  cs.version += 1;
+  const gear = manifestForSheet(cs.id);
+  if (gear) gear.contentId = contentId;
+  logAudit(actor, "attach", "callsheet", id2, `${from} to ${contentId}`);
+  commit();
+  return cs;
+}
+function crewConflicts(cs) {
+  const out = [];
+  for (const other of getDb().callSheets) {
+    if (other.id === cs.id || other.date !== cs.date) continue;
+    for (const pid of cs.crewPersonIds) if (other.crewPersonIds.includes(pid)) out.push({ personId: pid, otherSheet: other });
+  }
+  return out;
+}
+function finalizeCallSheet(actor, id2, expectedVersion) {
+  const cs = loadSheet(actor, id2, expectedVersion);
+  const conflicts = crewConflicts(cs);
+  if (conflicts.length) {
+    const names = conflicts.map((c) => getDb().people.find((p) => p.personId === c.personId)?.name ?? c.personId);
+    throw new RuleError(`Crew double-booked on ${cs.date}: ${[...new Set(names)].join(", ")}. Resolve before finalizing.`);
+  }
+  const mm = getMismatches(cs);
+  if (mm.moved.length || mm.unlinked.length)
+    throw new RuleError("Episode dates no longer match this call sheet. Resolve the mismatch before finalizing.");
+  if (runOfShowRequired(cs) && cs.runOfShow.length === 0)
+    throw new RuleError("This is a large production, so the call sheet needs a run of show before it can be final.");
+  const gear = gearIssues(cs.id);
+  if (gear.length)
+    throw new RuleError(`Gear needs attention before finalizing: ${gear[0]}${gear.length > 1 ? ` (and ${gear.length - 1} more)` : ""}`);
+  cs.status = "final";
+  cs.version += 1;
+  logAudit(actor, "finalize", "callsheet", id2);
+  commit();
+  return cs;
+}
+function reopenCallSheet(actor, id2) {
+  const cs = loadSheet(actor, id2);
+  cs.status = "draft";
+  cs.version += 1;
+  logAudit(actor, "reopen", "callsheet", id2);
+  commit();
+  return cs;
+}
+function duplicateOf(cs) {
+  return getDb().callSheets.filter((c) => c.contentId === cs.contentId && c.id !== cs.id);
+}
+function deleteCallSheet(actor, id2) {
+  const cs = loadSheet(actor, id2);
+  releaseSheetGear(actor, id2);
+  getDb().callSheets = getDb().callSheets.filter((c) => c.id !== id2);
+  for (const s2 of getDb().recordingSessions) if (s2.callSheetId === id2) s2.callSheetId = null;
+  logAudit(actor, "delete", "callsheet", cs.id, cs.title);
+  commit();
+}
+function daysOf(cs) {
+  return cs.linkedEpisodeIds.map((id2) => getRecord(id2)).filter((r) => !!r && !r.archived);
+}
+function sheetLevel(cs) {
+  const order = ["small", "medium", "large"];
+  const levels = [...daysOf(cs).map((d) => d.productionLevel), getRecord(cs.contentId)?.productionLevel ?? null].filter(
+    (l) => !!l
+  );
+  return levels.sort((a, b) => order.indexOf(b) - order.indexOf(a))[0] ?? null;
+}
+function runOfShowRequired(cs) {
+  return sheetLevel(cs) === "large";
+}
+var sortedRunOfShow = (cs) => [...cs.runOfShow].sort((a, b) => a.time.localeCompare(b.time));
+function checkRunItem(input) {
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(input.time)) throw new RuleError("Enter the start time as hours and minutes, for example 09:30.");
+  if (!input.title.trim()) throw new RuleError("Give this segment a name.");
+  if (!Number.isInteger(input.durationMin) || input.durationMin < 0 || input.durationMin > 600)
+    throw new RuleError("Length must be a whole number of minutes, up to 600.");
+  if (input.ownerPersonId) {
+    const p = getPerson(input.ownerPersonId);
+    if (!p || p.status !== "active") throw new RuleError("Choose an active person.");
+  }
+}
+function editableSheet(actor, id2) {
+  const cs = loadSheet(actor, id2);
+  if (cs.status === "final") throw new RuleError("This call sheet is final. Reopen it to make changes.");
+  if (!runOfShowRequired(cs) && cs.runOfShow.length === 0)
+    throw new RuleError("A run of show is for large productions. Set the level of production to Large on the day first.");
+  return cs;
+}
+function addRunItem(actor, sheetId, input) {
+  const cs = editableSheet(actor, sheetId);
+  checkRunItem(input);
+  const item2 = {
+    id: localId("RS", (x) => cs.runOfShow.some((i) => i.id === x)),
+    time: input.time,
+    title: input.title.trim(),
+    durationMin: input.durationMin,
+    ownerPersonId: input.ownerPersonId || null,
+    notes: (input.notes ?? "").trim()
+  };
+  cs.runOfShow.push(item2);
+  cs.version += 1;
+  logAudit(actor, "run-add", "callsheet", sheetId, `${item2.time} ${item2.title}`);
+  commit();
+  return item2;
+}
+function updateRunItem(actor, sheetId, itemId, patch) {
+  const cs = editableSheet(actor, sheetId);
+  const item2 = cs.runOfShow.find((x) => x.id === itemId);
+  if (!item2) throw new RuleError("That segment no longer exists.");
+  const next2 = {
+    time: patch.time ?? item2.time,
+    title: patch.title ?? item2.title,
+    durationMin: patch.durationMin ?? item2.durationMin,
+    ownerPersonId: patch.ownerPersonId === void 0 ? item2.ownerPersonId : patch.ownerPersonId,
+    notes: patch.notes ?? item2.notes
+  };
+  checkRunItem(next2);
+  Object.assign(item2, { ...next2, title: next2.title.trim(), notes: next2.notes.trim() });
+  cs.version += 1;
+  logAudit(actor, "run-update", "callsheet", sheetId, item2.title);
+  commit();
+  return item2;
+}
+function removeRunItem(actor, sheetId, itemId) {
+  const cs = editableSheet(actor, sheetId);
+  cs.runOfShow = cs.runOfShow.filter((x) => x.id !== itemId);
+  cs.version += 1;
+  logAudit(actor, "run-remove", "callsheet", sheetId, itemId);
+  commit();
+}
+function runOfShowTotals(cs) {
+  const items = sortedRunOfShow(cs);
+  if (!items.length) return { minutes: 0, ends: null };
+  const toMin = (t2) => Number(t2.slice(0, 2)) * 60 + Number(t2.slice(3));
+  const end = Math.max(...items.map((i) => toMin(i.time) + i.durationMin));
+  const first = toMin(items[0].time);
+  const pad2 = (n) => String(n).padStart(2, "0");
+  return { minutes: end - first, ends: `${pad2(Math.floor(end / 60) % 24)}:${pad2(end % 60)}` };
+}
+
 // src/services/workflow/ids.ts
 function next(key2, used) {
   const db2 = getDb();
@@ -5898,6 +6483,757 @@ function nextEpisode(projectId) {
   const n = next(episodeCounter(projectId), used);
   return { id: claimId(episodeCode(projectId, n)), n };
 }
+
+// src/services/workflow/sessions.ts
+var RUN_SHEET_NOTE = "Real conversations often run long. If takes reach 65 to 70 minutes, expect the day to run 35 to 60 minutes over. Five long conversations in a row tire the host. Never skip the Episode 1 spot check.";
+var MAX_DAY = 24 * 60;
+var hhmm = (min) => `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
+function runSheetTemplate(episodes, minutes = 58) {
+  const titles = typeof episodes === "number" ? null : episodes;
+  const count2 = titles ? titles.length : episodes;
+  if (titles ? count2 > 12 : !Number.isInteger(count2) || count2 < 1 || count2 > 12)
+    throw new RuleError(titles ? "A recording day can hold up to 12 episodes." : "A recording day can hold from 1 to 12 episodes.");
+  if (!Number.isInteger(minutes) || minutes < 5 || minutes > 240) throw new RuleError("An episode's length must be from 5 to 240 minutes.");
+  const out = [];
+  let t2 = 7 * 60;
+  const add = (title2, durationMin, notes = "") => {
+    out.push({ time: hhmm(t2), title: title2, durationMin, ownerPersonId: null, notes });
+    t2 += durationMin;
+  };
+  add("Crew call, load-in", 0, "Gear check against the call sheet");
+  add("Setup", 90, "Cameras, lighting, audio, set dressing; take a reference photo of the set");
+  add("Technical check", 30, "Mic levels, camera sync, color match, storage and battery, short mock recording");
+  add("Talent arrival, mic-up, start routine", 10, "Quiet room, phones off");
+  for (let i = 1; i <= count2; i++) {
+    add(titles ? `Record: ${titles[i - 1]}` : `Episode ${i}`, minutes, i === 1 ? "Slate with the episode ID" : "");
+    if (i === count2) break;
+    if (i === 1) add("Spot check and changeover", 22, "Review Ep 1 for audio, focus and sync; reset set, water; brief the next guest");
+    else if (i === 3 && count2 >= 4) add("Lunch", 44, "Media offload can run while everyone eats");
+    else add("Changeover", 20, i % 2 === 0 ? "Log timestamps for any pickups" : "Check battery and card capacity");
+  }
+  add("Wrap", 59, "See wrap checklist");
+  if (t2 > MAX_DAY) throw new RuleError("That many episodes do not fit in one day. Split them across sessions.");
+  return out;
+}
+var withIds = (items) => items.map((x) => ({ id: localId("RS"), ...x }));
+function plannedMinutes(projectId) {
+  for (const p of getDb().plannedEpisodes)
+    if (p.contentId === projectId && !p.archivedAt) {
+      const n = Number(p.details.targetMinutes);
+      if (Number.isInteger(n) && n >= 5 && n <= 240) return n;
+    }
+  return 58;
+}
+var checkDate = (d) => {
+  if (d !== null && d !== void 0 && d !== "" && !isIsoDate(d)) throw new RuleError("Pick the session's date.");
+};
+var TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+function checkPlanFields(input) {
+  if (input.name !== void 0 && input.name.trim().length > 120) throw new RuleError("Keep the session's name under 120 characters.");
+  if (input.label !== void 0 && input.label !== null && !SESSION_LABELS.includes(input.label))
+    throw new RuleError("Choose Morning, Afternoon, Evening, Late night or Full day.");
+  for (const t2 of [input.startTime, input.endTime])
+    if (t2 !== void 0 && t2 !== null && t2 !== "" && !TIME.test(t2))
+      throw new RuleError("Enter the time as hours and minutes, for example 09:30.");
+}
+var isDevotion = (projectId) => getRecord(projectId)?.workflow?.formType === "devotion";
+function recordTitles(sessionId) {
+  const db2 = getDb();
+  return rowsOf(sessionId).map((r) => db2.plannedEpisodes.find((p) => p.id === r.plannedEpisodeId)).filter((p) => !!p).sort((a, b) => a.episodeNumber - b.episodeNumber).map(plannedTitle);
+}
+function keepCallSheet(actor, session) {
+  if (!isDevotion(session.contentId) || !session.scheduledDate || session.archivedAt || session.status === "Closed") return;
+  const sheet = session.callSheetId ? getDb().callSheets.find((c) => c.id === session.callSheetId) : void 0;
+  if (!sheet) createSessionCallSheet(actor, session.id);
+  else if (sheet.status === "draft" && sheet.date !== session.scheduledDate) {
+    sheet.date = session.scheduledDate;
+    sheet.version += 1;
+    logAudit(actor, "update", "callsheet", sheet.id, `date ${session.scheduledDate}, with its session`);
+  }
+}
+function createSession(actor, projectId, input = {}) {
+  const p = projectForWrite(actor, projectId);
+  if (p.workflow.stage !== "Pre-production")
+    throw new RuleError("Sessions are scheduled at Pre-production, once the project is greenlit and handed off.");
+  checkDate(input.scheduledDate);
+  checkPlanFields(input);
+  const { id: id2, n } = nextSession(projectId);
+  const at = nowStamp();
+  const s2 = {
+    id: id2,
+    contentId: projectId,
+    sessionNumber: n,
+    scheduledDate: input.scheduledDate || null,
+    venue: (input.venue ?? "").trim(),
+    status: "Planned",
+    closedAt: null,
+    callSheetId: null,
+    // A devotion's sessions start with no devotions on them: the run sheet gains a recording row for each one ticked.
+    runSheet: withIds(runSheetTemplate(isDevotion(projectId) ? [] : 5, plannedMinutes(projectId))),
+    dailyLog: "",
+    createdAt: at,
+    updatedAt: at,
+    archivedAt: null,
+    archivedReason: null,
+    name: (input.name ?? "").trim(),
+    label: input.label ?? null,
+    startTime: input.startTime || null,
+    endTime: input.endTime || null,
+    storyboardId: null,
+    shotListId: null,
+    storageDriveId: null
+  };
+  getDb().recordingSessions.push(s2);
+  ensureChecklist("preSession", "session", id2);
+  logAudit(actor, "create", "session", id2, s2.scheduledDate ?? "no date yet");
+  keepCallSheet(actor, s2);
+  commit();
+  return s2;
+}
+var SESSION_EDITABLE = ["scheduledDate", "venue", "dailyLog", "name", "label", "startTime", "endTime"];
+function updateSession(actor, sessionId, input) {
+  const { session } = sessionForWrite(actor, sessionId);
+  if (session.status === "Closed") throw new RuleError("This session is closed. Reopen it to change it.");
+  const patch = pickKeys(input, SESSION_EDITABLE);
+  checkDate(patch.scheduledDate);
+  checkPlanFields(patch);
+  if (patch.venue !== void 0 && patch.venue.length > 300) throw new RuleError("Keep the venue under 300 characters.");
+  if (patch.dailyLog !== void 0 && patch.dailyLog.length > 2e4) throw new RuleError("Keep the daily log under 20,000 characters.");
+  if (patch.scheduledDate !== void 0) session.scheduledDate = patch.scheduledDate || null;
+  if (patch.venue !== void 0) session.venue = patch.venue.trim();
+  if (patch.dailyLog !== void 0) session.dailyLog = patch.dailyLog.trim();
+  if (patch.name !== void 0) session.name = patch.name.trim();
+  if (patch.label !== void 0) session.label = patch.label || null;
+  if (patch.startTime !== void 0) session.startTime = patch.startTime || null;
+  if (patch.endTime !== void 0) session.endTime = patch.endTime || null;
+  session.updatedAt = nowStamp();
+  logAudit(actor, "update", "session", sessionId, Object.keys(patch).join(", "));
+  keepCallSheet(actor, session);
+  commit();
+  return session;
+}
+function archiveSession(actor, sessionId, reason) {
+  const { session } = sessionForWrite(actor, sessionId);
+  if (session.status !== "Planned") throw new RuleError("Only a session that has not started can be taken off the schedule.");
+  if (!reason.trim()) throw new RuleError("Write why the session is being taken off the schedule.");
+  session.archivedAt = nowStamp();
+  session.archivedReason = reason.trim();
+  session.updatedAt = session.archivedAt;
+  logAudit(actor, "archive", "session", sessionId, reason.trim());
+  commit();
+  return session;
+}
+function checkRunItem2(input) {
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(input.time)) throw new RuleError("Enter the start time as hours and minutes, for example 09:30.");
+  if (!input.title.trim()) throw new RuleError("Give this part of the day a name.");
+  if (!Number.isInteger(input.durationMin) || input.durationMin < 0 || input.durationMin > 600)
+    throw new RuleError("Length must be a whole number of minutes, up to 600.");
+  if (input.ownerPersonId) {
+    const p = getPerson(input.ownerPersonId);
+    if (!p || p.status !== "active") throw new RuleError("Choose an active person.");
+  }
+}
+var editableRunSheet = (actor, sessionId) => {
+  const { session } = sessionForWrite(actor, sessionId);
+  if (session.status === "Closed") throw new RuleError("This session is closed. Reopen it to change it.");
+  return session;
+};
+function resetRunSheet(actor, sessionId, minutes) {
+  const session = editableRunSheet(actor, sessionId);
+  const length = minutes ?? plannedMinutes(session.contentId);
+  const titles = isDevotion(session.contentId) ? recordTitles(sessionId) : null;
+  const planned = rowsOf(sessionId).filter((r) => r.plannedEpisodeId).length;
+  session.runSheet = withIds(runSheetTemplate(titles ?? (planned || 5), length));
+  session.updatedAt = nowStamp();
+  logAudit(actor, "run-sheet-reset", "session", sessionId, titles ? `${titles.length} devotions` : `${planned || 5} episodes`);
+  commit();
+  return session;
+}
+function isTemplate(session, titles) {
+  let tpl;
+  try {
+    tpl = runSheetTemplate(titles, plannedMinutes(session.contentId));
+  } catch {
+    return false;
+  }
+  const strip = (i) => [i.time, i.title, i.durationMin, i.ownerPersonId ?? null, i.notes];
+  return JSON.stringify(session.runSheet.map(strip)) === JSON.stringify(tpl.map(strip));
+}
+function followRunSheet(sessionId, before) {
+  const session = getDb().recordingSessions.find((s2) => s2.id === sessionId);
+  if (!session || session.status === "Closed" || !isDevotion(session.contentId)) return;
+  const after = recordTitles(sessionId);
+  if (after.join("\n") === before.join("\n") || !isTemplate(session, before)) return;
+  try {
+    session.runSheet = withIds(runSheetTemplate(after, plannedMinutes(session.contentId)));
+    session.updatedAt = nowStamp();
+  } catch {
+  }
+}
+function addRunSheetItem(actor, sessionId, input) {
+  const session = editableRunSheet(actor, sessionId);
+  checkRunItem2(input);
+  const item2 = {
+    id: localId("RS", (x) => session.runSheet.some((i) => i.id === x)),
+    time: input.time,
+    title: input.title.trim(),
+    durationMin: input.durationMin,
+    ownerPersonId: input.ownerPersonId || null,
+    notes: (input.notes ?? "").trim()
+  };
+  session.runSheet.push(item2);
+  session.runSheet.sort((a, b) => a.time.localeCompare(b.time));
+  session.updatedAt = nowStamp();
+  logAudit(actor, "run-sheet-add", "session", sessionId, `${item2.time} ${item2.title}`);
+  commit();
+  return item2;
+}
+function updateRunSheetItem(actor, sessionId, itemId, input) {
+  const session = editableRunSheet(actor, sessionId);
+  const item2 = session.runSheet.find((x) => x.id === itemId);
+  if (!item2) throw new RuleError("That part of the run sheet no longer exists.");
+  const next2 = {
+    time: input.time ?? item2.time,
+    title: input.title ?? item2.title,
+    durationMin: input.durationMin ?? item2.durationMin,
+    ownerPersonId: input.ownerPersonId === void 0 ? item2.ownerPersonId : input.ownerPersonId,
+    notes: input.notes ?? item2.notes
+  };
+  checkRunItem2(next2);
+  Object.assign(item2, { ...next2, title: next2.title.trim(), notes: next2.notes.trim(), ownerPersonId: next2.ownerPersonId || null });
+  session.runSheet.sort((a, b) => a.time.localeCompare(b.time));
+  session.updatedAt = nowStamp();
+  logAudit(actor, "run-sheet-update", "session", sessionId, item2.title);
+  commit();
+  return item2;
+}
+function removeRunSheetItem(actor, sessionId, itemId) {
+  const session = editableRunSheet(actor, sessionId);
+  session.runSheet = session.runSheet.filter((x) => x.id !== itemId);
+  session.updatedAt = nowStamp();
+  logAudit(actor, "run-sheet-remove", "session", sessionId, itemId);
+  commit();
+}
+function createSessionCallSheet(actor, sessionId) {
+  const { session, project } = sessionForWrite(actor, sessionId);
+  if (session.status === "Closed") throw new RuleError("This session is closed.");
+  if (session.callSheetId && getDb().callSheets.some((c) => c.id === session.callSheetId))
+    throw new RuleError(`This session already has call sheet ${session.callSheetId}.`);
+  if (!session.scheduledDate) throw new RuleError("Set the session's date before making its call sheet.");
+  const db2 = getDb();
+  const crew = [
+    ...new Set(
+      [project.workflow.showProducerId, ...db2.projectRoles.filter((r) => r.contentId === project.contentId).map((r) => r.crewId)].filter(
+        (x) => !!x
+      )
+    )
+  ];
+  const devotion = isDevotion(project.contentId);
+  const lines = devotion ? [] : rowsOf(sessionId).map((r) => {
+    const planned = db2.plannedEpisodes.find((p) => p.id === r.plannedEpisodeId);
+    const what = planned ? `${planned.id} ${planned.workingTitle}` : r.itemLabel;
+    return `- ${what}${r.guest ? ` (guest: ${r.guest})` : ""}`;
+  });
+  const sheet = createCallSheet(actor, {
+    contentId: rootOf(project).contentId,
+    date: session.scheduledDate,
+    title: `${displayTitle(project)}: ${session.name?.trim() || session.id}`,
+    location: session.venue,
+    callTime: [...session.runSheet].sort((a, b) => a.time.localeCompare(b.time))[0]?.time ?? "07:00",
+    crewPersonIds: crew,
+    format: formTypeOf(project.workflow.formType).label,
+    notes: lines.length ? `Recording session ${session.id}.
+${lines.join("\n")}` : `Recording session ${session.id}.`
+  });
+  session.callSheetId = sheet.id;
+  session.updatedAt = nowStamp();
+  logAudit(actor, "callsheet", "session", sessionId, sheet.id);
+  commit();
+  return sheet;
+}
+var RECORDED = ["Recorded", "Pickup needed"];
+function availableForLog(sessionId) {
+  const db2 = getDb();
+  const session = db2.recordingSessions.find((s2) => s2.id === sessionId);
+  if (!session) return [];
+  const live = new Set(db2.recordingSessions.filter((s2) => !s2.archivedAt).map((s2) => s2.id));
+  const recorded = new Set(
+    db2.sessionLogEntries.filter((e) => e.sessionId !== sessionId && live.has(e.sessionId) && RECORDED.includes(e.status)).map((e) => e.plannedEpisodeId)
+  );
+  const made = new Set(db2.records.filter((r) => r.episode && !r.archived).map((r) => r.episode.plannedEpisodeId));
+  const here = new Set(rowsOf(sessionId).map((e) => e.plannedEpisodeId));
+  return db2.plannedEpisodes.filter((p) => p.contentId === session.contentId && !p.archivedAt && !recorded.has(p.id) && !made.has(p.id) && !here.has(p.id)).sort((a, b) => a.episodeNumber - b.episodeNumber).map((p) => p.id);
+}
+function checkStatus(session, status2) {
+  if (status2 && session.status !== "Open") throw new RuleError("A row's status is set during the session, once it is in Production.");
+}
+function addLogRow(actor, sessionId, input) {
+  const { session, project } = sessionForWrite(actor, sessionId);
+  if (session.status === "Closed") throw new RuleError("This session is closed. Reopen it to change its log.");
+  checkStatus(session, input.status);
+  const db2 = getDb();
+  const plannedId = input.plannedEpisodeId || null;
+  const label = (input.itemLabel ?? "").trim();
+  let guest = (input.guest ?? "").trim();
+  if (isDocumentary(project)) {
+    if (!label) throw new RuleError("Name what was recorded: an interview set, a scene or a location.");
+  } else if (!plannedId) throw new RuleError("Choose the planned episode this row is for.");
+  if (plannedId) {
+    const planned = db2.plannedEpisodes.find((p) => p.id === plannedId && p.contentId === project.contentId);
+    if (!planned || planned.archivedAt) throw new RuleError("That is not one of this project's planned episodes.");
+    if (!availableForLog(sessionId).includes(plannedId))
+      throw new RuleError(`${planned.workingTitle || planned.id} is already in this log, or was recorded in another session.`);
+    guest ||= planned.guest;
+  }
+  const logDate = input.logDate || session.scheduledDate || todayIso();
+  if (!isIsoDate(logDate)) throw new RuleError("Pick the row's date.");
+  const at = nowStamp();
+  const row = {
+    id: plannedId ? `${sessionId}|${plannedId}` : `${sessionId}|${localId("I", (x) => db2.sessionLogEntries.some((e) => e.id === `${sessionId}|${x}`))}`,
+    sessionId,
+    plannedEpisodeId: plannedId,
+    itemLabel: label,
+    logDate,
+    guest,
+    status: input.status ?? null,
+    notesForPost: (input.notesForPost ?? "").trim(),
+    createdAt: at,
+    updatedAt: at
+  };
+  db2.sessionLogEntries.push(row);
+  session.updatedAt = at;
+  logAudit(actor, "log-add", "session", sessionId, row.plannedEpisodeId ?? row.itemLabel);
+  commit();
+  return row;
+}
+var LOG_EDITABLE = ["itemLabel", "guest", "logDate", "status", "notesForPost"];
+function updateLogRow(actor, rowId, input) {
+  const row = getDb().sessionLogEntries.find((e) => e.id === rowId);
+  if (!row) throw new RuleError("That log row no longer exists.");
+  const { session } = sessionForWrite(actor, row.sessionId);
+  if (session.status === "Closed") throw new RuleError("This session is closed. Reopen it to change its log.");
+  const patch = pickKeys(input, LOG_EDITABLE);
+  checkStatus(session, patch.status);
+  if (patch.logDate !== void 0 && !isIsoDate(patch.logDate)) throw new RuleError("Pick the row's date.");
+  if (patch.itemLabel !== void 0) {
+    if (!row.plannedEpisodeId && !patch.itemLabel.trim()) throw new RuleError("Name what was recorded.");
+    row.itemLabel = patch.itemLabel.trim();
+  }
+  if (patch.guest !== void 0) row.guest = patch.guest.trim();
+  if (patch.logDate) row.logDate = patch.logDate;
+  if (patch.status !== void 0) row.status = patch.status;
+  if (patch.notesForPost !== void 0) {
+    if (patch.notesForPost.length > 2e4) throw new RuleError("Keep the notes under 20,000 characters.");
+    row.notesForPost = patch.notesForPost.trim();
+  }
+  row.updatedAt = nowStamp();
+  logAudit(actor, "log-update", "session", row.sessionId, `${row.plannedEpisodeId ?? row.itemLabel}: ${Object.keys(patch).join(", ")}`);
+  commit();
+  return row;
+}
+function removeLogRow(actor, rowId) {
+  const db2 = getDb();
+  const row = db2.sessionLogEntries.find((e) => e.id === rowId);
+  if (!row) throw new RuleError("That log row no longer exists.");
+  const { session } = sessionForWrite(actor, row.sessionId);
+  if (session.status === "Closed") throw new RuleError("This session is closed. Reopen it to change its log.");
+  db2.sessionLogEntries = db2.sessionLogEntries.filter((e) => e.id !== rowId);
+  logAudit(actor, "log-remove", "session", row.sessionId, row.plannedEpisodeId ?? row.itemLabel);
+  commit();
+}
+function openSession(actor, sessionId) {
+  const { session } = sessionForWrite(actor, sessionId);
+  const gate = evaluateGate("Pre-production", "session", sessionId);
+  if (!gate.passed) throw gateError("Pre-production", gate.missing);
+  session.status = "Open";
+  session.updatedAt = nowStamp();
+  ensureChecklist("wrap", "session", sessionId);
+  logAudit(actor, "stage-advance", "session", sessionId, "Pre-production \u2192 Production");
+  commit();
+  return session;
+}
+function closeSession(actor, sessionId) {
+  const { session, project } = sessionForWrite(actor, sessionId);
+  const gate = evaluateGate("Production", "session", sessionId);
+  if (!gate.passed) throw gateError("Production", gate.missing);
+  const db2 = getDb();
+  const made = [];
+  const kept2 = [];
+  const archived = [];
+  if (!isDocumentary(project)) {
+    const planned = new Map(db2.plannedEpisodes.map((p) => [p.id, p]));
+    const rows = rowsOf(sessionId).filter((r) => r.plannedEpisodeId && planned.has(r.plannedEpisodeId)).sort((a, b) => planned.get(a.plannedEpisodeId).episodeNumber - planned.get(b.plannedEpisodeId).episodeNumber);
+    const label = categoryOf(project.category).workflow?.episodeLabel ?? "Episode";
+    for (const row of rows) {
+      const existing = db2.records.find((r) => r.episode?.plannedEpisodeId === row.plannedEpisodeId && !r.archived);
+      if (RECORDED.includes(row.status)) {
+        if (existing) {
+          kept2.push(existing.contentId);
+          continue;
+        }
+        const p = planned.get(row.plannedEpisodeId);
+        const waiting2 = p.reservedId ? db2.records.find((r) => r.contentId === p.reservedId && (!r.episode || r.archived && r.episode.plannedEpisodeId === p.id)) : void 0;
+        const given2 = p.reservedId && !db2.records.some((r) => r.contentId === p.reservedId) ? p.reservedId : void 0;
+        const ep = makeEpisode(
+          actor,
+          project,
+          {
+            title: p.workingTitle || `${label} ${p.episodeNumber}`,
+            plannedEpisodeId: p.id,
+            sourceSessionId: sessionId,
+            productionNotes: row.notesForPost,
+            scheduledDate: row.logDate
+          },
+          waiting2 ?? given2
+        );
+        made.push(ep.contentId);
+      } else if (existing && existing.episode?.sourceSessionId === sessionId) {
+        existing.archived = true;
+        existing.closedReason = `Session ${sessionId} was reopened and this was marked Not recorded.`;
+        existing.version += 1;
+        archived.push(existing.contentId);
+      }
+    }
+  }
+  session.status = "Closed";
+  session.closedAt = nowStamp();
+  session.updatedAt = session.closedAt;
+  logAudit(
+    actor,
+    "stage-advance",
+    "session",
+    sessionId,
+    `Production \u2192 closed. ${made.length ? `Made ${made.join(", ")}.` : "No new episodes."}${archived.length ? ` Archived ${archived.join(", ")}.` : ""}`
+  );
+  commit();
+  return { session, made, kept: kept2, archived };
+}
+function reopenSession(actor, sessionId) {
+  const { session, project } = sessionForWrite(actor, sessionId);
+  if (session.status !== "Closed") throw new RuleError("This session is not closed.");
+  const eps = isDocumentary(project) ? episodesOf(project.contentId) : episodesOf(project.contentId).filter((e) => e.episode.sourceSessionId === sessionId);
+  const started = eps.filter((e) => e.episode.stage !== "Post production" || e.episode.postStage !== "Not started");
+  if (started.length)
+    throw new RuleError(
+      `This session cannot be reopened: work has started on ${started.map((e) => `${e.contentId} (${e.episode.stage === "Post production" ? e.episode.postStage : e.episode.stage})`).join(", ")}.`
+    );
+  session.status = "Open";
+  session.closedAt = null;
+  session.updatedAt = nowStamp();
+  logAudit(actor, "reopen", "session", sessionId);
+  commit();
+  return session;
+}
+function sendToPostProduction(actor, projectId) {
+  const p = projectForWrite(actor, projectId);
+  if (!isDocumentary(p)) throw new RuleError("Series and devotions make their episodes when each session closes.");
+  if (!canManageTeam(actor, p))
+    throw new RuleError("Only the show producer or the Head of Production sends a documentary to post production.");
+  const closed = sessionsOf(projectId).filter((s2) => s2.status === "Closed" && !s2.archivedAt);
+  if (!closed.length) throw new RuleError("Close at least one recording session first.");
+  if (episodesOf(projectId).length) throw new RuleError("This documentary is already in post production.");
+  const notes = closed.flatMap(
+    (s2) => rowsOf(s2.id).map(
+      (r) => `${s2.id}, ${r.logDate}, ${r.itemLabel || r.plannedEpisodeId}${r.guest ? ` (${r.guest})` : ""}: ${r.notesForPost || "no notes"}`
+    )
+  ).join("\n");
+  const parts = getDb().plannedEpisodes.filter((x) => x.contentId === projectId && !x.archivedAt).sort((a, b) => a.episodeNumber - b.episodeNumber);
+  const made = (parts.length ? parts : [null]).map(
+    (part) => makeEpisode(actor, p, {
+      title: part ? part.workingTitle || `Part ${part.episodeNumber}` : p.title,
+      plannedEpisodeId: part?.id ?? null,
+      sourceSessionId: null,
+      productionNotes: notes,
+      scheduledDate: closed[closed.length - 1].scheduledDate
+    })
+  );
+  logAudit(actor, "stage-advance", "record", projectId, `Sent to post production: ${made.map((e) => e.contentId).join(", ")}`);
+  commit();
+  return made;
+}
+
+// src/services/workflow/plan.ts
+var defOrder = (r) => {
+  const i = PROJECT_ROLE_DEFS.findIndex((d) => d.key === r.roleKey);
+  return i < 0 ? PROJECT_ROLE_DEFS.length : i;
+};
+var planRolesOf = (projectId) => getDb().projectRoles.filter((r) => r.contentId === projectId).sort((a, b) => (a.position ?? defOrder(a)) - (b.position ?? defOrder(b)) || a.createdAt.localeCompare(b.createdAt));
+function forRoles(actor, projectId) {
+  const p = projectForWrite(actor, projectId);
+  if (!canManageTeam(actor, p))
+    throw new RuleError(
+      `Only the show producer, the Head of Production, or someone given "Assign other people's work", can change roles.`
+    );
+  if (p.workflow.stage !== "Pre-production")
+    throw new RuleError("Roles are set at Pre-production, once the project is greenlit and handed off.");
+  return p;
+}
+var MAX_ROLE_NAME = 60;
+function roleNameOf(label, projectId, selfId) {
+  const name = label.trim();
+  if (!name) throw new RuleError("Give the role a name.");
+  if (name.length > MAX_ROLE_NAME) throw new RuleError(`Keep the role's name under ${MAX_ROLE_NAME} characters.`);
+  const clash = planRolesOf(projectId).find((r) => r.id !== selfId && roleName(r).toLowerCase() === name.toLowerCase());
+  if (clash) throw new RuleError(`There is already a role called ${roleName(clash)}.`);
+  return name;
+}
+function blankRole(projectId, key2, label, position, by) {
+  const db2 = getDb();
+  const at = nowStamp();
+  const known = key2 !== "custom" && !db2.projectRoles.some((r) => r.id === `${projectId}|${key2}`);
+  return {
+    id: known ? `${projectId}|${key2}` : `${projectId}|custom-${localId("RL").slice(3)}`,
+    contentId: projectId,
+    roleKey: known ? key2 : "custom",
+    exclusive: known,
+    // a role of the usual kind is held once per project; roles added by hand can be several
+    crewId: null,
+    guestName: "",
+    assignedById: by,
+    assignedAt: at,
+    createdAt: at,
+    updatedAt: at,
+    label,
+    position
+  };
+}
+function seedPlanRoles(projectId, by) {
+  const db2 = getDb();
+  if (db2.projectRoles.some((r) => r.contentId === projectId)) return [];
+  const made = PLAN_ROLE_SEEDS.map((s2, i) => blankRole(projectId, s2.key, s2.label, i, by));
+  db2.projectRoles.push(...made);
+  return made;
+}
+function startPlanRoles(actor, projectId) {
+  forRoles(actor, projectId);
+  const made = seedPlanRoles(projectId, actor.personId);
+  if (made.length) {
+    logAudit(actor, "role", "record", projectId, `Roles listed: ${made.map(roleName).join(", ")}`);
+    commit();
+  }
+  return planRolesOf(projectId);
+}
+function addPlanRole(actor, projectId, label) {
+  forRoles(actor, projectId);
+  const name = roleNameOf(label, projectId);
+  const roles2 = planRolesOf(projectId);
+  const role = blankRole(projectId, "custom", name, Math.max(-1, ...roles2.map((r) => r.position ?? defOrder(r))) + 1, actor.personId);
+  getDb().projectRoles.push(role);
+  logAudit(actor, "role", "record", projectId, `Role added: ${name}`);
+  commit();
+  return role;
+}
+var requireRole = (roleId) => {
+  const role = getDb().projectRoles.find((r) => r.id === roleId);
+  if (!role) throw new RuleError("That role is no longer on the project.");
+  return role;
+};
+function renamePlanRole(actor, roleId, label) {
+  const role = requireRole(roleId);
+  forRoles(actor, role.contentId);
+  const before = roleName(role);
+  role.label = roleNameOf(label, role.contentId, role.id);
+  role.updatedAt = nowStamp();
+  logAudit(actor, "role", "record", role.contentId, `Role renamed: ${before} \u2192 ${role.label}`);
+  commit();
+  return role;
+}
+function setRolePerson(actor, roleId, crewId) {
+  const role = requireRole(roleId);
+  const p = forRoles(actor, role.contentId);
+  if (crewId) {
+    requireCrew(crewId, roleName(role));
+    joinProject(actor, crewId, p);
+  }
+  role.crewId = crewId || null;
+  if (crewId) role.guestName = "";
+  role.assignedById = actor.personId;
+  role.assignedAt = role.updatedAt = nowStamp();
+  logAudit(
+    actor,
+    "role",
+    "record",
+    role.contentId,
+    `${roleName(role)}: ${crewId ? getDb().people.find((x) => x.personId === crewId)?.name ?? crewId : "no one yet"}`
+  );
+  commit();
+  return role;
+}
+var roleHolder = (r) => !!r.crewId || !!r.guestName.trim();
+var liveSessions = (projectId) => getDb().recordingSessions.filter((s2) => s2.contentId === projectId && !s2.archivedAt);
+function devotionPlacements(projectId) {
+  const db2 = getDb();
+  const sessions = new Map(liveSessions(projectId).map((s2) => [s2.id, s2]));
+  return db2.plannedEpisodes.filter((p) => p.contentId === projectId && !p.archivedAt).sort((a, b) => a.episodeNumber - b.episodeNumber).map((p) => {
+    const rows = db2.sessionLogEntries.filter((e) => e.plannedEpisodeId === p.id && sessions.has(e.sessionId));
+    const row = rows.find((e) => e.status === "Recorded" || e.status === "Pickup needed") ?? rows[0];
+    const session = row ? sessions.get(row.sessionId) : void 0;
+    const made = db2.records.some((r) => r.episode?.plannedEpisodeId === p.id && !r.archived);
+    return {
+      planned: p,
+      title: plannedTitle(p),
+      scripture: plannedScripture(p),
+      sessionId: session?.id ?? null,
+      locked: made || !!session && (session.status !== "Planned" || !!row.status)
+    };
+  });
+}
+function assignDevotion(actor, plannedId, sessionId) {
+  const db2 = getDb();
+  const planned = db2.plannedEpisodes.find((p) => p.id === plannedId);
+  if (!planned || planned.archivedAt) throw new RuleError("That devotion is no longer on the list.");
+  projectForWrite(actor, planned.contentId);
+  const now = devotionPlacements(planned.contentId).find((x) => x.planned.id === plannedId);
+  if (now.sessionId === sessionId) return now;
+  if (now.locked)
+    throw new RuleError(
+      `${now.title} is on ${sessionName(db2.recordingSessions.find((s2) => s2.id === now.sessionId))}, which has started recording, so it stays there.`
+    );
+  if (sessionId) {
+    const { session } = sessionForWrite(actor, sessionId);
+    if (session.contentId !== planned.contentId) throw new RuleError("That session belongs to another project.");
+    if (session.status !== "Planned")
+      throw new RuleError(`${sessionName(session)} has started recording. Choose a session still being planned.`);
+  }
+  const live = new Set(liveSessions(planned.contentId).map((s2) => s2.id));
+  const touched = [now.sessionId, sessionId].filter((x) => !!x).map((id2) => [id2, recordTitles(id2)]);
+  db2.sessionLogEntries = db2.sessionLogEntries.filter((e) => !(e.plannedEpisodeId === plannedId && live.has(e.sessionId)));
+  if (sessionId) addLogRow(actor, sessionId, { plannedEpisodeId: plannedId });
+  for (const [id2, before] of touched) followRunSheet(id2, before);
+  logAudit(
+    actor,
+    "devotion-session",
+    "record",
+    planned.contentId,
+    `${now.title}: ${sessionId ? `on ${sessionId}` : "taken off its session"}`
+  );
+  commit();
+  return devotionPlacements(planned.contentId).find((x) => x.planned.id === plannedId);
+}
+var sessionName = (s2) => s2 ? s2.name?.trim() || `Session ${s2.sessionNumber}` : "a session";
+function sheetTimes(runSheet) {
+  const rows = [...runSheet].sort((a, b) => a.time.localeCompare(b.time));
+  const at = (re) => rows.find((i) => re.test(i.title))?.time ?? null;
+  return {
+    crewCall: at(/crew call/i) ?? rows[0]?.time ?? null,
+    talentArrival: at(/talent|guest arriv|host arriv/i),
+    startRecording: at(/^(record\b|episode \d)/i),
+    wrap: at(/^wrap/i)
+  };
+}
+function setSessionBoards(actor, sessionId, choice) {
+  const { session } = sessionForWrite(actor, sessionId);
+  if (session.status === "Closed") throw new RuleError("This session is closed.");
+  const db2 = getDb();
+  if (choice.storyboardId !== void 0) {
+    if (choice.storyboardId && !db2.storyboards.some((b) => b.id === choice.storyboardId && b.contentId === session.contentId))
+      throw new RuleError("Choose one of this project's storyboards.");
+    session.storyboardId = choice.storyboardId || null;
+  }
+  if (choice.shotListId !== void 0) {
+    if (choice.shotListId && !db2.shotLists.some((l) => l.id === choice.shotListId && l.contentId === session.contentId))
+      throw new RuleError("Choose one of this project's shot lists.");
+    session.shotListId = choice.shotListId || null;
+  }
+  session.updatedAt = nowStamp();
+  logAudit(
+    actor,
+    "session-boards",
+    "session",
+    sessionId,
+    `storyboard ${session.storyboardId ?? "none"}, shot list ${session.shotListId ?? "none"}`
+  );
+  commit();
+  return session;
+}
+var requireStorage = (actor) => {
+  if (!hasStorageAccess(actor)) throw new RuleError("Only someone who may use storage can choose the drive.");
+};
+var requireDrive = (driveId) => {
+  const d = getDrive(driveId);
+  if (!d) throw new RuleError("Choose one of the drives on the Storage screen.");
+  return d;
+};
+function setProjectDrive(actor, projectId, driveId) {
+  const p = projectForWrite(actor, projectId);
+  requireStorage(actor);
+  if (driveId) requireDrive(driveId);
+  p.workflow.storageDriveId = driveId || null;
+  p.version += 1;
+  logAudit(actor, "storage-plan", "record", projectId, driveId ? `footage to go on ${getDrive(driveId).name}` : "no drive chosen");
+  commit();
+  return p;
+}
+function sessionDriveId(session) {
+  const p = getRecord(session.contentId);
+  return session.storageDriveId ?? p?.workflow?.storageDriveId ?? null;
+}
+var footageOf = (sessionId) => getDb().allocations.find((a) => a.sessionId === sessionId);
+var assetsOf = (episodeId) => getDb().allocations.find((a) => a.contentId === episodeId && a.kind === "project" && !a.sessionId);
+function setSessionDrive(actor, sessionId, driveId) {
+  const { session } = sessionForWrite(actor, sessionId);
+  requireStorage(actor);
+  if (driveId) requireDrive(driveId);
+  session.storageDriveId = driveId || null;
+  session.updatedAt = nowStamp();
+  const footage = footageOf(sessionId);
+  const target = sessionDriveId(session);
+  if (footage && target && footage.driveId !== target) updateAllocation(actor, footage.id, { driveId: target });
+  logAudit(actor, "storage-plan", "session", sessionId, target ? `footage on ${getDrive(target)?.name ?? target}` : "no drive chosen");
+  commit();
+  return session;
+}
+var checkSize = (sizeGB) => {
+  if (!Number.isFinite(sizeGB) || sizeGB <= 0 || sizeGB > 1e6) throw new RuleError("Enter the size in GB, more than zero.");
+};
+function setSessionFootage(actor, sessionId, sizeGB) {
+  const { session } = sessionForWrite(actor, sessionId);
+  if (session.status === "Planned") throw new RuleError("The footage's size is entered once recording has started.");
+  checkSize(sizeGB);
+  const existing = footageOf(sessionId);
+  if (existing) {
+    const a2 = updateAllocation(actor, existing.id, { sizeGB });
+    commit();
+    return a2;
+  }
+  const driveId = sessionDriveId(session);
+  if (!driveId) throw new RuleError("Choose the drive the footage is on first.");
+  const a = addAllocation(actor, {
+    driveId,
+    contentId: session.contentId,
+    sizeGB,
+    kind: "raw",
+    label: `${sessionName(session)} footage`,
+    note: `Recording session ${session.id}`
+  });
+  a.sessionId = sessionId;
+  logAudit(actor, "storage-footage", "session", sessionId, fmtSize(sizeGB));
+  commit();
+  return a;
+}
+function setEpisodeAssets(actor, episodeId, input) {
+  const { project } = episodeForWrite(actor, episodeId);
+  const existing = assetsOf(episodeId);
+  if (input.sizeGB !== void 0) checkSize(input.sizeGB);
+  if (input.driveId) requireDrive(input.driveId);
+  if (existing) {
+    const a2 = updateAllocation(actor, existing.id, {
+      ...input.sizeGB !== void 0 ? { sizeGB: input.sizeGB } : {},
+      ...input.driveId ? { driveId: input.driveId } : {}
+    });
+    commit();
+    return a2;
+  }
+  const driveId = input.driveId || project.workflow.storageDriveId || null;
+  if (!driveId) throw new RuleError("Choose the drive the assets are on first.");
+  if (input.sizeGB === void 0) throw new RuleError("Enter the size in GB, more than zero.");
+  const a = addAllocation(actor, { driveId, contentId: episodeId, sizeGB: input.sizeGB, kind: "project", label: "Edit assets" });
+  logAudit(actor, "storage-assets", "record", episodeId, fmtSize(input.sizeGB));
+  commit();
+  return a;
+}
+var unassignedDevotions = (projectId) => devotionPlacements(projectId).filter((x) => !x.sessionId && !x.locked);
+var onSession = (sessionId, plannedId) => rowsOf(sessionId).some((r) => r.plannedEpisodeId === plannedId);
 
 // src/services/workflow/status.ts
 function refreshProjectStatus(p) {
@@ -6045,11 +7381,17 @@ function preProductionProjectGate(p) {
   if (p.workflow.stage !== "Pre-production") missing.push("The project must have left Development");
   if (!p.workflow.showProducerId) missing.push("A show producer");
   const roles2 = getDb().projectRoles.filter((r) => r.contentId === p.contentId);
-  for (const key2 of REQUIRED_ROLES) if (!roles2.some((r) => r.roleKey === key2)) missing.push(`Role: ${roleLabel(key2)}`);
+  const warnings = lateDates(p, [["The Pre-production deadline", p.stageDeadlines["Pre-production"]]]);
+  if (p.workflow.formType === "devotion") {
+    if (!roles2.length) missing.push("Roles: list the project's roles in the Recording Plan");
+    for (const r of roles2) if (!roleHolder(r)) missing.push(`Role: ${roleName(r)} needs a person`);
+    const waiting2 = unassignedDevotions(p.contentId).length;
+    if (waiting2) warnings.push(`${waiting2} devotion${waiting2 === 1 ? " is" : "s are"} not assigned to a session yet`);
+  } else for (const key2 of REQUIRED_ROLES) if (!roles2.some((r) => r.roleKey === key2)) missing.push(`Role: ${roleLabel(key2)}`);
   missing.push(...openRequired("preProject", p.contentId).map((l) => `Pre-production: ${l}`));
   if (p.workflow.formType === "documentary_dof" && latestDecision(formOf(p.contentId), 2)?.outcome !== "Greenlight")
     missing.push("Second greenlight decision: Greenlight (shoot budget, interview sets and shot list)");
-  return result(missing, lateDates(p, [["The Pre-production deadline", p.stageDeadlines["Pre-production"]]]));
+  return result(missing, warnings);
 }
 function preProductionSessionGate(s2, p) {
   const project = preProductionProjectGate(p);
@@ -8837,10 +10179,99 @@ function upgradeToV17(db2) {
   db2.schemaVersion = 17;
   return db2;
 }
+function upgradeToV18(db2) {
+  const order = ["director", "dop", "audio_engineer", "camera_operator", "continuity", "editor", "host_guest"];
+  for (const r of db2.projectRoles ?? []) {
+    r.label ??= "";
+    r.position ??= order.indexOf(r.roleKey) < 0 ? order.length : order.indexOf(r.roleKey);
+  }
+  for (const r of db2.records) if (r.workflow) r.workflow.storageDriveId ??= null;
+  for (const a of db2.allocations ?? []) a.sessionId ??= null;
+  for (const ses of db2.recordingSessions ?? []) {
+    ses.name ??= "";
+    ses.label ??= null;
+    ses.startTime ??= null;
+    ses.endTime ??= null;
+    ses.storyboardId ??= null;
+    ses.shotListId ??= null;
+    ses.storageDriveId ??= null;
+  }
+  const at = (/* @__PURE__ */ new Date()).toISOString();
+  const linked = new Set((db2.recordingSessions ?? []).map((x) => x.callSheetId).filter(Boolean));
+  const made = [];
+  for (const p of db2.records) {
+    if (p.workflow?.formType !== "devotion" || p.archived || p.workflow.stage !== "Pre-production") continue;
+    const sheets = db2.callSheets.filter((c) => c.contentId === p.contentId && !linked.has(c.id)).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+    for (const sheet of sheets) {
+      const key2 = sessionCounter(p.contentId);
+      const used = db2.recordingSessions.filter((x) => x.contentId === p.contentId).map((x) => x.sessionNumber);
+      const n = Math.max(db2.counters[key2] ?? 0, ...used) + 1;
+      db2.counters[key2] = n;
+      db2.recordingSessions.push({
+        id: sessionCode(p.contentId, n),
+        contentId: p.contentId,
+        sessionNumber: n,
+        scheduledDate: sheet.date || null,
+        venue: sheet.location,
+        status: "Planned",
+        closedAt: null,
+        callSheetId: sheet.id,
+        runSheet: sheet.runOfShow.map((item2) => ({ ...item2 })),
+        dailyLog: "",
+        createdAt: at,
+        updatedAt: at,
+        archivedAt: null,
+        archivedReason: null,
+        name: sheet.title,
+        label: null,
+        startTime: null,
+        endTime: null,
+        storyboardId: null,
+        shotListId: null,
+        storageDriveId: null,
+        fromCallSheet: true
+      });
+      const list = CHECKLISTS.preSession;
+      for (const item2 of list.items) {
+        const rowId = `${sessionCode(p.contentId, n)}|${list.stage}|${item2.key}`;
+        if (item2.auto || db2.workflowChecklistItems.some((c) => c.id === rowId)) continue;
+        db2.workflowChecklistItems.push({
+          id: rowId,
+          ownerType: "session",
+          ownerId: sessionCode(p.contentId, n),
+          stage: list.stage,
+          itemKey: item2.key,
+          label: item2.label,
+          required: item2.required,
+          done: false,
+          note: "",
+          doneAt: null,
+          doneById: null,
+          createdAt: at,
+          updatedAt: at
+        });
+      }
+      linked.add(sheet.id);
+      made.push(`${sessionCode(p.contentId, n)} from ${sheet.id}`);
+    }
+  }
+  if (made.length)
+    db2.audit.push({
+      id: logId("A"),
+      at,
+      byPersonId: "system",
+      action: "migrate-call-sheets",
+      entity: "system",
+      entityId: "recording-plan",
+      detail: `Devotion call sheets moved into Recording Plan sessions: ${made.join(", ")}.`
+    });
+  db2.schemaVersion = 18;
+  return db2;
+}
 
 // src/data/store.ts
 var KEY = "dof-hub-db";
-var SCHEMA_VERSION = 17;
+var SCHEMA_VERSION = 18;
 function migrate(old) {
   const gear = buildGearSeed();
   const next2 = {
@@ -8880,7 +10311,8 @@ var UPGRADES = {
   13: upgradeToV14,
   14: upgradeToV15,
   15: upgradeToV16,
-  16: upgradeToV17
+  16: upgradeToV17,
+  17: upgradeToV18
 };
 function upgradeDb(parsed) {
   let db2 = parsed.schemaVersion === 1 ? migrate(parsed) : parsed;
@@ -9718,285 +11150,6 @@ async function afterPeopleChange(store2, personId) {
   for (const u of await store2.users.find({ personId })) await revokeSessions(store2, u._id);
 }
 
-// src/services/callsheets.ts
-var callsheets_exports = {};
-__export(callsheets_exports, {
-  SHEET_EDITABLE: () => SHEET_EDITABLE,
-  addRunItem: () => addRunItem,
-  attachCallSheet: () => attachCallSheet,
-  callSheetForRecord: () => callSheetForRecord,
-  createCallSheet: () => createCallSheet,
-  crewConflicts: () => crewConflicts,
-  daysOf: () => daysOf,
-  deleteCallSheet: () => deleteCallSheet,
-  duplicateCallSheet: () => duplicateCallSheet,
-  duplicateOf: () => duplicateOf,
-  episodesOnDate: () => episodesOnDate,
-  finalizeCallSheet: () => finalizeCallSheet,
-  getCallSheet: () => getCallSheet,
-  getMismatches: () => getMismatches,
-  openOrCreateForRecord: () => openOrCreateForRecord,
-  removeRunItem: () => removeRunItem,
-  reopenCallSheet: () => reopenCallSheet,
-  resolveMismatches: () => resolveMismatches,
-  runOfShowRequired: () => runOfShowRequired,
-  runOfShowTotals: () => runOfShowTotals,
-  sheetLevel: () => sheetLevel,
-  sortedRunOfShow: () => sortedRunOfShow,
-  updateCallSheet: () => updateCallSheet,
-  updateRunItem: () => updateRunItem
-});
-var getCallSheet = (id2) => getDb().callSheets.find((c) => c.id === id2);
-function episodesOnDate(projectId, date2) {
-  const root = getRecord(projectId);
-  if (!root) return [];
-  return leavesUnder(root).filter((r) => r.scheduledDate === date2);
-}
-function callSheetForRecord(record2) {
-  const rootId = rootOf(record2).contentId;
-  return getDb().callSheets.find(
-    (cs) => cs.contentId === rootId && (cs.linkedEpisodeIds.includes(record2.contentId) || record2.scheduledDate !== null && cs.date === record2.scheduledDate)
-  );
-}
-function createCallSheet(actor, input) {
-  const root = getRecord(input.contentId);
-  if (!root) throw new RuleError("Project not found.");
-  if (!canWrite(actor, root)) throw new RuleError("You are not assigned to this project.");
-  if (!input.date) throw new RuleError("Pick a date for the call sheet.");
-  const cs = {
-    id: claimId(`DOF-CS-${pad(nextCounter("callsheet"))}`),
-    contentId: root.contentId,
-    title: input.title?.trim() || `${root.title}: ${input.date}`,
-    date: input.date,
-    location: input.location ?? "",
-    callTime: input.callTime ?? "08:00",
-    linkedEpisodeIds: episodesOnDate(root.contentId, input.date).map((r) => r.contentId),
-    // fixed at creation
-    crewPersonIds: input.crewPersonIds ?? [],
-    equipmentIds: [],
-    runOfShow: [],
-    format: input.format ?? "",
-    notes: input.notes ?? "",
-    status: "draft",
-    version: 1,
-    createdAt: (/* @__PURE__ */ new Date()).toISOString()
-  };
-  getDb().callSheets.push(cs);
-  logAudit(actor, "create", "callsheet", cs.id, `${cs.linkedEpisodeIds.length} linked`);
-  commit();
-  return cs;
-}
-function openOrCreateForRecord(actor, recordId) {
-  const rec2 = getRecord(recordId);
-  if (!rec2) throw new RuleError("Record not found.");
-  const existing = callSheetForRecord(rec2);
-  if (existing) return { sheet: existing, created: false };
-  if (!rec2.scheduledDate) throw new RuleError("Set a shoot date on this record before creating a call sheet.");
-  const root = rootOf(rec2);
-  return { sheet: createCallSheet(actor, { contentId: root.contentId, date: rec2.scheduledDate }), created: true };
-}
-function duplicateCallSheet(actor, id2, newDate) {
-  const src = getCallSheet(id2);
-  if (!src) throw new RuleError("Call sheet not found.");
-  const copy = createCallSheet(actor, {
-    contentId: src.contentId,
-    date: newDate,
-    title: `${src.title.replace(/:.*$/, "")}: ${newDate}`,
-    location: src.location,
-    callTime: src.callTime,
-    crewPersonIds: [...src.crewPersonIds],
-    format: src.format,
-    notes: src.notes
-  });
-  copy.runOfShow = src.runOfShow.map((x) => ({ ...x, id: localId("RS") }));
-  const gear = copyGearBetweenSheets(actor, src.id, { id: copy.id, contentId: copy.contentId, date: copy.date });
-  logAudit(actor, "duplicate", "callsheet", copy.id, `from ${src.id}`);
-  commit();
-  return { sheet: copy, gear };
-}
-function getMismatches(cs) {
-  const linked = cs.linkedEpisodeIds.map((id2) => getRecord(id2)).filter((r) => !!r);
-  const moved = linked.filter((r) => r.scheduledDate !== cs.date || r.archived);
-  const unlinked = episodesOnDate(cs.contentId, cs.date).filter((r) => !cs.linkedEpisodeIds.includes(r.contentId));
-  return { moved, unlinked };
-}
-function resolveMismatches(actor, id2, expectedVersion) {
-  const cs = loadSheet(actor, id2, expectedVersion);
-  cs.linkedEpisodeIds = episodesOnDate(cs.contentId, cs.date).map((r) => r.contentId);
-  cs.version += 1;
-  logAudit(actor, "resolve-mismatch", "callsheet", id2, `${cs.linkedEpisodeIds.length} linked`);
-  commit();
-  return cs;
-}
-function loadSheet(actor, id2, expectedVersion) {
-  const cs = getCallSheet(id2);
-  if (!cs) throw new RuleError("Call sheet not found.");
-  const root = getRecord(cs.contentId);
-  if (!root || !canWrite(actor, root)) throw new RuleError("You have view-only access to this project.");
-  if (expectedVersion !== void 0 && cs.version !== expectedVersion) throw new ConflictError();
-  return cs;
-}
-var SHEET_EDITABLE = ["title", "location", "callTime", "crewPersonIds", "format", "notes", "date"];
-function updateCallSheet(actor, id2, input, expectedVersion) {
-  const patch = pickKeys(input, SHEET_EDITABLE);
-  const cs = loadSheet(actor, id2, expectedVersion);
-  if (cs.status === "final") throw new RuleError("This call sheet is final. Reopen it to make changes.");
-  if (patch.date !== void 0 && patch.date !== cs.date) {
-    if (!patch.date) throw new RuleError("Pick a date for the call sheet.");
-    rebookSheetGear(actor, cs.id, patch.date);
-  }
-  Object.assign(cs, patch);
-  cs.version += 1;
-  logAudit(actor, "update", "callsheet", id2, Object.keys(patch).join(", "));
-  commit();
-  return cs;
-}
-function attachCallSheet(actor, id2, contentId, expectedVersion) {
-  const cs = loadSheet(actor, id2, expectedVersion);
-  if (cs.contentId === contentId) throw new RuleError("This call sheet is already attached here.");
-  const target = getRecord(contentId);
-  if (!target) throw new RuleError("Project not found.");
-  if (!canWrite(actor, target)) throw new RuleError("You are not attached to that project.");
-  const from = cs.contentId;
-  cs.contentId = contentId;
-  cs.version += 1;
-  const gear = manifestForSheet(cs.id);
-  if (gear) gear.contentId = contentId;
-  logAudit(actor, "attach", "callsheet", id2, `${from} to ${contentId}`);
-  commit();
-  return cs;
-}
-function crewConflicts(cs) {
-  const out = [];
-  for (const other of getDb().callSheets) {
-    if (other.id === cs.id || other.date !== cs.date) continue;
-    for (const pid of cs.crewPersonIds) if (other.crewPersonIds.includes(pid)) out.push({ personId: pid, otherSheet: other });
-  }
-  return out;
-}
-function finalizeCallSheet(actor, id2, expectedVersion) {
-  const cs = loadSheet(actor, id2, expectedVersion);
-  const conflicts = crewConflicts(cs);
-  if (conflicts.length) {
-    const names = conflicts.map((c) => getDb().people.find((p) => p.personId === c.personId)?.name ?? c.personId);
-    throw new RuleError(`Crew double-booked on ${cs.date}: ${[...new Set(names)].join(", ")}. Resolve before finalizing.`);
-  }
-  const mm = getMismatches(cs);
-  if (mm.moved.length || mm.unlinked.length)
-    throw new RuleError("Episode dates no longer match this call sheet. Resolve the mismatch before finalizing.");
-  if (runOfShowRequired(cs) && cs.runOfShow.length === 0)
-    throw new RuleError("This is a large production, so the call sheet needs a run of show before it can be final.");
-  const gear = gearIssues(cs.id);
-  if (gear.length)
-    throw new RuleError(`Gear needs attention before finalizing: ${gear[0]}${gear.length > 1 ? ` (and ${gear.length - 1} more)` : ""}`);
-  cs.status = "final";
-  cs.version += 1;
-  logAudit(actor, "finalize", "callsheet", id2);
-  commit();
-  return cs;
-}
-function reopenCallSheet(actor, id2) {
-  const cs = loadSheet(actor, id2);
-  cs.status = "draft";
-  cs.version += 1;
-  logAudit(actor, "reopen", "callsheet", id2);
-  commit();
-  return cs;
-}
-function duplicateOf(cs) {
-  return getDb().callSheets.filter((c) => c.contentId === cs.contentId && c.id !== cs.id);
-}
-function deleteCallSheet(actor, id2) {
-  const cs = loadSheet(actor, id2);
-  releaseSheetGear(actor, id2);
-  getDb().callSheets = getDb().callSheets.filter((c) => c.id !== id2);
-  for (const s2 of getDb().recordingSessions) if (s2.callSheetId === id2) s2.callSheetId = null;
-  logAudit(actor, "delete", "callsheet", cs.id, cs.title);
-  commit();
-}
-function daysOf(cs) {
-  return cs.linkedEpisodeIds.map((id2) => getRecord(id2)).filter((r) => !!r && !r.archived);
-}
-function sheetLevel(cs) {
-  const order = ["small", "medium", "large"];
-  const levels = [...daysOf(cs).map((d) => d.productionLevel), getRecord(cs.contentId)?.productionLevel ?? null].filter(
-    (l) => !!l
-  );
-  return levels.sort((a, b) => order.indexOf(b) - order.indexOf(a))[0] ?? null;
-}
-function runOfShowRequired(cs) {
-  return sheetLevel(cs) === "large";
-}
-var sortedRunOfShow = (cs) => [...cs.runOfShow].sort((a, b) => a.time.localeCompare(b.time));
-function checkRunItem(input) {
-  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(input.time)) throw new RuleError("Enter the start time as hours and minutes, for example 09:30.");
-  if (!input.title.trim()) throw new RuleError("Give this segment a name.");
-  if (!Number.isInteger(input.durationMin) || input.durationMin < 0 || input.durationMin > 600)
-    throw new RuleError("Length must be a whole number of minutes, up to 600.");
-  if (input.ownerPersonId) {
-    const p = getPerson(input.ownerPersonId);
-    if (!p || p.status !== "active") throw new RuleError("Choose an active person.");
-  }
-}
-function editableSheet(actor, id2) {
-  const cs = loadSheet(actor, id2);
-  if (cs.status === "final") throw new RuleError("This call sheet is final. Reopen it to make changes.");
-  if (!runOfShowRequired(cs) && cs.runOfShow.length === 0)
-    throw new RuleError("A run of show is for large productions. Set the level of production to Large on the day first.");
-  return cs;
-}
-function addRunItem(actor, sheetId, input) {
-  const cs = editableSheet(actor, sheetId);
-  checkRunItem(input);
-  const item2 = {
-    id: localId("RS", (x) => cs.runOfShow.some((i) => i.id === x)),
-    time: input.time,
-    title: input.title.trim(),
-    durationMin: input.durationMin,
-    ownerPersonId: input.ownerPersonId || null,
-    notes: (input.notes ?? "").trim()
-  };
-  cs.runOfShow.push(item2);
-  cs.version += 1;
-  logAudit(actor, "run-add", "callsheet", sheetId, `${item2.time} ${item2.title}`);
-  commit();
-  return item2;
-}
-function updateRunItem(actor, sheetId, itemId, patch) {
-  const cs = editableSheet(actor, sheetId);
-  const item2 = cs.runOfShow.find((x) => x.id === itemId);
-  if (!item2) throw new RuleError("That segment no longer exists.");
-  const next2 = {
-    time: patch.time ?? item2.time,
-    title: patch.title ?? item2.title,
-    durationMin: patch.durationMin ?? item2.durationMin,
-    ownerPersonId: patch.ownerPersonId === void 0 ? item2.ownerPersonId : patch.ownerPersonId,
-    notes: patch.notes ?? item2.notes
-  };
-  checkRunItem(next2);
-  Object.assign(item2, { ...next2, title: next2.title.trim(), notes: next2.notes.trim() });
-  cs.version += 1;
-  logAudit(actor, "run-update", "callsheet", sheetId, item2.title);
-  commit();
-  return item2;
-}
-function removeRunItem(actor, sheetId, itemId) {
-  const cs = editableSheet(actor, sheetId);
-  cs.runOfShow = cs.runOfShow.filter((x) => x.id !== itemId);
-  cs.version += 1;
-  logAudit(actor, "run-remove", "callsheet", sheetId, itemId);
-  commit();
-}
-function runOfShowTotals(cs) {
-  const items = sortedRunOfShow(cs);
-  if (!items.length) return { minutes: 0, ends: null };
-  const toMin = (t2) => Number(t2.slice(0, 2)) * 60 + Number(t2.slice(3));
-  const end = Math.max(...items.map((i) => toMin(i.time) + i.durationMin));
-  const first = toMin(items[0].time);
-  const pad2 = (n) => String(n).padStart(2, "0");
-  return { minutes: end - first, ends: `${pad2(Math.floor(end / 60) % 24)}:${pad2(end % 60)}` };
-}
-
 // src/services/documents.ts
 var documents_exports = {};
 __export(documents_exports, {
@@ -10397,6 +11550,7 @@ function acceptDevotion(actor, projectId, note) {
   if (p.workflow.formType !== "devotion") throw new RuleError("Only a devotion is accepted this way.");
   decideGreenlight(actor, projectId, { outcome: "Greenlight", notes: note, date: todayIso() });
   advanceProject(actor, projectId);
+  seedPlanRoles(projectId, actor.personId);
   logAudit(actor, "devotion-accepted", "record", projectId, note.trim() ? `Accepted. ${note.trim()}` : "Accepted");
   const script = documentOf(projectId, "Development", "devotional_script");
   const written = script ? pagesOf(script.id).filter(countsAsDevotion) : [];
@@ -10877,271 +12031,6 @@ function changePassword2(actor, current3, next2) {
   commit();
 }
 
-// src/services/storage.ts
-var storage_exports = {};
-__export(storage_exports, {
-  addAllocation: () => addAllocation,
-  allDriveUsage: () => allDriveUsage,
-  allocationsForRecord: () => allocationsForRecord,
-  clearRecordFromDrives: () => clearRecordFromDrives,
-  createDrive: () => createDrive,
-  deleteDrive: () => deleteDrive,
-  driveReportText: () => driveReportText,
-  driveUsage: () => driveUsage,
-  fleetReportText: () => fleetReportText,
-  fleetTotals: () => fleetTotals,
-  forecast: () => forecast,
-  getDrive: () => getDrive,
-  hasStorageAccess: () => hasStorageAccess,
-  isNearlyFull: () => isNearlyFull,
-  moveAllocation: () => moveAllocation,
-  recordSnapshot: () => recordSnapshot,
-  removeAllocation: () => removeAllocation,
-  standaloneAllocations: () => standaloneAllocations,
-  updateAllocation: () => updateAllocation,
-  updateDrive: () => updateDrive
-});
-var hasStorageAccess = (actor) => can(actor, "storage.use");
-function requireStorageAccess(actor) {
-  if (!hasStorageAccess(actor)) throw new RuleError("Storage is managed by crew and the Head of Production.");
-}
-function validateDrive(input, selfId) {
-  if (!input.name.trim()) throw new RuleError("Give the drive a name.");
-  if (getDb().drives.some((d) => d.id !== selfId && d.name.toLowerCase() === input.name.trim().toLowerCase()))
-    throw new RuleError("A drive with that name already exists.");
-  if (!Number.isFinite(input.capacityGB) || input.capacityGB <= 0) throw new RuleError("Capacity must be more than zero.");
-  if (input.otherUsedGB !== void 0 && (!Number.isFinite(input.otherUsedGB) || input.otherUsedGB < 0))
-    throw new RuleError("Other used space cannot be negative.");
-}
-function createDrive(actor, input) {
-  requireCan(actor, "storage.admin", "add drives");
-  validateDrive(input);
-  const d = {
-    id: claimId(`DRV-${pad(nextCounter("drive"))}`),
-    name: input.name.trim(),
-    capacityGB: input.capacityGB,
-    otherUsedGB: input.otherUsedGB ?? 0,
-    notes: input.notes ?? ""
-  };
-  if (d.otherUsedGB > d.capacityGB) throw new RuleError("Used space is larger than the drive.");
-  getDb().drives.push(d);
-  logAudit(actor, "create", "drive", d.id, d.name);
-  recordSnapshot();
-  commit();
-  return d;
-}
-function updateDrive(actor, id2, patch) {
-  requireStorageAccess(actor);
-  const d = getDrive(id2);
-  if (!d) throw new RuleError("Drive not found.");
-  const structural = patch.name !== void 0 || patch.capacityGB !== void 0;
-  if (structural) requireCan(actor, "storage.admin", "rename a drive or change its capacity");
-  const next2 = {
-    name: patch.name ?? d.name,
-    capacityGB: patch.capacityGB ?? d.capacityGB,
-    otherUsedGB: patch.otherUsedGB ?? d.otherUsedGB,
-    notes: patch.notes ?? d.notes
-  };
-  validateDrive(next2, id2);
-  const allocated = getDb().allocations.filter((a) => a.driveId === id2).reduce((n, a) => n + a.sizeGB, 0);
-  if (allocated + next2.otherUsedGB > next2.capacityGB)
-    throw new RuleError(`That would put ${fmtSize(allocated + next2.otherUsedGB)} on a ${fmtSize(next2.capacityGB)} drive.`);
-  Object.assign(d, { name: next2.name.trim(), capacityGB: next2.capacityGB, otherUsedGB: next2.otherUsedGB, notes: next2.notes });
-  logAudit(actor, "update", "drive", id2, Object.keys(patch).join(", "));
-  recordSnapshot();
-  commit();
-  return d;
-}
-function deleteDrive(actor, id2) {
-  requireCan(actor, "storage.admin", "remove drives");
-  const d = getDrive(id2);
-  if (!d) throw new RuleError("Drive not found.");
-  if (getDb().allocations.some((a) => a.driveId === id2))
-    throw new RuleError("Projects are still recorded on this drive. Remove them first.");
-  getDb().drives = getDb().drives.filter((x) => x.id !== id2);
-  logAudit(actor, "delete", "drive", id2, d.name);
-  recordSnapshot();
-  commit();
-}
-function requireProjectWrite(actor, contentId) {
-  const rec2 = getRecord(contentId);
-  if (!rec2) throw new RuleError("Choose the project this footage belongs to.");
-  if (!canWrite(actor, rec2)) throw new RuleError("You are not attached to this project.");
-  return rec2;
-}
-function requireLabel(label) {
-  const l = (label ?? "").trim();
-  if (!l)
-    throw new RuleError(
-      "Give this entry a short label, for example the project or shoot it is holding footage for, since it is not tied to a project yet."
-    );
-  return l;
-}
-function addAllocation(actor, input) {
-  requireStorageAccess(actor);
-  const drive = getDrive(input.driveId);
-  if (!drive) throw new RuleError("Drive not found.");
-  const label = input.contentId === null ? requireLabel(input.label) : (input.label ?? "").trim();
-  if (input.contentId !== null) requireProjectWrite(actor, input.contentId);
-  if (!Number.isFinite(input.sizeGB) || input.sizeGB <= 0) throw new RuleError("Enter the size in GB.");
-  const u = driveUsage(drive);
-  if (input.sizeGB > u.freeGB + 1e-6) throw new RuleError(`${drive.name} has only ${fmtSize(u.freeGB)} free.`);
-  const a = {
-    id: claimId(`ALC-${pad(nextCounter("allocation"), 4)}`),
-    driveId: drive.id,
-    contentId: input.contentId,
-    label,
-    sizeGB: input.sizeGB,
-    kind: input.kind,
-    note: input.note ?? "",
-    updatedAt: todayIso()
-  };
-  getDb().allocations.push(a);
-  logAudit(actor, "allocate", "drive", drive.id, `${input.contentId ?? label} ${fmtSize(a.sizeGB)}`);
-  recordSnapshot();
-  commit();
-  return a;
-}
-var ALLOCATION_EDITABLE = ["sizeGB", "kind", "note", "label", "driveId"];
-var ALLOCATION_KINDS = ["raw", "project", "delivered", "other"];
-function updateAllocation(actor, id2, input) {
-  requireStorageAccess(actor);
-  const patch = pickKeys(input, ALLOCATION_EDITABLE);
-  const a = getDb().allocations.find((x) => x.id === id2);
-  if (!a) throw new RuleError("Entry not found.");
-  if (patch.kind !== void 0 && !ALLOCATION_KINDS.includes(patch.kind)) throw new RuleError("Choose raw, project, delivered or other.");
-  const rec2 = a.contentId !== null ? requireProjectWrite(actor, a.contentId) : null;
-  if (rec2 && a.kind === "raw" && patch.kind && patch.kind !== "raw" && !isHop(actor) && leavesUnder(rec2).some((l) => !isComplete(l))) {
-    throw new RuleError(`Raw footage for ${rec2.title} stays marked as raw until everything under it is Delivered.`);
-  }
-  const label = a.contentId === null ? requireLabel(patch.label ?? a.label) : patch.label ?? a.label;
-  const target = getDrive(patch.driveId ?? a.driveId);
-  if (!target) throw new RuleError("Drive not found.");
-  const newSize = patch.sizeGB ?? a.sizeGB;
-  if (!Number.isFinite(newSize) || newSize <= 0) throw new RuleError("Enter the size in GB.");
-  const u = driveUsage(target);
-  const alreadyThere = target.id === a.driveId ? a.sizeGB : 0;
-  if (newSize - alreadyThere > u.freeGB + 1e-6) throw new RuleError(`${target.name} has only ${fmtSize(u.freeGB + alreadyThere)} free.`);
-  Object.assign(a, patch, { label, updatedAt: todayIso() });
-  logAudit(actor, "update", "allocation", id2, Object.keys(patch).join(", "));
-  recordSnapshot();
-  commit();
-  return a;
-}
-function moveAllocation(actor, id2, contentId) {
-  requireStorageAccess(actor);
-  const a = getDb().allocations.find((x) => x.id === id2);
-  if (!a) throw new RuleError("Entry not found.");
-  if (a.contentId === contentId) throw new RuleError("This entry is already attached here.");
-  const target = getRecord(contentId);
-  if (!target) throw new RuleError("Project not found.");
-  const current3 = a.contentId ? getRecord(a.contentId) : null;
-  if (!canWrite(actor, target) || (current3 ? !canWrite(actor, current3) : !isHop(actor)))
-    throw new RuleError("You are not attached to both projects.");
-  const from = a.contentId ?? a.label;
-  a.contentId = contentId;
-  a.updatedAt = todayIso();
-  logAudit(actor, "update", "allocation", id2, `moved from ${from} to ${contentId}`);
-  commit();
-  return a;
-}
-function removeAllocation(actor, id2) {
-  requireStorageAccess(actor);
-  const a = getDb().allocations.find((x) => x.id === id2);
-  if (!a) throw new RuleError("Entry not found.");
-  if (a.contentId !== null) {
-    const rec2 = requireProjectWrite(actor, a.contentId);
-    if (a.kind === "raw") {
-      const leaves = leavesUnder(rec2);
-      if (leaves.some((l) => !isComplete(l)))
-        throw new RuleError(`Raw footage for ${rec2.title} cannot be removed until everything under it is Delivered.`);
-    }
-  }
-  getDb().allocations = getDb().allocations.filter((x) => x.id !== id2);
-  logAudit(actor, "deallocate", "drive", a.driveId, `${a.contentId ?? a.label} ${fmtSize(a.sizeGB)}`);
-  recordSnapshot();
-  commit();
-}
-function standaloneAllocations(actor) {
-  requireStorageAccess(actor);
-  return getDb().allocations.filter((a) => a.contentId === null);
-}
-function clearRecordFromDrives(actor, contentId) {
-  requireStorageAccess(actor);
-  const rec2 = requireProjectWrite(actor, contentId);
-  const mine = getDb().allocations.filter((a) => a.contentId === contentId);
-  if (!mine.length) throw new RuleError("Nothing is recorded on drives for this item.");
-  if (mine.some((a) => a.kind === "raw") && leavesUnder(rec2).some((l) => !isComplete(l)))
-    throw new RuleError(`Raw footage for ${rec2.title} cannot be cleared until everything under it is Delivered.`);
-  const gb = mine.reduce((n, a) => n + a.sizeGB, 0);
-  for (const a of mine) logAudit(actor, "deallocate", "drive", a.driveId, `${contentId} ${fmtSize(a.sizeGB)}`);
-  getDb().allocations = getDb().allocations.filter((a) => a.contentId !== contentId);
-  recordSnapshot();
-  commit();
-  return { count: mine.length, gb };
-}
-function descendantIds2(r) {
-  return [r.contentId, ...getChildren(r.contentId, true).flatMap(descendantIds2)];
-}
-function allocationsForRecord(record2) {
-  const ids2 = /* @__PURE__ */ new Set([...descendantIds2(record2), ...selfAndAncestors(record2).map((r) => r.contentId)]);
-  return getDb().allocations.filter((a) => a.contentId !== null && ids2.has(a.contentId));
-}
-function forecast(horizonDays = 90) {
-  const t2 = fleetTotals();
-  const snaps = getDb().snapshots.slice(-16);
-  const history = snaps.map((s2) => ({ date: s2.date, usedGB: s2.usedGB }));
-  const thresholdGB = t2.capacity * getDb().settings.storageWarningThreshold / 100;
-  let slope = 0;
-  if (snaps.length >= 2) {
-    const xs = snaps.map((s2) => dayNumber(s2.date));
-    const ys = snaps.map((s2) => s2.usedGB);
-    const mx = xs.reduce((a, b) => a + b, 0) / xs.length;
-    const my = ys.reduce((a, b) => a + b, 0) / ys.length;
-    const den = xs.reduce((n, x) => n + (x - mx) ** 2, 0);
-    slope = den ? xs.reduce((n, x, i) => n + (x - mx) * (ys[i] - my), 0) / den : 0;
-  }
-  const today = dayNumber(todayIso());
-  const projected = [{ date: todayIso(), usedGB: t2.used }];
-  if (slope > 0)
-    for (let d = 7; d <= horizonDays; d += 7)
-      projected.push({ date: fromDayNumber(today + d), usedGB: Math.min(t2.capacity * 1.05, t2.used + slope * d) });
-  let fillDate = null;
-  if (slope > 0 && t2.used < thresholdGB) fillDate = fromDayNumber(today + Math.ceil((thresholdGB - t2.used) / slope));
-  else if (t2.used >= thresholdGB) fillDate = todayIso();
-  return { history, projected, capacityGB: t2.capacity, thresholdGB, slopeGBPerDay: slope, fillDate };
-}
-function driveReportText(driveId) {
-  const d = getDrive(driveId);
-  if (!d) throw new RuleError("Drive not found.");
-  const u = driveUsage(d);
-  const lines = [
-    `Drive report: ${d.name}`,
-    `Date: ${fmtDate(todayIso())}`,
-    `Capacity ${fmtSize(d.capacityGB)}, used ${fmtSize(u.usedGB)} (${u.pct.toFixed(1)}%), free ${fmtSize(u.freeGB)}`,
-    "",
-    "Projects on this drive:",
-    ...u.projects.length ? u.projects.map(
-      (p) => `  ${p.contentId ?? "No project yet"}  ${p.contentId ? getRecord(p.contentId)?.title ?? "" : p.label}  ${fmtSize(p.gb)}  (${p.kinds.join(", ")})`
-    ) : ["  None recorded"],
-    ...u.otherGB ? [`  Other files  ${fmtSize(u.otherGB)}`] : []
-  ];
-  return lines.join("\n");
-}
-function fleetReportText() {
-  const t2 = fleetTotals();
-  const rows = allDriveUsage();
-  return [
-    "Storage report: all drives",
-    `Date: ${fmtDate(todayIso())}`,
-    `Total capacity ${fmtSize(t2.capacity)}, used ${fmtSize(t2.used)}, free ${fmtSize(t2.capacity - t2.used)}`,
-    "",
-    ...rows.map(
-      (u) => `${u.drive.name}: ${fmtSize(u.usedGB)} of ${fmtSize(u.drive.capacityGB)} (${u.pct.toFixed(0)}%)${u.projects.length ? `. Projects: ${u.projects.map((p) => `${p.contentId ?? p.label} ${fmtSize(p.gb)}`).join(", ")}` : ""}`
-    )
-  ].join("\n");
-}
-
 // src/services/team.ts
 var team_exports = {};
 __export(team_exports, {
@@ -11236,6 +12125,7 @@ __export(workflow_exports, {
   SYSTEM: () => SYSTEM,
   addDistribution: () => addDistribution,
   addLogRow: () => addLogRow,
+  addPlanRole: () => addPlanRole,
   addPlannedEpisode: () => addPlannedEpisode,
   addRunSheetItem: () => addRunSheetItem,
   advanceProject: () => advanceProject,
@@ -11243,6 +12133,8 @@ __export(workflow_exports, {
   approveReleasePlan: () => approveReleasePlan,
   archivePlannedEpisode: () => archivePlannedEpisode,
   archiveSession: () => archiveSession,
+  assetsOf: () => assetsOf,
+  assignDevotion: () => assignDevotion,
   assignProducer: () => assignProducer,
   assignRole: () => assignRole,
   availableForLog: () => availableForLog,
@@ -11257,9 +12149,11 @@ __export(workflow_exports, {
   createWorkflowProject: () => createWorkflowProject,
   decideCheckpoint: () => decideCheckpoint,
   decideGreenlight: () => decideGreenlight,
+  devotionPlacements: () => devotionPlacements,
   episodeOverdue: () => episodeOverdue,
   episodesOf: () => episodesOf,
   evaluateGate: () => evaluateGate,
+  footageOf: () => footageOf,
   formProblems: () => formProblems,
   getSession: () => getSession,
   greenlightBlockers: () => greenlightBlockers,
@@ -11268,7 +12162,9 @@ __export(workflow_exports, {
   isWorkflowProject: () => isWorkflowProject,
   latestDecision: () => latestDecision,
   moveToMarketing: () => moveToMarketing,
+  onSession: () => onSession,
   openSession: () => openSession,
+  planRolesOf: () => planRolesOf,
   plannedOf: () => plannedOf,
   projectLabelOf: () => projectLabelOf,
   projectSummary: () => projectSummary,
@@ -11278,29 +12174,42 @@ __export(workflow_exports, {
   removeLogRow: () => removeLogRow,
   removeRole: () => removeRole,
   removeRunSheetItem: () => removeRunSheetItem,
+  renamePlanRole: () => renamePlanRole,
   reopenSession: () => reopenSession,
   requiredSections: () => requiredSections,
   resetRunSheet: () => resetRunSheet,
   resolveShareToken: () => resolveShareToken,
   reviewWindowsDue: () => reviewWindowsDue,
   revokeShareLink: () => revokeShareLink,
+  roleHolder: () => roleHolder,
   rowsOf: () => rowsOf,
   runSheetTemplate: () => runSheetTemplate,
   saveFormSection: () => saveFormSection,
   sendForReview: () => sendForReview,
   sendToPostProduction: () => sendToPostProduction,
+  sessionDriveId: () => sessionDriveId,
+  sessionName: () => sessionName,
   sessionsOf: () => sessionsOf,
   setChecklistItem: () => setChecklistItem,
   setCheckpointReviewers: () => setCheckpointReviewers,
   setCriterion: () => setCriterion,
+  setEpisodeAssets: () => setEpisodeAssets,
   setEpisodeEditor: () => setEpisodeEditor,
   setEpisodeLinks: () => setEpisodeLinks,
   setLearningNotes: () => setLearningNotes,
+  setProjectDrive: () => setProjectDrive,
   setReadyForReview: () => setReadyForReview,
   setReviewWindow: () => setReviewWindow,
+  setRolePerson: () => setRolePerson,
+  setSessionBoards: () => setSessionBoards,
+  setSessionDrive: () => setSessionDrive,
+  setSessionFootage: () => setSessionFootage,
   setWorkflowDeadline: () => setWorkflowDeadline,
   shareTarget: () => shareTarget,
+  sheetTimes: () => sheetTimes,
   startEditing: () => startEditing,
+  startPlanRoles: () => startPlanRoles,
+  unassignedDevotions: () => unassignedDevotions,
   updateDistribution: () => updateDistribution,
   updateLogRow: () => updateLogRow,
   updatePlannedEpisode: () => updatePlannedEpisode,
@@ -11372,7 +12281,7 @@ function removeRole(actor, roleId) {
       `Only the show producer, the Head of Production, or someone given "Assign other people's work", can change roles.`
     );
   db2.projectRoles = db2.projectRoles.filter((r) => r.id !== roleId);
-  logAudit(actor, "role-remove", "record", role.contentId, roleLabel(role.roleKey));
+  logAudit(actor, "role-remove", "record", role.contentId, roleName(role));
   commit();
 }
 function setChecklistItem(actor, itemId, change) {
@@ -11469,407 +12378,6 @@ function decideCheckpoint(actor, checkpointId, decision) {
   logAudit(actor, "checkpoint", "record", c.episodeId ?? c.contentId, `${c.checkpoint}: ${decision.status}${note ? `. ${note}` : ""}`);
   commit();
   return c;
-}
-
-// src/services/workflow/sessions.ts
-var RUN_SHEET_NOTE = "Real conversations often run long. If takes reach 65 to 70 minutes, expect the day to run 35 to 60 minutes over. Five long conversations in a row tire the host. Never skip the Episode 1 spot check.";
-var MAX_DAY = 24 * 60;
-var hhmm = (min) => `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
-function runSheetTemplate(episodes, minutes = 58) {
-  if (!Number.isInteger(episodes) || episodes < 1 || episodes > 12) throw new RuleError("A recording day can hold from 1 to 12 episodes.");
-  if (!Number.isInteger(minutes) || minutes < 5 || minutes > 240) throw new RuleError("An episode's length must be from 5 to 240 minutes.");
-  const out = [];
-  let t2 = 7 * 60;
-  const add = (title2, durationMin, notes = "") => {
-    out.push({ time: hhmm(t2), title: title2, durationMin, ownerPersonId: null, notes });
-    t2 += durationMin;
-  };
-  add("Crew call, load-in", 0, "Gear check against the call sheet");
-  add("Setup", 90, "Cameras, lighting, audio, set dressing; take a reference photo of the set");
-  add("Technical check", 30, "Mic levels, camera sync, color match, storage and battery, short mock recording");
-  add("Talent arrival, mic-up, start routine", 10, "Quiet room, phones off");
-  for (let i = 1; i <= episodes; i++) {
-    add(`Episode ${i}`, minutes, i === 1 ? "Slate with the episode ID" : "");
-    if (i === episodes) break;
-    if (i === 1) add("Spot check and changeover", 22, "Review Ep 1 for audio, focus and sync; reset set, water; brief the next guest");
-    else if (i === 3 && episodes >= 4) add("Lunch", 44, "Media offload can run while everyone eats");
-    else add("Changeover", 20, i % 2 === 0 ? "Log timestamps for any pickups" : "Check battery and card capacity");
-  }
-  add("Wrap", 59, "See wrap checklist");
-  if (t2 > MAX_DAY) throw new RuleError("That many episodes do not fit in one day. Split them across sessions.");
-  return out;
-}
-var withIds = (items) => items.map((x) => ({ id: localId("RS"), ...x }));
-function plannedMinutes(projectId) {
-  for (const p of getDb().plannedEpisodes)
-    if (p.contentId === projectId && !p.archivedAt) {
-      const n = Number(p.details.targetMinutes);
-      if (Number.isInteger(n) && n >= 5 && n <= 240) return n;
-    }
-  return 58;
-}
-var checkDate = (d) => {
-  if (d !== null && d !== void 0 && d !== "" && !isIsoDate(d)) throw new RuleError("Pick the session's date.");
-};
-function createSession(actor, projectId, input = {}) {
-  const p = projectForWrite(actor, projectId);
-  if (p.workflow.stage !== "Pre-production")
-    throw new RuleError("Sessions are scheduled at Pre-production, once the project is greenlit and handed off.");
-  checkDate(input.scheduledDate);
-  const { id: id2, n } = nextSession(projectId);
-  const at = nowStamp();
-  const s2 = {
-    id: id2,
-    contentId: projectId,
-    sessionNumber: n,
-    scheduledDate: input.scheduledDate || null,
-    venue: (input.venue ?? "").trim(),
-    status: "Planned",
-    closedAt: null,
-    callSheetId: null,
-    runSheet: withIds(runSheetTemplate(5, plannedMinutes(projectId))),
-    dailyLog: "",
-    createdAt: at,
-    updatedAt: at,
-    archivedAt: null,
-    archivedReason: null
-  };
-  getDb().recordingSessions.push(s2);
-  ensureChecklist("preSession", "session", id2);
-  logAudit(actor, "create", "session", id2, s2.scheduledDate ?? "no date yet");
-  commit();
-  return s2;
-}
-var SESSION_EDITABLE = ["scheduledDate", "venue", "dailyLog"];
-function updateSession(actor, sessionId, input) {
-  const { session } = sessionForWrite(actor, sessionId);
-  if (session.status === "Closed") throw new RuleError("This session is closed. Reopen it to change it.");
-  const patch = pickKeys(input, SESSION_EDITABLE);
-  checkDate(patch.scheduledDate);
-  if (patch.venue !== void 0 && patch.venue.length > 300) throw new RuleError("Keep the venue under 300 characters.");
-  if (patch.dailyLog !== void 0 && patch.dailyLog.length > 2e4) throw new RuleError("Keep the daily log under 20,000 characters.");
-  if (patch.scheduledDate !== void 0) session.scheduledDate = patch.scheduledDate || null;
-  if (patch.venue !== void 0) session.venue = patch.venue.trim();
-  if (patch.dailyLog !== void 0) session.dailyLog = patch.dailyLog.trim();
-  session.updatedAt = nowStamp();
-  logAudit(actor, "update", "session", sessionId, Object.keys(patch).join(", "));
-  commit();
-  return session;
-}
-function archiveSession(actor, sessionId, reason) {
-  const { session } = sessionForWrite(actor, sessionId);
-  if (session.status !== "Planned") throw new RuleError("Only a session that has not started can be taken off the schedule.");
-  if (!reason.trim()) throw new RuleError("Write why the session is being taken off the schedule.");
-  session.archivedAt = nowStamp();
-  session.archivedReason = reason.trim();
-  session.updatedAt = session.archivedAt;
-  logAudit(actor, "archive", "session", sessionId, reason.trim());
-  commit();
-  return session;
-}
-function checkRunItem2(input) {
-  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(input.time)) throw new RuleError("Enter the start time as hours and minutes, for example 09:30.");
-  if (!input.title.trim()) throw new RuleError("Give this part of the day a name.");
-  if (!Number.isInteger(input.durationMin) || input.durationMin < 0 || input.durationMin > 600)
-    throw new RuleError("Length must be a whole number of minutes, up to 600.");
-  if (input.ownerPersonId) {
-    const p = getPerson(input.ownerPersonId);
-    if (!p || p.status !== "active") throw new RuleError("Choose an active person.");
-  }
-}
-var editableRunSheet = (actor, sessionId) => {
-  const { session } = sessionForWrite(actor, sessionId);
-  if (session.status === "Closed") throw new RuleError("This session is closed. Reopen it to change it.");
-  return session;
-};
-function resetRunSheet(actor, sessionId, minutes) {
-  const session = editableRunSheet(actor, sessionId);
-  const planned = rowsOf(sessionId).filter((r) => r.plannedEpisodeId).length;
-  session.runSheet = withIds(runSheetTemplate(planned || 5, minutes ?? plannedMinutes(session.contentId)));
-  session.updatedAt = nowStamp();
-  logAudit(actor, "run-sheet-reset", "session", sessionId, `${planned || 5} episodes`);
-  commit();
-  return session;
-}
-function addRunSheetItem(actor, sessionId, input) {
-  const session = editableRunSheet(actor, sessionId);
-  checkRunItem2(input);
-  const item2 = {
-    id: localId("RS", (x) => session.runSheet.some((i) => i.id === x)),
-    time: input.time,
-    title: input.title.trim(),
-    durationMin: input.durationMin,
-    ownerPersonId: input.ownerPersonId || null,
-    notes: (input.notes ?? "").trim()
-  };
-  session.runSheet.push(item2);
-  session.runSheet.sort((a, b) => a.time.localeCompare(b.time));
-  session.updatedAt = nowStamp();
-  logAudit(actor, "run-sheet-add", "session", sessionId, `${item2.time} ${item2.title}`);
-  commit();
-  return item2;
-}
-function updateRunSheetItem(actor, sessionId, itemId, input) {
-  const session = editableRunSheet(actor, sessionId);
-  const item2 = session.runSheet.find((x) => x.id === itemId);
-  if (!item2) throw new RuleError("That part of the run sheet no longer exists.");
-  const next2 = {
-    time: input.time ?? item2.time,
-    title: input.title ?? item2.title,
-    durationMin: input.durationMin ?? item2.durationMin,
-    ownerPersonId: input.ownerPersonId === void 0 ? item2.ownerPersonId : input.ownerPersonId,
-    notes: input.notes ?? item2.notes
-  };
-  checkRunItem2(next2);
-  Object.assign(item2, { ...next2, title: next2.title.trim(), notes: next2.notes.trim(), ownerPersonId: next2.ownerPersonId || null });
-  session.runSheet.sort((a, b) => a.time.localeCompare(b.time));
-  session.updatedAt = nowStamp();
-  logAudit(actor, "run-sheet-update", "session", sessionId, item2.title);
-  commit();
-  return item2;
-}
-function removeRunSheetItem(actor, sessionId, itemId) {
-  const session = editableRunSheet(actor, sessionId);
-  session.runSheet = session.runSheet.filter((x) => x.id !== itemId);
-  session.updatedAt = nowStamp();
-  logAudit(actor, "run-sheet-remove", "session", sessionId, itemId);
-  commit();
-}
-function createSessionCallSheet(actor, sessionId) {
-  const { session, project } = sessionForWrite(actor, sessionId);
-  if (session.status === "Closed") throw new RuleError("This session is closed.");
-  if (session.callSheetId && getDb().callSheets.some((c) => c.id === session.callSheetId))
-    throw new RuleError(`This session already has call sheet ${session.callSheetId}.`);
-  if (!session.scheduledDate) throw new RuleError("Set the session's date before making its call sheet.");
-  const db2 = getDb();
-  const crew = [
-    ...new Set(
-      [project.workflow.showProducerId, ...db2.projectRoles.filter((r) => r.contentId === project.contentId).map((r) => r.crewId)].filter(
-        (x) => !!x
-      )
-    )
-  ];
-  const lines = rowsOf(sessionId).map((r) => {
-    const planned = db2.plannedEpisodes.find((p) => p.id === r.plannedEpisodeId);
-    const what = planned ? `${planned.id} ${planned.workingTitle}` : r.itemLabel;
-    return `- ${what}${r.guest ? ` (guest: ${r.guest})` : ""}`;
-  });
-  const sheet = createCallSheet(actor, {
-    contentId: rootOf(project).contentId,
-    date: session.scheduledDate,
-    title: `${displayTitle(project)}: ${session.id}`,
-    location: session.venue,
-    callTime: [...session.runSheet].sort((a, b) => a.time.localeCompare(b.time))[0]?.time ?? "07:00",
-    crewPersonIds: crew,
-    format: formTypeOf(project.workflow.formType).label,
-    notes: lines.length ? `Recording session ${session.id}.
-${lines.join("\n")}` : `Recording session ${session.id}.`
-  });
-  session.callSheetId = sheet.id;
-  session.updatedAt = nowStamp();
-  logAudit(actor, "callsheet", "session", sessionId, sheet.id);
-  commit();
-  return sheet;
-}
-var RECORDED = ["Recorded", "Pickup needed"];
-function availableForLog(sessionId) {
-  const db2 = getDb();
-  const session = db2.recordingSessions.find((s2) => s2.id === sessionId);
-  if (!session) return [];
-  const live = new Set(db2.recordingSessions.filter((s2) => !s2.archivedAt).map((s2) => s2.id));
-  const recorded = new Set(
-    db2.sessionLogEntries.filter((e) => e.sessionId !== sessionId && live.has(e.sessionId) && RECORDED.includes(e.status)).map((e) => e.plannedEpisodeId)
-  );
-  const made = new Set(db2.records.filter((r) => r.episode && !r.archived).map((r) => r.episode.plannedEpisodeId));
-  const here = new Set(rowsOf(sessionId).map((e) => e.plannedEpisodeId));
-  return db2.plannedEpisodes.filter((p) => p.contentId === session.contentId && !p.archivedAt && !recorded.has(p.id) && !made.has(p.id) && !here.has(p.id)).sort((a, b) => a.episodeNumber - b.episodeNumber).map((p) => p.id);
-}
-function checkStatus(session, status2) {
-  if (status2 && session.status !== "Open") throw new RuleError("A row's status is set during the session, once it is in Production.");
-}
-function addLogRow(actor, sessionId, input) {
-  const { session, project } = sessionForWrite(actor, sessionId);
-  if (session.status === "Closed") throw new RuleError("This session is closed. Reopen it to change its log.");
-  checkStatus(session, input.status);
-  const db2 = getDb();
-  const plannedId = input.plannedEpisodeId || null;
-  const label = (input.itemLabel ?? "").trim();
-  let guest = (input.guest ?? "").trim();
-  if (isDocumentary(project)) {
-    if (!label) throw new RuleError("Name what was recorded: an interview set, a scene or a location.");
-  } else if (!plannedId) throw new RuleError("Choose the planned episode this row is for.");
-  if (plannedId) {
-    const planned = db2.plannedEpisodes.find((p) => p.id === plannedId && p.contentId === project.contentId);
-    if (!planned || planned.archivedAt) throw new RuleError("That is not one of this project's planned episodes.");
-    if (!availableForLog(sessionId).includes(plannedId))
-      throw new RuleError(`${planned.workingTitle || planned.id} is already in this log, or was recorded in another session.`);
-    guest ||= planned.guest;
-  }
-  const logDate = input.logDate || session.scheduledDate || todayIso();
-  if (!isIsoDate(logDate)) throw new RuleError("Pick the row's date.");
-  const at = nowStamp();
-  const row = {
-    id: plannedId ? `${sessionId}|${plannedId}` : `${sessionId}|${localId("I", (x) => db2.sessionLogEntries.some((e) => e.id === `${sessionId}|${x}`))}`,
-    sessionId,
-    plannedEpisodeId: plannedId,
-    itemLabel: label,
-    logDate,
-    guest,
-    status: input.status ?? null,
-    notesForPost: (input.notesForPost ?? "").trim(),
-    createdAt: at,
-    updatedAt: at
-  };
-  db2.sessionLogEntries.push(row);
-  session.updatedAt = at;
-  logAudit(actor, "log-add", "session", sessionId, row.plannedEpisodeId ?? row.itemLabel);
-  commit();
-  return row;
-}
-var LOG_EDITABLE = ["itemLabel", "guest", "logDate", "status", "notesForPost"];
-function updateLogRow(actor, rowId, input) {
-  const row = getDb().sessionLogEntries.find((e) => e.id === rowId);
-  if (!row) throw new RuleError("That log row no longer exists.");
-  const { session } = sessionForWrite(actor, row.sessionId);
-  if (session.status === "Closed") throw new RuleError("This session is closed. Reopen it to change its log.");
-  const patch = pickKeys(input, LOG_EDITABLE);
-  checkStatus(session, patch.status);
-  if (patch.logDate !== void 0 && !isIsoDate(patch.logDate)) throw new RuleError("Pick the row's date.");
-  if (patch.itemLabel !== void 0) {
-    if (!row.plannedEpisodeId && !patch.itemLabel.trim()) throw new RuleError("Name what was recorded.");
-    row.itemLabel = patch.itemLabel.trim();
-  }
-  if (patch.guest !== void 0) row.guest = patch.guest.trim();
-  if (patch.logDate) row.logDate = patch.logDate;
-  if (patch.status !== void 0) row.status = patch.status;
-  if (patch.notesForPost !== void 0) {
-    if (patch.notesForPost.length > 2e4) throw new RuleError("Keep the notes under 20,000 characters.");
-    row.notesForPost = patch.notesForPost.trim();
-  }
-  row.updatedAt = nowStamp();
-  logAudit(actor, "log-update", "session", row.sessionId, `${row.plannedEpisodeId ?? row.itemLabel}: ${Object.keys(patch).join(", ")}`);
-  commit();
-  return row;
-}
-function removeLogRow(actor, rowId) {
-  const db2 = getDb();
-  const row = db2.sessionLogEntries.find((e) => e.id === rowId);
-  if (!row) throw new RuleError("That log row no longer exists.");
-  const { session } = sessionForWrite(actor, row.sessionId);
-  if (session.status === "Closed") throw new RuleError("This session is closed. Reopen it to change its log.");
-  db2.sessionLogEntries = db2.sessionLogEntries.filter((e) => e.id !== rowId);
-  logAudit(actor, "log-remove", "session", row.sessionId, row.plannedEpisodeId ?? row.itemLabel);
-  commit();
-}
-function openSession(actor, sessionId) {
-  const { session } = sessionForWrite(actor, sessionId);
-  const gate = evaluateGate("Pre-production", "session", sessionId);
-  if (!gate.passed) throw gateError("Pre-production", gate.missing);
-  session.status = "Open";
-  session.updatedAt = nowStamp();
-  ensureChecklist("wrap", "session", sessionId);
-  logAudit(actor, "stage-advance", "session", sessionId, "Pre-production \u2192 Production");
-  commit();
-  return session;
-}
-function closeSession(actor, sessionId) {
-  const { session, project } = sessionForWrite(actor, sessionId);
-  const gate = evaluateGate("Production", "session", sessionId);
-  if (!gate.passed) throw gateError("Production", gate.missing);
-  const db2 = getDb();
-  const made = [];
-  const kept2 = [];
-  const archived = [];
-  if (!isDocumentary(project)) {
-    const planned = new Map(db2.plannedEpisodes.map((p) => [p.id, p]));
-    const rows = rowsOf(sessionId).filter((r) => r.plannedEpisodeId && planned.has(r.plannedEpisodeId)).sort((a, b) => planned.get(a.plannedEpisodeId).episodeNumber - planned.get(b.plannedEpisodeId).episodeNumber);
-    const label = categoryOf(project.category).workflow?.episodeLabel ?? "Episode";
-    for (const row of rows) {
-      const existing = db2.records.find((r) => r.episode?.plannedEpisodeId === row.plannedEpisodeId && !r.archived);
-      if (RECORDED.includes(row.status)) {
-        if (existing) {
-          kept2.push(existing.contentId);
-          continue;
-        }
-        const p = planned.get(row.plannedEpisodeId);
-        const waiting2 = p.reservedId ? db2.records.find((r) => r.contentId === p.reservedId && (!r.episode || r.archived && r.episode.plannedEpisodeId === p.id)) : void 0;
-        const given2 = p.reservedId && !db2.records.some((r) => r.contentId === p.reservedId) ? p.reservedId : void 0;
-        const ep = makeEpisode(
-          actor,
-          project,
-          {
-            title: p.workingTitle || `${label} ${p.episodeNumber}`,
-            plannedEpisodeId: p.id,
-            sourceSessionId: sessionId,
-            productionNotes: row.notesForPost,
-            scheduledDate: row.logDate
-          },
-          waiting2 ?? given2
-        );
-        made.push(ep.contentId);
-      } else if (existing && existing.episode?.sourceSessionId === sessionId) {
-        existing.archived = true;
-        existing.closedReason = `Session ${sessionId} was reopened and this was marked Not recorded.`;
-        existing.version += 1;
-        archived.push(existing.contentId);
-      }
-    }
-  }
-  session.status = "Closed";
-  session.closedAt = nowStamp();
-  session.updatedAt = session.closedAt;
-  logAudit(
-    actor,
-    "stage-advance",
-    "session",
-    sessionId,
-    `Production \u2192 closed. ${made.length ? `Made ${made.join(", ")}.` : "No new episodes."}${archived.length ? ` Archived ${archived.join(", ")}.` : ""}`
-  );
-  commit();
-  return { session, made, kept: kept2, archived };
-}
-function reopenSession(actor, sessionId) {
-  const { session, project } = sessionForWrite(actor, sessionId);
-  if (session.status !== "Closed") throw new RuleError("This session is not closed.");
-  const eps = isDocumentary(project) ? episodesOf(project.contentId) : episodesOf(project.contentId).filter((e) => e.episode.sourceSessionId === sessionId);
-  const started = eps.filter((e) => e.episode.stage !== "Post production" || e.episode.postStage !== "Not started");
-  if (started.length)
-    throw new RuleError(
-      `This session cannot be reopened: work has started on ${started.map((e) => `${e.contentId} (${e.episode.stage === "Post production" ? e.episode.postStage : e.episode.stage})`).join(", ")}.`
-    );
-  session.status = "Open";
-  session.closedAt = null;
-  session.updatedAt = nowStamp();
-  logAudit(actor, "reopen", "session", sessionId);
-  commit();
-  return session;
-}
-function sendToPostProduction(actor, projectId) {
-  const p = projectForWrite(actor, projectId);
-  if (!isDocumentary(p)) throw new RuleError("Series and devotions make their episodes when each session closes.");
-  if (!canManageTeam(actor, p))
-    throw new RuleError("Only the show producer or the Head of Production sends a documentary to post production.");
-  const closed = sessionsOf(projectId).filter((s2) => s2.status === "Closed" && !s2.archivedAt);
-  if (!closed.length) throw new RuleError("Close at least one recording session first.");
-  if (episodesOf(projectId).length) throw new RuleError("This documentary is already in post production.");
-  const notes = closed.flatMap(
-    (s2) => rowsOf(s2.id).map(
-      (r) => `${s2.id}, ${r.logDate}, ${r.itemLabel || r.plannedEpisodeId}${r.guest ? ` (${r.guest})` : ""}: ${r.notesForPost || "no notes"}`
-    )
-  ).join("\n");
-  const parts = getDb().plannedEpisodes.filter((x) => x.contentId === projectId && !x.archivedAt).sort((a, b) => a.episodeNumber - b.episodeNumber);
-  const made = (parts.length ? parts : [null]).map(
-    (part) => makeEpisode(actor, p, {
-      title: part ? part.workingTitle || `Part ${part.episodeNumber}` : p.title,
-      plannedEpisodeId: part?.id ?? null,
-      sourceSessionId: null,
-      productionNotes: notes,
-      scheduledDate: closed[closed.length - 1].scheduledDate
-    })
-  );
-  logAudit(actor, "stage-advance", "record", projectId, `Sent to post production: ${made.map((e) => e.contentId).join(", ")}`);
-  commit();
-  return made;
 }
 
 // src/services/workflow/share.ts
@@ -12112,12 +12620,14 @@ var RPC_NAMES = {
   "workflow": [
     "addDistribution",
     "addLogRow",
+    "addPlanRole",
     "addPlannedEpisode",
     "addRunSheetItem",
     "advanceProject",
     "approveReleasePlan",
     "archivePlannedEpisode",
     "archiveSession",
+    "assignDevotion",
     "assignProducer",
     "assignRole",
     "canShare",
@@ -12136,6 +12646,7 @@ var RPC_NAMES = {
     "removeLogRow",
     "removeRole",
     "removeRunSheetItem",
+    "renamePlanRole",
     "reopenSession",
     "resetRunSheet",
     "revokeShareLink",
@@ -12145,13 +12656,20 @@ var RPC_NAMES = {
     "setChecklistItem",
     "setCheckpointReviewers",
     "setCriterion",
+    "setEpisodeAssets",
     "setEpisodeEditor",
     "setEpisodeLinks",
     "setLearningNotes",
+    "setProjectDrive",
     "setReadyForReview",
     "setReviewWindow",
+    "setRolePerson",
+    "setSessionBoards",
+    "setSessionDrive",
+    "setSessionFootage",
     "setWorkflowDeadline",
     "startEditing",
+    "startPlanRoles",
     "updateDistribution",
     "updateLogRow",
     "updatePlannedEpisode",
@@ -12226,6 +12744,7 @@ var outcome = z2.enum(["Greenlight", "Revise and resubmit", "Hold", "Decline", "
 var criterion = enumOf(CRITERIA.map((c) => c.key));
 var roleKey = enumOf(PROJECT_ROLE_DEFS.map((r) => r.key));
 var logStatus = z2.enum(["Recorded", "Pickup needed", "Not recorded"]);
+var sessionLabel = enumOf(SESSION_LABELS);
 var compound = z2.string().min(1).max(260);
 var sectionValues = z2.record(z2.string().max(60), z2.union([z2.string().max(2e4), amount(1e12), z2.null(), z2.array(short(100)).max(20)]));
 var plannedDetails = z2.record(z2.string().max(60), z2.string().max(2e4));
@@ -12628,8 +13147,42 @@ var ACTIONS = {
   "workflow.assignRole": args([id, roleKey, z2.object({ crewId: ref.nullable().optional(), guestName: short(120).nullable().optional() })]),
   "workflow.removeRole": args([compound]),
   "workflow.setChecklistItem": args([compound, z2.object({ done: z2.boolean().optional(), note: text2(2e3).optional() })]),
-  "workflow.createSession": args([id], [z2.object({ scheduledDate: date.nullable().optional(), venue: short().optional() })]),
-  "workflow.updateSession": args([id, z2.object({ scheduledDate: date.nullable(), venue: short(), dailyLog: text2() }).partial()]),
+  "workflow.createSession": args(
+    [id],
+    [
+      z2.object({
+        scheduledDate: date.nullable().optional(),
+        venue: short().optional(),
+        name: short(120).optional(),
+        label: sessionLabel.nullable().optional(),
+        startTime: time.nullable().optional(),
+        endTime: time.nullable().optional()
+      })
+    ]
+  ),
+  "workflow.updateSession": args([
+    id,
+    z2.object({
+      scheduledDate: date.nullable(),
+      venue: short(),
+      dailyLog: text2(),
+      name: short(120),
+      label: sessionLabel.nullable(),
+      startTime: time.nullable(),
+      endTime: time.nullable()
+    }).partial()
+  ]),
+  // A devotion's Recording Plan: its roles, its devotions on sessions, each session's boards, and where footage goes.
+  "workflow.startPlanRoles": args([id]),
+  "workflow.addPlanRole": args([id, short(60)]),
+  "workflow.renamePlanRole": args([compound, short(60)]),
+  "workflow.setRolePerson": args([compound, ref.nullable()]),
+  "workflow.assignDevotion": args([id, id.nullable()]),
+  "workflow.setSessionBoards": args([id, z2.object({ storyboardId: id.nullable(), shotListId: id.nullable() }).partial()]),
+  "workflow.setProjectDrive": args([id, id.nullable()]),
+  "workflow.setSessionDrive": args([id, id.nullable()]),
+  "workflow.setSessionFootage": args([id, amount(1e6)]),
+  "workflow.setEpisodeAssets": args([id, z2.object({ driveId: id.nullable(), sizeGB: amount(1e6) }).partial()]),
   "workflow.archiveSession": args([id, text2(2e3)]),
   "workflow.resetRunSheet": args([id], [count(240)]),
   "workflow.addRunSheetItem": args([id, runSheetItem]),

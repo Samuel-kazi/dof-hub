@@ -33,7 +33,7 @@ import { cleanHtml } from "../../services/html";
 import { pagesOf } from "../../services/wrapped/documents";
 import { useApp } from "../../ui/AppContext";
 import { Empty, Field } from "../../ui/parts";
-import { GatePanel } from "../../ui/workflow/shared";
+import { CrewSelect, GatePanel } from "../../ui/workflow/shared";
 import { ConfigChecklist, useDraft, useReason } from "./common";
 
 // One recording session: Pre-production while Planned (call sheet, gear, rehearsal), Production while Open (the
@@ -79,6 +79,14 @@ function RunSheetRow({ sessionId, item, editable }: { sessionId: string; item: R
           disabled={!editable}
           onChange={(e) => setDraft({ ...draft, title: e.target.value })}
           onBlur={save}
+        />
+      </td>
+      <td className="wf-who">
+        <CrewSelect
+          label={`Who: ${item.title}`}
+          value={item.ownerPersonId}
+          disabled={!editable}
+          onChange={(p) => attempt(() => updateRunSheetItem(actor, sessionId, item.id, { ownerPersonId: p }))}
         />
       </td>
       <td>
@@ -302,6 +310,9 @@ export function RunSheetPanel({ sessionId, editable }: { sessionId: string; edit
   if (!session) return null;
   const id = sessionId;
   const rows = rowsOf(id);
+  // A devotion's run sheet has a "Record: <title>" row for each devotion on the session.
+  const devotion = getRecord(session.contentId)?.workflow?.formType === "devotion";
+  const planned = rows.filter((r) => r.plannedEpisodeId).length;
   return (
     <section className="glass panel" aria-label="Run sheet">
       <div className="wf-head">
@@ -313,14 +324,16 @@ export function RunSheetPanel({ sessionId, editable }: { sessionId: string; edit
               if (
                 await confirm({
                   title: "Rebuild the run sheet?",
-                  body: `It is made again from the template for ${rows.filter((r) => r.plannedEpisodeId).length || 5} episodes. Changes made to it are replaced.`,
+                  body: devotion
+                    ? `It is made again from the template, with a recording row for each of the ${planned} devotion${planned === 1 ? "" : "s"} on this session. Changes made to it are replaced.`
+                    : `It is made again from the template for ${planned || 5} episodes. Changes made to it are replaced.`,
                   confirmLabel: "Rebuild",
                 })
               )
                 attempt(() => resetRunSheet(actor, id), "Run sheet rebuilt");
             }}
           >
-            Rebuild from the template
+            {devotion ? "Rebuild from episodes" : "Rebuild from the template"}
           </button>
         )}
       </div>
@@ -335,6 +348,7 @@ export function RunSheetPanel({ sessionId, editable }: { sessionId: string; edit
                 <th>Start</th>
                 <th>End</th>
                 <th>Activity</th>
+                <th>Who</th>
                 <th>Minutes</th>
                 <th>Notes</th>
                 <th />
@@ -354,7 +368,7 @@ export function RunSheetPanel({ sessionId, editable }: { sessionId: string; edit
           style={{ marginTop: 8 }}
           onClick={() => attempt(() => addRunSheetItem(actor, id, { time: "17:00", title: "New item", durationMin: 15, notes: "" }))}
         >
-          Add a line
+          {devotion ? "+ Row" : "Add a line"}
         </button>
       )}
     </section>

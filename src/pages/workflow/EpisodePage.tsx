@@ -35,6 +35,7 @@ import { useApp } from "../../ui/AppContext";
 import { Empty, Field } from "../../ui/parts";
 import { CrewSelect, GatePanel, OpenLinkButton, copyText, shareUrlOf } from "../../ui/workflow/shared";
 import { CheckpointCard, ConfigChecklist, useDraft } from "./common";
+import { EpisodeAssets } from "./StorageFields";
 
 // One episode, from the moment its session closes: Post production (editing, the rough cut and final reviews) and
 // Marketing and distribution (the release plan, publishing, learning notes), with its review and share links.
@@ -424,6 +425,7 @@ export function EpisodePage({ ep, project }: { ep: Episode; project: Project }) 
           disabled={!write}
           onSave={(v) => !!attempt(() => setEpisodeLinks(actor, ep.contentId, { finalFileLink: v }), "Final file link saved")}
         />
+        <EpisodeAssets ep={ep} project={project} write={write} />
         {info.sendBackReason && info.postStage === "Editing" && (
           <div className="banner warn">Sent back from review: {info.sendBackReason}</div>
         )}

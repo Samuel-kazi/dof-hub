@@ -172,9 +172,13 @@ await t("a devotion opens on Project Home: five stage rows of tiles, no Show Bri
     "Theological Review (review)",
     "Accept or Decline (form)",
     "Recording Plan",
-    "Call Sheet (form)",
+    "Storyboard (tool)",
+    "Shot List (tool)",
   ])
     assert.ok(page.includes(`aria-label="${tile}`), tile);
+  // The Recording Plan holds the roles, devotions, sessions and call sheets: they are not tiles of their own.
+  for (const gone of ["Devotions (form)", "Recording Session (form)", "Call Sheet (form)"])
+    assert.ok(!page.includes(`aria-label="${gone}`), gone);
   assert.ok(!page.includes('aria-label="Show Brief') && !page.includes('aria-label="Greenlight'));
   // A series opens on its own Project Home too.
   const series = html("hop@dof.demo", <RecordPage id={WOW} />);

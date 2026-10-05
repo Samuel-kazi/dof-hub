@@ -278,8 +278,10 @@ await t("in Pre-production a devotion's script becomes its list of episodes, eac
   const six = D.addPage(hop(), script.id, { title: "Day 6" });
   D.savePage(hop(), six.id, { bodyHtml: "<p>A bonus day</p>" }, 1);
   D.savePage(hop(), pages(script.id)[0].id, { title: "Day 1: Today is a gift" }, pages(script.id)[0].version);
+  // Saving the renamed page already brought its devotion up to date (the Recording Plan reads the script live).
+  assert.equal(getDb().plannedEpisodes.find((p) => p.sourcePageId === pages(script.id)[0].id)?.workingTitle, "Day 1: Today is a gift");
   const again = D.makeDevotionEpisodes(hop(), id);
-  assert.deepEqual([again.made.length, again.updated.length], [1, 1]);
+  assert.deepEqual([again.made.length, again.updated.length], [1, 0]);
   assert.equal(again.episodes[5].contentId, `${id}-E06`, "numbering carries on, never twice");
   assert.equal(again.episodes[0].title, "Day 1: Today is a gift", "a renamed page renames its episode");
   ok();

@@ -2,7 +2,7 @@ import type { Actor, ProjectRole, RoleKey, WorkflowChecklistItem } from "../../t
 import { RuleError } from "../../types";
 import { commit, getDb } from "../../data/store";
 import { localId } from "../../data/ids";
-import { PROJECT_ROLE_DEFS, roleLabel } from "../../config/workflow";
+import { PROJECT_ROLE_DEFS, roleName } from "../../config/workflow";
 import { logAudit } from "../audit";
 import { getPerson } from "../people";
 import { canManageTeam, episodeForWrite, joinProject, nowStamp, projectForWrite, requireCrew, sessionForWrite } from "./common";
@@ -90,7 +90,7 @@ export function removeRole(actor: Actor, roleId: string): void {
       'Only the show producer, the Head of Production, or someone given "Assign other people\'s work", can change roles.',
     );
   db.projectRoles = db.projectRoles.filter((r) => r.id !== roleId);
-  logAudit(actor, "role-remove", "record", role.contentId, roleLabel(role.roleKey));
+  logAudit(actor, "role-remove", "record", role.contentId, roleName(role));
   commit();
 }
 

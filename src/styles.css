@@ -3897,3 +3897,217 @@ button.link:hover {
   align-items: center;
   gap: 8px;
 }
+
+/* A devotion's Recording Plan: its four sections (roles, devotions, sessions, call sheets). */
+.rp-section h3 {
+  font-size: 0.95rem;
+  margin: 12px 0 6px;
+}
+.rp-roles,
+.rp-readonly,
+.rp-frames {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.rp-roles li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.rp-roles input,
+.rp-roles select {
+  width: 100%;
+  min-width: 0;
+}
+.rp-add {
+  align-items: end;
+  margin-top: 10px;
+}
+.rp-readonly li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.rp-session {
+  border: 1px solid var(--glass-line);
+  border-radius: 10px;
+  background: var(--glass-2);
+  padding: 10px 12px;
+  margin: 10px 0;
+}
+.rp-session h3 {
+  margin: 0;
+}
+.rp-ticks {
+  border: 0;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+.rp-ticks legend {
+  font-weight: 600;
+  font-size: 0.86rem;
+  color: var(--ink-2);
+  margin-bottom: 4px;
+}
+.rp-new {
+  border-top: 1px solid var(--line-soft);
+  margin-top: 12px;
+  padding-top: 4px;
+}
+.rp-sheets {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.rp-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 10px;
+}
+.rp-tabs button {
+  border: 1px solid var(--glass-line);
+  border-radius: 999px;
+  background: var(--glass-2);
+  color: var(--ink-2);
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.rp-tabs button.on {
+  background: var(--accent-soft);
+  border-color: var(--accent-hi);
+  color: var(--ink);
+  font-weight: 600;
+}
+.rp-sheet-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.rp-sheet-bar .grow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.rp-times {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 10px;
+}
+.rp-times div {
+  border: 1px solid var(--glass-line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--glass-2);
+}
+.rp-times dt {
+  font-size: 0.78rem;
+  color: var(--ink-3);
+}
+.rp-times dd {
+  margin: 2px 0 0;
+  font-weight: 600;
+  font-size: 1.05rem;
+}
+.rp-order {
+  margin: 0;
+  padding-left: 22px;
+}
+.rp-order li {
+  padding: 3px 0;
+}
+.rp-frames {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+.rp-frames li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.82rem;
+}
+.rp-frames img,
+.rp-frame-blank {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 6px;
+  background: var(--track);
+}
+.rp-frame-blank {
+  display: grid;
+  place-items: center;
+  color: var(--ink-3);
+}
+.rp-frame-text {
+  color: var(--ink-2);
+}
+.rp-banner td {
+  font-weight: 600;
+  background: var(--track);
+}
+.rp-drive select {
+  max-width: 100%;
+}
+.rp-assets {
+  border-top: 1px solid var(--line-soft);
+  margin-top: 10px;
+  padding-top: 4px;
+}
+@media (max-width: 760px) {
+  .rp-roles li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .rp-times {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+/* A printed call sheet or run sheet: one clean page, black on white. */
+.rp-print {
+  padding: 0;
+}
+.rp-print-head h1 {
+  margin-bottom: 2pt;
+}
+.rp-print ol {
+  margin: 0 0 8pt;
+  padding-left: 18pt;
+}
+.rp-print-frames {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6pt;
+}
+.rp-print-frames li {
+  font-size: 8.5pt;
+}
+.rp-print-frames img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border: 1px solid #999;
+}
+@media print {
+  .rp-print .report-table th {
+    background: #fff;
+    border-bottom: 1.5px solid #000;
+  }
+  .rp-print .report-table td {
+    border-bottom: 1px solid #999;
+  }
+}

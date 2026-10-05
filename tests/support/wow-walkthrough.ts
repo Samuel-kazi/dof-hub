@@ -86,10 +86,14 @@ export async function tickAll(call: Call, key: keyof typeof CHECKLISTS, ownerId:
 
 /** A session through Pre-production into Production: rows, call sheet, gear, rehearsal. */
 export async function prepareSession(call: Call, projectId: string, date: string, planned: string[], gear: string[]): Promise<string> {
-  const session = (await call("workflow.createSession", projectId, { scheduledDate: date, venue: "DOF Studio A" })).id as string;
+  const made = await call("workflow.createSession", projectId, { scheduledDate: date, venue: "DOF Studio A" });
+  const session = made.id as string;
   for (const p of planned) await call("workflow.addLogRow", session, { plannedEpisodeId: p });
   await call("workflow.resetRunSheet", session);
-  const sheet = await call("workflow.createSessionCallSheet", session);
+  // A devotion's session has its call sheet as soon as it has a date; any other's is made from the session.
+  const sheet = made.callSheetId
+    ? { id: made.callSheetId as string, contentId: projectId, date }
+    : await call("workflow.createSessionCallSheet", session);
   await call(
     "equipment.addGearToSheet",
     { id: sheet.id, contentId: sheet.contentId, date: sheet.date },

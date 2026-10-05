@@ -1,7 +1,7 @@
 import type { ContentRecord, RecordingSession, WorkflowStage } from "../../types";
 import { RuleError } from "../../types";
 import { getDb } from "../../data/store";
-import { REQUIRED_ROLES, roleLabel } from "../../config/workflow";
+import { REQUIRED_ROLES, roleLabel, roleName } from "../../config/workflow";
 import { getRecord } from "../access";
 import { gearIssues, manifestForSheet } from "../equipment";
 import { asWebUrl } from "../urls";
@@ -20,6 +20,7 @@ import {
   type Project,
 } from "./common";
 import { latestDecision } from "./forms";
+import { roleHolder, unassignedDevotions } from "./plan";
 import { hardGatesMissing } from "../documents/gates";
 import { softNudges } from "../documents/nudges";
 
@@ -75,11 +76,18 @@ function preProductionProjectGate(p: Project): GateResult {
   if (p.workflow.stage !== "Pre-production") missing.push("The project must have left Development");
   if (!p.workflow.showProducerId) missing.push("A show producer");
   const roles = getDb().projectRoles.filter((r) => r.contentId === p.contentId);
-  for (const key of REQUIRED_ROLES) if (!roles.some((r) => r.roleKey === key)) missing.push(`Role: ${roleLabel(key)}`);
+  const warnings = lateDates(p, [["The Pre-production deadline", p.stageDeadlines["Pre-production"]]]);
+  if (p.workflow.formType === "devotion") {
+    // A devotion's roles are its Recording Plan's own list: each one needs a person. Its guest is set at Development.
+    if (!roles.length) missing.push("Roles: list the project's roles in the Recording Plan");
+    for (const r of roles) if (!roleHolder(r)) missing.push(`Role: ${roleName(r)} needs a person`);
+    const waiting = unassignedDevotions(p.contentId).length;
+    if (waiting) warnings.push(`${waiting} devotion${waiting === 1 ? " is" : "s are"} not assigned to a session yet`);
+  } else for (const key of REQUIRED_ROLES) if (!roles.some((r) => r.roleKey === key)) missing.push(`Role: ${roleLabel(key)}`);
   missing.push(...openRequired("preProject", p.contentId).map((l) => `Pre-production: ${l}`));
   if (p.workflow.formType === "documentary_dof" && latestDecision(formOf(p.contentId), 2)?.outcome !== "Greenlight")
     missing.push("Second greenlight decision: Greenlight (shoot budget, interview sets and shot list)");
-  return result(missing, lateDates(p, [["The Pre-production deadline", p.stageDeadlines["Pre-production"]]]));
+  return result(missing, warnings);
 }
 
 function preProductionSessionGate(s: RecordingSession, p: Project): GateResult {

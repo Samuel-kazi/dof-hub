@@ -145,7 +145,24 @@ export const PROJECT_ROLE_DEFS: { key: RoleKey; label: string; exclusive: boolea
 /** Roles that must be filled before a session can move into Production. Hosts and guests need at least one. */
 export const REQUIRED_ROLES: RoleKey[] = ["director", "dop", "audio_engineer", "editor", "host_guest"];
 
-export const roleLabel = (key: RoleKey): string => PROJECT_ROLE_DEFS.find((r) => r.key === key)?.label ?? key;
+export const roleLabel = (key: RoleKey): string =>
+  key === "custom" ? "Role" : (PROJECT_ROLE_DEFS.find((r) => r.key === key)?.label ?? key);
+
+/** A role's name on its project: what the producer called it, or its usual name. */
+export const roleName = (role: { roleKey: RoleKey; label?: string }): string => role.label?.trim() || roleLabel(role.roleKey);
+
+/** The roles a devotion's Recording Plan starts with. Any can be renamed or removed, and more added. */
+export const PLAN_ROLE_SEEDS: { key: RoleKey; label: string }[] = [
+  { key: "director", label: "Director" },
+  { key: "dop", label: "Camera" },
+  { key: "audio_engineer", label: "Audio" },
+  { key: "custom", label: "Lighting" },
+  { key: "custom", label: "Floor manager" },
+  { key: "editor", label: "Editor" },
+];
+
+/** The parts of the day a recording session can be. */
+export const SESSION_LABELS = ["Morning", "Afternoon", "Evening", "Late night", "Full day"] as const;
 
 // ── Checklists ───────────────────────────────────────────────
 // Items marked `auto` are worked out from the data (a call sheet that is final, a producer who is named) and

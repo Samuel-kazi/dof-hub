@@ -32,6 +32,29 @@ export { addPlannedEpisode, updatePlannedEpisode, archivePlannedEpisode, planned
 export type { PlannedInput } from "./workflow/planned";
 
 export { assignRole, removeRole, setChecklistItem } from "./workflow/team";
+export {
+  planRolesOf,
+  startPlanRoles,
+  addPlanRole,
+  renamePlanRole,
+  setRolePerson,
+  roleHolder,
+  devotionPlacements,
+  assignDevotion,
+  unassignedDevotions,
+  onSession,
+  sessionName,
+  sheetTimes,
+  setSessionBoards,
+  setProjectDrive,
+  setSessionDrive,
+  sessionDriveId,
+  footageOf,
+  assetsOf,
+  setSessionFootage,
+  setEpisodeAssets,
+} from "./workflow/plan";
+export type { Placement, BoardChoice, AssetsInput, SheetTimes } from "./workflow/plan";
 export type { RoleInput } from "./workflow/team";
 
 export { setCheckpointReviewers, decideCheckpoint } from "./workflow/checkpoints";
