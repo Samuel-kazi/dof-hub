@@ -3,7 +3,7 @@ import { CATEGORIES } from "../src/config/categories";
 import { ACCENTS, FONT_PAIRINGS } from "../src/config/appearance";
 import { CONDITIONS, EQUIP_CATEGORIES } from "../src/config/equipment";
 import { ALL_CAPABILITIES } from "../src/config/permissions";
-import { CRITERIA, FORM_TYPES, PROJECT_ROLE_DEFS, SERIES_TYPES } from "../src/config/workflow";
+import { CRITERIA, FORM_TYPES, PROJECT_ROLE_DEFS, SERIES_TYPES, SESSION_LABELS } from "../src/config/workflow";
 
 // Every change the browser may ask the server to make, and the exact shape of what it may send.
 //
@@ -101,6 +101,7 @@ const outcome = z.enum(["Greenlight", "Revise and resubmit", "Hold", "Decline", 
 const criterion = enumOf(CRITERIA.map((c) => c.key));
 const roleKey = enumOf(PROJECT_ROLE_DEFS.map((r) => r.key));
 const logStatus = z.enum(["Recorded", "Pickup needed", "Not recorded"]);
+const sessionLabel = enumOf(SESSION_LABELS);
 /** IDs that join several parts, such as DOF-SER-001-S1-R01|DOF-SER-001-S1-P07. */
 const compound = z.string().min(1).max(260);
 const sectionValues = z.record(z.string().max(60), z.union([z.string().max(20_000), amount(1e12), z.null(), z.array(short(100)).max(20)]));
@@ -539,8 +540,44 @@ export const ACTIONS: Record<string, ActionSpec> = {
   "workflow.assignRole": args([id, roleKey, z.object({ crewId: ref.nullable().optional(), guestName: short(120).nullable().optional() })]),
   "workflow.removeRole": args([compound]),
   "workflow.setChecklistItem": args([compound, z.object({ done: z.boolean().optional(), note: text(2000).optional() })]),
-  "workflow.createSession": args([id], [z.object({ scheduledDate: date.nullable().optional(), venue: short().optional() })]),
-  "workflow.updateSession": args([id, z.object({ scheduledDate: date.nullable(), venue: short(), dailyLog: text() }).partial()]),
+  "workflow.createSession": args(
+    [id],
+    [
+      z.object({
+        scheduledDate: date.nullable().optional(),
+        venue: short().optional(),
+        name: short(120).optional(),
+        label: sessionLabel.nullable().optional(),
+        startTime: time.nullable().optional(),
+        endTime: time.nullable().optional(),
+      }),
+    ],
+  ),
+  "workflow.updateSession": args([
+    id,
+    z
+      .object({
+        scheduledDate: date.nullable(),
+        venue: short(),
+        dailyLog: text(),
+        name: short(120),
+        label: sessionLabel.nullable(),
+        startTime: time.nullable(),
+        endTime: time.nullable(),
+      })
+      .partial(),
+  ]),
+  // A devotion's Recording Plan: its roles, its devotions on sessions, each session's boards, and where footage goes.
+  "workflow.startPlanRoles": args([id]),
+  "workflow.addPlanRole": args([id, short(60)]),
+  "workflow.renamePlanRole": args([compound, short(60)]),
+  "workflow.setRolePerson": args([compound, ref.nullable()]),
+  "workflow.assignDevotion": args([id, id.nullable()]),
+  "workflow.setSessionBoards": args([id, z.object({ storyboardId: id.nullable(), shotListId: id.nullable() }).partial()]),
+  "workflow.setProjectDrive": args([id, id.nullable()]),
+  "workflow.setSessionDrive": args([id, id.nullable()]),
+  "workflow.setSessionFootage": args([id, amount(1_000_000)]),
+  "workflow.setEpisodeAssets": args([id, z.object({ driveId: id.nullable(), sizeGB: amount(1_000_000) }).partial()]),
   "workflow.archiveSession": args([id, text(2000)]),
   "workflow.resetRunSheet": args([id], [count(240)]),
   "workflow.addRunSheetItem": args([id, runSheetItem]),

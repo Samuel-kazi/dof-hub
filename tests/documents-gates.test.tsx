@@ -19,8 +19,7 @@ import { AppProvider } from "../src/ui/AppContext";
 import { ProjectHome } from "../src/pages/documents/ProjectDocuments";
 import { PageComments, ReviewBanner, ReviewPanes } from "../src/pages/documents/ReviewView";
 import { PageEditor } from "../src/pages/documents/PageEditor";
-import { FormPane } from "../src/pages/documents/FormPanes";
-import { catalogEntry } from "../src/config/documentCatalog";
+import { PlanSectionView } from "../src/pages/documents/RecordingPlan";
 import type { Project } from "../src/services/workflow";
 import { allWorkItems } from "../src/services/workItems";
 import { remindersFor } from "../src/services/reminders";
@@ -369,12 +368,9 @@ await t("a devotion's pages are its topics, under one theme every devotion share
     html("hop@dof.demo", <PageEditor doc={script} page={page} write subtitleLabel="Scripture" titleLabel="Topic" />),
     /aria-label="Topic"/,
   );
-  const list = html(
-    "hop@dof.demo",
-    <FormPane project={project(DEV)} entry={catalogEntry("devotion", "Pre-production", "devotion_episodes")!} write />,
-  );
+  const list = html("hop@dof.demo", <PlanSectionView project={project(DEV)} section="devotions" write onOpenTool={() => {}} />);
   assert.match(list, /<th>Topic<\/th>/);
-  assert.match(list, /<th>Shared theme<\/th>/);
+  assert.match(list, /Theme, shared by every devotion: <b>Grace in the ordinary<\/b>/);
   const rows = getDb().plannedEpisodes.filter((p) => p.contentId === DEV && p.sourcePageId);
   assert.deepEqual([...new Set(rows.map((p) => p.question))], ["Grace in the ordinary"], "every devotion carries the one theme");
   assert.equal(new Set(rows.map((p) => p.workingTitle)).size, rows.length, "each with its own topic");

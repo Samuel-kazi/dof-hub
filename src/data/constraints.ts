@@ -200,7 +200,10 @@ export function integrityProblems(db: Database): string[] {
   for (const r of db.projectRoles ?? []) {
     project(r.contentId, `Role ${r.id}`);
     person(r.crewId, `Role ${r.id}`);
-    if (r.exclusive !== (r.roleKey !== "host_guest")) out.push(`Role ${r.id}: only hosts and guests may be held by several people.`);
+    // A role of the usual kind is held once per project. Hosts and guests, and roles a Recording Plan adds by hand, can
+    // be several (each row still names one person).
+    const several = r.roleKey === "host_guest" || r.roleKey === "custom";
+    if (r.exclusive === several) out.push(`Role ${r.id}: only hosts, guests and roles added by hand may be held by several people.`);
   }
   for (const c of db.workflowChecklistItems ?? []) {
     const exists = c.ownerType === "session" ? sessions.has(c.ownerId) : records.has(c.ownerId);
@@ -275,6 +278,23 @@ export function integrityProblems(db: Database): string[] {
     if (b.episodeId !== null && !records.has(b.episodeId)) missing("episode", b.episodeId, b.id);
   }
   for (const f of db.storyboardFrames ?? []) if (!boards.has(f.storyboardId)) missing("storyboard", f.storyboardId, `Frame ${f.id}`);
+  // A session's chosen storyboard and shot list are its own project's; the drives a project or session plans to use
+  // exist; a storage entry for a session's footage names a real session.
+  const boardProject = new Map([...(db.storyboards ?? []), ...(db.shotLists ?? [])].map((b) => [b.id, b.contentId]));
+  const drives = new Set((db.drives ?? []).map((d) => d.id));
+  for (const s of db.recordingSessions ?? []) {
+    for (const [what, id] of [
+      ["storyboard", s.storyboardId],
+      ["shot list", s.shotListId],
+    ] as const)
+      if (id && boardProject.get(id) !== s.contentId) out.push(`Session ${s.id} shows a ${what} that is not its project's: ${id}.`);
+    if (s.storageDriveId && !drives.has(s.storageDriveId)) missing("drive", s.storageDriveId, `Session ${s.id}`);
+  }
+  for (const r of db.records)
+    if (r.workflow?.storageDriveId && !drives.has(r.workflow.storageDriveId))
+      missing("drive", r.workflow.storageDriveId, `Project ${r.contentId}`);
+  for (const a of db.allocations ?? [])
+    if (a.sessionId && !sessions.has(a.sessionId)) missing("session", a.sessionId, `Storage entry ${a.id}`);
   for (const r of db.shotListRows ?? []) if (!lists.has(r.shotListId)) missing("shot list", r.shotListId, `Row ${r.id}`);
   return out;
 }

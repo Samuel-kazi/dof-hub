@@ -4,6 +4,7 @@ import type {
   ContentRecord,
   DevelopmentForm,
   Person,
+  PlannedEpisode,
   RecordingSession,
   ReviewCheckpoint,
   SessionLogEntry,
@@ -90,6 +91,18 @@ export function formOf(projectId: string): DevelopmentForm {
 }
 
 export const rowsOf = (sessionId: string): SessionLogEntry[] => getDb().sessionLogEntries.filter((e) => e.sessionId === sessionId);
+
+/** The script page a planned devotion was made from, while it is still a page of the script. */
+const sourcePage = (p: PlannedEpisode) => (p.sourcePageId ? getDb().documentPages.find((pg) => pg.id === p.sourcePageId) : undefined);
+
+/** A planned episode's title as it stands now: a devotion's is its script page's (the page is the source of truth). */
+export const plannedTitle = (p: PlannedEpisode): string => sourcePage(p)?.title.trim() || p.workingTitle || p.id;
+
+/** A planned devotion's scripture, from its script page. */
+export const plannedScripture = (p: PlannedEpisode): string => {
+  const page = sourcePage(p);
+  return page ? page.subtitle.trim() : String(p.details.scripture ?? "");
+};
 export const sessionsOf = (projectId: string): RecordingSession[] =>
   getDb()
     .recordingSessions.filter((s) => s.contentId === projectId)

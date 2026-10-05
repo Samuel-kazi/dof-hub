@@ -1,11 +1,11 @@
 import type { ContentRecord, Database, DocRecord, DocRevision, DriveAllocation, EquipCondition, EquipmentItem } from "../types";
 import { MUSIC_STAGE_MAP, categoryOf } from "../config/categories";
 import { templateOf } from "../config/docTemplates";
-import { syncRecordCounters } from "./ids";
+import { CHECKLISTS } from "../config/workflow";
 import { DOCUMENT_PARTS, WORKFLOW_PARTS } from "./constraints";
 import { todayIso } from "../services/utils";
 import { migrateDocuments } from "./migrateDocuments";
-import { logId } from "./ids";
+import { logId, sessionCode, sessionCounter, syncRecordCounters } from "./ids";
 
 // Upgrades saved data from version 2 to 3. It only touches plain data, so it can run while the
 // store is loading. It is safe to run twice: anything already present is left alone.
@@ -419,5 +419,108 @@ export function upgradeToV17(db: Database): Database {
   }
   delete (db.settings as { newDocuments?: unknown }).newDocuments;
   db.schemaVersion = 17;
+  return db;
+}
+
+/**
+ * Version 18: a devotion's Recording Plan. Sessions gain a name, a part of the day, hours, the storyboard and shot list
+ * chosen for them and the drive their footage goes on; roles gain the name and order the plan gives them; a project the
+ * drive its footage is planned for; a storage entry the session whose footage it is. All empty to start.
+ *
+ * A devotion's call sheet that has no session (made before the workflow, or by hand in the Call Sheet module) gets one:
+ * a session planned on the sheet's date, with its location as the venue, its run of show as the run sheet, and the
+ * sheet itself, unchanged, as the session's call sheet. Which days it covered was never recorded, so no devotion is put
+ * on it: each shows "Needs a session" until someone ticks it. Running it again changes nothing.
+ */
+export function upgradeToV18(db: Database): Database {
+  const order = ["director", "dop", "audio_engineer", "camera_operator", "continuity", "editor", "host_guest"];
+  for (const r of db.projectRoles ?? []) {
+    r.label ??= "";
+    r.position ??= order.indexOf(r.roleKey) < 0 ? order.length : order.indexOf(r.roleKey);
+  }
+  for (const r of db.records) if (r.workflow) r.workflow.storageDriveId ??= null;
+  for (const a of db.allocations ?? []) a.sessionId ??= null;
+  for (const ses of db.recordingSessions ?? []) {
+    ses.name ??= "";
+    ses.label ??= null;
+    ses.startTime ??= null;
+    ses.endTime ??= null;
+    ses.storyboardId ??= null;
+    ses.shotListId ??= null;
+    ses.storageDriveId ??= null;
+  }
+  const at = new Date().toISOString();
+  const linked = new Set((db.recordingSessions ?? []).map((x) => x.callSheetId).filter(Boolean));
+  const made: string[] = [];
+  for (const p of db.records) {
+    if (p.workflow?.formType !== "devotion" || p.archived || p.workflow.stage !== "Pre-production") continue;
+    const sheets = db.callSheets
+      .filter((c) => c.contentId === p.contentId && !linked.has(c.id))
+      .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+    for (const sheet of sheets) {
+      const key = sessionCounter(p.contentId);
+      const used = db.recordingSessions.filter((x) => x.contentId === p.contentId).map((x) => x.sessionNumber);
+      const n = Math.max(db.counters[key] ?? 0, ...used) + 1;
+      db.counters[key] = n;
+      db.recordingSessions.push({
+        id: sessionCode(p.contentId, n),
+        contentId: p.contentId,
+        sessionNumber: n,
+        scheduledDate: sheet.date || null,
+        venue: sheet.location,
+        status: "Planned",
+        closedAt: null,
+        callSheetId: sheet.id,
+        runSheet: sheet.runOfShow.map((item) => ({ ...item })),
+        dailyLog: "",
+        createdAt: at,
+        updatedAt: at,
+        archivedAt: null,
+        archivedReason: null,
+        name: sheet.title,
+        label: null,
+        startTime: null,
+        endTime: null,
+        storyboardId: null,
+        shotListId: null,
+        storageDriveId: null,
+        fromCallSheet: true,
+      });
+      // The session's pre-session checklist, as a session scheduled by hand starts with.
+      const list = CHECKLISTS.preSession;
+      for (const item of list.items) {
+        const rowId = `${sessionCode(p.contentId, n)}|${list.stage}|${item.key}`;
+        if (item.auto || db.workflowChecklistItems.some((c) => c.id === rowId)) continue;
+        db.workflowChecklistItems.push({
+          id: rowId,
+          ownerType: "session",
+          ownerId: sessionCode(p.contentId, n),
+          stage: list.stage,
+          itemKey: item.key,
+          label: item.label,
+          required: item.required,
+          done: false,
+          note: "",
+          doneAt: null,
+          doneById: null,
+          createdAt: at,
+          updatedAt: at,
+        });
+      }
+      linked.add(sheet.id);
+      made.push(`${sessionCode(p.contentId, n)} from ${sheet.id}`);
+    }
+  }
+  if (made.length)
+    db.audit.push({
+      id: logId("A"),
+      at,
+      byPersonId: "system",
+      action: "migrate-call-sheets",
+      entity: "system",
+      entityId: "recording-plan",
+      detail: `Devotion call sheets moved into Recording Plan sessions: ${made.join(", ")}.`,
+    });
+  db.schemaVersion = 18;
   return db;
 }

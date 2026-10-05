@@ -11,7 +11,6 @@ export type FormTile =
   | "plannedEpisodes"
   | "consent"
   | "acceptDecline"
-  | "devotionEpisodes"
   | "roles"
   | "sessions"
   | "callSheet"
@@ -32,6 +31,7 @@ export interface CatalogPage {
   fields?: { section: string; key: string; label: string }[];
   // A structured screen shown as this page instead of rich text (a session's run sheet or wrap checklist).
   form?: "runSheet" | "wrapChecklist";
+  storage?: boolean; // the drive the footage is planned to go on is chosen above this page (a Recording Plan's Cards and storage)
 }
 
 export interface CatalogEntry {
@@ -45,6 +45,7 @@ export interface CatalogEntry {
   per?: "session" | "episode"; // one of these documents for each session or episode, rather than one for the project
   pagePerEpisode?: boolean; // its pages are one per episode (a review thread)
   onlyIfMade?: boolean; // made only by the move from the old forms: its tile shows once it exists, and it is never made empty
+  plan?: boolean; // a Recording Plan: its roles, devotions, sessions and call sheets show as fixed cards before its pages
 }
 
 const CRITERIA_LIST =
@@ -203,11 +204,12 @@ const devotionCatalog: Record<WorkflowStage, CatalogEntry[]> = {
     form("accept_decline", "Accept or Decline", "acceptDecline"),
     earlierForm,
   ],
+  // The Recording Plan holds the roles, the devotions, the sessions they are recorded in and each session's call sheet;
+  // a session's call sheet shows one storyboard and one shot list of the project's, chosen from these.
   "Pre-production": [
-    form("devotion_episodes", "Devotions", "devotionEpisodes"),
-    doc("recording_plan", "Recording Plan", ["Cards and storage", "Notes"]),
-    form("sessions", "Recording Session", "sessions"),
-    form("call_sheet", "Call Sheet", "callSheet"),
+    doc("recording_plan", "Recording Plan", [{ title: "Cards and storage", storage: true }, "Notes"], { plan: true }),
+    tool("storyboard", "Storyboard", "storyboard"),
+    tool("shot_list", "Shot List", "shotList"),
   ],
   Production: [form("recording_day_view", "Recording Day View", "recordingDayView"), form("storage", "Storage", "storage")],
   "Post production": [doc("edit_notes", "Edit Notes", ["Notes to the editor"]), form("review", "Review", "review")],

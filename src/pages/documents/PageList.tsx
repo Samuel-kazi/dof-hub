@@ -13,6 +13,7 @@ export interface FixedCard {
   title: string;
   note: string;
   at: "start" | "end";
+  tag?: string; // the small tag before its note: "form" unless given
 }
 
 export function PageList({
@@ -57,7 +58,7 @@ export function PageList({
         <span className="pd-card-text">
           <span className="pd-card-title">{f.title}</span>
           <span className="pd-card-snip">
-            <span className="pd-tag">form</span> {f.note}
+            <span className="pd-tag">{f.tag ?? "form"}</span> {f.note}
           </span>
         </span>
       </button>

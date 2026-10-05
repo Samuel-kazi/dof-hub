@@ -217,6 +217,14 @@ export function savePage(actor: Actor, pageId: string, edit: PageEdit, baseVersi
   page.updatedAt = nowStamp();
   page.updatedBy = actor.personId;
   doc.updatedAt = page.updatedAt;
+  // The script page is the source of a devotion's title and scripture: the copy its planned episode keeps (to name the
+  // episode when it is recorded) follows it, until it is recorded.
+  for (const planned of getDb().plannedEpisodes)
+    if (planned.sourcePageId === page.id && !getDb().records.some((r) => r.episode?.plannedEpisodeId === planned.id)) {
+      if (page.title.trim()) planned.workingTitle = page.title.trim();
+      planned.details = { ...planned.details, scripture: page.subtitle };
+      planned.updatedAt = page.updatedAt;
+    }
   commit();
   return page;
 }

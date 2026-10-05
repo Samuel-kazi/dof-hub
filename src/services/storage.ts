@@ -85,6 +85,9 @@ export function deleteDrive(actor: Actor, id: string): void {
   if (getDb().allocations.some((a) => a.driveId === id))
     throw new RuleError("Projects are still recorded on this drive. Remove them first.");
   getDb().drives = getDb().drives.filter((x) => x.id !== id);
+  // A project or session that planned to use it is left with no drive chosen.
+  for (const r of getDb().records) if (r.workflow?.storageDriveId === id) r.workflow.storageDriveId = null;
+  for (const s of getDb().recordingSessions) if (s.storageDriveId === id) s.storageDriveId = null;
   logAudit(actor, "delete", "drive", id, d.name);
   recordSnapshot();
   commit();

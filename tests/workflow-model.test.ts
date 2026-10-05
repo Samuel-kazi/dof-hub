@@ -11,7 +11,7 @@ import { DOCUMENT_PARTS, WORKFLOW_PARTS, integrityProblems, uniqueViolations } f
 import { buildWorkflowFixture } from "../src/data/seedWorkflow";
 import { buildSeed } from "../src/data/seed";
 import { upgradeDb, CURRENT_SCHEMA, commit, enableRollback, getDb, setDb, transaction } from "../src/data/store";
-import { upgradeToV15, upgradeToV16, upgradeToV17 } from "../src/data/migrate";
+import { upgradeToV15, upgradeToV16, upgradeToV17, upgradeToV18 } from "../src/data/migrate";
 import { codeNumber, episodeCode, episodeCounter, plannedEpisodeId, plannedCounter, sessionCode, sessionCounter } from "../src/data/ids";
 import { addDaysIso, dateInNairobi, hoursUntilEndOfDay, isIsoDate, todayIso } from "../src/services/utils";
 
@@ -205,7 +205,7 @@ t("references: everything the workflow's data points at must exist, and a log ro
       const r = db.projectRoles.find((x) => x.roleKey === "editor")!;
       r.exclusive = false;
     })[0],
-    /only hosts and guests/,
+    /only hosts, guests and roles added by hand/,
   );
   assert.match(
     broken((db) => (db.records.find((r) => r.contentId === WOW)!.workflow!.showProducerId = "DOF-P-CRW-999"))[0],
@@ -243,34 +243,31 @@ t("date arithmetic is by the calendar: months, years and leap days", () => {
 
 // ── Saved data from before the workflow ──────────────────────
 
-t(
-  "upgrading to versions 15, 16 and 17 adds the workflow's and the documents' lists and fields, changes nothing else, and can run twice",
-  () => {
-    const old = buildSeed() as unknown as Record<string, unknown>;
-    for (const k of WORKFLOW_PARTS) delete old[k];
-    for (const r of old.records as Record<string, unknown>[]) {
-      delete r.seriesType;
-      delete r.workflow;
-      delete r.episode;
-    }
-    old.schemaVersion = 14;
-    const before = JSON.stringify(old);
-    const up = upgradeDb(JSON.parse(before) as Database)!;
-    assert.equal(up.schemaVersion, CURRENT_SCHEMA);
-    assert.equal(CURRENT_SCHEMA, 17);
-    for (const k of [...WORKFLOW_PARTS, ...DOCUMENT_PARTS]) assert.deepEqual(up[k], []);
-    const was = JSON.parse(before) as Database;
-    assert.deepEqual(
-      up.records.map(({ seriesType, workflow, episode, ...rest }) => [rest, seriesType, workflow, episode]),
-      was.records.map((r) => [r, null, null, null]),
-      "every record is exactly as it was, plus three empty fields",
-    );
-    const twice = JSON.stringify(upgradeToV17(upgradeToV16(upgradeToV15(structuredClone(up)))));
-    assert.equal(twice, JSON.stringify(up), "running it again changes nothing");
-    assert.equal(upgradeDb(up), up, "data already at the current version is left alone");
-    assert.equal(upgradeDb({ ...up, schemaVersion: 99 }), null, "a version this app does not know is refused, not guessed at");
-  },
-);
+t("upgrading to versions 15 to 18 adds the workflow's and the documents' lists and fields, changes nothing else, and can run twice", () => {
+  const old = buildSeed() as unknown as Record<string, unknown>;
+  for (const k of WORKFLOW_PARTS) delete old[k];
+  for (const r of old.records as Record<string, unknown>[]) {
+    delete r.seriesType;
+    delete r.workflow;
+    delete r.episode;
+  }
+  old.schemaVersion = 14;
+  const before = JSON.stringify(old);
+  const up = upgradeDb(JSON.parse(before) as Database)!;
+  assert.equal(up.schemaVersion, CURRENT_SCHEMA);
+  assert.equal(CURRENT_SCHEMA, 18);
+  for (const k of [...WORKFLOW_PARTS, ...DOCUMENT_PARTS]) assert.deepEqual(up[k], []);
+  const was = JSON.parse(before) as Database;
+  assert.deepEqual(
+    up.records.map(({ seriesType, workflow, episode, ...rest }) => [rest, seriesType, workflow, episode]),
+    was.records.map((r) => [r, null, null, null]),
+    "every record is exactly as it was, plus three empty fields",
+  );
+  const twice = JSON.stringify(upgradeToV18(upgradeToV17(upgradeToV16(upgradeToV15(structuredClone(up))))));
+  assert.equal(twice, JSON.stringify(up), "running it again changes nothing");
+  assert.equal(upgradeDb(up), up, "data already at the current version is left alone");
+  assert.equal(upgradeDb({ ...up, schemaVersion: 99 }), null, "a version this app does not know is refused, not guessed at");
+});
 
 t("upgrading to version 17 moves every workflow project's Development form into its documents, once, and drops the old setting", () => {
   const old = fixture() as Database & { settings: { newDocuments?: string[] } };
@@ -278,7 +275,7 @@ t("upgrading to version 17 moves every workflow project's Development form into 
   old.schemaVersion = 16;
   const formsBefore = JSON.stringify(old.developmentForms);
   const up = upgradeDb(structuredClone(old))!;
-  assert.equal(up.schemaVersion, 17);
+  assert.equal(up.schemaVersion, 18);
   assert.equal("newDocuments" in up.settings, false, "the setting is gone");
   for (const [id, key] of [
     ["DOF-SER-001-S1", "show_brief"],
@@ -291,9 +288,62 @@ t("upgrading to version 17 moves every workflow project's Development form into 
     );
   assert.equal(JSON.stringify(up.developmentForms), formsBefore, "the old forms are left exactly as they were");
   assert.equal(up.audit.filter((a) => a.action === "migrate-documents" && a.byPersonId === "system").length, 1);
-  const again = JSON.stringify(upgradeToV17(structuredClone(up)));
+  const again = JSON.stringify(upgradeToV18(upgradeToV17(structuredClone(up))));
   assert.equal(again, JSON.stringify(up), "running it again changes nothing");
   assert.deepEqual(integrityProblems(up), []);
+});
+
+t("upgrading to version 18 gives a devotion's call sheets their sessions in its Recording Plan, keeping each sheet as it was", () => {
+  const old = fixture();
+  const dev = old.records.find((r) => r.contentId === "DOF-DEV-001")!;
+  Object.assign(dev.workflow!, { stage: "Pre-production", status: "Active" });
+  const sheet = {
+    ...structuredClone(old.callSheets[0]),
+    id: "DOF-CS-900",
+    contentId: "DOF-DEV-001",
+    title: "Devotion day",
+    date: "2026-11-02",
+    location: "Studio B",
+    runOfShow: [{ id: "RS-1", time: "08:00", title: "Crew call", durationMin: 0, ownerPersonId: null, notes: "" }],
+  };
+  old.callSheets.push(sheet);
+  const sheetBefore = JSON.stringify(sheet);
+  for (const s of old.recordingSessions) {
+    for (const k of ["name", "label", "startTime", "endTime", "storyboardId", "shotListId", "storageDriveId"])
+      delete (s as unknown as Record<string, unknown>)[k];
+  }
+  for (const r of old.projectRoles) {
+    delete r.label;
+    delete r.position;
+  }
+  old.schemaVersion = 17;
+  const up = upgradeDb(structuredClone(old))!;
+  assert.equal(up.schemaVersion, 18);
+  const made = up.recordingSessions.filter((s) => s.contentId === "DOF-DEV-001");
+  assert.equal(made.length, 1, "one session for the sheet");
+  const [s] = made;
+  assert.deepEqual(
+    [s.id, s.scheduledDate, s.venue, s.callSheetId, s.name, s.status, s.fromCallSheet, s.runSheet.map((i) => i.title)],
+    ["DOF-DEV-001-R01", "2026-11-02", "Studio B", "DOF-CS-900", "Devotion day", "Planned", true, ["Crew call"]],
+  );
+  assert.equal(JSON.stringify(up.callSheets.find((c) => c.id === "DOF-CS-900")), sheetBefore, "the sheet itself is unchanged");
+  assert.ok(
+    up.workflowChecklistItems.some((c) => c.ownerId === s.id && c.ownerType === "session"),
+    "the session has its pre-session checklist",
+  );
+  assert.equal(up.sessionLogEntries.filter((e) => e.sessionId === s.id).length, 0, "no devotion is guessed onto it");
+  assert.ok(up.audit.some((a) => a.action === "migrate-call-sheets" && a.detail.includes("DOF-DEV-001-R01 from DOF-CS-900")));
+  // Every session has the new fields, empty; roles their order.
+  for (const x of up.recordingSessions) assert.equal(x.storageDriveId, null);
+  for (const r of up.projectRoles) assert.equal(typeof r.position, "number");
+  const again = JSON.stringify(upgradeToV18(structuredClone(up)));
+  assert.equal(again, JSON.stringify(up), "running it again changes nothing");
+  assert.deepEqual(integrityProblems(up), []);
+  // A devotion still in Development, or a series, keeps its sheets as they are.
+  const series = fixture();
+  series.schemaVersion = 17;
+  const sessionsBefore = series.recordingSessions.length;
+  assert.equal(upgradeDb(series)!.recordingSessions.length, sessionsBefore);
 });
 
 // ── All or nothing ───────────────────────────────────────────
