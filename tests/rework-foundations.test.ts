@@ -3,6 +3,7 @@
 // part, one view of production instances, lending, role kits, the Calendar's reminders and the bell, the email queue,
 // the urgency report, and storyboard and shot list templates. No screens yet.
 import assert from "node:assert/strict";
+import { FEATURES } from "../src/config/features";
 import type { Actor, Database } from "../src/types";
 import { RuleError } from "../src/types";
 import { enableRollback, getDb, setDb } from "../src/data/store";
@@ -110,10 +111,18 @@ await t("the dry-run report lists each General Use record with a proposal, and w
 // ── Switches ─────────────────────────────────────────────────
 
 await t("a part of the rework not built yet stays off whatever is stored; only the Head of Production switches parts", () => {
+  assert.equal(featureOn("lending"), true, "built: on unless switched off");
+  S.setFeature(hop(), "lending", false);
   assert.equal(featureOn("lending"), false);
   S.setFeature(hop(), "lending", true);
-  assert.equal(getDb().settings.features?.lending, true);
-  assert.equal(featureOn("lending"), false, "not built yet: off, whatever is stored");
+  // A part marked not built is off whatever is stored.
+  const part = FEATURES.find((f) => f.key === "lending") as { built: boolean };
+  part.built = false;
+  try {
+    assert.equal(featureOn("lending"), false, "not built yet: off, whatever is stored");
+  } finally {
+    part.built = true;
+  }
   throwsRule(() => S.setFeature(crew(1), "lending", false), /Head of Production/);
 });
 

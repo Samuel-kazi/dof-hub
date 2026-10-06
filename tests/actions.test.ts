@@ -565,6 +565,10 @@ await t("every action accepts the arguments its screen sends", async () => {
     daySheet.version,
   );
   await must("production.resetToTemplate", firstDay);
+  await must("production.setDayLabel", firstDay, "Evening");
+  await call("production.applyDayToFuture", firstDay); // its arguments are accepted
+  await must("production.updateShowTemplate", tpl, { horizonCount: 6 });
+  await call("production.cancelDay", firstDay, "Venue closed for repairs"); // its arguments are accepted
   await must("callsheets.bookPlannedGear", daySheet.id);
   const camp = await must("production.createProduction", {
     title: "Camp",

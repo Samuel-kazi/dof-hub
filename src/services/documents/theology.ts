@@ -5,6 +5,7 @@ import { briefKeyOf, catalogFor, catalogTypeOf } from "../../config/documentCata
 import { logAudit } from "../audit";
 import { featureOn } from "../settings";
 import { checkpoint, isWorkflowProject, nowStamp, type Project } from "../workflow/common";
+import { fmtDate } from "../utils";
 import { projectForWrite } from "./common";
 import { documentOf } from "./pages";
 import { reviewsOf, reviewStateOf } from "./reviews";
@@ -21,6 +22,8 @@ const NOTE_MAX = 300;
 
 export interface TheologyStatus {
   done: boolean;
+  legacy: string | null; // an approval from before the review documents, recognised: on the earlier checkpoints, passed by hand, or moved across
+  newRequest: boolean; // reviewers were named after such an approval: a new review is asked for
   what: string; // what is reviewed: "brief" or "script"
   documentId: string | null;
   detail: string; // where it stands, in words
@@ -40,18 +43,21 @@ export function approvedAt(documentId: string): string | null {
   return reviewsOf(documentId).reduce<string | null>((at, r) => (r.decidedAt && (!at || r.decidedAt > at) ? r.decidedAt : at), null);
 }
 
-/** Where a project's theological review stands. */
-export function theologyStatus(projectId: string): TheologyStatus {
+/**
+ * Where a project's theological review stands. `passedByHand` false: a review passed by hand does not count (while the
+ * review is a gate, that pass is the gate's override, shown as such).
+ */
+export function theologyStatus(projectId: string, passedByHand = true): TheologyStatus {
   const p = getDb().records.find((r) => r.contentId === projectId) as Project;
   const what = catalogTypeOf(p.workflow.formType) === "devotion" ? "script" : "brief";
   const doc = documentOf(projectId, "Development", briefKeyOf(p.workflow.formType));
   const state = doc ? reviewStateOf(doc.id) : "no reviewers";
   const rows = doc ? reviewsOf(doc.id) : [];
-  // A project reviewed on the earlier pitch and outline checkpoints, before the documents, keeps that review: both of
-  // its checkpoints approved count, until reviewers are named on the document.
-  const earlier = (["pitch", "outline_script"] as const).every((k) => checkpoint(projectId, k)?.status === "Approved");
-  if (state === "no reviewers" && earlier)
-    return { done: true, what, documentId: doc?.id ?? null, detail: "Approved on the earlier review checkpoints", approvedAt: null };
+  // An approval from before the review documents is recognised, so no one repeats the work, until reviewers are named
+  // on the document: then a new review is asked for, and said to be new.
+  const legacy = legacyApproval(p, passedByHand);
+  if (state === "no reviewers" && legacy)
+    return { done: true, legacy, newRequest: false, what, documentId: doc?.id ?? null, detail: legacy, approvedAt: null };
   const detail =
     state === "approved"
       ? `Approved by ${rows.length === 1 ? "its reviewer" : `all ${rows.length} reviewers`}`
@@ -60,7 +66,32 @@ export function theologyStatus(projectId: string): TheologyStatus {
         : state === "changes_requested"
           ? "Changes requested"
           : `${rows.filter((r) => r.status === "approved").length} of ${rows.length} reviewers have approved`;
-  return { done: state === "approved", what, documentId: doc?.id ?? null, detail, approvedAt: doc ? approvedAt(doc.id) : null };
+  const done = state === "approved";
+  const newRequest = !done && !!legacy;
+  return {
+    done,
+    legacy,
+    newRequest,
+    what,
+    documentId: doc?.id ?? null,
+    detail: newRequest ? `New review asked for (earlier: ${legacy.charAt(0).toLowerCase()}${legacy.slice(1)}). ${detail}` : detail,
+    approvedAt: doc ? approvedAt(doc.id) : null,
+  };
+}
+
+/**
+ * A theological review from before the review documents: both earlier checkpoints (pitch, outline or script)
+ * approved; the review gate passed by hand while it was a gate, with its note; or a project moved across from the
+ * earlier pipeline after Development, whose review was done there.
+ */
+function legacyApproval(p: Project, passedByHand: boolean): string | null {
+  if ((["pitch", "outline_script"] as const).every((k) => checkpoint(p.contentId, k)?.status === "Approved"))
+    return "Approved on the earlier review checkpoints";
+  const form = getDb().developmentForms.find((f) => f.contentId === p.contentId);
+  const passed = (form?.overrides ?? []).find((o) => o.key === "review");
+  if (passed && passedByHand) return `Passed by hand on ${fmtDate(passed.at.slice(0, 10))}: ${passed.note}`;
+  if (p.workflow.migrated && p.workflow.stage !== "Development") return "Reviewed in the earlier pipeline, before it moved across";
+  return null;
 }
 
 /**

@@ -1,3 +1,4 @@
+import { toFiveStages } from "./migrate";
 import type {
   CategoryKey,
   ContentRecord,
@@ -750,5 +751,8 @@ export function buildSeed(): Database {
     },
   };
   syncRecordCounters(db); // project numbers continue from the sample projects (src/data/ids.ts)
+  // Live Shows and DOF Music are on the five stages (build prompt v2): the sample is written in their earlier stage
+  // names and moved across here, the same way saved data is.
+  toFiveStages(db);
   return db;
 }

@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { ContentRecord, RecurrenceRule } from "../../types";
 import { EVENT_PLAN_FIELDS, MODE_LABEL } from "../../config/callSheet";
 import { describeRule } from "../../services/recurrence";
-import { addDaysIso, fmtDate, todayIso } from "../../services/utils";
+import { fmtDate, todayIso } from "../../services/utils";
 import {
   addEventDay,
   canPlanShow,
@@ -13,6 +13,7 @@ import {
   setShowSchedule,
   sheetOfDay,
   updateEventPlan,
+  horizonEnd,
 } from "../../services/wrapped/production";
 import { useApp } from "../../ui/AppContext";
 import { Empty, Field } from "../../ui/parts";
@@ -73,8 +74,9 @@ function Recurring({ show, plan }: { show: ContentRecord; plan: boolean }) {
     <div className="stack">
       <div className="prod-rule">
         <span className="grow">
-          <b>{describeRule(t.rule, fmtDate)}.</b> Days are made {t.horizonWeeks} weeks ahead, up to{" "}
-          {fmtDate(addDaysIso(today, t.horizonWeeks * 7))}, and topped up every day.
+          <b>{describeRule(t.rule, fmtDate)}.</b> Days are made{" "}
+          {t.horizonCount ? `for the next ${t.horizonCount} dates` : `${t.horizonWeeks} weeks ahead`}, up to {fmtDate(horizonEnd(t, today))}
+          , and topped up every day.
         </span>
         <button className="btn small primary" onClick={() => go({ n: "template", id: t.id })}>
           Open the template

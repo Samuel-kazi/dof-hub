@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { ReviewNote } from "../types";
 import { catalogTypeOf } from "../config/documentCatalog";
-import { noteUnreviewed, REVIEW_ACTIONS, reviewNotesOf, reviewOutstanding, theologyStatus } from "../services/wrapped/documents";
+import { noteUnreviewed, REVIEW_ACTIONS, reviewNotesOf, reviewOutstanding, reviewsOf, theologyStatus } from "../services/wrapped/documents";
 import type { Project } from "../services/wrapped/workflow";
 import { fmtDateTime } from "../services/utils";
 import { useApp } from "./AppContext";
@@ -21,8 +21,8 @@ export function ReviewNotDone({ project, onOpen }: { project: Project; onOpen?: 
   return (
     <div className="banner warn pd-review-due" role="status" aria-label="Theological review not done">
       <div className="grow">
-        <b>Theological review not done.</b> {t.detail}. It does not hold the project up; it is asked about when sessions are scheduled and
-        when call sheets and episodes are published.
+        <b>{t.newRequest ? "New theological review requested." : "Theological review not done."}</b> {t.detail}. It does not hold the
+        project up; it is asked about when sessions are scheduled and when call sheets and episodes are published.
         {notes.length > 0 && (
           <details className="pd-review-notes">
             <summary>
@@ -48,9 +48,89 @@ export function ReviewNotDone({ project, onOpen }: { project: Project; onOpen?: 
   );
 }
 
-/** A board card's line. */
+/**
+ * A board card's line, which opens what needs attention: where the review stands, each reviewer's decision, and each
+ * time someone went ahead without it.
+ */
 export function ReviewDueTag({ contentId }: { contentId: string }) {
-  return reviewOutstanding(contentId) ? <span className="badge warn">Theological review not done</span> : null;
+  const { go } = useApp();
+  const [open, setOpen] = useState(false);
+  const project = reviewOutstanding(contentId);
+  if (!project) return null;
+  const t = theologyStatus(project.contentId);
+  const notes = reviewNotesOf(project);
+  const rows = t.documentId ? reviewsOf(t.documentId) : [];
+  return (
+    <>
+      <button
+        type="button"
+        className="badge warn badge-button"
+        aria-label={`${t.newRequest ? "New theological review requested" : "Theological review not done"}: see what needs attention`}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(true);
+        }}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
+        {t.newRequest ? "New theological review requested" : "Theological review not done"}
+      </button>
+      {open && (
+        <Modal
+          title={`Theological review: ${project.title}`}
+          onClose={() => setOpen(false)}
+          actions={
+            <>
+              <button className="btn" onClick={() => setOpen(false)}>
+                Close
+              </button>
+              <button
+                className="btn primary"
+                onClick={() => {
+                  setOpen(false);
+                  go({ n: "record", id: project.contentId });
+                }}
+              >
+                Open the project
+              </button>
+            </>
+          }
+        >
+          <div onClick={(e) => e.stopPropagation()}>
+            <p className="sub">{t.detail}.</p>
+            {rows.length > 0 && (
+              <ul className="pd-reviewers">
+                {rows.map((r) => (
+                  <li key={r.id}>
+                    <PersonName id={r.reviewerId} />:{" "}
+                    {r.status === "approved"
+                      ? "approved"
+                      : r.status === "changes_requested"
+                        ? `changes requested: ${r.note}`
+                        : "not decided yet"}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="muted">
+              {notes.length
+                ? `Gone ahead without it ${notes.length} time${notes.length === 1 ? "" : "s"}:`
+                : "No one has gone ahead without it yet."}
+            </p>
+            {notes.length > 0 && (
+              <ul>
+                {notes.map((n) => (
+                  <li key={`${n.at}|${n.targetId}`}>
+                    {REVIEW_ACTIONS[n.action]} ({n.targetId}), <PersonName id={n.byPersonId} />, {fmtDateTime(n.at)}
+                    {n.note ? `: ${n.note}` : ""}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </Modal>
+      )}
+    </>
+  );
 }
 
 export interface ReviewAsk {

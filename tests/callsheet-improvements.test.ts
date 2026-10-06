@@ -421,9 +421,9 @@ await t("a sheet stays open to edit, published or not, and locks once its sessio
   const show = P.createProduction(hop(), { title: "Rally", mode: "one_time", date: "2026-10-20" });
   const day = daysOfShow(show.contentId)[0];
   const cs = sheetOfDay(day)!;
-  getDb().records.find((r) => r.contentId === day.contentId)!.pipelineStage = "Show";
+  getDb().records.find((r) => r.contentId === day.contentId)!.pipelineStage = "Production";
   CS.updateCallSheet(hop(), cs.id, { notes: "On the day" });
-  getDb().records.find((r) => r.contentId === day.contentId)!.pipelineStage = "Post Production";
+  getDb().records.find((r) => r.contentId === day.contentId)!.pipelineStage = "Post production";
   commit();
   throwsRule(() => CS.updateCallSheet(hop(), cs.id, { notes: "After" }), /locked\. .* has reached Post production/);
 });

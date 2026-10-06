@@ -14,13 +14,16 @@ import {
   shotNumbers,
   updateShotRow,
   type RowEdit,
+  saveShotListAsTemplate,
 } from "../../services/wrapped/documents";
-import type { Project } from "../../services/wrapped/workflow";
+import type { BoardScope } from "./Storyboards";
 import { useApp } from "../../ui/AppContext";
 import { Empty } from "../../ui/parts";
 import { NewBoardModal } from "./Storyboards";
 import { ImageSlot, SavedInput } from "./toolkit";
 import { useFocusRow } from "../../ui/keys";
+import { canKeepLibrary } from "../../services/documents/boards";
+import { useReason } from "../workflow/common";
 
 // The Shot List, in Pre-production: the project's lists on the left, each with its number of shots, and "+ New shot
 // list", which can start as a copy of any list the person may see. The chosen list is a table: a picture, the shot's
@@ -232,6 +235,7 @@ function Row({
 
 function ListView({ list, write }: { list: ShotList; write: boolean }) {
   const { actor, attempt, confirm } = useApp();
+  const [ask, askModal] = useReason();
   const rows = rowsOfShotList(list.id);
   const numbers = shotNumbers(list.id);
   const total = estimatedMinutes(list.id);
@@ -262,9 +266,26 @@ function ListView({ list, write }: { list: ShotList; write: boolean }) {
           <h3>{list.name}</h3>
         )}
         {episode && <span className="badge">{episode.contentId}</span>}
+        {list.isTemplate && <span className="badge accent">Template</span>}
         <span className="muted">
           {numbers.size} shot{numbers.size === 1 ? "" : "s"}
         </span>
+        {list.contentId && canKeepLibrary(actor) && (
+          <button
+            className="btn small ghost"
+            onClick={async () => {
+              const name = await ask(
+                "Save as a template",
+                "The template's name. A copy goes to Documents, Templates; this list stays as it is.",
+                "Save as template",
+              );
+              if (name) attempt(() => saveShotListAsTemplate(actor, list.id, name), "Saved as a template in Documents");
+            }}
+          >
+            Save as template
+          </button>
+        )}
+        {askModal}
       </div>
       {write && live.length > 0 && (
         <div className="pd-bulk">
@@ -386,7 +407,7 @@ function ListView({ list, write }: { list: ShotList; write: boolean }) {
   );
 }
 
-export function ShotListTool({ project, write }: { project: Project; write: boolean }) {
+export function ShotListTool({ project, write }: { project: BoardScope; write: boolean }) {
   const lists = shotListsOf(project.contentId);
   const [chosen, setChosen] = useState<string | null>(null);
   const [making, setMaking] = useState(false);

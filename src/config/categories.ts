@@ -123,16 +123,20 @@ export const CATEGORIES: CategoryConfig[] = [
     childToken: "D",
     grandchildToken: "D",
     // A show can run for one day or several. Each day is its own item with its own pipeline, call sheet and run of show.
+    // The five stages (build prompt v2, section 9): show planning in Development; technical prep and rehearsal in
+    // Pre-production; the show and its strike in Production; post-show editing and clips in Post production; archive
+    // and report in Marketing and distribution. Labels and checklists here, so they change without code.
     stages: [
-      s("Prep", "Gear tested and packed", { docs: ["run-of-show"] }),
-      s("Build", "Rig built and safety-checked"),
-      s("Rehearse", "Camera, audio and stream checks passed"),
-      s("Show", "Stream completed"),
-      s("Wrap", "Strike checklist complete"),
-      s("Review", "Stream review notes"),
-      s("Post Production", "Archive and clips exported", { docs: ["analysis"] }),
+      s("Development", "Show plan ready: show date set and producer named"),
+      s("Pre-production", "Technical prep and rehearsal done", {
+        tasks: ["Gear tested and packed", "Rig built and safety-checked", "Camera, audio and stream checks passed"],
+        docs: ["run-of-show"],
+      }),
+      s("Production", "Stream completed and strike done"),
+      s("Post production", "Recording reviewed, clips exported"),
+      s("Marketing and distribution", "Archived, with the show report", { docs: ["analysis"] }),
     ],
-    footageStage: "Show",
+    footageStage: "Production",
     leafLevel: 1,
     workflow: null,
   },
@@ -179,17 +183,16 @@ export const CATEGORIES: CategoryConfig[] = [
     grandchildLevelLabel: "Track",
     childToken: "A",
     grandchildToken: "T",
+    // The five stages (build prompt v2, section 10), configured here so the details can change without code.
     stages: [
-      s("Idea", "Approved concept and lyrics", { docs: ["concept"] }),
+      s("Development", "Approved concept and lyrics", { docs: ["concept"] }),
       s("Pre-production", "Session plan", { docs: ["music-plan"] }),
       // Recording is tracked as two parts, so audio and video each have an owner and a date.
-      s("Recording", "Audio and video recorded", { tasks: ["Audio recording", "Video recording"] }),
-      s("Audio post-production", "Approved mix and master", { tasks: ["Mixing", "Mastering"] }),
-      s("Video editing", "Finished edit", { tasks: EDIT_TASKS, docs: ["edit-notes"] }),
-      s("Review", "Approved cut"),
-      s("Publish", "Published, with final link", { docs: ["analysis"] }),
+      s("Production", "Audio and video recorded", { tasks: ["Audio recording", "Video recording"] }),
+      s("Post production", "Approved mix, master and edit", { tasks: ["Mixing", "Mastering", ...EDIT_TASKS], docs: ["edit-notes"] }),
+      s("Marketing and distribution", "Published, with final link", { docs: ["analysis"] }),
     ],
-    footageStage: "Recording",
+    footageStage: "Production",
     leafLevel: 2,
     workflow: null,
   },

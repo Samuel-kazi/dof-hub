@@ -1,4 +1,14 @@
-import type { ContentRecord, Database, DocRecord, DocRevision, DriveAllocation, EquipCondition, EquipmentItem } from "../types";
+import type {
+  ContentRecord,
+  Database,
+  DocRecord,
+  DocRevision,
+  DriveAllocation,
+  EquipCondition,
+  EquipmentItem,
+  LoanLine,
+  StageOwner,
+} from "../types";
 import { MUSIC_STAGE_MAP, categoryOf } from "../config/categories";
 import { templateOf } from "../config/docTemplates";
 import { CHECKLISTS } from "../config/workflow";
@@ -18,10 +28,14 @@ const isoPlus = (base: string, days: number): string => {
   return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`;
 };
 
+// Music's stages as they were from version 3 until version 22 moved it onto the five stages. An upgrade uses the
+// stages of its own time, never today's, so old data passes through each step as it did then.
+const MUSIC_STAGES_V3 = ["Idea", "Pre-production", "Recording", "Audio post-production", "Video editing", "Review", "Publish"];
+
 /** Music moved to a new set of stages. Maps where each saved item now sits. */
 function remapMusic(r: ContentRecord): void {
   if (r.category !== "music" || !r.pipelineStage) return;
-  const stages = categoryOf("music").stages.map((s) => s.name);
+  const stages = MUSIC_STAGES_V3;
   if (stages.includes(r.pipelineStage) && Object.keys(r.stageOutputs).every((k) => stages.includes(k))) return;
   const oldCurrent = r.pipelineStage;
   const newCurrent = MUSIC_STAGE_MAP[oldCurrent] ?? "Idea";
@@ -645,5 +659,162 @@ export function upgradeToV21(db: Database): Database {
   for (const l of db.shotLists ?? []) l.isTemplate ??= false;
   db.settings.features ??= {};
   db.schemaVersion = 21;
+  return db;
+}
+
+/** The five-stage names for Live Shows and DOF Music (build prompt v2, sections 9 and 10), from their earlier stages. */
+export const FIVE_STAGE_MAP: Record<"live" | "music", Record<string, string>> = {
+  live: {
+    Prep: "Pre-production",
+    Build: "Pre-production",
+    Rehearse: "Pre-production",
+    Show: "Production",
+    Wrap: "Production",
+    Review: "Post production",
+    "Post Production": "Post production",
+  },
+  music: {
+    Idea: "Development",
+    "Pre-production": "Pre-production",
+    Recording: "Production",
+    "Audio post-production": "Post production",
+    "Video editing": "Post production",
+    Review: "Post production",
+    Publish: "Marketing and distribution",
+  },
+};
+
+/**
+ * Moves every Live Shows and DOF Music record onto the five stages: its stage, each stage's confirmation (a merged
+ * stage is confirmed only if every earlier stage in it was), deadline (the latest), owners (all of them), checklist
+ * items and documents, and the workload estimates set in Settings. Names already on the five stages are left alone,
+ * so it can run twice.
+ */
+export function toFiveStages(db: Database): void {
+  const cats = new Map<string, "live" | "music">();
+  for (const r of db.records) {
+    if (r.category !== "live" && r.category !== "music") continue;
+    cats.set(r.contentId, r.category);
+    const map = FIVE_STAGE_MAP[r.category];
+    const to = (s: string) => map[s] ?? s;
+    if (r.pipelineStage) r.pipelineStage = to(r.pipelineStage);
+    const outputs: Record<string, boolean> = {};
+    for (const [k, v] of Object.entries(r.stageOutputs ?? {})) outputs[to(k)] = to(k) in outputs ? outputs[to(k)] && !!v : !!v;
+    r.stageOutputs = outputs;
+    const deadlines: Record<string, string> = {};
+    for (const [k, v] of Object.entries(r.stageDeadlines ?? {})) if (v && (!deadlines[to(k)] || v > deadlines[to(k)])) deadlines[to(k)] = v;
+    r.stageDeadlines = deadlines;
+    const owners: Record<string, StageOwner[]> = {};
+    for (const [k, list] of Object.entries(r.stageAssignees ?? {})) {
+      const into = (owners[to(k)] ??= []);
+      for (const o of list) {
+        const same = into.find((x) => x.personId === o.personId);
+        if (same) same.roles = [...new Set([...same.roles, ...o.roles])];
+        else into.push({ personId: o.personId, roles: [...o.roles] });
+      }
+    }
+    r.stageAssignees = owners;
+    for (const t of r.tasks ?? []) t.stage = to(t.stage);
+    for (const l of r.links ?? []) if (l.stage) l.stage = to(l.stage);
+  }
+  for (const d of db.docs ?? []) {
+    const cat = cats.get(d.contentId);
+    if (cat && d.stage) d.stage = FIVE_STAGE_MAP[cat][d.stage] ?? d.stage;
+  }
+  const effort = db.settings.effortOverrides ?? {};
+  for (const key of Object.keys(effort)) {
+    const [cat, stage] = key.split(":");
+    if (cat !== "live" && cat !== "music") continue;
+    const next = `${cat}:${FIVE_STAGE_MAP[cat][stage] ?? stage}`;
+    if (next === key) continue;
+    effort[next] = Math.max(effort[next] ?? 0, effort[key]);
+    delete effort[key];
+  }
+}
+
+/**
+ * Turns the General Use records into loans or archives them, as decided from the dry-run report: a record with gear
+ * checkout lists becomes a loan (Equipment, Lending) holding the same items for the same dates, and the record is
+ * archived with the loan's number; any other is archived. Each Content ID stays and keeps resolving; the checkout
+ * lists stay, a still-open one released with a note saying which loan now holds its items, so nothing is held twice.
+ * Records already archived for this are left alone, so it can run twice.
+ */
+export function generalUseToLoans(db: Database): void {
+  const MOVED = "Moved to Lending";
+  const at = new Date().toISOString();
+  db.loans ??= [];
+  for (const r of db.records) {
+    if (r.category !== "general" || r.closedReason?.startsWith(MOVED) || r.closedReason?.startsWith("General Use retired")) continue;
+    const lists = (db.manifests ?? []).filter((m) => m.contentId === r.contentId && m.status !== "released");
+    if (!lists.length) {
+      if (!r.archived) {
+        r.archived = true;
+        r.closedReason = "General Use retired: nothing was lent on it. Kept, archived, with its Content ID.";
+      }
+      continue;
+    }
+    const n = (db.counters.loan ?? 0) + 1;
+    db.counters.loan = n;
+    const id = `DOF-LOAN-${String(n).padStart(4, "0")}`;
+    const open = lists.some((m) => m.status === "assigned" || m.status === "checked-out");
+    const lines = new Map<string, LoanLine>();
+    for (const m of lists)
+      for (const l of m.lines) {
+        const line = lines.get(l.equipmentId) ?? { equipmentId: l.equipmentId, quantity: 0, conditionOut: l.conditionOut, returns: [] };
+        line.quantity += l.quantity;
+        const back = l.returnedGood + l.damaged + l.lost;
+        if (m.status === "returned" && back)
+          line.returns.push({
+            at: m.returnedAt ?? at,
+            by: m.responsiblePersonId,
+            quantity: back,
+            condition: l.conditionIn ?? l.conditionOut,
+            note: [l.damaged && `${l.damaged} damaged`, l.lost && `${l.lost} lost`].filter(Boolean).join(", "),
+          });
+        lines.set(l.equipmentId, line);
+      }
+    const dates = lists.map((m) => m.date).sort();
+    const backBy = lists.map((m) => m.expectedReturn ?? m.date).sort();
+    db.loans.push({
+      id,
+      borrowerName: r.title,
+      borrowerPhone: "",
+      organisation: "",
+      lines: [...lines.values()],
+      dateOut: dates[0],
+      expectedReturn: backBy[backBy.length - 1],
+      notes: [`From General Use ${r.contentId}.`, ...lists.map((m) => m.notes).filter(Boolean)].join("\n"),
+      lentBy: lists[0].responsiblePersonId,
+      status: open ? "out" : "returned",
+      createdAt: r.createdAt,
+      updatedAt: at,
+      returnedAt: open
+        ? null
+        : (lists
+            .map((m) => m.returnedAt)
+            .filter(Boolean)
+            .sort()
+            .pop() ?? at),
+      fromContentId: r.contentId,
+    });
+    for (const m of lists)
+      if (m.status === "assigned" || m.status === "checked-out") {
+        m.status = "released";
+        m.notes = [m.notes, `Its items are held by loan ${id} (General Use moved to Lending).`].filter(Boolean).join("\n");
+      }
+    r.archived = true;
+    r.closedReason = `${MOVED} as ${id}. Kept, archived, with its Content ID.`;
+  }
+}
+
+/**
+ * Version 22: the rework's structure (build prompt v2). Live Shows and DOF Music move onto the five stages
+ * (toFiveStages), and General Use moves to Lending (generalUseToLoans). A copy of the data is kept first
+ * (`before_v22`); going back is restoring it. Running it again changes nothing.
+ */
+export function upgradeToV22(db: Database): Database {
+  toFiveStages(db);
+  generalUseToLoans(db);
+  db.schemaVersion = 22;
   return db;
 }

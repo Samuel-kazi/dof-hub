@@ -130,7 +130,6 @@ var PROJECT_ROLE_DEFS = [
   { key: "editor", label: "Editor", exclusive: true },
   { key: "host_guest", label: "Host or guest", exclusive: false }
 ];
-var REQUIRED_ROLES = ["director", "dop", "audio_engineer", "editor", "host_guest"];
 var roleLabel = (key2) => key2 === "custom" ? "Role" : PROJECT_ROLE_DEFS.find((r) => r.key === key2)?.label ?? key2;
 var roleName = (role) => role.label?.trim() || roleLabel(role.roleKey);
 var PLAN_ROLE_SEEDS = [
@@ -321,16 +320,20 @@ var CATEGORIES = [
     childToken: "D",
     grandchildToken: "D",
     // A show can run for one day or several. Each day is its own item with its own pipeline, call sheet and run of show.
+    // The five stages (build prompt v2, section 9): show planning in Development; technical prep and rehearsal in
+    // Pre-production; the show and its strike in Production; post-show editing and clips in Post production; archive
+    // and report in Marketing and distribution. Labels and checklists here, so they change without code.
     stages: [
-      s("Prep", "Gear tested and packed", { docs: ["run-of-show"] }),
-      s("Build", "Rig built and safety-checked"),
-      s("Rehearse", "Camera, audio and stream checks passed"),
-      s("Show", "Stream completed"),
-      s("Wrap", "Strike checklist complete"),
-      s("Review", "Stream review notes"),
-      s("Post Production", "Archive and clips exported", { docs: ["analysis"] })
+      s("Development", "Show plan ready: show date set and producer named"),
+      s("Pre-production", "Technical prep and rehearsal done", {
+        tasks: ["Gear tested and packed", "Rig built and safety-checked", "Camera, audio and stream checks passed"],
+        docs: ["run-of-show"]
+      }),
+      s("Production", "Stream completed and strike done"),
+      s("Post production", "Recording reviewed, clips exported"),
+      s("Marketing and distribution", "Archived, with the show report", { docs: ["analysis"] })
     ],
-    footageStage: "Show",
+    footageStage: "Production",
     leafLevel: 1,
     workflow: null
   },
@@ -377,17 +380,16 @@ var CATEGORIES = [
     grandchildLevelLabel: "Track",
     childToken: "A",
     grandchildToken: "T",
+    // The five stages (build prompt v2, section 10), configured here so the details can change without code.
     stages: [
-      s("Idea", "Approved concept and lyrics", { docs: ["concept"] }),
+      s("Development", "Approved concept and lyrics", { docs: ["concept"] }),
       s("Pre-production", "Session plan", { docs: ["music-plan"] }),
       // Recording is tracked as two parts, so audio and video each have an owner and a date.
-      s("Recording", "Audio and video recorded", { tasks: ["Audio recording", "Video recording"] }),
-      s("Audio post-production", "Approved mix and master", { tasks: ["Mixing", "Mastering"] }),
-      s("Video editing", "Finished edit", { tasks: EDIT_TASKS, docs: ["edit-notes"] }),
-      s("Review", "Approved cut"),
-      s("Publish", "Published, with final link", { docs: ["analysis"] })
+      s("Production", "Audio and video recorded", { tasks: ["Audio recording", "Video recording"] }),
+      s("Post production", "Approved mix, master and edit", { tasks: ["Mixing", "Mastering", ...EDIT_TASKS], docs: ["edit-notes"] }),
+      s("Marketing and distribution", "Published, with final link", { docs: ["analysis"] })
     ],
-    footageStage: "Recording",
+    footageStage: "Production",
     leafLevel: 2,
     workflow: null
   },
@@ -1332,6 +1334,217 @@ function pickKeys(patch, keys) {
 var STORED_FILE = /^\/api\/file\?id=[a-f0-9]{32}$/;
 var MEDIA_FILE = /^media:[A-Za-z0-9-]{1,80}\/[A-Za-z0-9_-]{1,80}\.(jpg|png|webp)$/;
 
+// src/config/docTemplates.ts
+function composeBody(purpose, sections) {
+  const parts = purpose ? [`_${purpose}_`, ""] : [];
+  sections.forEach((s2, i) => {
+    parts.push(`${i + 1}. ${s2.title}`);
+    if (s2.note) parts.push(`_${s2.note}_`);
+    const answer = s2.answer ?? s2.start ?? "";
+    parts.push(answer, "");
+  });
+  return parts.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
+}
+var t = (key2, title2, kind, purpose, sections) => ({
+  key: key2,
+  title: title2,
+  kind,
+  purpose,
+  sections,
+  body: composeBody(purpose, sections)
+});
+var DOC_TEMPLATES = [
+  t(
+    "concept",
+    "Content brief",
+    "Content brief",
+    "A one-page brief that says who this is for, why we are making it and how it will reach people. Fill it in before scripting starts.",
+    [
+      { title: "Working title", note: "The name people will use for it. Short enough to say out loud." },
+      { title: "Audience", note: "Who is this for? Describe the person watching, not a statistic." },
+      { title: "Mission purpose", note: "Why are we making it? What should change, or be understood, because of it?" },
+      { title: "Scripture or theme", note: "The passage or idea it rests on. Give the references." },
+      { title: "Format and length", note: "Studio, field or live. How long is it, and is it one part or several?" },
+      { title: "Distribution plan", note: "Where it is published, on what day, and who shares it." },
+      {
+        title: "What we need",
+        note: "People, equipment, locations and money. Tick each one when it is sorted.",
+        start: "- [ ] People\n- [ ] Equipment\n- [ ] Locations\n- [ ] Budget"
+      },
+      { title: "Risks and open questions", note: "Anything that could stop or delay this, and what is still undecided." }
+    ]
+  ),
+  t("script", "Script", "Script, treatment or outline", "The story-lock document. Once it is approved, the shoot is planned from it.", [
+    { title: "Cold open", note: "The first thirty seconds. Give the viewer a reason to stay." },
+    { title: "Segment 1", note: "What is said and shown. Note who speaks." },
+    { title: "Segment 2", note: "The next part. Add more sections if the episode needs them." },
+    { title: "Closing and call to action", note: "How it ends and what the viewer is asked to do." },
+    { title: "Scripture references", note: "Every passage quoted, with the version used." },
+    { title: "Notes for the presenter", note: "Pronunciations, timing and anything to avoid." },
+    {
+      title: "Approval",
+      note: "Tick each one when it is done. The script is locked when all three are ticked.",
+      start: "- [ ] Script read through\n- [ ] Theology checked\n- [ ] Script locked"
+    }
+  ]),
+  t("shotlist", "Shot list and plan", "Shot list and run of show", "The plan for the shoot day: where, what, who and when.", [
+    {
+      title: "Locations and permissions",
+      note: "Where you are shooting, and who has said yes.",
+      start: "- [ ] Location confirmed\n- [ ] Permission obtained"
+    },
+    { title: "Shot list", note: "Each shot, in order, with a note on how to get it.", start: "| # | Shot | Notes |" },
+    { title: "Equipment needed", note: "Cameras, lenses, audio and lights. Then reserve them on a call sheet." },
+    { title: "Crew and roles", note: "Who is doing what on the day." },
+    { title: "Schedule for the day", note: "Call time, set-up, each setup, lunch and wrap." },
+    { title: "Backup plan", note: "What you will do if the weather, the location or a person falls through." }
+  ]),
+  t(
+    "research",
+    "Research file",
+    "Treatment or outline",
+    "Everything the documentary is built on: the question, the people and the facts.",
+    [
+      { title: "The question we are answering", note: "One sentence. If it takes more, the film is not focused yet." },
+      { title: "Sources and contacts", note: "Who we talk to, how to reach them, and what they can tell us." },
+      {
+        title: "Facts to verify",
+        note: "Every claim that must be checked before it is used. Tick each one when confirmed.",
+        start: "- [ ] First fact to check"
+      },
+      { title: "Interview questions", note: "The questions for each person, in the order you will ask them." },
+      {
+        title: "Rights and releases",
+        note: "Who has signed a release, and any music, footage or images that need permission.",
+        start: "- [ ] Interview releases signed"
+      }
+    ]
+  ),
+  t(
+    "run-of-show",
+    "Run of show plan",
+    "Shot list and run of show",
+    "The plan for a live session. The call sheet holds the final minute-by-minute run of show.",
+    [
+      { title: "Goal of the session", note: "What this service or event is for, and what a good one looks like." },
+      { title: "Segments in order", note: "Each segment with a start time and length." },
+      { title: "Who is on the platform", note: "Everyone speaking, leading or performing, and when." },
+      { title: "Cues and transitions", note: "How the switcher, graphics and audio move from one segment to the next." },
+      {
+        title: "Technical checks",
+        note: "Tick each one before going live.",
+        start: "- [ ] Audio\n- [ ] Video\n- [ ] Stream key and backup"
+      }
+    ]
+  ),
+  t("music-plan", "Session plan", "Shot list and run of show", "The plan for recording a song, both the sound and the video.", [
+    { title: "Song and arrangement", note: "The song, the key and tempo, and the structure." },
+    {
+      title: "Audio recording plan",
+      note: "Studio, engineer, microphones and what is recorded first.",
+      start: "- [ ] Studio and engineer booked\n- [ ] Click and reference track ready"
+    },
+    {
+      title: "Video recording plan",
+      note: "Camera positions, lighting and how lyrics are shown.",
+      start: "- [ ] Camera positions agreed\n- [ ] Lyrics on screen or cue cards"
+    },
+    { title: "Who is playing what", note: "Every musician and vocalist, and their part." },
+    { title: "Schedule", note: "Arrival, set-up, takes and finish." }
+  ]),
+  t(
+    "edit-notes",
+    "Editor's brief",
+    "Editor's brief",
+    "What the editor needs to know to finish this episode. It travels with the episode through editing and review.",
+    [
+      { title: "Story", note: "What the cut must say, and the moments that cannot be lost.", start: "- [ ] Story locked" },
+      {
+        title: "Picture",
+        note: "Pacing, the B-roll to add, and anything to trim. Reviews happen on picture lock.",
+        start: "- [ ] Picture locked"
+      },
+      { title: "Sound", note: "Dialogue clean-up, music and levels.", start: "- [ ] Sound checked" },
+      { title: "Colour and look", note: "The look to match, and the LUT if there is one.", start: "- [ ] Colour graded" },
+      { title: "Notes from review", note: "What reviewers asked for, who asked, and whether it is done." },
+      { title: "Delivery specification", note: "Format, length, frame rate, file name and where it goes." }
+    ]
+  ),
+  t(
+    "analysis",
+    "Publishing analysis",
+    "Report",
+    "Written after publishing. It records how the piece performed, so the next one is better.",
+    [
+      { title: "Where it was published", note: "Every platform and its link." },
+      { title: "Headline numbers", note: "Views, watch time and average view duration, with the date you took them." },
+      { title: "Audience retention", note: "Where viewers dropped off and what you think caused it." },
+      { title: "Post-production notes", note: "What worked in the edit and what you would change." },
+      { title: "Audience response", note: "Comments, messages and shares worth noting." },
+      { title: "What to repeat and what to change", note: "The two or three lessons to carry into the next one." }
+    ]
+  ),
+  t("tech-spec", "Technical spec", "Technical spec", "The settings everyone works to, so footage and audio from different people match.", [
+    { title: "Camera settings", note: "Resolution, frame rate, codec, white balance and picture profile." },
+    { title: "Audio settings", note: "Sample rate, levels, microphones and monitoring." },
+    { title: "LUT and colour reference", note: "The LUT name and version, and where to find it." },
+    { title: "Delivery specification", note: "The final format, loudness target, file naming and destination." }
+  ]),
+  t(
+    "daily-report",
+    "Daily production report",
+    "Report",
+    "Written at the end of each shoot day. It is the record of what was shot and where the files are.",
+    [
+      { title: "Date, location and crew", note: "Where you were and who was there." },
+      { title: "What was shot", note: "Each setup or scene completed, and anything missed." },
+      {
+        title: "Ingest and backup",
+        note: "Which drive the files are on, how much, and that a second copy exists.",
+        start: "- [ ] Files copied\n- [ ] Second copy made\n- [ ] Copy checked"
+      },
+      { title: "Problems and fixes", note: "Anything that went wrong, and what was done about it." },
+      { title: "Tomorrow", note: "What is planned next, and anything needed for it." }
+    ]
+  ),
+  t(
+    "release",
+    "Guest release",
+    "Contract or release form",
+    "Records that a guest agreed to appear and how their words and image may be used. Keep the signed copy safe.",
+    [
+      { title: "Guest details", note: "Full name, organisation and how to reach them. Keep this private." },
+      { title: "What they agree to", note: "Being filmed or recorded, and having it edited." },
+      { title: "Where it may be used", note: "Which platforms, for how long, and any limits they asked for." },
+      {
+        title: "Signed",
+        note: "Tick when the signed copy is filed, and note where.",
+        start: "- [ ] Release signed\n- [ ] Signed copy filed"
+      }
+    ]
+  ),
+  t(
+    "moodboard",
+    "Reference and moodboard",
+    "Reference",
+    "Pictures and examples that show the look we want, so everyone aims at the same thing.",
+    [
+      { title: "Look and feel", note: "Describe the mood in a few plain words." },
+      { title: "References", note: "Links to films, photos or clips that show it." },
+      { title: "Colours and fonts", note: "The palette and type to use." },
+      { title: "What to avoid", note: "Anything that would feel wrong for this piece." }
+    ]
+  )
+];
+var templateOf = (key2) => DOC_TEMPLATES.find((t2) => t2.key === key2);
+function fillTemplate(key2, answers) {
+  const tpl = templateOf(key2);
+  return composeBody(
+    tpl.purpose,
+    tpl.sections.map((s2) => ({ ...s2, answer: answers[s2.title] ?? s2.start ?? "" }))
+  );
+}
+
 // src/config/callSheet.ts
 var SHEET_CONTENT_KEYS = [
   "callTime",
@@ -1413,6 +1626,1714 @@ var blankSheetTracking = () => ({
   confirmations: {},
   changeLog: []
 });
+
+// src/config/devForms.ts
+var f = (key2, label, type = "text", extra = {}) => ({
+  key: key2,
+  label,
+  type,
+  ...extra
+});
+var req = (key2, label, type = "text", extra = {}) => f(key2, label, type, { ...extra, required: true });
+var INITIATED_BY = ["DOF", "Proposer", "Partner"];
+var SUPPORT_MENU = ["Gear", "Crew", "Editing", "Color", "Sound", "Studio time", "Distribution", "Advice only"];
+var READINESS = ["Ready", "Partly", "Not yet"];
+var DELIVERY = ["In person", "Recorded"];
+var entryFields = [
+  req("initiatedBy", "Who initiated it", "select", { options: INITIATED_BY }),
+  req("dateReceived", "Date received", "date"),
+  req("ownerId", "Owner", "crew"),
+  f("mandate", "Mandate or source note", "longtext")
+];
+var coreBrief = (extra = []) => ({
+  key: "brief",
+  label: "Brief",
+  fields: [
+    req("workingTitle", "Working title"),
+    req("logline", "Logline", "longtext"),
+    req("targetAudience", "Target audience"),
+    req("formatDuration", "Format and duration"),
+    f("showType", "Show type"),
+    req("coreQuestion", "Core question or tension", "longtext"),
+    req("scriptureBasis", "Scripture and source basis", "longtext"),
+    f("mustNotBecome", "What it must not become", "longtext"),
+    f("contributors", "Contributors, guests and locations", "longtext"),
+    f("resourceAsk", "Resource ask", "longtext"),
+    f("distributionPlan", "Distribution plan", "longtext"),
+    req("successMeasures", "Success measures", "longtext", { hint: "Learning notes after release are written against these." }),
+    f("learningQuestions", "Learning questions", "longtext"),
+    ...extra
+  ]
+});
+var stressTest = {
+  key: "stressTest",
+  label: "Stress-test",
+  fields: [
+    req("twoSides", "The two sides of the core tension", "longtext"),
+    f("discarded", "Ideas discarded, and why", "longtext"),
+    req("revisedQuestion", "Revised core question", "longtext")
+  ]
+};
+var title = (n) => f("workingTitle", n);
+var DEV_FORMS = {
+  podcast: [
+    { key: "entry", label: "Entry", fields: entryFields },
+    coreBrief(),
+    {
+      key: "research",
+      label: "Research",
+      fields: [
+        f("experts", "Experts consulted, with what they confirmed and corrected", "longtext"),
+        req("claimsToVerify", "Claims to verify", "longtext", { hint: "Write None if there are none." }),
+        req("permissions", "Permissions needed for music, quotes and clips", "longtext", { hint: "Write None if there are none." })
+      ]
+    },
+    stressTest,
+    {
+      key: "story",
+      label: "Story",
+      fields: [req("synopsis", "Series synopsis", "longtext")],
+      planned: { label: "Planned episodes", min: 1, details: [f("targetMinutes", "Target minutes")] }
+    },
+    {
+      key: "team",
+      label: "Team",
+      fields: [
+        req("host", "Host"),
+        f("guests", "Guests", "longtext"),
+        f("soundId", "Sound", "crew"),
+        f("editorId", "Editor", "crew"),
+        req("confirmations", "Each person's confirmation", "longtext"),
+        f("proposerCovers", "What the proposer covers", "longtext"),
+        f("dofSupplies", "What DOF supplies", "longtext")
+      ]
+    },
+    {
+      key: "budget",
+      label: "Budget",
+      fields: [
+        f("recordingSpace", "Recording space", "amount"),
+        f("gear", "Gear", "amount"),
+        f("editingHours", "Editing hours", "amount"),
+        f("hostingDistribution", "Hosting and distribution", "amount"),
+        f("musicLicensing", "Music licensing", "amount"),
+        f("notes", "Notes", "longtext")
+      ]
+    }
+  ],
+  testimonial: [
+    { key: "entry", label: "Entry", fields: [...entryFields, req("howCameToDof", "How the person came to DOF", "longtext")] },
+    {
+      key: "brief",
+      label: "Brief",
+      fields: [
+        req("person", "The person"),
+        // Read by the documents' first gate; optional here, so the earlier form's gate is as it was.
+        f("logline", "Logline", "longtext"),
+        f("coreQuestion", "Core question or tension", "longtext"),
+        req("storyCore", "The core of their story", "longtext"),
+        req("audience", "Audience"),
+        req("formatDuration", "Format and duration"),
+        f("scriptureConnection", "Scripture or message connection", "longtext"),
+        f("distribution", "Distribution", "longtext"),
+        f("successMeasures", "Success measures", "longtext")
+      ]
+    },
+    {
+      key: "research",
+      label: "Research",
+      fields: [req("factsToVerify", "Facts to verify", "longtext"), f("scriptureUsed", "Scripture used", "longtext")]
+    },
+    {
+      key: "consent",
+      label: "Consent and release",
+      fields: [
+        req("agreement", "They agree to be recorded and published", "yesno"),
+        req("whereShared", "Where it may be shared", "longtext"),
+        req("peopleNamed", "People named in the story", "longtext", { hint: "Write None if there are none." }),
+        req("minors", "Minors involved", "yesno"),
+        f("minorsConsent", "Consent for the minors", "longtext"),
+        req("withdrawalTerms", "Terms if they want to withdraw before publication", "longtext")
+      ]
+    },
+    {
+      key: "sensitivity",
+      label: "Sensitivity check",
+      fields: [
+        req("privateDetails", "Private details about other people", "longtext", { hint: "Write None if there are none." }),
+        f("timing", "Timing", "longtext"),
+        f("askAgain", "Anything to ask the person again about", "longtext")
+      ]
+    },
+    {
+      key: "story",
+      label: "Story",
+      fields: [
+        req("keyBeats", "Key beats", "longtext"),
+        req("interviewQuestions", "Interview questions", "longtext"),
+        req("openingMinute", "Opening minute, as the sample", "longtext")
+      ],
+      planned: { label: "Planned episodes", min: 1, details: [] }
+    },
+    {
+      key: "team",
+      label: "Team",
+      fields: [req("interviewer", "Interviewer"), f("cameraId", "Camera", "crew"), f("soundId", "Sound", "crew")]
+    }
+  ],
+  sermon: [
+    { key: "entry", label: "Entry", fields: entryFields },
+    {
+      key: "brief",
+      label: "Brief",
+      fields: [
+        req("speaker", "Speaker"),
+        // Read by the documents' first gate; optional here, so the earlier form's gate is as it was.
+        f("logline", "Logline", "longtext"),
+        f("coreQuestion", "Core question or tension", "longtext"),
+        req("seriesTheme", "Series theme"),
+        req("mainScripture", "Main scripture"),
+        req("audience", "Audience"),
+        req("duration", "Duration"),
+        req("delivery", "Delivery", "select", { options: DELIVERY, hint: "Decides which later stages apply." }),
+        f("distribution", "Distribution", "longtext"),
+        f("successMeasures", "Success measures", "longtext")
+      ]
+    },
+    {
+      key: "research",
+      label: "Research",
+      fields: [req("scriptureCheck", "Scripture and source check", "longtext"), f("quotations", "Quotations and permissions", "longtext")]
+    },
+    {
+      key: "outline",
+      label: "Outline",
+      fields: [
+        title("Title"),
+        req("mainText", "Main text"),
+        req("keyPoints", "Key points", "longtext"),
+        req("application", "Application", "longtext"),
+        f("closing", "Closing", "longtext"),
+        req("openingMinute", "Opening minute, as the sample", "longtext")
+      ],
+      // The per-sermon check is kept on each planned sermon.
+      planned: {
+        label: "Sermons, with the per-sermon check",
+        min: 1,
+        details: [
+          f("outlineReceived", "Outline received by the agreed date", "yesno"),
+          f("scriptureConfirmed", "Scripture confirmed", "yesno"),
+          f("slotBooked", "Recording slot booked", "yesno")
+        ]
+      }
+    },
+    {
+      key: "team",
+      label: "Team",
+      fields: [req("speakerConfirmed", "Speaker confirmed", "yesno"), f("cameraId", "Camera", "crew"), f("soundId", "Sound", "crew")]
+    }
+  ],
+  documentary_dof: [
+    { key: "entry", label: "Entry", fields: entryFields.map((x) => x.key === "mandate" ? { ...x, required: true } : x) },
+    coreBrief([req("thesis", "Thesis statement", "longtext")]),
+    {
+      key: "research",
+      label: "Research",
+      fields: [
+        req("researchPlan", "Deep research plan", "longtext"),
+        f("sources", "Sources and archives", "longtext"),
+        f("peopleToConsult", "People to consult", "longtext"),
+        f("claimsToVerify", "Claims to verify", "longtext"),
+        req("permissions", "Permissions and releases needed", "longtext", { hint: "Write None if there are none." })
+      ]
+    },
+    stressTest,
+    {
+      key: "story",
+      label: "Story",
+      fields: [
+        req("treatment", "Treatment", "longtext"),
+        req("actStructure", "Act structure", "longtext"),
+        req("interviewSets", "Interview sets", "longtext"),
+        req("oneMinuteSample", "One-minute sample", "longtext")
+      ],
+      planned: { label: "Parts (only if it is planned in several parts)", min: 0, details: [] }
+    },
+    {
+      key: "team",
+      label: "Team",
+      fields: [
+        req("directorId", "Director", "crew"),
+        f("cameraId", "Camera", "crew"),
+        f("soundId", "Sound", "crew"),
+        f("editorId", "Editor", "crew"),
+        f("narrator", "Narrator"),
+        f("confirmations", "Confirmations", "longtext"),
+        req("intervieweesLocations", "Interviewees and locations confirmed", "longtext")
+      ]
+    },
+    {
+      key: "budget",
+      label: "Budget",
+      fields: [
+        f("locations", "Locations", "amount"),
+        f("gear", "Gear", "amount"),
+        f("travel", "Travel", "amount"),
+        f("crewTime", "Crew time", "amount"),
+        f("post", "Post", "amount"),
+        f("licensing", "Licensing", "amount"),
+        req("approaches", "For each demanding element: a practical, a simplified and an alternative approach", "longtext")
+      ]
+    }
+  ],
+  documentary_pitched: [
+    {
+      key: "entry",
+      label: "Entry",
+      fields: [
+        ...entryFields,
+        req("proposerName", "Proposer's name"),
+        req("proposerContact", "Proposer's contact"),
+        req("howReceived", "How it was received")
+      ]
+    },
+    coreBrief(),
+    {
+      key: "readiness",
+      label: "Proposer readiness",
+      fields: [
+        req("script", "Script or treatment", "select", { options: READINESS }),
+        req("footage", "Footage", "select", { options: READINESS }),
+        req("team", "Team", "select", { options: READINESS }),
+        req("funding", "Funding", "select", { options: READINESS }),
+        req("permissions", "Permissions", "select", { options: READINESS }),
+        f("notes", "Notes", "longtext")
+      ]
+    },
+    {
+      key: "research",
+      label: "Research",
+      fields: [
+        req("claimsToVerify", "Claims to verify", "longtext"),
+        f("sources", "Sources", "longtext"),
+        f("permissions", "Permissions", "longtext")
+      ]
+    },
+    {
+      key: "story",
+      label: "Story",
+      fields: [
+        req("treatment", "Treatment", "longtext"),
+        f("structure", "Structure", "longtext"),
+        f("interviewSets", "Interview sets", "longtext"),
+        req("oneMinuteSample", "One-minute sample", "longtext")
+      ],
+      planned: { label: "Parts (only if it is planned in several parts)", min: 0, details: [] }
+    },
+    {
+      key: "team",
+      label: "Team",
+      fields: [req("proposerTeam", "The proposer's team", "longtext"), f("confirmations", "Confirmations", "longtext")]
+    },
+    {
+      key: "support",
+      label: "Support menu",
+      fields: [req("support", "What DOF is asked for", "multiselect", { options: SUPPORT_MENU })]
+    },
+    {
+      key: "budget",
+      label: "Budget",
+      fields: [req("dofCommitment", "DOF's commitment", "longtext"), req("proposerProvides", "What the proposer provides", "longtext")]
+    },
+    {
+      key: "ownership",
+      label: "Ownership terms",
+      fields: [
+        req("owner", "Who owns the final film"),
+        req("distributor", "Who distributes it"),
+        req("creditBranding", "Credit and branding", "longtext"),
+        req("editApproval", "Edit approval", "longtext"),
+        req("messageAlignment", "Message alignment", "longtext")
+      ]
+    }
+  ],
+  devotion: [
+    {
+      key: "entry",
+      label: "Entry",
+      fields: [
+        ...entryFields,
+        req("theme", "Theme"),
+        req("slot", "Slot"),
+        req("runStart", "Run starts", "date"),
+        req("runEnd", "Run ends", "date")
+      ]
+    },
+    {
+      key: "guest",
+      label: "Guest",
+      fields: [
+        req("name", "Name"),
+        req("contact", "Contact"),
+        req("invitedById", "Who invited them", "crew"),
+        req("invitedOn", "When they were invited", "date"),
+        req("availableAllDays", "Availability confirmed for all five days", "yesno"),
+        req("where", "In studio or remote", "select", { options: ["In studio", "Remote"] })
+      ]
+    },
+    {
+      key: "outline",
+      label: "Five-day outline",
+      fields: [],
+      planned: {
+        label: "The five days",
+        min: 5,
+        max: 5,
+        details: [
+          req("scripture", "Scripture"),
+          req("keyThought", "Key thought", "longtext"),
+          req("application", "Application or closing", "longtext")
+        ]
+      }
+    },
+    {
+      key: "messageReview",
+      label: "Message review",
+      fields: [
+        f("notes", "Notes from the team's review", "longtext", {
+          hint: "A named reviewer approves the outline at the Outline checkpoint."
+        })
+      ]
+    },
+    {
+      key: "recordingPlan",
+      label: "Recording plan",
+      fields: [req("slot", "Recording slot"), f("technicalNeeds", "Technical needs", "longtext"), f("backupDate", "Backup date", "date")]
+    }
+  ]
+};
+var sectionOf = (formType2, key2) => DEV_FORMS[formType2].find((s2) => s2.key === key2);
+var plannedSectionOf = (formType2) => DEV_FORMS[formType2].find((s2) => s2.planned);
+
+// src/config/documentCatalog.ts
+var CRITERIA_LIST = "<ul><li><p><strong>Mission fit:</strong> </p></li><li><p><strong>Message soundness:</strong> </p></li><li><p><strong>Audience need:</strong> </p></li><li><p><strong>Feasibility:</strong> </p></li><li><p><strong>Resource cost:</strong> </p></li><li><p><strong>Team strength:</strong> </p></li></ul>";
+var doc = (key2, title2, pages, extra = {}) => ({
+  key: key2,
+  title: title2,
+  kind: "document",
+  pages: pages.map((p) => typeof p === "string" ? { title: p } : p),
+  ...extra
+});
+var form = (key2, title2, tile, extra = {}) => ({
+  key: key2,
+  title: title2,
+  kind: "form",
+  form: tile,
+  ...extra
+});
+var tool = (key2, title2, which) => ({ key: key2, title: title2, kind: "tool", tool: which });
+var review = (reviews) => ({ key: "theological_review", title: "Theological Review", kind: "review", reviews });
+var recordingPlan = doc("recording_plan", "Recording Plan", [{ title: "Cards and storage", storage: true }, "Notes"], { plan: true });
+var planOrForms = () => [
+  recordingPlan,
+  tool("storyboard", "Storyboard", "storyboard"),
+  tool("shot_list", "Shot List", "shotList")
+];
+var IDEA_FIELDS = [
+  { section: "brief", key: "logline", label: "Logline" },
+  { section: "brief", key: "coreQuestion", label: "Core question or tension" }
+];
+var greenlight = doc("greenlight", "Greenlight", [{ title: "Decision", body: `<p>The six criteria:</p>${CRITERIA_LIST}` }]);
+var EARLIER_FORM_KEY = "earlier_form";
+var earlierForm = doc(EARLIER_FORM_KEY, "Earlier Development form", [], { onlyIfMade: true });
+function showBrief(formType2) {
+  const pages = [
+    { title: "The idea", fields: IDEA_FIELDS },
+    { title: "Scripture and source basis" },
+    { title: "Shape" },
+    { title: "Ask" }
+  ];
+  if (formType2 === "testimonial") pages.splice(3, 0, { title: "Sensitivity" });
+  if (formType2 === "sermon") pages.splice(3, 0, { title: "Outline" });
+  return doc("show_brief", "Show Brief", pages);
+}
+function documentaryBrief(formType2) {
+  const pages = [
+    { title: "The idea", fields: IDEA_FIELDS },
+    { title: "Subjects and locations" },
+    { title: "Sources and fact-checking" },
+    { title: "Ask" }
+  ];
+  if (formType2 === "documentary_pitched")
+    pages.push({ title: "Proposer readiness" }, { title: "Support asked for" }, { title: "Ownership terms" });
+  return doc("documentary_brief", "Documentary Brief", pages);
+}
+var marketing = () => [
+  doc("release_plan", "Release Plan", ["Release message", "Platform plan", "Study resources"]),
+  form("platform_status", "Platform Status", "platformStatus"),
+  doc("learning_notes", "Learning Notes", ["Against the success measures"]),
+  form("archive", "Archive", "archive")
+];
+function seriesCatalog(formType2) {
+  return {
+    Development: [
+      showBrief(formType2),
+      review("show_brief"),
+      greenlight,
+      form("planned_episodes", "Planned Episodes", "plannedEpisodes"),
+      ...formType2 === "testimonial" ? [form("consent", "Consent and Release", "consent")] : [],
+      earlierForm
+    ],
+    // The Recording Plan holds the roles, the episodes, the sessions they are recorded in and each session's call sheet.
+    "Pre-production": [
+      doc("production_pack", "Production Pack", ["Set design", "Rehearsal notes"]),
+      ...planOrForms(),
+      form("gear", "Gear", "gear")
+    ],
+    Production: [
+      doc(
+        "recording_day_sheet",
+        "Recording Day Sheet",
+        [{ title: "Run sheet", form: "runSheet" }, "Daily notes", { title: "Wrap checklist", form: "wrapChecklist" }],
+        {
+          per: "session"
+        }
+      ),
+      form("session_log", "Session Log", "sessionLog"),
+      form("storage", "Storage", "storage")
+    ],
+    "Post production": [
+      doc("edit_notes", "Edit Notes", ["Notes to the editor", "Story and theology lock", "Graphics and music"]),
+      form("episode_tracker", "Episode Tracker", "episodeTracker"),
+      doc("review_thread", "Review Thread", [], { pagePerEpisode: true })
+    ],
+    "Marketing and distribution": marketing()
+  };
+}
+function documentaryCatalog(formType2) {
+  return {
+    Development: [
+      documentaryBrief(formType2),
+      review("documentary_brief"),
+      greenlight,
+      form("planned_episodes", "Planned Parts", "plannedEpisodes"),
+      earlierForm
+    ],
+    "Pre-production": [
+      doc("treatment", "Treatment", ["Story structure", "Interview guide"]),
+      ...planOrForms(),
+      form("gear", "Gear", "gear")
+    ],
+    Production: [
+      doc(
+        "shoot_day_sheet",
+        "Shoot Day Sheet",
+        [{ title: "Run sheet", form: "runSheet" }, "Interview notes", { title: "Wrap checklist", form: "wrapChecklist" }],
+        {
+          per: "session"
+        }
+      ),
+      form("session_log", "Session Log", "sessionLog"),
+      form("storage", "Storage", "storage")
+    ],
+    "Post production": [
+      doc("edit_notes", "Edit Notes", ["Assembly notes", "Narration", "Fact-check lock", "Graphics and music"]),
+      form("cut_tracker", "Cut Tracker", "episodeTracker"),
+      doc("review_thread", "Review Thread", [], { pagePerEpisode: true })
+    ],
+    "Marketing and distribution": marketing()
+  };
+}
+var DEVOTION_PAGES = [1, 2, 3, 4, 5].map((n) => ({ title: `Devotion ${n}`, subtitle: "" }));
+var devotionCatalog = {
+  Development: [
+    doc("devotional_script", "Devotional Script", DEVOTION_PAGES),
+    review("devotional_script"),
+    form("accept_decline", "Accept or Decline", "acceptDecline"),
+    earlierForm
+  ],
+  // The Recording Plan holds the roles, the devotions, the sessions they are recorded in and each session's call sheet;
+  // a session's call sheet shows one storyboard and one shot list of the project's, chosen from these.
+  "Pre-production": [recordingPlan, tool("storyboard", "Storyboard", "storyboard"), tool("shot_list", "Shot List", "shotList")],
+  Production: [form("recording_day_view", "Recording Day View", "recordingDayView"), form("storage", "Storage", "storage")],
+  "Post production": [doc("edit_notes", "Edit Notes", ["Notes to the editor"]), form("review", "Review", "review")],
+  "Marketing and distribution": [
+    doc("release_plan", "Release Plan", ["Release message", "Platform plan"]),
+    doc("study_notes", "Study Notes", ["Study notes"])
+  ]
+};
+var planLabels = (formType2) => catalogTypeOf(formType2) === "devotion" ? { one: "devotion", many: "devotions", title: "Devotions", source: "the Devotional Script", detail: "Scripture" } : catalogTypeOf(formType2) === "documentary" ? { one: "part", many: "parts", title: "Parts", source: "the Planned Parts in Development", detail: "Question" } : { one: "episode", many: "episodes", title: "Episodes", source: "the Planned Episodes in Development", detail: "Question" };
+var catalogTypeOf = (formType2) => formType2 === "devotion" ? "devotion" : formType2 === "documentary_dof" || formType2 === "documentary_pitched" ? "documentary" : "series";
+function catalogFor(formType2, stage) {
+  const type = catalogTypeOf(formType2);
+  const all = type === "devotion" ? devotionCatalog : type === "documentary" ? documentaryCatalog(formType2) : seriesCatalog(formType2);
+  return all[stage];
+}
+var catalogEntry = (formType2, stage, key2) => catalogFor(formType2, stage).find((e) => e.key === key2);
+var briefKeyOf = (formType2) => catalogTypeOf(formType2) === "devotion" ? "devotional_script" : catalogTypeOf(formType2) === "documentary" ? "documentary_brief" : "show_brief";
+
+// src/services/html.ts
+import createDOMPurify from "dompurify";
+var TAGS = [
+  "p",
+  "br",
+  "strong",
+  "b",
+  "em",
+  "i",
+  "u",
+  "s",
+  "strike",
+  "h1",
+  "h2",
+  "h3",
+  "ul",
+  "ol",
+  "li",
+  "a",
+  "span",
+  "mark",
+  "label",
+  "input",
+  "div"
+];
+var ATTRS = ["href", "style", "data-type", "data-checked", "type", "checked", "data-color"];
+var STYLE = {
+  color: /^(#[0-9a-f]{3,8}|rgba?\([\d\s.,%]+\))$/i,
+  "background-color": /^(#[0-9a-f]{3,8}|rgba?\([\d\s.,%]+\))$/i,
+  "font-size": /^(0\.\d+|[1-3](\.\d+)?)(em|rem)$|^([89]|[1-4]\d)px$/,
+  "text-align": /^(left|center|right|justify)$/,
+  "margin-left": /^\d{1,3}(px|em)$/,
+  // How Google Docs and Word mark bold, italic, underline and strikethrough when pasted.
+  "font-weight": /^(bold|[6-9]00)$/,
+  "font-style": /^italic$/,
+  "text-decoration": /^(underline|line-through)$/
+};
+function cleanStyle(style) {
+  return style.split(";").map((d) => d.split(":")).filter((p) => p.length === 2).map(([k, v]) => [k.trim().toLowerCase(), v.trim()]).filter(([k, v]) => STYLE[k]?.test(v)).map(([k, v]) => `${k}: ${v}`).join("; ");
+}
+var purifier = null;
+var given = null;
+function configure(p) {
+  p.addHook("uponSanitizeAttribute", (node, data2) => {
+    if (data2.attrName === "style") {
+      data2.attrValue = cleanStyle(data2.attrValue);
+      if (!data2.attrValue) data2.keepAttr = false;
+    }
+    if (node.nodeName === "INPUT" && data2.attrName === "type" && data2.attrValue !== "checkbox") data2.keepAttr = false;
+  });
+  p.addHook("afterSanitizeAttributes", (node) => {
+    if (node.nodeName === "INPUT" && node.getAttribute("type") !== "checkbox") node.remove();
+    if (node.nodeName === "A") node.setAttribute("rel", "noopener noreferrer nofollow");
+  });
+  return p;
+}
+function setHtmlWindow(window2) {
+  given = window2;
+  purifier = configure(createDOMPurify(window2));
+}
+function current() {
+  if (!purifier && typeof window !== "undefined") purifier = configure(createDOMPurify(window));
+  if (!purifier) throw new Error("Rich text cannot be cleaned here: no document to clean it with was given (server/html.ts).");
+  return purifier;
+}
+function cleanHtml(html) {
+  return current().sanitize(html, {
+    ALLOWED_TAGS: TAGS,
+    ALLOWED_ATTR: ATTRS,
+    // DOMPurify checks every attribute value against this, so plain values ("taskList", "checkbox") must pass; of
+    // the values that name a scheme, only web and mail links do.
+    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,
+    ALLOW_DATA_ATTR: false,
+    KEEP_CONTENT: true
+  }).trim();
+}
+function textOf(html) {
+  return html.replace(/<(br|\/p|\/h[1-3]|\/li|\/div)>/gi, " ").replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, " ").trim();
+}
+function textToHtml(text4) {
+  const esc = (s2) => s2.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  return text4.split(/\n{2,}/).map((para) => para.trim()).filter(Boolean).map((para) => `<p>${esc(para).replace(/\n/g, "<br>")}</p>`).join("");
+}
+var escapeHtml = (s2) => s2.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+// src/data/migrateDocuments.ts
+var MIGRATION = "migration";
+function ruleFor(formType2, section, field) {
+  const brief = briefKeyOf(formType2);
+  const doc2 = catalogTypeOf(formType2) === "documentary";
+  const at = (page, heading) => ({ doc: brief, stage: "Development", page, heading });
+  if (section === "entry" || section === "guest") return { keep: "the header strip" };
+  if (section === "consent") return { keep: "the Consent and Release form" };
+  if (section === "brief" && (field === "logline" || field === "coreQuestion")) return { keep: "the two fields at the top of The idea" };
+  if (section === "brief" && field === "delivery") return { keep: "the project's sermon format, which decides later stages" };
+  switch (section) {
+    case "brief":
+      if ([
+        "workingTitle",
+        "targetAudience",
+        "formatDuration",
+        "thesis",
+        "person",
+        "storyCore",
+        "audience",
+        "speaker",
+        "seriesTheme",
+        "duration"
+      ].includes(field))
+        return at("The idea");
+      if (["showType", "mustNotBecome"].includes(field)) return at(doc2 ? "The idea" : "Shape");
+      if (["scriptureBasis", "scriptureConnection", "mainScripture"].includes(field))
+        return at(doc2 ? "Sources and fact-checking" : "Scripture and source basis");
+      if (field === "contributors") return at(doc2 ? "Subjects and locations" : "Shape");
+      if (["resourceAsk", "distributionPlan", "distribution", "successMeasures", "learningQuestions"].includes(field)) return at("Ask");
+      return null;
+    case "research":
+      return at(doc2 ? "Sources and fact-checking" : "Scripture and source basis", "Research");
+    case "stressTest":
+      return at("The idea", "Stress-test");
+    case "story":
+      return doc2 ? { doc: "treatment", stage: "Pre-production", page: field === "interviewSets" ? "Interview guide" : "Story structure" } : at("Shape", "Story");
+    case "team":
+      return at(doc2 ? "Subjects and locations" : "Shape", "Team");
+    case "budget":
+      return at("Ask", "Budget");
+    case "sensitivity":
+      return at("Sensitivity");
+    case "outline":
+      return at("Outline");
+    case "readiness":
+      return at("Proposer readiness");
+    case "support":
+      return at("Support asked for");
+    case "ownership":
+      return at("Ownership terms");
+    case "messageReview":
+      return { comment: true };
+    case "recordingPlan":
+      return { doc: "recording_plan", stage: "Pre-production", page: "Notes" };
+  }
+  return null;
+}
+var blank = (v) => v === void 0 || v === null || v === "" || Array.isArray(v) && v.length === 0;
+function show(f2, v, nameOf3) {
+  switch (f2?.type) {
+    case "crew":
+      return nameOf3(String(v));
+    case "yesno":
+      return v === "yes" ? "Yes" : v === "no" ? "No" : String(v);
+    case "date":
+      return fmtDate(String(v));
+    case "amount":
+      return typeof v === "number" ? v.toLocaleString("en-GB") : String(v);
+    case "multiselect":
+      return Array.isArray(v) ? v.join(", ") : String(v);
+    default:
+      return Array.isArray(v) ? v.join(", ") : String(v);
+  }
+}
+var labelled = (label, value) => `<p><strong>${escapeHtml(label)}</strong></p>${textToHtml(value)}`;
+function migrateDocuments(db2, options) {
+  const { at } = options;
+  const report = { lines: [], kept: [], extras: [], unaccounted: [], changed: false };
+  const people = new Map(db2.people.map((p) => [p.personId, p.name]));
+  const nameOf3 = (id2) => people.get(id2) ?? id2;
+  const byId = new Map(db2.records.map((r) => [r.contentId, r]));
+  const newDocument = (p, stage, key2) => {
+    const entry = catalogEntry(p.workflow.formType, stage, key2);
+    if (!entry) return null;
+    const id2 = documentIdOf(p.contentId, stage, key2, null);
+    const existing = db2.projectDocuments.find((d2) => d2.id === id2);
+    if (existing) return existing;
+    const d = {
+      id: id2,
+      contentId: p.contentId,
+      stage,
+      docKey: key2,
+      ownerId: null,
+      title: entry.title,
+      migrated: true,
+      createdAt: at,
+      updatedAt: at
+    };
+    db2.projectDocuments.push(d);
+    (entry.pages ?? []).forEach((pg, i) => db2.documentPages.push(page(d.id, i, pg.title, pg.subtitle ?? "", pg.body ?? "")));
+    return d;
+  };
+  const page = (documentId, position, title2, subtitle, bodyHtml) => ({
+    id: localId("PG"),
+    documentId,
+    position,
+    title: title2,
+    subtitle,
+    bodyHtml,
+    version: 1,
+    archivedAt: null,
+    updatedAt: at,
+    updatedBy: MIGRATION
+  });
+  const pagesOf2 = (documentId) => db2.documentPages.filter((p) => p.documentId === documentId && !p.archivedAt).sort((a, b) => a.position - b.position);
+  const write = (d, title2, html) => {
+    let pg = pagesOf2(d.id).find((p) => p.title === title2);
+    if (!pg) {
+      pg = page(d.id, pagesOf2(d.id).length, title2, "", "");
+      db2.documentPages.push(pg);
+    }
+    pg.bodyHtml += html;
+  };
+  for (const p of db2.records.filter((r) => r.workflow).sort((a, b) => a.contentId.localeCompare(b.contentId, void 0, { numeric: true }))) {
+    const formType2 = p.workflow.formType;
+    const form2 = db2.developmentForms.find((f2) => f2.contentId === p.contentId);
+    const briefKey = briefKeyOf(formType2);
+    const title2 = p.parentId && byId.get(p.parentId) ? `${byId.get(p.parentId).title}: ${p.title}` : p.title;
+    let started = db2.projectDocuments.find((d) => d.contentId === p.contentId && d.docKey === briefKey && !d.ownerId);
+    const carried = db2.projectDocuments.some((d) => d.contentId === p.contentId && d.docKey === EARLIER_FORM_KEY);
+    if (started && started.migrated || carried) {
+      report.lines.push({ contentId: p.contentId, title: title2, documents: [], fields: 0, note: "It already has its documents. Left as it is." });
+      continue;
+    }
+    if (started && form2 && onlyOpened(db2, started.id)) {
+      const id2 = started.id;
+      db2.projectDocuments = db2.projectDocuments.filter((d) => d.id !== id2);
+      db2.documentPages = db2.documentPages.filter((pg) => pg.documentId !== id2);
+      started = void 0;
+    }
+    const late = !!started;
+    if (!form2) {
+      report.lines.push({
+        contentId: p.contentId,
+        title: title2,
+        documents: [],
+        fields: 0,
+        note: "It has no Development form, so there is nothing to move."
+      });
+      continue;
+    }
+    const written = /* @__PURE__ */ new Set();
+    let fields = 0;
+    const grouped = /* @__PURE__ */ new Map();
+    for (const section of DEV_FORMS[formType2]) {
+      const values = form2.sections[section.key] ?? {};
+      const keys = [...section.fields.map((f2) => f2.key), ...Object.keys(values).filter((k) => !section.fields.some((f2) => f2.key === k))];
+      for (const key2 of keys) {
+        const v = values[key2];
+        if (blank(v)) continue;
+        const def = section.fields.find((f2) => f2.key === key2);
+        const name = `${section.label}: ${def?.label ?? key2}`;
+        const rule = ruleFor(formType2, section.key, key2);
+        if (rule && "keep" in rule) {
+          report.kept.push({ contentId: p.contentId, field: name, why: rule.keep });
+          continue;
+        }
+        if (rule && "comment" in rule) continue;
+        const target = rule ?? { doc: briefKey, stage: "Development", page: "Also from the old form" };
+        if (!rule) report.extras.push({ contentId: p.contentId, field: name });
+        const pageKey = `${target.stage}|${target.doc}|${target.page}`;
+        if (!grouped.has(pageKey)) grouped.set(pageKey, { target, parts: /* @__PURE__ */ new Map() });
+        const heading = rule ? target.heading ?? "" : section.label;
+        const parts = grouped.get(pageKey).parts;
+        if (!parts.has(heading)) parts.set(heading, []);
+        parts.get(heading).push(labelled(def?.label ?? key2, show(def, v, nameOf3)));
+        fields++;
+      }
+    }
+    for (const [sectionKey, values] of Object.entries(form2.sections)) {
+      if (DEV_FORMS[formType2].some((s2) => s2.key === sectionKey)) continue;
+      for (const [key2, v] of Object.entries(values ?? {})) {
+        if (blank(v)) continue;
+        const pageKey = `Development|${briefKey}|Also from the old form`;
+        if (!grouped.has(pageKey))
+          grouped.set(pageKey, { target: { doc: briefKey, stage: "Development", page: "Also from the old form" }, parts: /* @__PURE__ */ new Map() });
+        const parts = grouped.get(pageKey).parts;
+        if (!parts.has(sectionKey)) parts.set(sectionKey, []);
+        parts.get(sectionKey).push(labelled(key2, show(void 0, v, nameOf3)));
+        report.extras.push({ contentId: p.contentId, field: `${sectionKey}: ${key2}` });
+        fields++;
+      }
+    }
+    let keep = null;
+    const keeping = () => {
+      keep ??= newDocument(p, "Development", EARLIER_FORM_KEY);
+      written.add(keep.title);
+      return keep;
+    };
+    const ours = (stage, key2) => {
+      const existing = db2.projectDocuments.find((d) => d.id === documentIdOf(p.contentId, stage, key2, null));
+      return existing && !existing.migrated ? null : newDocument(p, stage, key2);
+    };
+    const brief = late ? null : newDocument(p, "Development", briefKey);
+    if (brief) written.add(brief.title);
+    for (const { target, parts } of grouped.values()) {
+      const d = target.doc === briefKey ? brief : ours(target.stage, target.doc);
+      const docTitle = catalogEntry(formType2, target.stage, target.doc)?.title ?? target.doc;
+      const [into, pageTitle] = d ? [d, target.page] : [keeping(), `${docTitle}: ${target.page}`];
+      written.add(into.title);
+      for (const [heading, blocks] of parts)
+        write(into, pageTitle, `${heading ? `<h3>${escapeHtml(heading)}</h3>` : ""}${blocks.join("")}`);
+    }
+    if (formType2 === "devotion" && late) {
+      const days = db2.plannedEpisodes.filter((x) => x.contentId === p.contentId).sort((a, b) => a.episodeNumber - b.episodeNumber);
+      if (days.length) {
+        const k = keeping();
+        days.forEach((day, i) => {
+          write(
+            k,
+            "Devotions on the earlier form",
+            `<h3>${escapeHtml(day.workingTitle || `Devotion ${i + 1}`)}${day.archivedAt ? " (taken off the list)" : ""}</h3>` + [
+              day.details.scripture ? labelled("Scripture", day.details.scripture) : "",
+              day.details.keyThought ? labelled("Key thought", day.details.keyThought) : "",
+              day.details.application ? labelled("Application or closing", day.details.application) : "",
+              day.question ? labelled("Question", day.question) : "",
+              day.guest ? labelled("Guest", day.guest) : "",
+              day.notes ? labelled("Notes", day.notes) : "",
+              ...Object.entries(day.details).filter(([key2, v]) => !["scripture", "keyThought", "application"].includes(key2) && v).map(([key2, v]) => labelled(key2, v))
+            ].join("")
+          );
+          fields++;
+        });
+      }
+      const notes = form2.sections.messageReview?.notes;
+      if (typeof notes === "string" && notes.trim()) {
+        write(keeping(), "Devotions on the earlier form", labelled("From the team's message review", notes.trim()));
+        fields++;
+      }
+    }
+    if (formType2 === "devotion" && brief) {
+      const days = db2.plannedEpisodes.filter((x) => x.contentId === p.contentId).sort((a, b) => a.episodeNumber - b.episodeNumber);
+      if (days.length) {
+        db2.documentPages = db2.documentPages.filter((x) => x.documentId !== brief.id);
+        days.forEach((day, i) => {
+          const body = [
+            day.details.keyThought ? labelled("Key thought", day.details.keyThought) : "",
+            day.details.application ? labelled("Application or closing", day.details.application) : "",
+            day.question ? labelled("Question", day.question) : "",
+            day.guest ? labelled("Guest", day.guest) : "",
+            day.notes ? labelled("Notes", day.notes) : "",
+            ...Object.entries(day.details).filter(([k, v]) => !["scripture", "keyThought", "application"].includes(k) && v).map(([k, v]) => labelled(k, v))
+          ].join("");
+          const pg = page(brief.id, i, day.workingTitle || `Devotion ${i + 1}`, day.details.scripture ?? "", body);
+          if (day.archivedAt) pg.archivedAt = day.archivedAt;
+          db2.documentPages.push(pg);
+          day.sourcePageId = pg.id;
+          fields++;
+        });
+      }
+      const notes = form2.sections.messageReview?.notes;
+      const first = pagesOf2(brief.id)[0];
+      if (typeof notes === "string" && notes.trim() && first) {
+        db2.reviewComments.push({
+          id: localId("RC"),
+          documentId: brief.id,
+          pageId: first.id,
+          authorId: "system",
+          body: `From the team's message review: ${notes.trim()}`,
+          resolved: false,
+          resolvedBy: null,
+          createdAt: at
+        });
+        fields++;
+      }
+    }
+    if (catalogEntry(formType2, "Development", "greenlight")) {
+      const judged = CRITERIA.filter((c) => form2.criteria[c.key]?.met !== null || form2.criteria[c.key]?.note);
+      if (judged.length) {
+        const list = CRITERIA.map((c) => {
+          const cr = form2.criteria[c.key] ?? { met: null, note: "" };
+          const verdict = cr.met === true ? "Met" : cr.met === false ? "Not met" : "Not judged yet";
+          return `<li><p><strong>${escapeHtml(c.label)}:</strong> ${verdict}${cr.note ? `. ${escapeHtml(cr.note)}` : ""}</p></li>`;
+        }).join("");
+        const g = ours("Development", "greenlight");
+        if (g) {
+          written.add(g.title);
+          const pg = pagesOf2(g.id)[0];
+          if (pg) pg.bodyHtml = `<p>The six criteria:</p><ul>${list}</ul>`;
+        } else write(keeping(), "Greenlight: the six criteria", `<ul>${list}</ul>`);
+        fields += judged.length;
+      }
+    }
+    if (late) {
+      const cps = db2.reviewCheckpoints.filter(
+        (c) => c.contentId === p.contentId && !c.episodeId && (c.checkpoint === "pitch" || c.checkpoint === "outline_script") && (c.status !== "Pending" || c.reviewerIds.length || c.note)
+      );
+      for (const c of cps) {
+        write(
+          keeping(),
+          "Theological review on the earlier form",
+          `<h3>${c.checkpoint === "pitch" ? "Pitch" : "Outline or script"}: ${escapeHtml(c.status)}</h3>` + (c.reviewerIds.length ? labelled("Reviewers", c.reviewerIds.map(nameOf3).join(", ")) : "") + (c.note ? labelled("Note", c.note) : "") + (c.decidedAt ? labelled("Decided", fmtDate(c.decidedAt.slice(0, 10))) : "")
+        );
+      }
+    }
+    if (brief) {
+      const cps = db2.reviewCheckpoints.filter(
+        (c) => c.contentId === p.contentId && !c.episodeId && (c.checkpoint === "pitch" || c.checkpoint === "outline_script")
+      );
+      const both = cps.length === 2 && cps.every((c) => c.status === "Approved");
+      const sentBack = cps.find((c) => c.status === "Changes requested");
+      const reviewers = [...new Set(cps.flatMap((c) => c.reviewerIds))];
+      const decidedBy = [...new Set(cps.map((c) => c.decidedById).filter((x) => !!x))];
+      const ids2 = reviewers.length ? reviewers : both ? decidedBy.length ? decidedBy : ["system"] : [];
+      for (const reviewerId of ids2) {
+        const r = {
+          id: `${brief.id}|${reviewerId}`,
+          documentId: brief.id,
+          reviewerId,
+          status: both ? "approved" : sentBack ? "changes_requested" : "pending",
+          note: both ? cps.map((c) => c.note).filter(Boolean).join(" ") || "Approved at the pitch and outline checkpoints." : sentBack?.note ?? "",
+          decidedAt: both ? cps.map((c) => c.decidedAt).filter(Boolean).sort().pop() ?? at : sentBack?.decidedAt ?? null,
+          createdAt: at,
+          updatedAt: at
+        };
+        if (!db2.documentReviews.some((x) => x.id === r.id)) db2.documentReviews.push(r);
+      }
+    }
+    const camera = db2.shotLists.some((l) => l.contentId === p.contentId && l.migrated) ? [] : cameraPlanRows(db2, p);
+    if (camera.length) {
+      const list = {
+        id: localId("SL"),
+        contentId: p.contentId,
+        isTemplate: false,
+        episodeId: null,
+        name: "Camera plan (from before the documents)",
+        position: db2.shotLists.filter((l) => l.contentId === p.contentId).length,
+        copiedFrom: null,
+        migrated: true,
+        createdAt: at,
+        updatedAt: at
+      };
+      db2.shotLists.push(list);
+      camera.forEach((r, i) => db2.shotListRows.push({ ...r, id: localId("SR"), shotListId: list.id, position: i }));
+      written.add("Shot List");
+    }
+    if (late && !written.size) {
+      report.lines.push({
+        contentId: p.contentId,
+        title: title2,
+        documents: [],
+        fields: 0,
+        note: "Its brief was started by hand, and its old form was empty."
+      });
+      continue;
+    }
+    report.lines.push({
+      contentId: p.contentId,
+      title: title2,
+      documents: [...written],
+      fields,
+      note: late ? "Its brief had been started by hand, so it is left as it was: the old form is kept on the Earlier Development form." : fields ? "" : "Its Development form was empty: its documents start blank."
+    });
+    report.changed = true;
+  }
+  report.unaccounted = unaccountedFields(db2, report);
+  return report;
+}
+function onlyOpened(db2, documentId) {
+  return db2.documentPages.filter((pg) => pg.documentId === documentId).every((pg) => pg.version === 1 && !pg.archivedAt) && !db2.documentLinks.some((l) => l.documentId === documentId) && !db2.documentReviews.some((r) => r.documentId === documentId) && !db2.reviewComments.some((c) => c.documentId === documentId);
+}
+function cameraPlanRows(db2, p) {
+  const row = (rowType, description) => ({
+    rowType,
+    imagePath: null,
+    description: description.slice(0, 500),
+    shotSize: "",
+    shotType: "",
+    movement: "",
+    estMinutes: null
+  });
+  const out = [];
+  const note = db2.workflowChecklistItems.find((c) => c.id === `${p.contentId}|Pre-production|shot_list`)?.note.trim();
+  if (note) {
+    out.push(row("banner", "Shot list note from Pre-production"));
+    for (const line3 of note.split("\n").map((l) => l.trim()).filter(Boolean))
+      out.push(row("setup", line3));
+  }
+  const family = /* @__PURE__ */ new Set([p.contentId, ...db2.records.filter((r) => r.parentId === p.contentId).map((r) => r.contentId)]);
+  const template = templateOf("shotlist")?.body.trim();
+  for (const d of db2.docs.filter((x) => x.templateKey === "shotlist" && family.has(x.contentId) && !x.archived)) {
+    if (d.body.trim() === template) continue;
+    out.push(row("banner", d.title));
+    let inShots = false;
+    for (const raw of d.body.split("\n")) {
+      const line3 = raw.trim();
+      if (!line3 || /^_.*_$/.test(line3) || /^\|?\s*-{3,}/.test(line3) || /^\|\s*#\s*\|/.test(line3)) continue;
+      const heading = /^\d+\.\s+(.*)$/.exec(line3);
+      if (heading) {
+        inShots = /shot/i.test(heading[1]);
+        out.push(row("banner", heading[1]));
+        continue;
+      }
+      if (line3.startsWith("|")) {
+        const cells = line3.split("|").map((c) => c.trim()).filter(Boolean);
+        const text4 = (cells.length > 1 && /^\d+$/.test(cells[0]) ? cells.slice(1) : cells).join(", ");
+        if (text4) out.push(row("shot", text4));
+        continue;
+      }
+      const item2 = /^-\s+(\[[ xX]\]\s+)?(.*)$/.exec(line3);
+      out.push(row(item2 && inShots ? "shot" : "setup", item2 ? item2[2] : line3));
+    }
+  }
+  return out;
+}
+function unaccountedFields(db2, report) {
+  const out = [];
+  const kept2 = new Set(report.kept.map((k) => `${k.contentId}|${k.field}`));
+  for (const form2 of db2.developmentForms) {
+    const p = db2.records.find((r) => r.contentId === form2.contentId);
+    if (!p?.workflow) continue;
+    const text4 = db2.documentPages.filter((pg) => pg.documentId.startsWith(`${p.contentId}|`)).map((pg) => `${pg.title} ${pg.subtitle} ${pg.bodyHtml}`).join(" ");
+    const comments = db2.reviewComments.filter((c) => c.documentId.startsWith(`${p.contentId}|`)).map((c) => c.body).join(" ");
+    for (const section of DEV_FORMS[form2.formType]) {
+      for (const [key2, v] of Object.entries(form2.sections[section.key] ?? {})) {
+        if (blank(v) || typeof v !== "string") continue;
+        const def = section.fields.find((f2) => f2.key === key2);
+        const name = `${section.label}: ${def?.label ?? key2}`;
+        if (kept2.has(`${p.contentId}|${name}`) || def?.type === "crew" || def?.type === "date" || def?.type === "yesno") continue;
+        const words = escapeHtml(v.trim().split("\n")[0]);
+        if (!text4.includes(words) && !comments.includes(v.trim())) out.push(`${p.contentId}: ${name}`);
+      }
+    }
+  }
+  return out;
+}
+
+// src/data/migrate.ts
+var isoPlus = (base, days) => {
+  const [y, m, d] = base.split("-").map(Number);
+  const dt = new Date(y, m - 1, d + days);
+  const p = (x) => String(x).padStart(2, "0");
+  return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`;
+};
+var MUSIC_STAGES_V3 = ["Idea", "Pre-production", "Recording", "Audio post-production", "Video editing", "Review", "Publish"];
+function remapMusic(r) {
+  if (r.category !== "music" || !r.pipelineStage) return;
+  const stages = MUSIC_STAGES_V3;
+  if (stages.includes(r.pipelineStage) && Object.keys(r.stageOutputs).every((k) => stages.includes(k))) return;
+  const oldCurrent = r.pipelineStage;
+  const newCurrent = MUSIC_STAGE_MAP[oldCurrent] ?? "Idea";
+  const idx = stages.indexOf(newCurrent);
+  const oldOutput = !!r.stageOutputs[oldCurrent];
+  const oldDue = r.stageDeadlines[oldCurrent] ?? r.deadline ?? todayIso();
+  r.pipelineStage = newCurrent;
+  r.stageOutputs = Object.fromEntries(stages.map((s2, i) => [s2, i < idx ? true : i === idx ? oldOutput : false]));
+  r.stageDeadlines = Object.fromEntries(stages.map((s2, i) => [s2, i === idx ? oldDue : isoPlus(oldDue, (i - idx) * 4)]));
+}
+function upgradeToV3(db2) {
+  db2.docs ??= [];
+  db2.docRevisions ??= [];
+  db2.counters ??= {};
+  for (const r of db2.records) {
+    remapMusic(r);
+    r.stageAssignees ??= r.pipelineStage && r.assigneePersonId ? { [r.pipelineStage]: r.assigneePersonId } : {};
+    r.tasks ??= [];
+    r.links ??= [];
+    r.productionLevel ??= null;
+    const def = r.pipelineStage ? categoryOf(r.category).stages.find((s2) => s2.name === r.pipelineStage) : void 0;
+    if (def?.tasks && !r.tasks.some((t2) => t2.stage === def.name)) {
+      for (const label of def.tasks) {
+        db2.counters.task = (db2.counters.task ?? 0) + 1;
+        r.tasks.push({
+          id: `T-${String(db2.counters.task).padStart(4, "0")}`,
+          stage: def.name,
+          label,
+          done: false,
+          dueDate: r.stageDeadlines[def.name] ?? null,
+          assigneePersonId: null,
+          doneAt: null,
+          doneBy: null
+        });
+      }
+    }
+    for (const key2 of def?.docs ?? []) {
+      const tpl = templateOf(key2);
+      if (!tpl || db2.docs.some((d) => d.contentId === r.contentId && d.templateKey === key2)) continue;
+      db2.counters.doc = (db2.counters.doc ?? 0) + 1;
+      db2.counters.docrev = (db2.counters.docrev ?? 0) + 1;
+      const now = (/* @__PURE__ */ new Date()).toISOString();
+      const doc2 = {
+        id: `DOF-DCS-${String(db2.counters.doc).padStart(3, "0")}`,
+        contentId: r.contentId,
+        title: `${tpl.title}: ${r.title}`,
+        body: tpl.body,
+        templateKey: key2,
+        stage: def.name,
+        version: 1,
+        createdBy: "DOF-P-HOP-001",
+        createdAt: now,
+        updatedAt: now,
+        updatedBy: "DOF-P-HOP-001",
+        archived: false
+      };
+      const rev = {
+        id: `REV-${String(db2.counters.docrev).padStart(5, "0")}`,
+        docId: doc2.id,
+        version: 1,
+        at: now,
+        byPersonId: "DOF-P-HOP-001",
+        title: doc2.title,
+        body: doc2.body,
+        note: "Created from template"
+      };
+      db2.docs.push(doc2);
+      db2.docRevisions.push(rev);
+    }
+  }
+  for (const c of db2.callSheets) c.runOfShow ??= [];
+  db2.schemaVersion = 3;
+  return db2;
+}
+function upgradeToV4(db2) {
+  const gone = new Set(db2.records.filter((r) => r.archived).map((r) => r.contentId));
+  if (gone.size) {
+    db2.allocations = db2.allocations.filter((a) => a.contentId === null || !gone.has(a.contentId));
+    for (const d of db2.docs) if (gone.has(d.contentId)) d.archived = true;
+    for (const m of db2.manifests) {
+      if (!gone.has(m.contentId) || m.status !== "assigned") continue;
+      m.status = "released";
+      db2.counters.history = db2.counters.history ?? 0;
+      for (const l of m.lines) {
+        db2.counters.history += 1;
+        db2.equipmentHistory.push({
+          id: `H-${String(db2.counters.history).padStart(5, "0")}`,
+          equipmentId: l.equipmentId,
+          at: (/* @__PURE__ */ new Date()).toISOString(),
+          kind: "released",
+          detail: `Released: ${m.contentId} was deleted`,
+          byPersonId: "DOF-P-HOP-001",
+          contentId: m.contentId,
+          manifestId: m.id
+        });
+      }
+    }
+    const droppedSheets = new Set(db2.callSheets.filter((c) => gone.has(c.contentId)).map((c) => c.id));
+    db2.callSheets = db2.callSheets.filter((c) => !droppedSheets.has(c.id));
+    for (const m of db2.manifests) if (m.callSheetId && droppedSheets.has(m.callSheetId)) m.callSheetId = null;
+    const used = db2.drives.reduce((n, d) => n + d.otherUsedGB, 0) + db2.allocations.reduce((n, a) => n + a.sizeGB, 0);
+    const capacity = db2.drives.reduce((n, d) => n + d.capacityGB, 0);
+    const today = todayIso();
+    const snap = db2.snapshots.find((s2) => s2.date === today);
+    if (snap) Object.assign(snap, { usedGB: used, capacityGB: capacity });
+    else db2.snapshots.push({ date: today, usedGB: used, capacityGB: capacity });
+  }
+  db2.schemaVersion = 4;
+  return db2;
+}
+function upgradeToV5(db2) {
+  for (const r of db2.records) {
+    r.featured ??= [];
+    r.showStart ??= null;
+    r.showEnd ??= null;
+  }
+  const flat = db2.records.filter(
+    (r) => r.category === "live" && r.hierarchyLevel === 0 && r.pipelineStage !== null && !db2.records.some((c) => c.parentId === r.contentId)
+  );
+  for (const r of flat) {
+    const id2 = `${r.contentId}-D1`;
+    const copy = (v) => JSON.parse(JSON.stringify(v));
+    const day = {
+      ...copy(r),
+      contentId: id2,
+      title: "Day 1",
+      parentId: r.contentId,
+      hierarchyLevel: 1,
+      featured: [],
+      showStart: null,
+      showEnd: null
+    };
+    db2.records.push(day);
+    r.showStart = r.showStart ?? r.scheduledDate;
+    r.showEnd = r.showEnd ?? r.scheduledDate;
+    Object.assign(r, {
+      pipelineStage: null,
+      stageOutputs: {},
+      stageDeadlines: {},
+      tasks: [],
+      links: [],
+      stageAssignees: {},
+      assigneePersonId: null,
+      productionLevel: null,
+      scheduledDate: null,
+      version: r.version + 1
+    });
+    for (const d of db2.docs) if (d.contentId === r.contentId && d.stage) d.contentId = id2;
+    for (const c of db2.callSheets) c.linkedEpisodeIds = c.linkedEpisodeIds.map((x) => x === r.contentId ? id2 : x);
+  }
+  db2.schemaVersion = 5;
+  return db2;
+}
+function upgradeToV6(db2) {
+  db2.settings.workDays ??= [1, 2, 3, 4, 5];
+  db2.settings.effortOverrides ??= {};
+  const generic = ["assigned", "team member"];
+  for (const r of db2.records) {
+    const raw = r.stageAssignees ?? {};
+    const rootId = r.contentId.split("-").slice(0, 3).join("-");
+    const next2 = {};
+    for (const [stage, v] of Object.entries(raw)) {
+      if (Array.isArray(v)) {
+        next2[stage] = v;
+        continue;
+      }
+      if (typeof v !== "string") continue;
+      const m = db2.members.find((x) => x.personId === v && x.projectContentId === rootId);
+      const roles2 = (m?.roleOnProject ?? "").split(",").map((x) => x.trim()).filter((x) => x && !generic.includes(x.toLowerCase()));
+      next2[stage] = [{ personId: v, roles: roles2 }];
+    }
+    r.stageAssignees = next2;
+  }
+  db2.schemaVersion = 6;
+  return db2;
+}
+function upgradeToV7(db2) {
+  db2.outbox ??= [];
+  db2.schemaVersion = 7;
+  return db2;
+}
+function upgradeToV8(db2) {
+  for (const item2 of db2.equipment) item2.unitLabel ??= null;
+  db2.schemaVersion = 8;
+  return db2;
+}
+function upgradeToV9(db2) {
+  db2.settings.appearance ??= { accent: "terracotta", fontPairing: "modern" };
+  for (const p of db2.people) {
+    p.photoUrl ??= null;
+    p.fontSize ??= "default";
+    p.density ??= "comfortable";
+  }
+  db2.schemaVersion = 9;
+  return db2;
+}
+function upgradeToV10(db2) {
+  const RENAME = { Idea: "Prep", Scripting: "Build", Streaming: "Show" };
+  const NEW_STAGES = ["Prep", "Build", "Rehearse", "Show", "Wrap", "Review", "Post Production"];
+  for (const r of db2.records) {
+    r.spunOffFrom ??= null;
+    r.postProductionNeeded ??= null;
+    r.strikePattern ??= null;
+    r.strikeChecklist ??= null;
+    if (r.category !== "live" || !r.pipelineStage) continue;
+    if (r.pipelineStage in RENAME) r.pipelineStage = RENAME[r.pipelineStage];
+    for (const dict of [r.stageOutputs, r.stageDeadlines]) {
+      for (const [from, to] of Object.entries(RENAME))
+        if (from in dict) {
+          dict[to] = dict[from];
+          delete dict[from];
+        }
+      for (const s2 of NEW_STAGES) if (!(s2 in dict)) dict[s2] = dict === r.stageOutputs ? false : null;
+    }
+    for (const t2 of r.tasks) if (t2.stage in RENAME) t2.stage = RENAME[t2.stage];
+    for (const [from, to] of Object.entries(RENAME))
+      if (from in r.stageAssignees) {
+        r.stageAssignees[to] = r.stageAssignees[from];
+        delete r.stageAssignees[from];
+      }
+  }
+  db2.schemaVersion = 10;
+  return db2;
+}
+function upgradeToV11(db2) {
+  for (const r of db2.records) r.stageEnteredAt ??= r.createdAt;
+  db2.schemaVersion = 11;
+  return db2;
+}
+function upgradeToV12(db2) {
+  const RENAME = { Idea: "Creation", Scripting: "Prep/Scripting", Editorial: "Editing", Delivered: "Published" };
+  for (const r of db2.records) {
+    r.guestName ??= "";
+    r.guestContact ??= "";
+    r.reviewerName ??= null;
+    r.reviewApprovedAt ??= null;
+    r.closedReason ??= null;
+    r.cardStorage ??= "";
+    r.publishDate ??= null;
+    r.recordingDurationMin ??= null;
+    r.recordingNotes ??= "";
+    r.readyForReview ??= false;
+    r.editorNotes ??= "";
+    r.sendBackReason ??= null;
+    if (r.category !== "devotional" || !r.pipelineStage) continue;
+    if (r.pipelineStage in RENAME) r.pipelineStage = RENAME[r.pipelineStage];
+    for (const dict of [r.stageOutputs, r.stageDeadlines]) {
+      for (const [from, to] of Object.entries(RENAME))
+        if (from in dict) {
+          dict[to] = dict[from];
+          delete dict[from];
+        }
+    }
+    for (const t2 of r.tasks) if (t2.stage in RENAME) t2.stage = RENAME[t2.stage];
+    for (const [from, to] of Object.entries(RENAME))
+      if (from in r.stageAssignees) {
+        r.stageAssignees[to] = r.stageAssignees[from];
+        delete r.stageAssignees[from];
+      }
+  }
+  db2.schemaVersion = 12;
+  return db2;
+}
+function upgradeToV13(db2) {
+  for (const item2 of db2.equipment) {
+    const it = item2;
+    if (it.trackingType === "aggregate") it.conditionBreakdown ??= { [it.condition]: it.quantityTotal };
+    else it.conditionBreakdown ??= null;
+  }
+  for (const a of db2.allocations) a.label ??= "";
+  db2.schemaVersion = 13;
+  return db2;
+}
+function upgradeToV14(db2) {
+  db2.counters ??= {};
+  syncRecordCounters(db2);
+  db2.schemaVersion = 14;
+  return db2;
+}
+function upgradeToV15(db2) {
+  const parts = db2;
+  for (const k of WORKFLOW_PARTS) parts[k] ??= [];
+  for (const r of db2.records) {
+    r.seriesType ??= null;
+    r.workflow ??= null;
+    r.episode ??= null;
+  }
+  db2.schemaVersion = 15;
+  return db2;
+}
+function upgradeToV16(db2) {
+  const parts = db2;
+  for (const k of DOCUMENT_PARTS) parts[k] ??= [];
+  for (const p of db2.plannedEpisodes ?? []) p.sourcePageId ??= null;
+  db2.schemaVersion = 16;
+  return db2;
+}
+function upgradeToV17(db2) {
+  const at = (/* @__PURE__ */ new Date()).toISOString();
+  const report = migrateDocuments(db2, { at });
+  if (report.changed) {
+    const projects = report.lines.filter((l) => l.documents.length).length;
+    db2.audit.push({
+      id: logId("A"),
+      at,
+      byPersonId: "system",
+      action: "migrate-documents",
+      entity: "system",
+      entityId: "documents",
+      detail: `With the old Development screens gone, the Development forms of ${projects} project${projects === 1 ? "" : "s"} moved into their documents.`
+    });
+  }
+  delete db2.settings.newDocuments;
+  db2.schemaVersion = 17;
+  return db2;
+}
+function upgradeToV18(db2) {
+  const order = ["director", "dop", "audio_engineer", "camera_operator", "continuity", "editor", "host_guest"];
+  for (const r of db2.projectRoles ?? []) {
+    r.label ??= "";
+    r.position ??= order.indexOf(r.roleKey) < 0 ? order.length : order.indexOf(r.roleKey);
+  }
+  for (const r of db2.records) if (r.workflow) r.workflow.storageDriveId ??= null;
+  for (const a of db2.allocations ?? []) a.sessionId ??= null;
+  for (const ses of db2.recordingSessions ?? []) {
+    ses.name ??= "";
+    ses.label ??= null;
+    ses.startTime ??= null;
+    ses.endTime ??= null;
+    ses.storyboardId ??= null;
+    ses.shotListId ??= null;
+    ses.storageDriveId ??= null;
+  }
+  const at = (/* @__PURE__ */ new Date()).toISOString();
+  const linked = new Set((db2.recordingSessions ?? []).map((x) => x.callSheetId).filter(Boolean));
+  const made = [];
+  for (const p of db2.records) {
+    if (p.workflow?.formType !== "devotion" || p.archived || p.workflow.stage !== "Pre-production") continue;
+    const sheets = db2.callSheets.filter((c) => c.contentId === p.contentId && !linked.has(c.id)).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+    for (const sheet of sheets) {
+      const key2 = sessionCounter(p.contentId);
+      const used = db2.recordingSessions.filter((x) => x.contentId === p.contentId).map((x) => x.sessionNumber);
+      const n = Math.max(db2.counters[key2] ?? 0, ...used) + 1;
+      db2.counters[key2] = n;
+      db2.recordingSessions.push({
+        id: sessionCode(p.contentId, n),
+        contentId: p.contentId,
+        sessionNumber: n,
+        scheduledDate: sheet.date || null,
+        venue: sheet.location,
+        status: "Planned",
+        closedAt: null,
+        callSheetId: sheet.id,
+        runSheet: sheet.runOfShow.map((item2) => ({ ...item2 })),
+        dailyLog: "",
+        createdAt: at,
+        updatedAt: at,
+        archivedAt: null,
+        archivedReason: null,
+        name: sheet.title,
+        label: null,
+        startTime: null,
+        endTime: null,
+        storyboardId: null,
+        shotListId: null,
+        storageDriveId: null,
+        fromCallSheet: true
+      });
+      const list = CHECKLISTS.preSession;
+      for (const item2 of list.items) {
+        const rowId = `${sessionCode(p.contentId, n)}|${list.stage}|${item2.key}`;
+        if (item2.auto || db2.workflowChecklistItems.some((c) => c.id === rowId)) continue;
+        db2.workflowChecklistItems.push({
+          id: rowId,
+          ownerType: "session",
+          ownerId: sessionCode(p.contentId, n),
+          stage: list.stage,
+          itemKey: item2.key,
+          label: item2.label,
+          required: item2.required,
+          done: false,
+          note: "",
+          doneAt: null,
+          doneById: null,
+          createdAt: at,
+          updatedAt: at
+        });
+      }
+      linked.add(sheet.id);
+      made.push(`${sessionCode(p.contentId, n)} from ${sheet.id}`);
+    }
+  }
+  if (made.length)
+    db2.audit.push({
+      id: logId("A"),
+      at,
+      byPersonId: "system",
+      action: "migrate-call-sheets",
+      entity: "system",
+      entityId: "recording-plan",
+      detail: `Devotion call sheets moved into Recording Plan sessions: ${made.join(", ")}.`
+    });
+  db2.schemaVersion = 18;
+  return db2;
+}
+function upgradeToV19(db2) {
+  db2.showTemplates ??= [];
+  const blank2 = blankSheetContent();
+  for (const cs of db2.callSheets) {
+    const sheet = cs;
+    for (const k of SHEET_CONTENT_KEYS) if (sheet[k] === void 0) sheet[k] = structuredClone(blank2[k]);
+    cs.instanceId ??= null;
+  }
+  for (const r of db2.records) {
+    r.production ??= null;
+    r.instance ??= null;
+  }
+  const today = todayIso();
+  const at = (/* @__PURE__ */ new Date()).toISOString();
+  const made = [];
+  const csNumbers = db2.callSheets.map((c) => Number(/^DOF-CS-(\d+)$/.exec(c.id)?.[1] ?? NaN)).filter((n) => !Number.isNaN(n));
+  let csNext = Math.max(db2.counters.callsheet ?? 0, ...csNumbers);
+  for (const show2 of db2.records.filter((r) => r.category === "live" && r.hierarchyLevel === 0)) {
+    const days = db2.records.filter((r) => r.parentId === show2.contentId && r.hierarchyLevel === 1);
+    if (!show2.production) {
+      const oneDay = days.filter((d) => !d.archived).length === 1;
+      show2.production = { mode: oneDay ? "one_time" : "multi_day", templateId: null, eventPlan: oneDay ? null : blankEventPlan() };
+    }
+    for (const day of days) {
+      const sheets = db2.callSheets.filter((c) => c.contentId === show2.contentId);
+      if (sheets.some((c) => c.instanceId === day.contentId)) continue;
+      const found = sheets.filter(
+        (c) => c.instanceId === null && (c.linkedEpisodeIds.includes(day.contentId) || !!day.scheduledDate && c.date === day.scheduledDate)
+      ).sort((a, b) => a.id.localeCompare(b.id))[0];
+      if (found) {
+        found.instanceId = day.contentId;
+        continue;
+      }
+      if (day.archived || !day.scheduledDate || day.scheduledDate < today) continue;
+      csNext += 1;
+      const id2 = `DOF-CS-${String(csNext).padStart(3, "0")}`;
+      db2.callSheets.push({
+        ...blankSheetContent(),
+        ...blankSheetTracking(),
+        id: id2,
+        contentId: show2.contentId,
+        title: `${show2.title}: ${day.scheduledDate}`,
+        date: day.scheduledDate,
+        callTime: "08:00",
+        linkedEpisodeIds: [day.contentId],
+        equipmentIds: [],
+        instanceId: day.contentId,
+        status: "draft",
+        version: 1,
+        createdAt: at
+      });
+      made.push(`${id2} for ${day.contentId}`);
+    }
+  }
+  if (made.length) {
+    db2.counters.callsheet = csNext;
+    db2.audit.push({
+      id: logId("A"),
+      at,
+      byPersonId: "system",
+      action: "migrate-productions",
+      entity: "system",
+      entityId: "productions",
+      detail: `Every day of a live show has its call sheet: made ${made.join(", ")}.`
+    });
+  }
+  db2.schemaVersion = 19;
+  return db2;
+}
+function upgradeToV20(db2) {
+  db2.locations ??= [];
+  const at = (/* @__PURE__ */ new Date()).toISOString();
+  for (const cs of db2.callSheets) {
+    cs.locationId ??= null;
+    cs.confirmations ??= {};
+    cs.changeLog ??= [];
+    if (cs.sharedAt === void 0) cs.sharedAt = cs.status === "final" ? at : null;
+  }
+  for (const t2 of db2.showTemplates ?? []) t2.sheet.locationId ??= null;
+  db2.schemaVersion = 20;
+  return db2;
+}
+function upgradeToV21(db2) {
+  db2.loans ??= [];
+  db2.roleKits ??= [];
+  db2.calendarReminders ??= [];
+  db2.notifications ??= [];
+  db2.emailQueue ??= [];
+  db2.googleSyncLinks ??= [];
+  for (const b of db2.storyboards ?? []) b.isTemplate ??= false;
+  for (const l of db2.shotLists ?? []) l.isTemplate ??= false;
+  db2.settings.features ??= {};
+  db2.schemaVersion = 21;
+  return db2;
+}
+var FIVE_STAGE_MAP = {
+  live: {
+    Prep: "Pre-production",
+    Build: "Pre-production",
+    Rehearse: "Pre-production",
+    Show: "Production",
+    Wrap: "Production",
+    Review: "Post production",
+    "Post Production": "Post production"
+  },
+  music: {
+    Idea: "Development",
+    "Pre-production": "Pre-production",
+    Recording: "Production",
+    "Audio post-production": "Post production",
+    "Video editing": "Post production",
+    Review: "Post production",
+    Publish: "Marketing and distribution"
+  }
+};
+function toFiveStages(db2) {
+  const cats = /* @__PURE__ */ new Map();
+  for (const r of db2.records) {
+    if (r.category !== "live" && r.category !== "music") continue;
+    cats.set(r.contentId, r.category);
+    const map = FIVE_STAGE_MAP[r.category];
+    const to = (s2) => map[s2] ?? s2;
+    if (r.pipelineStage) r.pipelineStage = to(r.pipelineStage);
+    const outputs = {};
+    for (const [k, v] of Object.entries(r.stageOutputs ?? {})) outputs[to(k)] = to(k) in outputs ? outputs[to(k)] && !!v : !!v;
+    r.stageOutputs = outputs;
+    const deadlines = {};
+    for (const [k, v] of Object.entries(r.stageDeadlines ?? {})) if (v && (!deadlines[to(k)] || v > deadlines[to(k)])) deadlines[to(k)] = v;
+    r.stageDeadlines = deadlines;
+    const owners = {};
+    for (const [k, list] of Object.entries(r.stageAssignees ?? {})) {
+      const into = owners[to(k)] ??= [];
+      for (const o of list) {
+        const same = into.find((x) => x.personId === o.personId);
+        if (same) same.roles = [.../* @__PURE__ */ new Set([...same.roles, ...o.roles])];
+        else into.push({ personId: o.personId, roles: [...o.roles] });
+      }
+    }
+    r.stageAssignees = owners;
+    for (const t2 of r.tasks ?? []) t2.stage = to(t2.stage);
+    for (const l of r.links ?? []) if (l.stage) l.stage = to(l.stage);
+  }
+  for (const d of db2.docs ?? []) {
+    const cat = cats.get(d.contentId);
+    if (cat && d.stage) d.stage = FIVE_STAGE_MAP[cat][d.stage] ?? d.stage;
+  }
+  const effort = db2.settings.effortOverrides ?? {};
+  for (const key2 of Object.keys(effort)) {
+    const [cat, stage] = key2.split(":");
+    if (cat !== "live" && cat !== "music") continue;
+    const next2 = `${cat}:${FIVE_STAGE_MAP[cat][stage] ?? stage}`;
+    if (next2 === key2) continue;
+    effort[next2] = Math.max(effort[next2] ?? 0, effort[key2]);
+    delete effort[key2];
+  }
+}
+function generalUseToLoans(db2) {
+  const MOVED = "Moved to Lending";
+  const at = (/* @__PURE__ */ new Date()).toISOString();
+  db2.loans ??= [];
+  for (const r of db2.records) {
+    if (r.category !== "general" || r.closedReason?.startsWith(MOVED) || r.closedReason?.startsWith("General Use retired")) continue;
+    const lists = (db2.manifests ?? []).filter((m) => m.contentId === r.contentId && m.status !== "released");
+    if (!lists.length) {
+      if (!r.archived) {
+        r.archived = true;
+        r.closedReason = "General Use retired: nothing was lent on it. Kept, archived, with its Content ID.";
+      }
+      continue;
+    }
+    const n = (db2.counters.loan ?? 0) + 1;
+    db2.counters.loan = n;
+    const id2 = `DOF-LOAN-${String(n).padStart(4, "0")}`;
+    const open = lists.some((m) => m.status === "assigned" || m.status === "checked-out");
+    const lines = /* @__PURE__ */ new Map();
+    for (const m of lists)
+      for (const l of m.lines) {
+        const line3 = lines.get(l.equipmentId) ?? { equipmentId: l.equipmentId, quantity: 0, conditionOut: l.conditionOut, returns: [] };
+        line3.quantity += l.quantity;
+        const back = l.returnedGood + l.damaged + l.lost;
+        if (m.status === "returned" && back)
+          line3.returns.push({
+            at: m.returnedAt ?? at,
+            by: m.responsiblePersonId,
+            quantity: back,
+            condition: l.conditionIn ?? l.conditionOut,
+            note: [l.damaged && `${l.damaged} damaged`, l.lost && `${l.lost} lost`].filter(Boolean).join(", ")
+          });
+        lines.set(l.equipmentId, line3);
+      }
+    const dates = lists.map((m) => m.date).sort();
+    const backBy = lists.map((m) => m.expectedReturn ?? m.date).sort();
+    db2.loans.push({
+      id: id2,
+      borrowerName: r.title,
+      borrowerPhone: "",
+      organisation: "",
+      lines: [...lines.values()],
+      dateOut: dates[0],
+      expectedReturn: backBy[backBy.length - 1],
+      notes: [`From General Use ${r.contentId}.`, ...lists.map((m) => m.notes).filter(Boolean)].join("\n"),
+      lentBy: lists[0].responsiblePersonId,
+      status: open ? "out" : "returned",
+      createdAt: r.createdAt,
+      updatedAt: at,
+      returnedAt: open ? null : lists.map((m) => m.returnedAt).filter(Boolean).sort().pop() ?? at,
+      fromContentId: r.contentId
+    });
+    for (const m of lists)
+      if (m.status === "assigned" || m.status === "checked-out") {
+        m.status = "released";
+        m.notes = [m.notes, `Its items are held by loan ${id2} (General Use moved to Lending).`].filter(Boolean).join("\n");
+      }
+    r.archived = true;
+    r.closedReason = `${MOVED} as ${id2}. Kept, archived, with its Content ID.`;
+  }
+}
+function upgradeToV22(db2) {
+  toFiveStages(db2);
+  generalUseToLoans(db2);
+  db2.schemaVersion = 22;
+  return db2;
+}
 
 // src/data/seedGear.ts
 var stamp = (daysAgo, hour = 10) => {
@@ -1699,217 +3620,6 @@ function buildGearSeed() {
     snapshots,
     counters: { manifest: 4, incident: incidents.length, history: h, attachment: 0, drive: drives.length, allocation: a }
   };
-}
-
-// src/config/docTemplates.ts
-function composeBody(purpose, sections) {
-  const parts = purpose ? [`_${purpose}_`, ""] : [];
-  sections.forEach((s2, i) => {
-    parts.push(`${i + 1}. ${s2.title}`);
-    if (s2.note) parts.push(`_${s2.note}_`);
-    const answer = s2.answer ?? s2.start ?? "";
-    parts.push(answer, "");
-  });
-  return parts.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
-}
-var t = (key2, title2, kind, purpose, sections) => ({
-  key: key2,
-  title: title2,
-  kind,
-  purpose,
-  sections,
-  body: composeBody(purpose, sections)
-});
-var DOC_TEMPLATES = [
-  t(
-    "concept",
-    "Content brief",
-    "Content brief",
-    "A one-page brief that says who this is for, why we are making it and how it will reach people. Fill it in before scripting starts.",
-    [
-      { title: "Working title", note: "The name people will use for it. Short enough to say out loud." },
-      { title: "Audience", note: "Who is this for? Describe the person watching, not a statistic." },
-      { title: "Mission purpose", note: "Why are we making it? What should change, or be understood, because of it?" },
-      { title: "Scripture or theme", note: "The passage or idea it rests on. Give the references." },
-      { title: "Format and length", note: "Studio, field or live. How long is it, and is it one part or several?" },
-      { title: "Distribution plan", note: "Where it is published, on what day, and who shares it." },
-      {
-        title: "What we need",
-        note: "People, equipment, locations and money. Tick each one when it is sorted.",
-        start: "- [ ] People\n- [ ] Equipment\n- [ ] Locations\n- [ ] Budget"
-      },
-      { title: "Risks and open questions", note: "Anything that could stop or delay this, and what is still undecided." }
-    ]
-  ),
-  t("script", "Script", "Script, treatment or outline", "The story-lock document. Once it is approved, the shoot is planned from it.", [
-    { title: "Cold open", note: "The first thirty seconds. Give the viewer a reason to stay." },
-    { title: "Segment 1", note: "What is said and shown. Note who speaks." },
-    { title: "Segment 2", note: "The next part. Add more sections if the episode needs them." },
-    { title: "Closing and call to action", note: "How it ends and what the viewer is asked to do." },
-    { title: "Scripture references", note: "Every passage quoted, with the version used." },
-    { title: "Notes for the presenter", note: "Pronunciations, timing and anything to avoid." },
-    {
-      title: "Approval",
-      note: "Tick each one when it is done. The script is locked when all three are ticked.",
-      start: "- [ ] Script read through\n- [ ] Theology checked\n- [ ] Script locked"
-    }
-  ]),
-  t("shotlist", "Shot list and plan", "Shot list and run of show", "The plan for the shoot day: where, what, who and when.", [
-    {
-      title: "Locations and permissions",
-      note: "Where you are shooting, and who has said yes.",
-      start: "- [ ] Location confirmed\n- [ ] Permission obtained"
-    },
-    { title: "Shot list", note: "Each shot, in order, with a note on how to get it.", start: "| # | Shot | Notes |" },
-    { title: "Equipment needed", note: "Cameras, lenses, audio and lights. Then reserve them on a call sheet." },
-    { title: "Crew and roles", note: "Who is doing what on the day." },
-    { title: "Schedule for the day", note: "Call time, set-up, each setup, lunch and wrap." },
-    { title: "Backup plan", note: "What you will do if the weather, the location or a person falls through." }
-  ]),
-  t(
-    "research",
-    "Research file",
-    "Treatment or outline",
-    "Everything the documentary is built on: the question, the people and the facts.",
-    [
-      { title: "The question we are answering", note: "One sentence. If it takes more, the film is not focused yet." },
-      { title: "Sources and contacts", note: "Who we talk to, how to reach them, and what they can tell us." },
-      {
-        title: "Facts to verify",
-        note: "Every claim that must be checked before it is used. Tick each one when confirmed.",
-        start: "- [ ] First fact to check"
-      },
-      { title: "Interview questions", note: "The questions for each person, in the order you will ask them." },
-      {
-        title: "Rights and releases",
-        note: "Who has signed a release, and any music, footage or images that need permission.",
-        start: "- [ ] Interview releases signed"
-      }
-    ]
-  ),
-  t(
-    "run-of-show",
-    "Run of show plan",
-    "Shot list and run of show",
-    "The plan for a live session. The call sheet holds the final minute-by-minute run of show.",
-    [
-      { title: "Goal of the session", note: "What this service or event is for, and what a good one looks like." },
-      { title: "Segments in order", note: "Each segment with a start time and length." },
-      { title: "Who is on the platform", note: "Everyone speaking, leading or performing, and when." },
-      { title: "Cues and transitions", note: "How the switcher, graphics and audio move from one segment to the next." },
-      {
-        title: "Technical checks",
-        note: "Tick each one before going live.",
-        start: "- [ ] Audio\n- [ ] Video\n- [ ] Stream key and backup"
-      }
-    ]
-  ),
-  t("music-plan", "Session plan", "Shot list and run of show", "The plan for recording a song, both the sound and the video.", [
-    { title: "Song and arrangement", note: "The song, the key and tempo, and the structure." },
-    {
-      title: "Audio recording plan",
-      note: "Studio, engineer, microphones and what is recorded first.",
-      start: "- [ ] Studio and engineer booked\n- [ ] Click and reference track ready"
-    },
-    {
-      title: "Video recording plan",
-      note: "Camera positions, lighting and how lyrics are shown.",
-      start: "- [ ] Camera positions agreed\n- [ ] Lyrics on screen or cue cards"
-    },
-    { title: "Who is playing what", note: "Every musician and vocalist, and their part." },
-    { title: "Schedule", note: "Arrival, set-up, takes and finish." }
-  ]),
-  t(
-    "edit-notes",
-    "Editor's brief",
-    "Editor's brief",
-    "What the editor needs to know to finish this episode. It travels with the episode through editing and review.",
-    [
-      { title: "Story", note: "What the cut must say, and the moments that cannot be lost.", start: "- [ ] Story locked" },
-      {
-        title: "Picture",
-        note: "Pacing, the B-roll to add, and anything to trim. Reviews happen on picture lock.",
-        start: "- [ ] Picture locked"
-      },
-      { title: "Sound", note: "Dialogue clean-up, music and levels.", start: "- [ ] Sound checked" },
-      { title: "Colour and look", note: "The look to match, and the LUT if there is one.", start: "- [ ] Colour graded" },
-      { title: "Notes from review", note: "What reviewers asked for, who asked, and whether it is done." },
-      { title: "Delivery specification", note: "Format, length, frame rate, file name and where it goes." }
-    ]
-  ),
-  t(
-    "analysis",
-    "Publishing analysis",
-    "Report",
-    "Written after publishing. It records how the piece performed, so the next one is better.",
-    [
-      { title: "Where it was published", note: "Every platform and its link." },
-      { title: "Headline numbers", note: "Views, watch time and average view duration, with the date you took them." },
-      { title: "Audience retention", note: "Where viewers dropped off and what you think caused it." },
-      { title: "Post-production notes", note: "What worked in the edit and what you would change." },
-      { title: "Audience response", note: "Comments, messages and shares worth noting." },
-      { title: "What to repeat and what to change", note: "The two or three lessons to carry into the next one." }
-    ]
-  ),
-  t("tech-spec", "Technical spec", "Technical spec", "The settings everyone works to, so footage and audio from different people match.", [
-    { title: "Camera settings", note: "Resolution, frame rate, codec, white balance and picture profile." },
-    { title: "Audio settings", note: "Sample rate, levels, microphones and monitoring." },
-    { title: "LUT and colour reference", note: "The LUT name and version, and where to find it." },
-    { title: "Delivery specification", note: "The final format, loudness target, file naming and destination." }
-  ]),
-  t(
-    "daily-report",
-    "Daily production report",
-    "Report",
-    "Written at the end of each shoot day. It is the record of what was shot and where the files are.",
-    [
-      { title: "Date, location and crew", note: "Where you were and who was there." },
-      { title: "What was shot", note: "Each setup or scene completed, and anything missed." },
-      {
-        title: "Ingest and backup",
-        note: "Which drive the files are on, how much, and that a second copy exists.",
-        start: "- [ ] Files copied\n- [ ] Second copy made\n- [ ] Copy checked"
-      },
-      { title: "Problems and fixes", note: "Anything that went wrong, and what was done about it." },
-      { title: "Tomorrow", note: "What is planned next, and anything needed for it." }
-    ]
-  ),
-  t(
-    "release",
-    "Guest release",
-    "Contract or release form",
-    "Records that a guest agreed to appear and how their words and image may be used. Keep the signed copy safe.",
-    [
-      { title: "Guest details", note: "Full name, organisation and how to reach them. Keep this private." },
-      { title: "What they agree to", note: "Being filmed or recorded, and having it edited." },
-      { title: "Where it may be used", note: "Which platforms, for how long, and any limits they asked for." },
-      {
-        title: "Signed",
-        note: "Tick when the signed copy is filed, and note where.",
-        start: "- [ ] Release signed\n- [ ] Signed copy filed"
-      }
-    ]
-  ),
-  t(
-    "moodboard",
-    "Reference and moodboard",
-    "Reference",
-    "Pictures and examples that show the look we want, so everyone aims at the same thing.",
-    [
-      { title: "Look and feel", note: "Describe the mood in a few plain words." },
-      { title: "References", note: "Links to films, photos or clips that show it." },
-      { title: "Colours and fonts", note: "The palette and type to use." },
-      { title: "What to avoid", note: "Anything that would feel wrong for this piece." }
-    ]
-  )
-];
-var templateOf = (key2) => DOC_TEMPLATES.find((t2) => t2.key === key2);
-function fillTemplate(key2, answers) {
-  const tpl = templateOf(key2);
-  return composeBody(
-    tpl.purpose,
-    tpl.sections.map((s2) => ({ ...s2, answer: answers[s2.title] ?? s2.start ?? "" }))
-  );
 }
 
 // src/data/seed.ts
@@ -2584,6 +4294,7 @@ function buildSeed() {
     }
   };
   syncRecordCounters(db2);
+  toFiveStages(db2);
   return db2;
 }
 
@@ -2629,6 +4340,7 @@ __export(content_exports, {
   isStale: () => isStale,
   leavesUnder: () => leavesUnder,
   levelLabel: () => levelLabel,
+  liveProducer: () => liveProducer,
   makeDay: () => makeDay,
   nextChildId: () => nextChildId,
   nextTopLevelId: () => nextTopLevelId,
@@ -3000,7 +4712,7 @@ var DEFAULT_STAGE_EFFORT = {
     "Marketing and distribution": 0.3
   },
   general: { "In use": 0 },
-  live: { Prep: 0.5, Build: 1.5, Rehearse: 0.5, Show: 1, Wrap: 0.5, Review: 0.5, "Post Production": 1 },
+  live: { Development: 0.5, "Pre-production": 2.5, Production: 1.5, "Post production": 1.5, "Marketing and distribution": 0.5 },
   documentary: {
     Idea: 1,
     Research: 3,
@@ -3012,7 +4724,7 @@ var DEFAULT_STAGE_EFFORT = {
     "Post production": 5,
     "Marketing and distribution": 1
   },
-  music: { Idea: 0.5, "Pre-production": 1, "Audio post-production": 2, "Video editing": 2, Review: 0.5, Publish: 0.5 }
+  music: { Development: 0.5, "Pre-production": 1, Production: 1, "Post production": 4.5, "Marketing and distribution": 0.5 }
 };
 var effortKey = (category2, stage) => `${category2}:${stage}`;
 function effortFor(category2, stage, overrides = {}) {
@@ -3904,7 +5616,13 @@ function lockInstanceOfSheet(actor, sheetId) {
   day.version += 1;
   logAudit(actor, "instance-edited", "record", day.contentId, "changed by hand: later template changes pass it by");
 }
-var LIVE_STAGE_OFFSETS = { Prep: -3, Build: -1, Rehearse: 0, Show: 0, Wrap: 0, Review: 3, "Post Production": 7 };
+var LIVE_STAGE_OFFSETS = {
+  Development: -7,
+  "Pre-production": -1,
+  Production: 0,
+  "Post production": 3,
+  "Marketing and distribution": 7
+};
 function anchorDeadlines(day, date2) {
   const stages = categoryOf(day.category).stages;
   const show2 = stages.findIndex((s2) => s2.name === categoryOf(day.category).footageStage);
@@ -4206,7 +5924,7 @@ function pastShooting(r) {
   const at = stages.indexOf(r.pipelineStage ?? "");
   if (at < 0) return false;
   if (r.category === "live") {
-    const post = stages.indexOf("Post Production");
+    const post = stages.indexOf("Post production");
     return post >= 0 && at >= post;
   }
   return at > stages.indexOf(categoryOf(r.category).footageStage);
@@ -4808,167 +6526,6 @@ function requireWebUrl(value, what, optional = false) {
   return url2;
 }
 
-// src/config/documentCatalog.ts
-var CRITERIA_LIST = "<ul><li><p><strong>Mission fit:</strong> </p></li><li><p><strong>Message soundness:</strong> </p></li><li><p><strong>Audience need:</strong> </p></li><li><p><strong>Feasibility:</strong> </p></li><li><p><strong>Resource cost:</strong> </p></li><li><p><strong>Team strength:</strong> </p></li></ul>";
-var doc = (key2, title2, pages, extra = {}) => ({
-  key: key2,
-  title: title2,
-  kind: "document",
-  pages: pages.map((p) => typeof p === "string" ? { title: p } : p),
-  ...extra
-});
-var form = (key2, title2, tile, extra = {}) => ({
-  key: key2,
-  title: title2,
-  kind: "form",
-  form: tile,
-  ...extra
-});
-var tool = (key2, title2, which) => ({ key: key2, title: title2, kind: "tool", tool: which });
-var review = (reviews) => ({ key: "theological_review", title: "Theological Review", kind: "review", reviews });
-var IDEA_FIELDS = [
-  { section: "brief", key: "logline", label: "Logline" },
-  { section: "brief", key: "coreQuestion", label: "Core question or tension" }
-];
-var greenlight = doc("greenlight", "Greenlight", [{ title: "Decision", body: `<p>The six criteria:</p>${CRITERIA_LIST}` }]);
-var EARLIER_FORM_KEY = "earlier_form";
-var earlierForm = doc(EARLIER_FORM_KEY, "Earlier Development form", [], { onlyIfMade: true });
-function showBrief(formType2) {
-  const pages = [
-    { title: "The idea", fields: IDEA_FIELDS },
-    { title: "Scripture and source basis" },
-    { title: "Shape" },
-    { title: "Ask" }
-  ];
-  if (formType2 === "testimonial") pages.splice(3, 0, { title: "Sensitivity" });
-  if (formType2 === "sermon") pages.splice(3, 0, { title: "Outline" });
-  return doc("show_brief", "Show Brief", pages);
-}
-function documentaryBrief(formType2) {
-  const pages = [
-    { title: "The idea", fields: IDEA_FIELDS },
-    { title: "Subjects and locations" },
-    { title: "Sources and fact-checking" },
-    { title: "Ask" }
-  ];
-  if (formType2 === "documentary_pitched")
-    pages.push({ title: "Proposer readiness" }, { title: "Support asked for" }, { title: "Ownership terms" });
-  return doc("documentary_brief", "Documentary Brief", pages);
-}
-var marketing = () => [
-  doc("release_plan", "Release Plan", ["Release message", "Platform plan", "Study resources"]),
-  form("platform_status", "Platform Status", "platformStatus"),
-  doc("learning_notes", "Learning Notes", ["Against the success measures"]),
-  form("archive", "Archive", "archive")
-];
-function seriesCatalog(formType2) {
-  return {
-    Development: [
-      showBrief(formType2),
-      review("show_brief"),
-      greenlight,
-      form("planned_episodes", "Planned Episodes", "plannedEpisodes"),
-      ...formType2 === "testimonial" ? [form("consent", "Consent and Release", "consent")] : [],
-      earlierForm
-    ],
-    "Pre-production": [
-      doc("production_pack", "Production Pack", ["Set design", "Rehearsal notes"]),
-      tool("storyboard", "Storyboard", "storyboard"),
-      tool("shot_list", "Shot List", "shotList"),
-      form("roles", "Roles", "roles"),
-      form("sessions", "Sessions", "sessions"),
-      form("call_sheet", "Call Sheet", "callSheet"),
-      form("gear", "Gear", "gear")
-    ],
-    Production: [
-      doc(
-        "recording_day_sheet",
-        "Recording Day Sheet",
-        [{ title: "Run sheet", form: "runSheet" }, "Daily notes", { title: "Wrap checklist", form: "wrapChecklist" }],
-        {
-          per: "session"
-        }
-      ),
-      form("session_log", "Session Log", "sessionLog"),
-      form("storage", "Storage", "storage")
-    ],
-    "Post production": [
-      doc("edit_notes", "Edit Notes", ["Notes to the editor", "Story and theology lock", "Graphics and music"]),
-      form("episode_tracker", "Episode Tracker", "episodeTracker"),
-      doc("review_thread", "Review Thread", [], { pagePerEpisode: true })
-    ],
-    "Marketing and distribution": marketing()
-  };
-}
-function documentaryCatalog(formType2) {
-  return {
-    Development: [
-      documentaryBrief(formType2),
-      review("documentary_brief"),
-      greenlight,
-      form("planned_episodes", "Planned Parts", "plannedEpisodes"),
-      earlierForm
-    ],
-    "Pre-production": [
-      doc("treatment", "Treatment", ["Story structure", "Interview guide"]),
-      tool("storyboard", "Storyboard", "storyboard"),
-      tool("shot_list", "Shot List", "shotList"),
-      form("roles", "Roles", "roles"),
-      form("sessions", "Sessions", "sessions"),
-      form("call_sheet", "Call Sheet", "callSheet"),
-      form("gear", "Gear", "gear")
-    ],
-    Production: [
-      doc(
-        "shoot_day_sheet",
-        "Shoot Day Sheet",
-        [{ title: "Run sheet", form: "runSheet" }, "Interview notes", { title: "Wrap checklist", form: "wrapChecklist" }],
-        {
-          per: "session"
-        }
-      ),
-      form("session_log", "Session Log", "sessionLog"),
-      form("storage", "Storage", "storage")
-    ],
-    "Post production": [
-      doc("edit_notes", "Edit Notes", ["Assembly notes", "Narration", "Fact-check lock", "Graphics and music"]),
-      form("cut_tracker", "Cut Tracker", "episodeTracker"),
-      doc("review_thread", "Review Thread", [], { pagePerEpisode: true })
-    ],
-    "Marketing and distribution": marketing()
-  };
-}
-var DEVOTION_PAGES = [1, 2, 3, 4, 5].map((n) => ({ title: `Devotion ${n}`, subtitle: "" }));
-var devotionCatalog = {
-  Development: [
-    doc("devotional_script", "Devotional Script", DEVOTION_PAGES),
-    review("devotional_script"),
-    form("accept_decline", "Accept or Decline", "acceptDecline"),
-    earlierForm
-  ],
-  // The Recording Plan holds the roles, the devotions, the sessions they are recorded in and each session's call sheet;
-  // a session's call sheet shows one storyboard and one shot list of the project's, chosen from these.
-  "Pre-production": [
-    doc("recording_plan", "Recording Plan", [{ title: "Cards and storage", storage: true }, "Notes"], { plan: true }),
-    tool("storyboard", "Storyboard", "storyboard"),
-    tool("shot_list", "Shot List", "shotList")
-  ],
-  Production: [form("recording_day_view", "Recording Day View", "recordingDayView"), form("storage", "Storage", "storage")],
-  "Post production": [doc("edit_notes", "Edit Notes", ["Notes to the editor"]), form("review", "Review", "review")],
-  "Marketing and distribution": [
-    doc("release_plan", "Release Plan", ["Release message", "Platform plan"]),
-    doc("study_notes", "Study Notes", ["Study notes"])
-  ]
-};
-var catalogTypeOf = (formType2) => formType2 === "devotion" ? "devotion" : formType2 === "documentary_dof" || formType2 === "documentary_pitched" ? "documentary" : "series";
-function catalogFor(formType2, stage) {
-  const type = catalogTypeOf(formType2);
-  const all = type === "devotion" ? devotionCatalog : type === "documentary" ? documentaryCatalog(formType2) : seriesCatalog(formType2);
-  return all[stage];
-}
-var catalogEntry = (formType2, stage, key2) => catalogFor(formType2, stage).find((e) => e.key === key2);
-var briefKeyOf = (formType2) => catalogTypeOf(formType2) === "devotion" ? "devotional_script" : catalogTypeOf(formType2) === "documentary" ? "documentary_brief" : "show_brief";
-
 // src/services/workflow/common.ts
 var nowStamp = () => (/* @__PURE__ */ new Date()).toISOString();
 var isWorkflowProject = (r) => !!r?.workflow;
@@ -5090,479 +6647,6 @@ function openRequired(key2, ownerId) {
 
 // src/services/workflow/forms.ts
 import { z } from "zod";
-
-// src/config/devForms.ts
-var f = (key2, label, type = "text", extra = {}) => ({
-  key: key2,
-  label,
-  type,
-  ...extra
-});
-var req = (key2, label, type = "text", extra = {}) => f(key2, label, type, { ...extra, required: true });
-var INITIATED_BY = ["DOF", "Proposer", "Partner"];
-var SUPPORT_MENU = ["Gear", "Crew", "Editing", "Color", "Sound", "Studio time", "Distribution", "Advice only"];
-var READINESS = ["Ready", "Partly", "Not yet"];
-var DELIVERY = ["In person", "Recorded"];
-var entryFields = [
-  req("initiatedBy", "Who initiated it", "select", { options: INITIATED_BY }),
-  req("dateReceived", "Date received", "date"),
-  req("ownerId", "Owner", "crew"),
-  f("mandate", "Mandate or source note", "longtext")
-];
-var coreBrief = (extra = []) => ({
-  key: "brief",
-  label: "Brief",
-  fields: [
-    req("workingTitle", "Working title"),
-    req("logline", "Logline", "longtext"),
-    req("targetAudience", "Target audience"),
-    req("formatDuration", "Format and duration"),
-    f("showType", "Show type"),
-    req("coreQuestion", "Core question or tension", "longtext"),
-    req("scriptureBasis", "Scripture and source basis", "longtext"),
-    f("mustNotBecome", "What it must not become", "longtext"),
-    f("contributors", "Contributors, guests and locations", "longtext"),
-    f("resourceAsk", "Resource ask", "longtext"),
-    f("distributionPlan", "Distribution plan", "longtext"),
-    req("successMeasures", "Success measures", "longtext", { hint: "Learning notes after release are written against these." }),
-    f("learningQuestions", "Learning questions", "longtext"),
-    ...extra
-  ]
-});
-var stressTest = {
-  key: "stressTest",
-  label: "Stress-test",
-  fields: [
-    req("twoSides", "The two sides of the core tension", "longtext"),
-    f("discarded", "Ideas discarded, and why", "longtext"),
-    req("revisedQuestion", "Revised core question", "longtext")
-  ]
-};
-var title = (n) => f("workingTitle", n);
-var DEV_FORMS = {
-  podcast: [
-    { key: "entry", label: "Entry", fields: entryFields },
-    coreBrief(),
-    {
-      key: "research",
-      label: "Research",
-      fields: [
-        f("experts", "Experts consulted, with what they confirmed and corrected", "longtext"),
-        req("claimsToVerify", "Claims to verify", "longtext", { hint: "Write None if there are none." }),
-        req("permissions", "Permissions needed for music, quotes and clips", "longtext", { hint: "Write None if there are none." })
-      ]
-    },
-    stressTest,
-    {
-      key: "story",
-      label: "Story",
-      fields: [req("synopsis", "Series synopsis", "longtext")],
-      planned: { label: "Planned episodes", min: 1, details: [f("targetMinutes", "Target minutes")] }
-    },
-    {
-      key: "team",
-      label: "Team",
-      fields: [
-        req("host", "Host"),
-        f("guests", "Guests", "longtext"),
-        f("soundId", "Sound", "crew"),
-        f("editorId", "Editor", "crew"),
-        req("confirmations", "Each person's confirmation", "longtext"),
-        f("proposerCovers", "What the proposer covers", "longtext"),
-        f("dofSupplies", "What DOF supplies", "longtext")
-      ]
-    },
-    {
-      key: "budget",
-      label: "Budget",
-      fields: [
-        f("recordingSpace", "Recording space", "amount"),
-        f("gear", "Gear", "amount"),
-        f("editingHours", "Editing hours", "amount"),
-        f("hostingDistribution", "Hosting and distribution", "amount"),
-        f("musicLicensing", "Music licensing", "amount"),
-        f("notes", "Notes", "longtext")
-      ]
-    }
-  ],
-  testimonial: [
-    { key: "entry", label: "Entry", fields: [...entryFields, req("howCameToDof", "How the person came to DOF", "longtext")] },
-    {
-      key: "brief",
-      label: "Brief",
-      fields: [
-        req("person", "The person"),
-        // Read by the documents' first gate; optional here, so the earlier form's gate is as it was.
-        f("logline", "Logline", "longtext"),
-        f("coreQuestion", "Core question or tension", "longtext"),
-        req("storyCore", "The core of their story", "longtext"),
-        req("audience", "Audience"),
-        req("formatDuration", "Format and duration"),
-        f("scriptureConnection", "Scripture or message connection", "longtext"),
-        f("distribution", "Distribution", "longtext"),
-        f("successMeasures", "Success measures", "longtext")
-      ]
-    },
-    {
-      key: "research",
-      label: "Research",
-      fields: [req("factsToVerify", "Facts to verify", "longtext"), f("scriptureUsed", "Scripture used", "longtext")]
-    },
-    {
-      key: "consent",
-      label: "Consent and release",
-      fields: [
-        req("agreement", "They agree to be recorded and published", "yesno"),
-        req("whereShared", "Where it may be shared", "longtext"),
-        req("peopleNamed", "People named in the story", "longtext", { hint: "Write None if there are none." }),
-        req("minors", "Minors involved", "yesno"),
-        f("minorsConsent", "Consent for the minors", "longtext"),
-        req("withdrawalTerms", "Terms if they want to withdraw before publication", "longtext")
-      ]
-    },
-    {
-      key: "sensitivity",
-      label: "Sensitivity check",
-      fields: [
-        req("privateDetails", "Private details about other people", "longtext", { hint: "Write None if there are none." }),
-        f("timing", "Timing", "longtext"),
-        f("askAgain", "Anything to ask the person again about", "longtext")
-      ]
-    },
-    {
-      key: "story",
-      label: "Story",
-      fields: [
-        req("keyBeats", "Key beats", "longtext"),
-        req("interviewQuestions", "Interview questions", "longtext"),
-        req("openingMinute", "Opening minute, as the sample", "longtext")
-      ],
-      planned: { label: "Planned episodes", min: 1, details: [] }
-    },
-    {
-      key: "team",
-      label: "Team",
-      fields: [req("interviewer", "Interviewer"), f("cameraId", "Camera", "crew"), f("soundId", "Sound", "crew")]
-    }
-  ],
-  sermon: [
-    { key: "entry", label: "Entry", fields: entryFields },
-    {
-      key: "brief",
-      label: "Brief",
-      fields: [
-        req("speaker", "Speaker"),
-        // Read by the documents' first gate; optional here, so the earlier form's gate is as it was.
-        f("logline", "Logline", "longtext"),
-        f("coreQuestion", "Core question or tension", "longtext"),
-        req("seriesTheme", "Series theme"),
-        req("mainScripture", "Main scripture"),
-        req("audience", "Audience"),
-        req("duration", "Duration"),
-        req("delivery", "Delivery", "select", { options: DELIVERY, hint: "Decides which later stages apply." }),
-        f("distribution", "Distribution", "longtext"),
-        f("successMeasures", "Success measures", "longtext")
-      ]
-    },
-    {
-      key: "research",
-      label: "Research",
-      fields: [req("scriptureCheck", "Scripture and source check", "longtext"), f("quotations", "Quotations and permissions", "longtext")]
-    },
-    {
-      key: "outline",
-      label: "Outline",
-      fields: [
-        title("Title"),
-        req("mainText", "Main text"),
-        req("keyPoints", "Key points", "longtext"),
-        req("application", "Application", "longtext"),
-        f("closing", "Closing", "longtext"),
-        req("openingMinute", "Opening minute, as the sample", "longtext")
-      ],
-      // The per-sermon check is kept on each planned sermon.
-      planned: {
-        label: "Sermons, with the per-sermon check",
-        min: 1,
-        details: [
-          f("outlineReceived", "Outline received by the agreed date", "yesno"),
-          f("scriptureConfirmed", "Scripture confirmed", "yesno"),
-          f("slotBooked", "Recording slot booked", "yesno")
-        ]
-      }
-    },
-    {
-      key: "team",
-      label: "Team",
-      fields: [req("speakerConfirmed", "Speaker confirmed", "yesno"), f("cameraId", "Camera", "crew"), f("soundId", "Sound", "crew")]
-    }
-  ],
-  documentary_dof: [
-    { key: "entry", label: "Entry", fields: entryFields.map((x) => x.key === "mandate" ? { ...x, required: true } : x) },
-    coreBrief([req("thesis", "Thesis statement", "longtext")]),
-    {
-      key: "research",
-      label: "Research",
-      fields: [
-        req("researchPlan", "Deep research plan", "longtext"),
-        f("sources", "Sources and archives", "longtext"),
-        f("peopleToConsult", "People to consult", "longtext"),
-        f("claimsToVerify", "Claims to verify", "longtext"),
-        req("permissions", "Permissions and releases needed", "longtext", { hint: "Write None if there are none." })
-      ]
-    },
-    stressTest,
-    {
-      key: "story",
-      label: "Story",
-      fields: [
-        req("treatment", "Treatment", "longtext"),
-        req("actStructure", "Act structure", "longtext"),
-        req("interviewSets", "Interview sets", "longtext"),
-        req("oneMinuteSample", "One-minute sample", "longtext")
-      ],
-      planned: { label: "Parts (only if it is planned in several parts)", min: 0, details: [] }
-    },
-    {
-      key: "team",
-      label: "Team",
-      fields: [
-        req("directorId", "Director", "crew"),
-        f("cameraId", "Camera", "crew"),
-        f("soundId", "Sound", "crew"),
-        f("editorId", "Editor", "crew"),
-        f("narrator", "Narrator"),
-        f("confirmations", "Confirmations", "longtext"),
-        req("intervieweesLocations", "Interviewees and locations confirmed", "longtext")
-      ]
-    },
-    {
-      key: "budget",
-      label: "Budget",
-      fields: [
-        f("locations", "Locations", "amount"),
-        f("gear", "Gear", "amount"),
-        f("travel", "Travel", "amount"),
-        f("crewTime", "Crew time", "amount"),
-        f("post", "Post", "amount"),
-        f("licensing", "Licensing", "amount"),
-        req("approaches", "For each demanding element: a practical, a simplified and an alternative approach", "longtext")
-      ]
-    }
-  ],
-  documentary_pitched: [
-    {
-      key: "entry",
-      label: "Entry",
-      fields: [
-        ...entryFields,
-        req("proposerName", "Proposer's name"),
-        req("proposerContact", "Proposer's contact"),
-        req("howReceived", "How it was received")
-      ]
-    },
-    coreBrief(),
-    {
-      key: "readiness",
-      label: "Proposer readiness",
-      fields: [
-        req("script", "Script or treatment", "select", { options: READINESS }),
-        req("footage", "Footage", "select", { options: READINESS }),
-        req("team", "Team", "select", { options: READINESS }),
-        req("funding", "Funding", "select", { options: READINESS }),
-        req("permissions", "Permissions", "select", { options: READINESS }),
-        f("notes", "Notes", "longtext")
-      ]
-    },
-    {
-      key: "research",
-      label: "Research",
-      fields: [
-        req("claimsToVerify", "Claims to verify", "longtext"),
-        f("sources", "Sources", "longtext"),
-        f("permissions", "Permissions", "longtext")
-      ]
-    },
-    {
-      key: "story",
-      label: "Story",
-      fields: [
-        req("treatment", "Treatment", "longtext"),
-        f("structure", "Structure", "longtext"),
-        f("interviewSets", "Interview sets", "longtext"),
-        req("oneMinuteSample", "One-minute sample", "longtext")
-      ],
-      planned: { label: "Parts (only if it is planned in several parts)", min: 0, details: [] }
-    },
-    {
-      key: "team",
-      label: "Team",
-      fields: [req("proposerTeam", "The proposer's team", "longtext"), f("confirmations", "Confirmations", "longtext")]
-    },
-    {
-      key: "support",
-      label: "Support menu",
-      fields: [req("support", "What DOF is asked for", "multiselect", { options: SUPPORT_MENU })]
-    },
-    {
-      key: "budget",
-      label: "Budget",
-      fields: [req("dofCommitment", "DOF's commitment", "longtext"), req("proposerProvides", "What the proposer provides", "longtext")]
-    },
-    {
-      key: "ownership",
-      label: "Ownership terms",
-      fields: [
-        req("owner", "Who owns the final film"),
-        req("distributor", "Who distributes it"),
-        req("creditBranding", "Credit and branding", "longtext"),
-        req("editApproval", "Edit approval", "longtext"),
-        req("messageAlignment", "Message alignment", "longtext")
-      ]
-    }
-  ],
-  devotion: [
-    {
-      key: "entry",
-      label: "Entry",
-      fields: [
-        ...entryFields,
-        req("theme", "Theme"),
-        req("slot", "Slot"),
-        req("runStart", "Run starts", "date"),
-        req("runEnd", "Run ends", "date")
-      ]
-    },
-    {
-      key: "guest",
-      label: "Guest",
-      fields: [
-        req("name", "Name"),
-        req("contact", "Contact"),
-        req("invitedById", "Who invited them", "crew"),
-        req("invitedOn", "When they were invited", "date"),
-        req("availableAllDays", "Availability confirmed for all five days", "yesno"),
-        req("where", "In studio or remote", "select", { options: ["In studio", "Remote"] })
-      ]
-    },
-    {
-      key: "outline",
-      label: "Five-day outline",
-      fields: [],
-      planned: {
-        label: "The five days",
-        min: 5,
-        max: 5,
-        details: [
-          req("scripture", "Scripture"),
-          req("keyThought", "Key thought", "longtext"),
-          req("application", "Application or closing", "longtext")
-        ]
-      }
-    },
-    {
-      key: "messageReview",
-      label: "Message review",
-      fields: [
-        f("notes", "Notes from the team's review", "longtext", {
-          hint: "A named reviewer approves the outline at the Outline checkpoint."
-        })
-      ]
-    },
-    {
-      key: "recordingPlan",
-      label: "Recording plan",
-      fields: [req("slot", "Recording slot"), f("technicalNeeds", "Technical needs", "longtext"), f("backupDate", "Backup date", "date")]
-    }
-  ]
-};
-var sectionOf = (formType2, key2) => DEV_FORMS[formType2].find((s2) => s2.key === key2);
-var plannedSectionOf = (formType2) => DEV_FORMS[formType2].find((s2) => s2.planned);
-
-// src/services/html.ts
-import createDOMPurify from "dompurify";
-var TAGS = [
-  "p",
-  "br",
-  "strong",
-  "b",
-  "em",
-  "i",
-  "u",
-  "s",
-  "strike",
-  "h1",
-  "h2",
-  "h3",
-  "ul",
-  "ol",
-  "li",
-  "a",
-  "span",
-  "mark",
-  "label",
-  "input",
-  "div"
-];
-var ATTRS = ["href", "style", "data-type", "data-checked", "type", "checked", "data-color"];
-var STYLE = {
-  color: /^(#[0-9a-f]{3,8}|rgba?\([\d\s.,%]+\))$/i,
-  "background-color": /^(#[0-9a-f]{3,8}|rgba?\([\d\s.,%]+\))$/i,
-  "font-size": /^(0\.\d+|[1-3](\.\d+)?)(em|rem)$|^([89]|[1-4]\d)px$/,
-  "text-align": /^(left|center|right|justify)$/,
-  "margin-left": /^\d{1,3}(px|em)$/,
-  // How Google Docs and Word mark bold, italic, underline and strikethrough when pasted.
-  "font-weight": /^(bold|[6-9]00)$/,
-  "font-style": /^italic$/,
-  "text-decoration": /^(underline|line-through)$/
-};
-function cleanStyle(style) {
-  return style.split(";").map((d) => d.split(":")).filter((p) => p.length === 2).map(([k, v]) => [k.trim().toLowerCase(), v.trim()]).filter(([k, v]) => STYLE[k]?.test(v)).map(([k, v]) => `${k}: ${v}`).join("; ");
-}
-var purifier = null;
-var given = null;
-function configure(p) {
-  p.addHook("uponSanitizeAttribute", (node, data2) => {
-    if (data2.attrName === "style") {
-      data2.attrValue = cleanStyle(data2.attrValue);
-      if (!data2.attrValue) data2.keepAttr = false;
-    }
-    if (node.nodeName === "INPUT" && data2.attrName === "type" && data2.attrValue !== "checkbox") data2.keepAttr = false;
-  });
-  p.addHook("afterSanitizeAttributes", (node) => {
-    if (node.nodeName === "INPUT" && node.getAttribute("type") !== "checkbox") node.remove();
-    if (node.nodeName === "A") node.setAttribute("rel", "noopener noreferrer nofollow");
-  });
-  return p;
-}
-function setHtmlWindow(window2) {
-  given = window2;
-  purifier = configure(createDOMPurify(window2));
-}
-function current() {
-  if (!purifier && typeof window !== "undefined") purifier = configure(createDOMPurify(window));
-  if (!purifier) throw new Error("Rich text cannot be cleaned here: no document to clean it with was given (server/html.ts).");
-  return purifier;
-}
-function cleanHtml(html) {
-  return current().sanitize(html, {
-    ALLOWED_TAGS: TAGS,
-    ALLOWED_ATTR: ATTRS,
-    // DOMPurify checks every attribute value against this, so plain values ("taskList", "checkbox") must pass; of
-    // the values that name a scheme, only web and mail links do.
-    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,
-    ALLOW_DATA_ATTR: false,
-    KEEP_CONTENT: true
-  }).trim();
-}
-function textOf(html) {
-  return html.replace(/<(br|\/p|\/h[1-3]|\/li|\/div)>/gi, " ").replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, " ").trim();
-}
-function textToHtml(text4) {
-  const esc = (s2) => s2.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-  return text4.split(/\n{2,}/).map((para) => para.trim()).filter(Boolean).map((para) => `<p>${esc(para).replace(/\n/g, "<br>")}</p>`).join("");
-}
-var escapeHtml = (s2) => s2.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 // src/services/documents/common.ts
 function projectOf(contentId) {
@@ -5865,11 +6949,9 @@ var FONT_PAIRINGS = [
 var FEATURES = [
   { key: "shell", label: "New menu, Settings in the profile menu, Ctrl+K search", built: true },
   { key: "reviewNotGate", label: "Theological review as a reminder, not a gate", built: true },
-  { key: "recordingPlanAll", label: "Recording Plan for series and documentaries", built: false },
-  { key: "templates", label: "Storyboard and shot list templates in Documents", built: false },
-  { key: "lending", label: "Equipment lending and role kits", built: false },
-  { key: "calendar2", label: "New Calendar with reminders, alerts and the urgency report", built: false },
-  { key: "liveFiveStages", label: "Live Shows and DOF Music on the five stages", built: false }
+  { key: "templates", label: "Storyboard and shot list templates in Documents", built: true },
+  { key: "lending", label: "Equipment lending and role kits", built: true },
+  { key: "calendar2", label: "New Calendar with reminders, alerts and the urgency report", built: true }
 ];
 var FEATURE_KEYS = FEATURES.map((f2) => f2.key);
 
@@ -6052,17 +7134,36 @@ function approvedAt(documentId) {
   if (reviewStateOf(documentId) !== "approved") return null;
   return reviewsOf(documentId).reduce((at, r) => r.decidedAt && (!at || r.decidedAt > at) ? r.decidedAt : at, null);
 }
-function theologyStatus(projectId) {
+function theologyStatus(projectId, passedByHand = true) {
   const p = getDb().records.find((r) => r.contentId === projectId);
   const what = catalogTypeOf(p.workflow.formType) === "devotion" ? "script" : "brief";
   const doc2 = documentOf(projectId, "Development", briefKeyOf(p.workflow.formType));
   const state = doc2 ? reviewStateOf(doc2.id) : "no reviewers";
   const rows2 = doc2 ? reviewsOf(doc2.id) : [];
-  const earlier = ["pitch", "outline_script"].every((k) => checkpoint(projectId, k)?.status === "Approved");
-  if (state === "no reviewers" && earlier)
-    return { done: true, what, documentId: doc2?.id ?? null, detail: "Approved on the earlier review checkpoints", approvedAt: null };
+  const legacy = legacyApproval(p, passedByHand);
+  if (state === "no reviewers" && legacy)
+    return { done: true, legacy, newRequest: false, what, documentId: doc2?.id ?? null, detail: legacy, approvedAt: null };
   const detail = state === "approved" ? `Approved by ${rows2.length === 1 ? "its reviewer" : `all ${rows2.length} reviewers`}` : state === "no reviewers" ? "No reviewer named yet" : state === "changes_requested" ? "Changes requested" : `${rows2.filter((r) => r.status === "approved").length} of ${rows2.length} reviewers have approved`;
-  return { done: state === "approved", what, documentId: doc2?.id ?? null, detail, approvedAt: doc2 ? approvedAt(doc2.id) : null };
+  const done = state === "approved";
+  const newRequest = !done && !!legacy;
+  return {
+    done,
+    legacy,
+    newRequest,
+    what,
+    documentId: doc2?.id ?? null,
+    detail: newRequest ? `New review asked for (earlier: ${legacy.charAt(0).toLowerCase()}${legacy.slice(1)}). ${detail}` : detail,
+    approvedAt: doc2 ? approvedAt(doc2.id) : null
+  };
+}
+function legacyApproval(p, passedByHand) {
+  if (["pitch", "outline_script"].every((k) => checkpoint(p.contentId, k)?.status === "Approved"))
+    return "Approved on the earlier review checkpoints";
+  const form2 = getDb().developmentForms.find((f2) => f2.contentId === p.contentId);
+  const passed = (form2?.overrides ?? []).find((o) => o.key === "review");
+  if (passed && passedByHand) return `Passed by hand on ${fmtDate(passed.at.slice(0, 10))}: ${passed.note}`;
+  if (p.workflow.migrated && p.workflow.stage !== "Development") return "Reviewed in the earlier pipeline, before it moved across";
+  return null;
 }
 function reviewOutstanding(contentId) {
   if (!contentId || reviewIsGate()) return null;
@@ -6121,7 +7222,7 @@ var NOTE_MAX2 = 300;
 var text = (v) => typeof v === "string" ? v.trim() : "";
 var latestFirstDecision = (form2) => [...form2.decisions].reverse().find((d) => d.stage === 1);
 function reviewGate(projectId, what) {
-  const t2 = theologyStatus(projectId);
+  const t2 = theologyStatus(projectId, false);
   return { key: "review", label: `Theological review of the ${what} approved`, met: t2.done, detail: t2.detail, overridable: true };
 }
 var devotionPageReady = (p) => p.title.trim() !== "" && p.subtitle.trim() !== "" && textOf(p.bodyHtml) !== "";
@@ -6791,6 +7892,16 @@ function checkRun(i) {
     const p = getDb().people.find((x) => x.personId === i.ownerPersonId);
     if (!p || p.status !== "active") throw new RuleError("Choose an active person for each segment.");
   }
+  for (const [k, what] of [
+    ["camera", "Camera"],
+    ["audio", "Audio"],
+    ["graphics", "Graphics"]
+  ])
+    if (i[k] !== void 0) checkText(i[k], what, 120);
+  if (i.status !== void 0 && !["Planned", "Live", "Done", "Cut"].includes(i.status))
+    throw new RuleError("A segment is planned, live, done or cut.");
+  for (const t2 of [i.actualStart, i.actualEnd])
+    if (t2 && !TIME.test(t2)) throw new RuleError("Enter actual times as hours and minutes, for example 09:30.");
 }
 function checkGear(g) {
   if (!g.equipmentId) throw new RuleError("Choose the gear.");
@@ -8232,12 +9343,13 @@ function preProductionProjectGate(p) {
   if (!p.workflow.showProducerId) missing.push("A show producer");
   const roles2 = getDb().projectRoles.filter((r) => r.contentId === p.contentId);
   const warnings = lateDates(p, [["The Pre-production deadline", p.stageDeadlines["Pre-production"]]]);
-  if (p.workflow.formType === "devotion") {
+  {
     if (!roles2.length) missing.push("Roles: list the project's roles in the Recording Plan");
     for (const r of roles2) if (!roleHolder(r)) missing.push(`Role: ${roleName(r)} needs a person`);
     const waiting2 = unassignedDevotions(p.contentId).length;
-    if (waiting2) warnings.push(`${waiting2} devotion${waiting2 === 1 ? " is" : "s are"} not assigned to a session yet`);
-  } else for (const key2 of REQUIRED_ROLES) if (!roles2.some((r) => r.roleKey === key2)) missing.push(`Role: ${roleLabel(key2)}`);
+    const L = planLabels(p.workflow.formType);
+    if (waiting2) warnings.push(`${waiting2} ${waiting2 === 1 ? `${L.one} is` : `${L.many} are`} not assigned to a session yet`);
+  }
   missing.push(...openRequired("preProject", p.contentId).map((l) => `Pre-production: ${l}`));
   if (p.workflow.formType === "documentary_dof" && latestDecision(formOf(p.contentId), 2)?.outcome !== "Greenlight")
     missing.push("Second greenlight decision: Greenlight (shoot budget, interview sets and shot list)");
@@ -8849,10 +9961,21 @@ function canAdvance(r) {
   if (idx === stages.length - 1) return { ok: false, reason: "Already at the final stage." };
   const open = openTasks(r);
   if (open.length) return { ok: false, reason: `Finish ${open.map((t2) => t2.label).join(", ")} before leaving ${r.pipelineStage}.` };
+  if (r.category === "live" && r.pipelineStage === "Development") {
+    const missing = [!r.scheduledDate && "set the show date", !liveProducer(r) && "name the producer"].filter(Boolean);
+    if (missing.length) return { ok: false, reason: `Before leaving Development, ${missing.join(" and ")}.` };
+  }
   if (!r.stageOutputs[r.pipelineStage]) {
     return { ok: false, reason: `Confirm "${stages[idx].requiredOutput}" before leaving ${r.pipelineStage}.` };
   }
   return { ok: true, reason: "" };
+}
+function liveProducer(r) {
+  const show2 = r.parentId ? getDb().records.find((x) => x.contentId === r.parentId) : void 0;
+  for (const rec2 of [r, show2])
+    for (const owners of Object.values(rec2?.stageAssignees ?? {}))
+      for (const o of owners) if (o.roles?.includes("Producer")) return o.personId;
+  return r.assigneePersonId ?? show2?.assigneePersonId ?? null;
 }
 var WORKFLOW_ONLY = "This uses the new workflow. Move it on with its own Done buttons.";
 function nextTopLevelId(category2) {
@@ -8951,7 +10074,7 @@ function wrapTasksFor(r) {
 function ensureStageTasks(r, stage) {
   if (r.tasks.some((t2) => t2.stage === stage)) return;
   const def = categoryOf(r.category).stages.find((x) => x.name === stage);
-  const labels = stage === "Wrap" ? wrapTasksFor(r) : def?.tasks ?? [];
+  const labels = r.category === "live" && stage === categoryOf("live").footageStage ? wrapTasksFor(r) : def?.tasks ?? [];
   for (const label of labels) {
     r.tasks.push({
       id: localId("T", (id2) => r.tasks.some((t2) => t2.id === id2)),
@@ -9053,7 +10176,7 @@ function createChildRecord(actor, parentId, input) {
   commit();
   return r;
 }
-var SPIN_OFF_START_STAGE = { music: "Audio post-production", series: "Editorial" };
+var SPIN_OFF_START_STAGE = { music: "Post production", series: "Editorial" };
 var spinOffCategories = ["music", "series"];
 function splitRecording(actor, dayId, input) {
   const day = getRecord(dayId);
@@ -9106,8 +10229,9 @@ function setStrikePlan(actor, id2, pattern, daily, final, expectedVersion) {
   const clean = (list) => list.map((s2) => s2.trim()).filter(Boolean);
   r.strikePattern = pattern;
   r.strikeChecklist = { daily: clean(daily), final: clean(final) };
+  const strike = categoryOf("live").footageStage;
   for (const day of getChildren(id2)) {
-    if (day.pipelineStage === "Wrap" && !day.tasks.some((t2) => t2.stage === "Wrap")) ensureStageTasks(day, "Wrap");
+    if (day.pipelineStage === strike && !day.tasks.some((t2) => t2.stage === strike)) ensureStageTasks(day, strike);
   }
   r.version += 1;
   logAudit(actor, "update", "record", id2, "Strike plan");
@@ -9197,7 +10321,7 @@ function setPostProductionNeeded(actor, id2, needed, expectedVersion) {
   const r = loadForWrite(actor, id2, expectedVersion);
   if (r.category !== "live") throw new RuleError("Only live days ask this.");
   r.postProductionNeeded = needed;
-  r.stageOutputs["Post Production"] = false;
+  r.stageOutputs["Post production"] = false;
   r.version += 1;
   logAudit(actor, "output-cleared", "record", id2, `Post-production needed: ${needed ? "yes" : "no"}`);
   commit();
@@ -9206,7 +10330,7 @@ function setPostProductionNeeded(actor, id2, needed, expectedVersion) {
 function setStageOutput(actor, id2, present, expectedVersion) {
   const r = loadForWrite(actor, id2, expectedVersion);
   if (!r.pipelineStage) throw new RuleError("This record has no pipeline.");
-  if (present && r.category === "live" && r.pipelineStage === "Post Production") {
+  if (present && r.category === "live" && r.pipelineStage === "Post production") {
     if (r.postProductionNeeded === null) throw new RuleError("First say whether anything recorded on this day needs post-production.");
     if (r.postProductionNeeded && !getDb().records.some((x) => x.spunOffFrom === r.contentId)) {
       throw new RuleError(
@@ -10236,444 +11360,6 @@ function migrateToWorkflow(db2, options) {
   return report;
 }
 
-// src/data/migrateDocuments.ts
-var MIGRATION = "migration";
-function ruleFor(formType2, section, field) {
-  const brief = briefKeyOf(formType2);
-  const doc2 = catalogTypeOf(formType2) === "documentary";
-  const at = (page, heading) => ({ doc: brief, stage: "Development", page, heading });
-  if (section === "entry" || section === "guest") return { keep: "the header strip" };
-  if (section === "consent") return { keep: "the Consent and Release form" };
-  if (section === "brief" && (field === "logline" || field === "coreQuestion")) return { keep: "the two fields at the top of The idea" };
-  if (section === "brief" && field === "delivery") return { keep: "the project's sermon format, which decides later stages" };
-  switch (section) {
-    case "brief":
-      if ([
-        "workingTitle",
-        "targetAudience",
-        "formatDuration",
-        "thesis",
-        "person",
-        "storyCore",
-        "audience",
-        "speaker",
-        "seriesTheme",
-        "duration"
-      ].includes(field))
-        return at("The idea");
-      if (["showType", "mustNotBecome"].includes(field)) return at(doc2 ? "The idea" : "Shape");
-      if (["scriptureBasis", "scriptureConnection", "mainScripture"].includes(field))
-        return at(doc2 ? "Sources and fact-checking" : "Scripture and source basis");
-      if (field === "contributors") return at(doc2 ? "Subjects and locations" : "Shape");
-      if (["resourceAsk", "distributionPlan", "distribution", "successMeasures", "learningQuestions"].includes(field)) return at("Ask");
-      return null;
-    case "research":
-      return at(doc2 ? "Sources and fact-checking" : "Scripture and source basis", "Research");
-    case "stressTest":
-      return at("The idea", "Stress-test");
-    case "story":
-      return doc2 ? { doc: "treatment", stage: "Pre-production", page: field === "interviewSets" ? "Interview guide" : "Story structure" } : at("Shape", "Story");
-    case "team":
-      return at(doc2 ? "Subjects and locations" : "Shape", "Team");
-    case "budget":
-      return at("Ask", "Budget");
-    case "sensitivity":
-      return at("Sensitivity");
-    case "outline":
-      return at("Outline");
-    case "readiness":
-      return at("Proposer readiness");
-    case "support":
-      return at("Support asked for");
-    case "ownership":
-      return at("Ownership terms");
-    case "messageReview":
-      return { comment: true };
-    case "recordingPlan":
-      return { doc: "recording_plan", stage: "Pre-production", page: "Notes" };
-  }
-  return null;
-}
-var blank = (v) => v === void 0 || v === null || v === "" || Array.isArray(v) && v.length === 0;
-function show(f2, v, nameOf3) {
-  switch (f2?.type) {
-    case "crew":
-      return nameOf3(String(v));
-    case "yesno":
-      return v === "yes" ? "Yes" : v === "no" ? "No" : String(v);
-    case "date":
-      return fmtDate(String(v));
-    case "amount":
-      return typeof v === "number" ? v.toLocaleString("en-GB") : String(v);
-    case "multiselect":
-      return Array.isArray(v) ? v.join(", ") : String(v);
-    default:
-      return Array.isArray(v) ? v.join(", ") : String(v);
-  }
-}
-var labelled = (label, value) => `<p><strong>${escapeHtml(label)}</strong></p>${textToHtml(value)}`;
-function migrateDocuments(db2, options) {
-  const { at } = options;
-  const report = { lines: [], kept: [], extras: [], unaccounted: [], changed: false };
-  const people = new Map(db2.people.map((p) => [p.personId, p.name]));
-  const nameOf3 = (id2) => people.get(id2) ?? id2;
-  const byId = new Map(db2.records.map((r) => [r.contentId, r]));
-  const newDocument = (p, stage, key2) => {
-    const entry = catalogEntry(p.workflow.formType, stage, key2);
-    if (!entry) return null;
-    const id2 = documentIdOf(p.contentId, stage, key2, null);
-    const existing = db2.projectDocuments.find((d2) => d2.id === id2);
-    if (existing) return existing;
-    const d = {
-      id: id2,
-      contentId: p.contentId,
-      stage,
-      docKey: key2,
-      ownerId: null,
-      title: entry.title,
-      migrated: true,
-      createdAt: at,
-      updatedAt: at
-    };
-    db2.projectDocuments.push(d);
-    (entry.pages ?? []).forEach((pg, i) => db2.documentPages.push(page(d.id, i, pg.title, pg.subtitle ?? "", pg.body ?? "")));
-    return d;
-  };
-  const page = (documentId, position, title2, subtitle, bodyHtml) => ({
-    id: localId("PG"),
-    documentId,
-    position,
-    title: title2,
-    subtitle,
-    bodyHtml,
-    version: 1,
-    archivedAt: null,
-    updatedAt: at,
-    updatedBy: MIGRATION
-  });
-  const pagesOf2 = (documentId) => db2.documentPages.filter((p) => p.documentId === documentId && !p.archivedAt).sort((a, b) => a.position - b.position);
-  const write = (d, title2, html) => {
-    let pg = pagesOf2(d.id).find((p) => p.title === title2);
-    if (!pg) {
-      pg = page(d.id, pagesOf2(d.id).length, title2, "", "");
-      db2.documentPages.push(pg);
-    }
-    pg.bodyHtml += html;
-  };
-  for (const p of db2.records.filter((r) => r.workflow).sort((a, b) => a.contentId.localeCompare(b.contentId, void 0, { numeric: true }))) {
-    const formType2 = p.workflow.formType;
-    const form2 = db2.developmentForms.find((f2) => f2.contentId === p.contentId);
-    const briefKey = briefKeyOf(formType2);
-    const title2 = p.parentId && byId.get(p.parentId) ? `${byId.get(p.parentId).title}: ${p.title}` : p.title;
-    let started = db2.projectDocuments.find((d) => d.contentId === p.contentId && d.docKey === briefKey && !d.ownerId);
-    const carried = db2.projectDocuments.some((d) => d.contentId === p.contentId && d.docKey === EARLIER_FORM_KEY);
-    if (started && started.migrated || carried) {
-      report.lines.push({ contentId: p.contentId, title: title2, documents: [], fields: 0, note: "It already has its documents. Left as it is." });
-      continue;
-    }
-    if (started && form2 && onlyOpened(db2, started.id)) {
-      const id2 = started.id;
-      db2.projectDocuments = db2.projectDocuments.filter((d) => d.id !== id2);
-      db2.documentPages = db2.documentPages.filter((pg) => pg.documentId !== id2);
-      started = void 0;
-    }
-    const late = !!started;
-    if (!form2) {
-      report.lines.push({
-        contentId: p.contentId,
-        title: title2,
-        documents: [],
-        fields: 0,
-        note: "It has no Development form, so there is nothing to move."
-      });
-      continue;
-    }
-    const written = /* @__PURE__ */ new Set();
-    let fields = 0;
-    const grouped = /* @__PURE__ */ new Map();
-    for (const section of DEV_FORMS[formType2]) {
-      const values = form2.sections[section.key] ?? {};
-      const keys = [...section.fields.map((f2) => f2.key), ...Object.keys(values).filter((k) => !section.fields.some((f2) => f2.key === k))];
-      for (const key2 of keys) {
-        const v = values[key2];
-        if (blank(v)) continue;
-        const def = section.fields.find((f2) => f2.key === key2);
-        const name = `${section.label}: ${def?.label ?? key2}`;
-        const rule = ruleFor(formType2, section.key, key2);
-        if (rule && "keep" in rule) {
-          report.kept.push({ contentId: p.contentId, field: name, why: rule.keep });
-          continue;
-        }
-        if (rule && "comment" in rule) continue;
-        const target = rule ?? { doc: briefKey, stage: "Development", page: "Also from the old form" };
-        if (!rule) report.extras.push({ contentId: p.contentId, field: name });
-        const pageKey = `${target.stage}|${target.doc}|${target.page}`;
-        if (!grouped.has(pageKey)) grouped.set(pageKey, { target, parts: /* @__PURE__ */ new Map() });
-        const heading = rule ? target.heading ?? "" : section.label;
-        const parts = grouped.get(pageKey).parts;
-        if (!parts.has(heading)) parts.set(heading, []);
-        parts.get(heading).push(labelled(def?.label ?? key2, show(def, v, nameOf3)));
-        fields++;
-      }
-    }
-    for (const [sectionKey, values] of Object.entries(form2.sections)) {
-      if (DEV_FORMS[formType2].some((s2) => s2.key === sectionKey)) continue;
-      for (const [key2, v] of Object.entries(values ?? {})) {
-        if (blank(v)) continue;
-        const pageKey = `Development|${briefKey}|Also from the old form`;
-        if (!grouped.has(pageKey))
-          grouped.set(pageKey, { target: { doc: briefKey, stage: "Development", page: "Also from the old form" }, parts: /* @__PURE__ */ new Map() });
-        const parts = grouped.get(pageKey).parts;
-        if (!parts.has(sectionKey)) parts.set(sectionKey, []);
-        parts.get(sectionKey).push(labelled(key2, show(void 0, v, nameOf3)));
-        report.extras.push({ contentId: p.contentId, field: `${sectionKey}: ${key2}` });
-        fields++;
-      }
-    }
-    let keep = null;
-    const keeping = () => {
-      keep ??= newDocument(p, "Development", EARLIER_FORM_KEY);
-      written.add(keep.title);
-      return keep;
-    };
-    const ours = (stage, key2) => {
-      const existing = db2.projectDocuments.find((d) => d.id === documentIdOf(p.contentId, stage, key2, null));
-      return existing && !existing.migrated ? null : newDocument(p, stage, key2);
-    };
-    const brief = late ? null : newDocument(p, "Development", briefKey);
-    if (brief) written.add(brief.title);
-    for (const { target, parts } of grouped.values()) {
-      const d = target.doc === briefKey ? brief : ours(target.stage, target.doc);
-      const docTitle = catalogEntry(formType2, target.stage, target.doc)?.title ?? target.doc;
-      const [into, pageTitle] = d ? [d, target.page] : [keeping(), `${docTitle}: ${target.page}`];
-      written.add(into.title);
-      for (const [heading, blocks] of parts)
-        write(into, pageTitle, `${heading ? `<h3>${escapeHtml(heading)}</h3>` : ""}${blocks.join("")}`);
-    }
-    if (formType2 === "devotion" && late) {
-      const days = db2.plannedEpisodes.filter((x) => x.contentId === p.contentId).sort((a, b) => a.episodeNumber - b.episodeNumber);
-      if (days.length) {
-        const k = keeping();
-        days.forEach((day, i) => {
-          write(
-            k,
-            "Devotions on the earlier form",
-            `<h3>${escapeHtml(day.workingTitle || `Devotion ${i + 1}`)}${day.archivedAt ? " (taken off the list)" : ""}</h3>` + [
-              day.details.scripture ? labelled("Scripture", day.details.scripture) : "",
-              day.details.keyThought ? labelled("Key thought", day.details.keyThought) : "",
-              day.details.application ? labelled("Application or closing", day.details.application) : "",
-              day.question ? labelled("Question", day.question) : "",
-              day.guest ? labelled("Guest", day.guest) : "",
-              day.notes ? labelled("Notes", day.notes) : "",
-              ...Object.entries(day.details).filter(([key2, v]) => !["scripture", "keyThought", "application"].includes(key2) && v).map(([key2, v]) => labelled(key2, v))
-            ].join("")
-          );
-          fields++;
-        });
-      }
-      const notes = form2.sections.messageReview?.notes;
-      if (typeof notes === "string" && notes.trim()) {
-        write(keeping(), "Devotions on the earlier form", labelled("From the team's message review", notes.trim()));
-        fields++;
-      }
-    }
-    if (formType2 === "devotion" && brief) {
-      const days = db2.plannedEpisodes.filter((x) => x.contentId === p.contentId).sort((a, b) => a.episodeNumber - b.episodeNumber);
-      if (days.length) {
-        db2.documentPages = db2.documentPages.filter((x) => x.documentId !== brief.id);
-        days.forEach((day, i) => {
-          const body = [
-            day.details.keyThought ? labelled("Key thought", day.details.keyThought) : "",
-            day.details.application ? labelled("Application or closing", day.details.application) : "",
-            day.question ? labelled("Question", day.question) : "",
-            day.guest ? labelled("Guest", day.guest) : "",
-            day.notes ? labelled("Notes", day.notes) : "",
-            ...Object.entries(day.details).filter(([k, v]) => !["scripture", "keyThought", "application"].includes(k) && v).map(([k, v]) => labelled(k, v))
-          ].join("");
-          const pg = page(brief.id, i, day.workingTitle || `Devotion ${i + 1}`, day.details.scripture ?? "", body);
-          if (day.archivedAt) pg.archivedAt = day.archivedAt;
-          db2.documentPages.push(pg);
-          day.sourcePageId = pg.id;
-          fields++;
-        });
-      }
-      const notes = form2.sections.messageReview?.notes;
-      const first = pagesOf2(brief.id)[0];
-      if (typeof notes === "string" && notes.trim() && first) {
-        db2.reviewComments.push({
-          id: localId("RC"),
-          documentId: brief.id,
-          pageId: first.id,
-          authorId: "system",
-          body: `From the team's message review: ${notes.trim()}`,
-          resolved: false,
-          resolvedBy: null,
-          createdAt: at
-        });
-        fields++;
-      }
-    }
-    if (catalogEntry(formType2, "Development", "greenlight")) {
-      const judged = CRITERIA.filter((c) => form2.criteria[c.key]?.met !== null || form2.criteria[c.key]?.note);
-      if (judged.length) {
-        const list = CRITERIA.map((c) => {
-          const cr = form2.criteria[c.key] ?? { met: null, note: "" };
-          const verdict = cr.met === true ? "Met" : cr.met === false ? "Not met" : "Not judged yet";
-          return `<li><p><strong>${escapeHtml(c.label)}:</strong> ${verdict}${cr.note ? `. ${escapeHtml(cr.note)}` : ""}</p></li>`;
-        }).join("");
-        const g = ours("Development", "greenlight");
-        if (g) {
-          written.add(g.title);
-          const pg = pagesOf2(g.id)[0];
-          if (pg) pg.bodyHtml = `<p>The six criteria:</p><ul>${list}</ul>`;
-        } else write(keeping(), "Greenlight: the six criteria", `<ul>${list}</ul>`);
-        fields += judged.length;
-      }
-    }
-    if (late) {
-      const cps = db2.reviewCheckpoints.filter(
-        (c) => c.contentId === p.contentId && !c.episodeId && (c.checkpoint === "pitch" || c.checkpoint === "outline_script") && (c.status !== "Pending" || c.reviewerIds.length || c.note)
-      );
-      for (const c of cps) {
-        write(
-          keeping(),
-          "Theological review on the earlier form",
-          `<h3>${c.checkpoint === "pitch" ? "Pitch" : "Outline or script"}: ${escapeHtml(c.status)}</h3>` + (c.reviewerIds.length ? labelled("Reviewers", c.reviewerIds.map(nameOf3).join(", ")) : "") + (c.note ? labelled("Note", c.note) : "") + (c.decidedAt ? labelled("Decided", fmtDate(c.decidedAt.slice(0, 10))) : "")
-        );
-      }
-    }
-    if (brief) {
-      const cps = db2.reviewCheckpoints.filter(
-        (c) => c.contentId === p.contentId && !c.episodeId && (c.checkpoint === "pitch" || c.checkpoint === "outline_script")
-      );
-      const both = cps.length === 2 && cps.every((c) => c.status === "Approved");
-      const sentBack = cps.find((c) => c.status === "Changes requested");
-      const reviewers = [...new Set(cps.flatMap((c) => c.reviewerIds))];
-      const decidedBy = [...new Set(cps.map((c) => c.decidedById).filter((x) => !!x))];
-      const ids2 = reviewers.length ? reviewers : both ? decidedBy.length ? decidedBy : ["system"] : [];
-      for (const reviewerId of ids2) {
-        const r = {
-          id: `${brief.id}|${reviewerId}`,
-          documentId: brief.id,
-          reviewerId,
-          status: both ? "approved" : sentBack ? "changes_requested" : "pending",
-          note: both ? cps.map((c) => c.note).filter(Boolean).join(" ") || "Approved at the pitch and outline checkpoints." : sentBack?.note ?? "",
-          decidedAt: both ? cps.map((c) => c.decidedAt).filter(Boolean).sort().pop() ?? at : sentBack?.decidedAt ?? null,
-          createdAt: at,
-          updatedAt: at
-        };
-        if (!db2.documentReviews.some((x) => x.id === r.id)) db2.documentReviews.push(r);
-      }
-    }
-    const camera = db2.shotLists.some((l) => l.contentId === p.contentId && l.migrated) ? [] : cameraPlanRows(db2, p);
-    if (camera.length) {
-      const list = {
-        id: localId("SL"),
-        contentId: p.contentId,
-        isTemplate: false,
-        episodeId: null,
-        name: "Camera plan (from before the documents)",
-        position: db2.shotLists.filter((l) => l.contentId === p.contentId).length,
-        copiedFrom: null,
-        migrated: true,
-        createdAt: at,
-        updatedAt: at
-      };
-      db2.shotLists.push(list);
-      camera.forEach((r, i) => db2.shotListRows.push({ ...r, id: localId("SR"), shotListId: list.id, position: i }));
-      written.add("Shot List");
-    }
-    if (late && !written.size) {
-      report.lines.push({
-        contentId: p.contentId,
-        title: title2,
-        documents: [],
-        fields: 0,
-        note: "Its brief was started by hand, and its old form was empty."
-      });
-      continue;
-    }
-    report.lines.push({
-      contentId: p.contentId,
-      title: title2,
-      documents: [...written],
-      fields,
-      note: late ? "Its brief had been started by hand, so it is left as it was: the old form is kept on the Earlier Development form." : fields ? "" : "Its Development form was empty: its documents start blank."
-    });
-    report.changed = true;
-  }
-  report.unaccounted = unaccountedFields(db2, report);
-  return report;
-}
-function onlyOpened(db2, documentId) {
-  return db2.documentPages.filter((pg) => pg.documentId === documentId).every((pg) => pg.version === 1 && !pg.archivedAt) && !db2.documentLinks.some((l) => l.documentId === documentId) && !db2.documentReviews.some((r) => r.documentId === documentId) && !db2.reviewComments.some((c) => c.documentId === documentId);
-}
-function cameraPlanRows(db2, p) {
-  const row = (rowType, description) => ({
-    rowType,
-    imagePath: null,
-    description: description.slice(0, 500),
-    shotSize: "",
-    shotType: "",
-    movement: "",
-    estMinutes: null
-  });
-  const out = [];
-  const note = db2.workflowChecklistItems.find((c) => c.id === `${p.contentId}|Pre-production|shot_list`)?.note.trim();
-  if (note) {
-    out.push(row("banner", "Shot list note from Pre-production"));
-    for (const line3 of note.split("\n").map((l) => l.trim()).filter(Boolean))
-      out.push(row("setup", line3));
-  }
-  const family = /* @__PURE__ */ new Set([p.contentId, ...db2.records.filter((r) => r.parentId === p.contentId).map((r) => r.contentId)]);
-  const template = templateOf("shotlist")?.body.trim();
-  for (const d of db2.docs.filter((x) => x.templateKey === "shotlist" && family.has(x.contentId) && !x.archived)) {
-    if (d.body.trim() === template) continue;
-    out.push(row("banner", d.title));
-    let inShots = false;
-    for (const raw of d.body.split("\n")) {
-      const line3 = raw.trim();
-      if (!line3 || /^_.*_$/.test(line3) || /^\|?\s*-{3,}/.test(line3) || /^\|\s*#\s*\|/.test(line3)) continue;
-      const heading = /^\d+\.\s+(.*)$/.exec(line3);
-      if (heading) {
-        inShots = /shot/i.test(heading[1]);
-        out.push(row("banner", heading[1]));
-        continue;
-      }
-      if (line3.startsWith("|")) {
-        const cells = line3.split("|").map((c) => c.trim()).filter(Boolean);
-        const text4 = (cells.length > 1 && /^\d+$/.test(cells[0]) ? cells.slice(1) : cells).join(", ");
-        if (text4) out.push(row("shot", text4));
-        continue;
-      }
-      const item2 = /^-\s+(\[[ xX]\]\s+)?(.*)$/.exec(line3);
-      out.push(row(item2 && inShots ? "shot" : "setup", item2 ? item2[2] : line3));
-    }
-  }
-  return out;
-}
-function unaccountedFields(db2, report) {
-  const out = [];
-  const kept2 = new Set(report.kept.map((k) => `${k.contentId}|${k.field}`));
-  for (const form2 of db2.developmentForms) {
-    const p = db2.records.find((r) => r.contentId === form2.contentId);
-    if (!p?.workflow) continue;
-    const text4 = db2.documentPages.filter((pg) => pg.documentId.startsWith(`${p.contentId}|`)).map((pg) => `${pg.title} ${pg.subtitle} ${pg.bodyHtml}`).join(" ");
-    const comments = db2.reviewComments.filter((c) => c.documentId.startsWith(`${p.contentId}|`)).map((c) => c.body).join(" ");
-    for (const section of DEV_FORMS[form2.formType]) {
-      for (const [key2, v] of Object.entries(form2.sections[section.key] ?? {})) {
-        if (blank(v) || typeof v !== "string") continue;
-        const def = section.fields.find((f2) => f2.key === key2);
-        const name = `${section.label}: ${def?.label ?? key2}`;
-        if (kept2.has(`${p.contentId}|${name}`) || def?.type === "crew" || def?.type === "date" || def?.type === "yesno") continue;
-        const words = escapeHtml(v.trim().split("\n")[0]);
-        if (!text4.includes(words) && !comments.includes(v.trim())) out.push(`${p.contentId}: ${name}`);
-      }
-    }
-  }
-  return out;
-}
-
 // src/data/moveToNewSystem.ts
 function moveToNewSystem(db2, options) {
   const before = countParts(db2);
@@ -10710,520 +11396,9 @@ function buildSampleData() {
   return db2;
 }
 
-// src/data/migrate.ts
-var isoPlus = (base, days) => {
-  const [y, m, d] = base.split("-").map(Number);
-  const dt = new Date(y, m - 1, d + days);
-  const p = (x) => String(x).padStart(2, "0");
-  return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`;
-};
-function remapMusic(r) {
-  if (r.category !== "music" || !r.pipelineStage) return;
-  const stages = categoryOf("music").stages.map((s2) => s2.name);
-  if (stages.includes(r.pipelineStage) && Object.keys(r.stageOutputs).every((k) => stages.includes(k))) return;
-  const oldCurrent = r.pipelineStage;
-  const newCurrent = MUSIC_STAGE_MAP[oldCurrent] ?? "Idea";
-  const idx = stages.indexOf(newCurrent);
-  const oldOutput = !!r.stageOutputs[oldCurrent];
-  const oldDue = r.stageDeadlines[oldCurrent] ?? r.deadline ?? todayIso();
-  r.pipelineStage = newCurrent;
-  r.stageOutputs = Object.fromEntries(stages.map((s2, i) => [s2, i < idx ? true : i === idx ? oldOutput : false]));
-  r.stageDeadlines = Object.fromEntries(stages.map((s2, i) => [s2, i === idx ? oldDue : isoPlus(oldDue, (i - idx) * 4)]));
-}
-function upgradeToV3(db2) {
-  db2.docs ??= [];
-  db2.docRevisions ??= [];
-  db2.counters ??= {};
-  for (const r of db2.records) {
-    remapMusic(r);
-    r.stageAssignees ??= r.pipelineStage && r.assigneePersonId ? { [r.pipelineStage]: r.assigneePersonId } : {};
-    r.tasks ??= [];
-    r.links ??= [];
-    r.productionLevel ??= null;
-    const def = r.pipelineStage ? categoryOf(r.category).stages.find((s2) => s2.name === r.pipelineStage) : void 0;
-    if (def?.tasks && !r.tasks.some((t2) => t2.stage === def.name)) {
-      for (const label of def.tasks) {
-        db2.counters.task = (db2.counters.task ?? 0) + 1;
-        r.tasks.push({
-          id: `T-${String(db2.counters.task).padStart(4, "0")}`,
-          stage: def.name,
-          label,
-          done: false,
-          dueDate: r.stageDeadlines[def.name] ?? null,
-          assigneePersonId: null,
-          doneAt: null,
-          doneBy: null
-        });
-      }
-    }
-    for (const key2 of def?.docs ?? []) {
-      const tpl = templateOf(key2);
-      if (!tpl || db2.docs.some((d) => d.contentId === r.contentId && d.templateKey === key2)) continue;
-      db2.counters.doc = (db2.counters.doc ?? 0) + 1;
-      db2.counters.docrev = (db2.counters.docrev ?? 0) + 1;
-      const now = (/* @__PURE__ */ new Date()).toISOString();
-      const doc2 = {
-        id: `DOF-DCS-${String(db2.counters.doc).padStart(3, "0")}`,
-        contentId: r.contentId,
-        title: `${tpl.title}: ${r.title}`,
-        body: tpl.body,
-        templateKey: key2,
-        stage: def.name,
-        version: 1,
-        createdBy: "DOF-P-HOP-001",
-        createdAt: now,
-        updatedAt: now,
-        updatedBy: "DOF-P-HOP-001",
-        archived: false
-      };
-      const rev = {
-        id: `REV-${String(db2.counters.docrev).padStart(5, "0")}`,
-        docId: doc2.id,
-        version: 1,
-        at: now,
-        byPersonId: "DOF-P-HOP-001",
-        title: doc2.title,
-        body: doc2.body,
-        note: "Created from template"
-      };
-      db2.docs.push(doc2);
-      db2.docRevisions.push(rev);
-    }
-  }
-  for (const c of db2.callSheets) c.runOfShow ??= [];
-  db2.schemaVersion = 3;
-  return db2;
-}
-function upgradeToV4(db2) {
-  const gone = new Set(db2.records.filter((r) => r.archived).map((r) => r.contentId));
-  if (gone.size) {
-    db2.allocations = db2.allocations.filter((a) => a.contentId === null || !gone.has(a.contentId));
-    for (const d of db2.docs) if (gone.has(d.contentId)) d.archived = true;
-    for (const m of db2.manifests) {
-      if (!gone.has(m.contentId) || m.status !== "assigned") continue;
-      m.status = "released";
-      db2.counters.history = db2.counters.history ?? 0;
-      for (const l of m.lines) {
-        db2.counters.history += 1;
-        db2.equipmentHistory.push({
-          id: `H-${String(db2.counters.history).padStart(5, "0")}`,
-          equipmentId: l.equipmentId,
-          at: (/* @__PURE__ */ new Date()).toISOString(),
-          kind: "released",
-          detail: `Released: ${m.contentId} was deleted`,
-          byPersonId: "DOF-P-HOP-001",
-          contentId: m.contentId,
-          manifestId: m.id
-        });
-      }
-    }
-    const droppedSheets = new Set(db2.callSheets.filter((c) => gone.has(c.contentId)).map((c) => c.id));
-    db2.callSheets = db2.callSheets.filter((c) => !droppedSheets.has(c.id));
-    for (const m of db2.manifests) if (m.callSheetId && droppedSheets.has(m.callSheetId)) m.callSheetId = null;
-    const used = db2.drives.reduce((n, d) => n + d.otherUsedGB, 0) + db2.allocations.reduce((n, a) => n + a.sizeGB, 0);
-    const capacity = db2.drives.reduce((n, d) => n + d.capacityGB, 0);
-    const today = todayIso();
-    const snap = db2.snapshots.find((s2) => s2.date === today);
-    if (snap) Object.assign(snap, { usedGB: used, capacityGB: capacity });
-    else db2.snapshots.push({ date: today, usedGB: used, capacityGB: capacity });
-  }
-  db2.schemaVersion = 4;
-  return db2;
-}
-function upgradeToV5(db2) {
-  for (const r of db2.records) {
-    r.featured ??= [];
-    r.showStart ??= null;
-    r.showEnd ??= null;
-  }
-  const flat = db2.records.filter(
-    (r) => r.category === "live" && r.hierarchyLevel === 0 && r.pipelineStage !== null && !db2.records.some((c) => c.parentId === r.contentId)
-  );
-  for (const r of flat) {
-    const id2 = `${r.contentId}-D1`;
-    const copy = (v) => JSON.parse(JSON.stringify(v));
-    const day = {
-      ...copy(r),
-      contentId: id2,
-      title: "Day 1",
-      parentId: r.contentId,
-      hierarchyLevel: 1,
-      featured: [],
-      showStart: null,
-      showEnd: null
-    };
-    db2.records.push(day);
-    r.showStart = r.showStart ?? r.scheduledDate;
-    r.showEnd = r.showEnd ?? r.scheduledDate;
-    Object.assign(r, {
-      pipelineStage: null,
-      stageOutputs: {},
-      stageDeadlines: {},
-      tasks: [],
-      links: [],
-      stageAssignees: {},
-      assigneePersonId: null,
-      productionLevel: null,
-      scheduledDate: null,
-      version: r.version + 1
-    });
-    for (const d of db2.docs) if (d.contentId === r.contentId && d.stage) d.contentId = id2;
-    for (const c of db2.callSheets) c.linkedEpisodeIds = c.linkedEpisodeIds.map((x) => x === r.contentId ? id2 : x);
-  }
-  db2.schemaVersion = 5;
-  return db2;
-}
-function upgradeToV6(db2) {
-  db2.settings.workDays ??= [1, 2, 3, 4, 5];
-  db2.settings.effortOverrides ??= {};
-  const generic = ["assigned", "team member"];
-  for (const r of db2.records) {
-    const raw = r.stageAssignees ?? {};
-    const rootId = r.contentId.split("-").slice(0, 3).join("-");
-    const next2 = {};
-    for (const [stage, v] of Object.entries(raw)) {
-      if (Array.isArray(v)) {
-        next2[stage] = v;
-        continue;
-      }
-      if (typeof v !== "string") continue;
-      const m = db2.members.find((x) => x.personId === v && x.projectContentId === rootId);
-      const roles2 = (m?.roleOnProject ?? "").split(",").map((x) => x.trim()).filter((x) => x && !generic.includes(x.toLowerCase()));
-      next2[stage] = [{ personId: v, roles: roles2 }];
-    }
-    r.stageAssignees = next2;
-  }
-  db2.schemaVersion = 6;
-  return db2;
-}
-function upgradeToV7(db2) {
-  db2.outbox ??= [];
-  db2.schemaVersion = 7;
-  return db2;
-}
-function upgradeToV8(db2) {
-  for (const item2 of db2.equipment) item2.unitLabel ??= null;
-  db2.schemaVersion = 8;
-  return db2;
-}
-function upgradeToV9(db2) {
-  db2.settings.appearance ??= { accent: "terracotta", fontPairing: "modern" };
-  for (const p of db2.people) {
-    p.photoUrl ??= null;
-    p.fontSize ??= "default";
-    p.density ??= "comfortable";
-  }
-  db2.schemaVersion = 9;
-  return db2;
-}
-function upgradeToV10(db2) {
-  const RENAME = { Idea: "Prep", Scripting: "Build", Streaming: "Show" };
-  const NEW_STAGES = ["Prep", "Build", "Rehearse", "Show", "Wrap", "Review", "Post Production"];
-  for (const r of db2.records) {
-    r.spunOffFrom ??= null;
-    r.postProductionNeeded ??= null;
-    r.strikePattern ??= null;
-    r.strikeChecklist ??= null;
-    if (r.category !== "live" || !r.pipelineStage) continue;
-    if (r.pipelineStage in RENAME) r.pipelineStage = RENAME[r.pipelineStage];
-    for (const dict of [r.stageOutputs, r.stageDeadlines]) {
-      for (const [from, to] of Object.entries(RENAME))
-        if (from in dict) {
-          dict[to] = dict[from];
-          delete dict[from];
-        }
-      for (const s2 of NEW_STAGES) if (!(s2 in dict)) dict[s2] = dict === r.stageOutputs ? false : null;
-    }
-    for (const t2 of r.tasks) if (t2.stage in RENAME) t2.stage = RENAME[t2.stage];
-    for (const [from, to] of Object.entries(RENAME))
-      if (from in r.stageAssignees) {
-        r.stageAssignees[to] = r.stageAssignees[from];
-        delete r.stageAssignees[from];
-      }
-  }
-  db2.schemaVersion = 10;
-  return db2;
-}
-function upgradeToV11(db2) {
-  for (const r of db2.records) r.stageEnteredAt ??= r.createdAt;
-  db2.schemaVersion = 11;
-  return db2;
-}
-function upgradeToV12(db2) {
-  const RENAME = { Idea: "Creation", Scripting: "Prep/Scripting", Editorial: "Editing", Delivered: "Published" };
-  for (const r of db2.records) {
-    r.guestName ??= "";
-    r.guestContact ??= "";
-    r.reviewerName ??= null;
-    r.reviewApprovedAt ??= null;
-    r.closedReason ??= null;
-    r.cardStorage ??= "";
-    r.publishDate ??= null;
-    r.recordingDurationMin ??= null;
-    r.recordingNotes ??= "";
-    r.readyForReview ??= false;
-    r.editorNotes ??= "";
-    r.sendBackReason ??= null;
-    if (r.category !== "devotional" || !r.pipelineStage) continue;
-    if (r.pipelineStage in RENAME) r.pipelineStage = RENAME[r.pipelineStage];
-    for (const dict of [r.stageOutputs, r.stageDeadlines]) {
-      for (const [from, to] of Object.entries(RENAME))
-        if (from in dict) {
-          dict[to] = dict[from];
-          delete dict[from];
-        }
-    }
-    for (const t2 of r.tasks) if (t2.stage in RENAME) t2.stage = RENAME[t2.stage];
-    for (const [from, to] of Object.entries(RENAME))
-      if (from in r.stageAssignees) {
-        r.stageAssignees[to] = r.stageAssignees[from];
-        delete r.stageAssignees[from];
-      }
-  }
-  db2.schemaVersion = 12;
-  return db2;
-}
-function upgradeToV13(db2) {
-  for (const item2 of db2.equipment) {
-    const it = item2;
-    if (it.trackingType === "aggregate") it.conditionBreakdown ??= { [it.condition]: it.quantityTotal };
-    else it.conditionBreakdown ??= null;
-  }
-  for (const a of db2.allocations) a.label ??= "";
-  db2.schemaVersion = 13;
-  return db2;
-}
-function upgradeToV14(db2) {
-  db2.counters ??= {};
-  syncRecordCounters(db2);
-  db2.schemaVersion = 14;
-  return db2;
-}
-function upgradeToV15(db2) {
-  const parts = db2;
-  for (const k of WORKFLOW_PARTS) parts[k] ??= [];
-  for (const r of db2.records) {
-    r.seriesType ??= null;
-    r.workflow ??= null;
-    r.episode ??= null;
-  }
-  db2.schemaVersion = 15;
-  return db2;
-}
-function upgradeToV16(db2) {
-  const parts = db2;
-  for (const k of DOCUMENT_PARTS) parts[k] ??= [];
-  for (const p of db2.plannedEpisodes ?? []) p.sourcePageId ??= null;
-  db2.schemaVersion = 16;
-  return db2;
-}
-function upgradeToV17(db2) {
-  const at = (/* @__PURE__ */ new Date()).toISOString();
-  const report = migrateDocuments(db2, { at });
-  if (report.changed) {
-    const projects = report.lines.filter((l) => l.documents.length).length;
-    db2.audit.push({
-      id: logId("A"),
-      at,
-      byPersonId: "system",
-      action: "migrate-documents",
-      entity: "system",
-      entityId: "documents",
-      detail: `With the old Development screens gone, the Development forms of ${projects} project${projects === 1 ? "" : "s"} moved into their documents.`
-    });
-  }
-  delete db2.settings.newDocuments;
-  db2.schemaVersion = 17;
-  return db2;
-}
-function upgradeToV18(db2) {
-  const order = ["director", "dop", "audio_engineer", "camera_operator", "continuity", "editor", "host_guest"];
-  for (const r of db2.projectRoles ?? []) {
-    r.label ??= "";
-    r.position ??= order.indexOf(r.roleKey) < 0 ? order.length : order.indexOf(r.roleKey);
-  }
-  for (const r of db2.records) if (r.workflow) r.workflow.storageDriveId ??= null;
-  for (const a of db2.allocations ?? []) a.sessionId ??= null;
-  for (const ses of db2.recordingSessions ?? []) {
-    ses.name ??= "";
-    ses.label ??= null;
-    ses.startTime ??= null;
-    ses.endTime ??= null;
-    ses.storyboardId ??= null;
-    ses.shotListId ??= null;
-    ses.storageDriveId ??= null;
-  }
-  const at = (/* @__PURE__ */ new Date()).toISOString();
-  const linked = new Set((db2.recordingSessions ?? []).map((x) => x.callSheetId).filter(Boolean));
-  const made = [];
-  for (const p of db2.records) {
-    if (p.workflow?.formType !== "devotion" || p.archived || p.workflow.stage !== "Pre-production") continue;
-    const sheets = db2.callSheets.filter((c) => c.contentId === p.contentId && !linked.has(c.id)).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
-    for (const sheet of sheets) {
-      const key2 = sessionCounter(p.contentId);
-      const used = db2.recordingSessions.filter((x) => x.contentId === p.contentId).map((x) => x.sessionNumber);
-      const n = Math.max(db2.counters[key2] ?? 0, ...used) + 1;
-      db2.counters[key2] = n;
-      db2.recordingSessions.push({
-        id: sessionCode(p.contentId, n),
-        contentId: p.contentId,
-        sessionNumber: n,
-        scheduledDate: sheet.date || null,
-        venue: sheet.location,
-        status: "Planned",
-        closedAt: null,
-        callSheetId: sheet.id,
-        runSheet: sheet.runOfShow.map((item2) => ({ ...item2 })),
-        dailyLog: "",
-        createdAt: at,
-        updatedAt: at,
-        archivedAt: null,
-        archivedReason: null,
-        name: sheet.title,
-        label: null,
-        startTime: null,
-        endTime: null,
-        storyboardId: null,
-        shotListId: null,
-        storageDriveId: null,
-        fromCallSheet: true
-      });
-      const list = CHECKLISTS.preSession;
-      for (const item2 of list.items) {
-        const rowId = `${sessionCode(p.contentId, n)}|${list.stage}|${item2.key}`;
-        if (item2.auto || db2.workflowChecklistItems.some((c) => c.id === rowId)) continue;
-        db2.workflowChecklistItems.push({
-          id: rowId,
-          ownerType: "session",
-          ownerId: sessionCode(p.contentId, n),
-          stage: list.stage,
-          itemKey: item2.key,
-          label: item2.label,
-          required: item2.required,
-          done: false,
-          note: "",
-          doneAt: null,
-          doneById: null,
-          createdAt: at,
-          updatedAt: at
-        });
-      }
-      linked.add(sheet.id);
-      made.push(`${sessionCode(p.contentId, n)} from ${sheet.id}`);
-    }
-  }
-  if (made.length)
-    db2.audit.push({
-      id: logId("A"),
-      at,
-      byPersonId: "system",
-      action: "migrate-call-sheets",
-      entity: "system",
-      entityId: "recording-plan",
-      detail: `Devotion call sheets moved into Recording Plan sessions: ${made.join(", ")}.`
-    });
-  db2.schemaVersion = 18;
-  return db2;
-}
-function upgradeToV19(db2) {
-  db2.showTemplates ??= [];
-  const blank2 = blankSheetContent();
-  for (const cs of db2.callSheets) {
-    const sheet = cs;
-    for (const k of SHEET_CONTENT_KEYS) if (sheet[k] === void 0) sheet[k] = structuredClone(blank2[k]);
-    cs.instanceId ??= null;
-  }
-  for (const r of db2.records) {
-    r.production ??= null;
-    r.instance ??= null;
-  }
-  const today = todayIso();
-  const at = (/* @__PURE__ */ new Date()).toISOString();
-  const made = [];
-  const csNumbers = db2.callSheets.map((c) => Number(/^DOF-CS-(\d+)$/.exec(c.id)?.[1] ?? NaN)).filter((n) => !Number.isNaN(n));
-  let csNext = Math.max(db2.counters.callsheet ?? 0, ...csNumbers);
-  for (const show2 of db2.records.filter((r) => r.category === "live" && r.hierarchyLevel === 0)) {
-    const days = db2.records.filter((r) => r.parentId === show2.contentId && r.hierarchyLevel === 1);
-    if (!show2.production) {
-      const oneDay = days.filter((d) => !d.archived).length === 1;
-      show2.production = { mode: oneDay ? "one_time" : "multi_day", templateId: null, eventPlan: oneDay ? null : blankEventPlan() };
-    }
-    for (const day of days) {
-      const sheets = db2.callSheets.filter((c) => c.contentId === show2.contentId);
-      if (sheets.some((c) => c.instanceId === day.contentId)) continue;
-      const found = sheets.filter(
-        (c) => c.instanceId === null && (c.linkedEpisodeIds.includes(day.contentId) || !!day.scheduledDate && c.date === day.scheduledDate)
-      ).sort((a, b) => a.id.localeCompare(b.id))[0];
-      if (found) {
-        found.instanceId = day.contentId;
-        continue;
-      }
-      if (day.archived || !day.scheduledDate || day.scheduledDate < today) continue;
-      csNext += 1;
-      const id2 = `DOF-CS-${String(csNext).padStart(3, "0")}`;
-      db2.callSheets.push({
-        ...blankSheetContent(),
-        ...blankSheetTracking(),
-        id: id2,
-        contentId: show2.contentId,
-        title: `${show2.title}: ${day.scheduledDate}`,
-        date: day.scheduledDate,
-        callTime: "08:00",
-        linkedEpisodeIds: [day.contentId],
-        equipmentIds: [],
-        instanceId: day.contentId,
-        status: "draft",
-        version: 1,
-        createdAt: at
-      });
-      made.push(`${id2} for ${day.contentId}`);
-    }
-  }
-  if (made.length) {
-    db2.counters.callsheet = csNext;
-    db2.audit.push({
-      id: logId("A"),
-      at,
-      byPersonId: "system",
-      action: "migrate-productions",
-      entity: "system",
-      entityId: "productions",
-      detail: `Every day of a live show has its call sheet: made ${made.join(", ")}.`
-    });
-  }
-  db2.schemaVersion = 19;
-  return db2;
-}
-function upgradeToV20(db2) {
-  db2.locations ??= [];
-  const at = (/* @__PURE__ */ new Date()).toISOString();
-  for (const cs of db2.callSheets) {
-    cs.locationId ??= null;
-    cs.confirmations ??= {};
-    cs.changeLog ??= [];
-    if (cs.sharedAt === void 0) cs.sharedAt = cs.status === "final" ? at : null;
-  }
-  for (const t2 of db2.showTemplates ?? []) t2.sheet.locationId ??= null;
-  db2.schemaVersion = 20;
-  return db2;
-}
-function upgradeToV21(db2) {
-  db2.loans ??= [];
-  db2.roleKits ??= [];
-  db2.calendarReminders ??= [];
-  db2.notifications ??= [];
-  db2.emailQueue ??= [];
-  db2.googleSyncLinks ??= [];
-  for (const b of db2.storyboards ?? []) b.isTemplate ??= false;
-  for (const l of db2.shotLists ?? []) l.isTemplate ??= false;
-  db2.settings.features ??= {};
-  db2.schemaVersion = 21;
-  return db2;
-}
-
 // src/data/store.ts
 var KEY = "dof-hub-db";
-var SCHEMA_VERSION = 21;
+var SCHEMA_VERSION = 22;
 function migrate(old) {
   const gear = buildGearSeed();
   const next2 = {
@@ -11267,7 +11442,8 @@ var UPGRADES = {
   17: upgradeToV18,
   18: upgradeToV19,
   19: upgradeToV20,
-  20: upgradeToV21
+  20: upgradeToV21,
+  21: upgradeToV22
 };
 function upgradeDb(parsed) {
   let db2 = parsed.schemaVersion === 1 ? migrate(parsed) : parsed;
@@ -11500,7 +11676,7 @@ function describeRework(r) {
   const out = ["", "For the rework, to decide before its later parts:"];
   if (!r.generalUse.length) out.push("  General Use records: none.");
   else {
-    out.push(`  General Use records: ${r.generalUse.length}. Proposed: with gear checkouts, a loan; otherwise archived. IDs stay.`);
+    out.push(`  General Use records: ${r.generalUse.length}. Data version 22: with gear checkouts, a loan; otherwise archived. IDs stay.`);
     for (const g of r.generalUse)
       out.push(
         `    ${g.contentId.padEnd(16)} ${g.title}${g.archived ? " (archived)" : ""}: ${g.checkouts} checkout${g.checkouts === 1 ? "" : "s"}${g.openCheckouts ? ` (${g.openCheckouts} still out or reserved)` : ""}, ${g.callSheets} call sheet${g.callSheets === 1 ? "" : "s"}, ${g.documents} document${g.documents === 1 ? "" : "s"}, ${g.storage} storage entr${g.storage === 1 ? "y" : "ies"}. Proposed: ${g.proposal}.`
@@ -12192,7 +12368,7 @@ var sheetOf = (id2) => id2 ? getDb().callSheets.find((c) => c.id === id2) : void
 function dayDone(day) {
   if (isComplete(day)) return true;
   const stages = categoryOf("live").stages.map((s2) => s2.name);
-  const show2 = stages.indexOf("Show");
+  const show2 = stages.indexOf(categoryOf("live").footageStage);
   return show2 >= 0 && stages.indexOf(day.pipelineStage ?? "") > show2;
 }
 function dayInstance(day) {
@@ -12204,7 +12380,7 @@ function dayInstance(day) {
     id: day.contentId,
     projectId: day.parentId ?? day.contentId,
     projectTitle: show2?.title ?? day.title,
-    label: day.title,
+    label: day.instance?.label ? `${day.title}, ${day.instance.label}` : day.title,
     date: day.scheduledDate,
     start: cs?.startTime || cs?.callTime || "",
     end: cs?.wrapTime ?? "",
@@ -12229,6 +12405,21 @@ function sessionInstance(s2) {
     status: status2,
     callSheetId: cs?.id ?? null
   };
+}
+function instancesBetween(actor, from, to) {
+  const db2 = getDb();
+  const out = [];
+  for (const r of db2.records) {
+    if (r.category !== "live" || r.hierarchyLevel !== 1 || !r.scheduledDate || r.scheduledDate < from || r.scheduledDate > to) continue;
+    const show2 = r.parentId ? getRecord(r.parentId) : void 0;
+    if (show2 && canView(actor, show2)) out.push(dayInstance(r));
+  }
+  for (const s2 of db2.recordingSessions) {
+    if (!s2.scheduledDate || s2.scheduledDate < from || s2.scheduledDate > to) continue;
+    const p = getRecord(s2.contentId);
+    if (p && canView(actor, p)) out.push(sessionInstance(s2));
+  }
+  return out.sort((a, b) => (a.date ?? "").localeCompare(b.date ?? "") || a.start.localeCompare(b.start) || a.id.localeCompare(b.id));
 }
 var instanceLine = (i) => `${i.projectTitle}, ${i.label}${i.date && !i.label.includes(fmtDate(i.date)) ? `, ${fmtDate(i.date)}` : ""}`;
 
@@ -13300,15 +13491,21 @@ var production_exports = {};
 __export(production_exports, {
   BOARD_AHEAD_DAYS: () => BOARD_AHEAD_DAYS,
   BOARD_PAST_DAYS: () => BOARD_PAST_DAYS,
+  DAY_LABELS: () => DAY_LABELS,
+  DEFAULT_HORIZON_COUNT: () => DEFAULT_HORIZON_COUNT,
   DEFAULT_HORIZON_WEEKS: () => DEFAULT_HORIZON_WEEKS,
   GEAR_WINDOW_DAYS: () => GEAR_WINDOW_DAYS,
+  MAX_HORIZON_COUNT: () => MAX_HORIZON_COUNT,
   MAX_HORIZON_WEEKS: () => MAX_HORIZON_WEEKS,
   addEventDay: () => addEventDay,
+  applyDayToFuture: () => applyDayToFuture,
   canPlanShow: () => canPlanShow,
+  cancelDay: () => cancelDay,
   createProduction: () => createProduction,
   daysOfShow: () => daysOfShow,
   followsTemplate: () => followsTemplate,
   getTemplate: () => getTemplate,
+  horizonEnd: () => horizonEnd,
   instanceTitle: () => instanceTitle,
   isShow: () => isShow,
   modeLabel: () => modeLabel,
@@ -13317,6 +13514,7 @@ __export(production_exports, {
   productionOf: () => productionOf,
   recurringDue: () => recurringDue,
   resetToTemplate: () => resetToTemplate,
+  setDayLabel: () => setDayLabel,
   setShowSchedule: () => setShowSchedule,
   sheetOfDay: () => sheetOfDay,
   templateOfShow: () => templateOfShow,
@@ -13341,8 +13539,11 @@ var MAX_COUNT = 520;
 function checkRule(rule) {
   if (!isIsoDate(rule.startDate)) throw new RuleError("Pick the date the show starts.");
   if (!Number.isInteger(rule.interval) || rule.interval < 1 || rule.interval > MAX_INTERVAL)
-    throw new RuleError(`It can repeat every 1 to ${MAX_INTERVAL} ${rule.freq === "weekly" ? "weeks" : "months"}.`);
-  if (rule.freq === "weekly") {
+    throw new RuleError(
+      `It can repeat every 1 to ${MAX_INTERVAL} ${rule.freq === "daily" ? "days" : rule.freq === "weekly" ? "weeks" : "months"}.`
+    );
+  if (rule.freq === "daily") {
+  } else if (rule.freq === "weekly") {
     if (!rule.weekdays.length) throw new RuleError("Choose the day of the week it happens on.");
     if (rule.weekdays.some((d) => !Number.isInteger(d) || d < 0 || d > 6)) throw new RuleError("Choose days of the week.");
   } else if (rule.freq === "monthly") {
@@ -13352,7 +13553,7 @@ function checkRule(rule) {
       throw new RuleError("Choose a day of the month from 1 to 31.");
     if (rule.nth && (![1, 2, 3, 4, -1].includes(rule.nth.week) || rule.nth.weekday < 0 || rule.nth.weekday > 6))
       throw new RuleError("Choose the first, second, third, fourth or last day of the week in the month.");
-  } else throw new RuleError("Choose weekly or monthly.");
+  } else throw new RuleError("Choose daily, weekly or monthly.");
   if (rule.until !== null && rule.count !== null) throw new RuleError("End it on a date or after a number of times, not both.");
   if (rule.until !== null && (!isIsoDate(rule.until) || rule.until < rule.startDate))
     throw new RuleError("It cannot end before it starts.");
@@ -13380,7 +13581,13 @@ function occurrences(rule, to) {
   const end = rule.until && rule.until < to ? rule.until : to;
   const out = [];
   const limit = rule.count ?? Infinity;
-  if (rule.freq === "weekly") {
+  if (rule.freq === "daily") {
+    for (let n = toDay(rule.startDate); out.length < limit; n += rule.interval) {
+      const date2 = fromDay(n);
+      if (date2 > end) break;
+      out.push(date2);
+    }
+  } else if (rule.freq === "weekly") {
     const weekStart = toDay(rule.startDate) - weekdayOf(rule.startDate);
     const days = [...new Set(rule.weekdays)].sort((a, b) => a - b);
     for (let w = 0; out.length < limit; w += rule.interval) {
@@ -13435,12 +13642,19 @@ function sheetOfDay(day) {
   const sheets = getDb().callSheets;
   return sheets.find((c) => c.instanceId === day.contentId) ?? (day.scheduledDate ? sheets.find((c) => c.contentId === day.parentId && c.instanceId === null && c.date === day.scheduledDate) : void 0);
 }
+var DEFAULT_HORIZON_COUNT = 8;
+var MAX_HORIZON_COUNT = 52;
+function horizonEnd(t2, today) {
+  if (!t2.horizonCount) return addDaysIso(today, t2.horizonWeeks * 7);
+  const coming = occurrencesBetween(t2.rule, today, addDaysIso(today, 3 * 366));
+  return coming[Math.min(t2.horizonCount, coming.length) - 1] ?? today;
+}
 var followsTemplate = (day) => !!day.instance && !day.instance.locked;
 function offSchedule(day, today = todayIso()) {
   if (!day.instance || !day.scheduledDate || day.scheduledDate < today) return false;
   const t2 = getTemplate(day.instance.templateId);
   if (!t2) return false;
-  const to = addDaysIso(today, t2.horizonWeeks * 7);
+  const to = horizonEnd(t2, today);
   return day.instance.occurrence >= today && day.instance.occurrence <= to && !occurrencesBetween(t2.rule, today, to).includes(day.instance.occurrence);
 }
 function onBoard(r, today = todayIso()) {
@@ -13501,7 +13715,7 @@ function untouched(day) {
 }
 function syncSchedule(actor, show2, t2, today) {
   const out = { made: [], restored: [], removed: [], kept: [], booked: 0 };
-  const to = addDaysIso(today, t2.horizonWeeks * 7);
+  const to = horizonEnd(t2, today);
   const wanted = occurrencesBetween(t2.rule, today, to);
   const wantedSet = new Set(wanted);
   const mine = daysOfShow(show2.contentId, true).filter((d) => d.instance?.templateId === t2.id);
@@ -13594,6 +13808,7 @@ function createProduction(actor, input) {
       productionLevel: input.productionLevel ?? null,
       ownerPersonId: input.assigneePersonId || null,
       horizonWeeks: DEFAULT_HORIZON_WEEKS,
+      horizonCount: DEFAULT_HORIZON_COUNT,
       version: 1,
       createdAt: at,
       updatedAt: at,
@@ -13682,12 +13897,18 @@ function updateShowTemplate(actor, templateId, patch) {
       throw new RuleError(`Make days from 1 to ${MAX_HORIZON_WEEKS} weeks ahead.`);
     t2.horizonWeeks = patch.horizonWeeks;
   }
+  if (patch.horizonCount !== void 0) {
+    if (!Number.isInteger(patch.horizonCount) || patch.horizonCount < 1 || patch.horizonCount > MAX_HORIZON_COUNT)
+      throw new RuleError(`Make the next 1 to ${MAX_HORIZON_COUNT} days ahead.`);
+    t2.horizonCount = patch.horizonCount;
+  }
   t2.version += 1;
   t2.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
   t2.updatedBy = actor.personId;
   const today = todayIso();
   const out = { updated: [], kept: [] };
-  for (const day of daysOfShow(show2.contentId).filter((d) => d.instance?.templateId === t2.id && (d.scheduledDate ?? "") >= today)) {
+  const from = patch.from && patch.from > today ? patch.from : today;
+  for (const day of daysOfShow(show2.contentId).filter((d) => d.instance?.templateId === t2.id && (d.scheduledDate ?? "") >= from)) {
     const cs = sheetOfDay(day);
     if (!cs || day.instance.locked || cs.status === "final") {
       out.kept.push(day.contentId);
@@ -13696,7 +13917,7 @@ function updateShowTemplate(actor, templateId, patch) {
     applyTemplateTo(actor, t2, day, cs, today);
     out.updated.push(day.contentId);
   }
-  if (patch.horizonWeeks !== void 0) syncSchedule(actor, show2, t2, today);
+  if (patch.horizonWeeks !== void 0 || patch.horizonCount !== void 0) syncSchedule(actor, show2, t2, today);
   logAudit(
     actor,
     "template",
@@ -13743,7 +13964,7 @@ function recurringDue(today = todayIso()) {
     const have = new Set(
       daysOfShow(show2.contentId, true).filter((d) => d.instance?.templateId === t2.id).map((d) => d.instance.occurrence)
     );
-    if (occurrencesBetween(t2.rule, today, addDaysIso(today, t2.horizonWeeks * 7)).some((d) => !have.has(d))) return true;
+    if (occurrencesBetween(t2.rule, today, horizonEnd(t2, today)).some((d) => !have.has(d))) return true;
     for (const d of daysOfShow(show2.contentId)) {
       const cs = d.instance ? sheetOfDay(d) : void 0;
       if (cs?.plannedGear.length && cs.status === "draft" && cs.date >= today && cs.date <= addDaysIso(today, GEAR_WINDOW_DAYS))
@@ -13824,6 +14045,47 @@ function addEventDay(actor, showId, date2) {
   show2.showEnd = all[all.length - 1] ?? null;
   show2.version += 1;
   logAudit(actor, "event-day", "record", showId, `${day.contentId} on ${date2}`);
+  commit();
+  return day;
+}
+function applyDayToFuture(actor, dayId) {
+  const day = getRecord(dayId);
+  if (!day?.instance || !day.scheduledDate) throw new RuleError("This day was not made from a show's template.");
+  const cs = sheetOfDay(day);
+  if (!cs) throw new RuleError("This day has no call sheet.");
+  const sheet = Object.fromEntries(SHEET_CONTENT_KEYS.map((k) => [k, structuredClone(cs[k])]));
+  const out = updateShowTemplate(actor, day.instance.templateId, { sheet, from: day.scheduledDate });
+  const t2 = requireTemplate(day.instance.templateId);
+  Object.assign(day.instance, { locked: false, lockedAt: null, lockedBy: null, templateVersion: t2.version });
+  day.version += 1;
+  logAudit(actor, "template", "record", day.contentId, "This and future: the day's call sheet is the template from here on");
+  commit();
+  return out;
+}
+function cancelDay(actor, dayId, reason) {
+  const day = getRecord(dayId);
+  if (!day?.instance || !day.scheduledDate) throw new RuleError("Only a day of a recurring show is cancelled this way.");
+  const show2 = showForPlan(actor, day.parentId ?? "");
+  const why = reason.trim();
+  if (!why) throw new RuleError("Say why this date is cancelled.");
+  const t2 = requireTemplate(day.instance.templateId);
+  if (!t2.rule.skipDates.includes(day.instance.occurrence)) t2.rule.skipDates = [...t2.rule.skipDates, day.instance.occurrence].sort();
+  t2.version += 1;
+  day.archived = true;
+  day.closedReason = `Cancelled: ${why}`;
+  day.version += 1;
+  logAudit(actor, "day-cancelled", "record", day.contentId, `${show2.title}, ${day.scheduledDate}: ${why}`);
+  commit();
+  return day;
+}
+var DAY_LABELS = ["Morning", "Afternoon", "Evening", "Late night", "Full day"];
+function setDayLabel(actor, dayId, label) {
+  const day = getRecord(dayId);
+  if (!day?.instance) throw new RuleError("Only a day of a show has a label here.");
+  showForPlan(actor, day.parentId ?? "");
+  const text4 = label.trim().slice(0, 60);
+  day.instance.label = text4 || null;
+  day.version += 1;
   commit();
   return day;
 }
@@ -14804,9 +15066,12 @@ var RPC_NAMES = {
   ],
   "production": [
     "addEventDay",
+    "applyDayToFuture",
     "canPlanShow",
+    "cancelDay",
     "createProduction",
     "resetToTemplate",
+    "setDayLabel",
     "setShowSchedule",
     "topUpShow",
     "updateEventPlan",
@@ -14921,7 +15186,20 @@ var capability = enumOf(ALL_CAPABILITIES);
 var staffCategory = z2.enum(["CRW", "VOL", "PTR"]);
 var photo = z2.object({ url, caption: short(500).optional() });
 var line2 = z2.object({ equipmentId: id, quantity: count(1e5) });
-var runItem = z2.object({ id, time, title: short(), durationMin: count(600), ownerPersonId: ref.nullable(), notes: text3(2e3) });
+var runItem = z2.object({
+  id,
+  time,
+  title: short(),
+  durationMin: count(600),
+  ownerPersonId: ref.nullable(),
+  notes: text3(2e3),
+  camera: short(120).optional(),
+  audio: short(120).optional(),
+  graphics: short(120).optional(),
+  status: z2.enum(["Planned", "Live", "Done", "Cut"]).optional(),
+  actualStart: z2.union([time, z2.literal("")]).optional(),
+  actualEnd: z2.union([time, z2.literal("")]).optional()
+});
 var sheetContent = z2.object({
   callTime: time,
   talentCall: time,
@@ -14945,7 +15223,7 @@ var sheetContent = z2.object({
   plannedGear: z2.array(line2).max(200)
 }).partial();
 var recurrence = z2.object({
-  freq: z2.enum(["weekly", "monthly"]),
+  freq: z2.enum(["daily", "weekly", "monthly"]),
   interval: count(12),
   weekdays: z2.array(count(6)).max(7),
   monthDay: count(31).nullable(),
@@ -15162,8 +15440,18 @@ var ACTIONS = {
   "production.setShowSchedule": args([id, recurrence]),
   "production.updateShowTemplate": args([
     id,
-    z2.object({ sheet: sheetContent, productionLevel: level.nullable(), ownerPersonId: ref.nullable(), horizonWeeks: count(26) }).partial()
+    z2.object({
+      sheet: sheetContent,
+      productionLevel: level.nullable(),
+      ownerPersonId: ref.nullable(),
+      horizonWeeks: count(26),
+      horizonCount: count(52),
+      from: date
+    }).partial()
   ]),
+  "production.applyDayToFuture": args([id]),
+  "production.cancelDay": args([id, short(500)]),
+  "production.setDayLabel": args([id, short(60)]),
   "production.resetToTemplate": args([id]),
   "production.topUpShow": args([id]),
   "production.updateEventPlan": args([id, eventPlan]),
@@ -15800,33 +16088,68 @@ async function accessToken(store2, username, need) {
 var addDay = (iso2) => new Date(Date.parse(`${iso2}T12:00:00Z`) + 864e5).toISOString().slice(0, 10);
 async function addToCalendar(store2, who) {
   const token = await accessToken(store2, who.user._id, "calendar");
-  const loaded = await loadDb(store2, ["records", "callSheets", "manifests", "settings", "people", "counters", "members"]);
+  const loaded = await loadDb(store2, [
+    "records",
+    "callSheets",
+    "manifests",
+    "settings",
+    "people",
+    "counters",
+    "members",
+    "recordingSessions"
+  ]);
   if (!loaded) throw new HttpError(503, "Not set up.");
-  const { rems, lead } = withDb(loaded.db, () => ({
-    rems: remindersFor(who.person.personId),
-    lead: loaded.db.settings.stageReminderHours
-  }));
+  const items = withDb(loaded.db, () => {
+    const lead = loaded.db.settings.stageReminderHours;
+    const out2 = remindersFor(who.person.personId).map((r) => ({
+      key: r.key,
+      title: r.title,
+      detail: r.detail,
+      date: r.date,
+      time: r.time ?? "",
+      end: "",
+      popupMinutes: Math.min(40320, lead * 60)
+    }));
+    const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+    const until = new Date(Date.now() + 60 * 864e5).toISOString().slice(0, 10);
+    for (const i of instancesBetween(who.actor, today, until)) {
+      const cs = i.callSheetId ? loaded.db.callSheets.find((c) => c.id === i.callSheetId) : void 0;
+      if (!i.date || i.status === "cancelled" || !cs?.crewPersonIds.includes(who.person.personId)) continue;
+      out2.push({
+        key: `instance:${i.id}`,
+        title: `${i.projectTitle}: ${i.label}`,
+        detail: [cs.callTime && `Crew call ${cs.callTime}`, i.location || cs.location, cs.crewRoles[who.person.personId]].filter(Boolean).join(". "),
+        date: i.date,
+        time: cs.callTime || i.start,
+        end: i.end,
+        popupMinutes: 1440
+      });
+    }
+    return out2;
+  });
   const out = { added: 0, already: 0, failed: 0 };
-  for (const r of rems) {
+  for (const r of items) {
     const start = r.time ? { dateTime: `${r.date}T${r.time}:00`, timeZone: TIME_ZONE2 } : { date: r.date };
-    const end = r.time ? {
-      dateTime: `${r.date}T${String(Math.min(23, Number(r.time.slice(0, 2)) + 8)).padStart(2, "0")}:${r.time.slice(3)}:00`,
-      timeZone: TIME_ZONE2
-    } : { date: addDay(r.date) };
-    const res = await web()("https://www.googleapis.com/calendar/v3/calendars/primary/events", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id: createHash3("sha1").update(r.key).digest("hex"),
-        summary: r.title,
-        description: `${r.detail}
+    const endTime = r.end && r.time && r.end > r.time ? r.end : r.time ? `${String(Math.min(23, Number(r.time.slice(0, 2)) + 8)).padStart(2, "0")}:${r.time.slice(3)}` : "";
+    const end = r.time ? { dateTime: `${r.date}T${endTime}:00`, timeZone: TIME_ZONE2 } : { date: addDay(r.date) };
+    const id2 = createHash3("sha1").update(r.key).digest("hex");
+    const body = JSON.stringify({
+      id: id2,
+      summary: r.title,
+      description: `${r.detail}
 
 From the Dawn of Faith Production Hub.`,
-        start,
-        end,
-        reminders: { useDefault: false, overrides: [{ method: "popup", minutes: Math.min(40320, lead * 60) }] }
-      })
+      start,
+      end,
+      reminders: { useDefault: false, overrides: [{ method: "popup", minutes: r.popupMinutes }] }
     });
+    const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+    const put = await web()(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${id2}`, { method: "PUT", headers, body });
+    if (put.ok) {
+      out.already++;
+      continue;
+    }
+    const res = await web()("https://www.googleapis.com/calendar/v3/calendars/primary/events", { method: "POST", headers, body });
     if (res.ok) out.added++;
     else if (res.status === 409) out.already++;
     else out.failed++;

@@ -44,6 +44,32 @@ function openLink(url: string) {
   a.remove();
 }
 
+/** The deadline reminders worked out from dates, and sending them to the team: now part of the Calendar. */
+export function DeadlineReminders() {
+  const { actor } = useApp();
+  useDb();
+  const canSend = can(actor, "reminders.sendOthers");
+  const [tab, setTab] = useState<"mine" | "send">("mine");
+  return (
+    <div className="stack">
+      <div className="wf-head">
+        <h2 className="grow">Deadlines coming up</h2>
+        {canSend && (
+          <div className="seg" role="tablist">
+            <button role="tab" aria-selected={tab === "mine"} className={tab === "mine" ? "on" : ""} onClick={() => setTab("mine")}>
+              Mine
+            </button>
+            <button role="tab" aria-selected={tab === "send"} className={tab === "send" ? "on" : ""} onClick={() => setTab("send")}>
+              Send to the team
+            </button>
+          </div>
+        )}
+      </div>
+      {tab === "mine" || !canSend ? <Mine /> : <Send />}
+    </div>
+  );
+}
+
 export function Reminders() {
   const { actor } = useApp();
   useDb();

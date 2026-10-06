@@ -26,8 +26,12 @@ const NTH_NAMES: Record<number, string> = { 1: "first", 2: "second", 3: "third",
 export function checkRule(rule: RecurrenceRule): void {
   if (!isIsoDate(rule.startDate)) throw new RuleError("Pick the date the show starts.");
   if (!Number.isInteger(rule.interval) || rule.interval < 1 || rule.interval > MAX_INTERVAL)
-    throw new RuleError(`It can repeat every 1 to ${MAX_INTERVAL} ${rule.freq === "weekly" ? "weeks" : "months"}.`);
-  if (rule.freq === "weekly") {
+    throw new RuleError(
+      `It can repeat every 1 to ${MAX_INTERVAL} ${rule.freq === "daily" ? "days" : rule.freq === "weekly" ? "weeks" : "months"}.`,
+    );
+  if (rule.freq === "daily") {
+    // Every day, or every few days, from the start: nothing more to choose.
+  } else if (rule.freq === "weekly") {
     if (!rule.weekdays.length) throw new RuleError("Choose the day of the week it happens on.");
     if (rule.weekdays.some((d) => !Number.isInteger(d) || d < 0 || d > 6)) throw new RuleError("Choose days of the week.");
   } else if (rule.freq === "monthly") {
@@ -37,7 +41,7 @@ export function checkRule(rule: RecurrenceRule): void {
       throw new RuleError("Choose a day of the month from 1 to 31.");
     if (rule.nth && (![1, 2, 3, 4, -1].includes(rule.nth.week) || rule.nth.weekday < 0 || rule.nth.weekday > 6))
       throw new RuleError("Choose the first, second, third, fourth or last day of the week in the month.");
-  } else throw new RuleError("Choose weekly or monthly.");
+  } else throw new RuleError("Choose daily, weekly or monthly.");
   if (rule.until !== null && rule.count !== null) throw new RuleError("End it on a date or after a number of times, not both.");
   if (rule.until !== null && (!isIsoDate(rule.until) || rule.until < rule.startDate))
     throw new RuleError("It cannot end before it starts.");
@@ -73,7 +77,13 @@ export function occurrences(rule: RecurrenceRule, to: string): string[] {
   const end = rule.until && rule.until < to ? rule.until : to;
   const out: string[] = [];
   const limit = rule.count ?? Infinity;
-  if (rule.freq === "weekly") {
+  if (rule.freq === "daily") {
+    for (let n = toDay(rule.startDate); out.length < limit; n += rule.interval) {
+      const date = fromDay(n);
+      if (date > end) break;
+      out.push(date);
+    }
+  } else if (rule.freq === "weekly") {
     // Weeks are counted from the Sunday of the week the show starts in, so "every 2 weeks" keeps its rhythm.
     const weekStart = toDay(rule.startDate) - weekdayOf(rule.startDate);
     const days = [...new Set(rule.weekdays)].sort((a, b) => a - b);
@@ -112,7 +122,8 @@ export const occurrencesBetween = (rule: RecurrenceRule, from: string, to: strin
 export function describeRule(rule: RecurrenceRule, fmt: (iso: string) => string = (x) => x): string {
   const every = rule.interval === 1 ? "" : ` ${rule.interval}`;
   let what: string;
-  if (rule.freq === "weekly") {
+  if (rule.freq === "daily") what = rule.interval === 1 ? "Every day" : `Every ${rule.interval} days`;
+  else if (rule.freq === "weekly") {
     const names = [...new Set(rule.weekdays)].sort((a, b) => a - b).map((d) => WEEKDAY_NAMES[d]);
     const list = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names[0];
     what = rule.interval === 1 ? `Every ${list}` : `Every${every} weeks on ${list}`;

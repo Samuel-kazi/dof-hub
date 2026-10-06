@@ -96,7 +96,7 @@ t("live sessions have a different pipeline (no Ingest or Editorial)", () => {
   const show = C.createRecord(hop(), { category: "live", title: "L" });
   const r = getRecord(`${show.contentId}-D1`)!; // a live show is made of days, and each day carries the pipeline
   assert.equal(Object.keys(r.stageOutputs).includes("Ingest"), false);
-  assert.equal(Object.keys(r.stageOutputs).includes("Show"), true);
+  assert.equal(Object.keys(r.stageOutputs).includes("Production"), true);
 });
 t("rollup counts leaves", () => {
   const roll = C.getRollupStatus("DOF-SER-001");

@@ -67,6 +67,14 @@ const form = (key: string, title: string, tile: FormTile, extra: Partial<Catalog
 });
 const tool = (key: string, title: string, which: "storyboard" | "shotList"): CatalogEntry => ({ key, title, kind: "tool", tool: which });
 const review = (reviews: string): CatalogEntry => ({ key: "theological_review", title: "Theological Review", kind: "review", reviews });
+// One page with four section cards (roles, the items to record, sessions, call sheets), then its own pages.
+const recordingPlan = doc("recording_plan", "Recording Plan", [{ title: "Cards and storage", storage: true }, "Notes"], { plan: true });
+/** A series' or documentary's planning tiles: the Recording Plan (roles, sessions and call sheets are in it). */
+const planOrForms = (): CatalogEntry[] => [
+  recordingPlan,
+  tool("storyboard", "Storyboard", "storyboard"),
+  tool("shot_list", "Shot List", "shotList"),
+];
 
 // The two brief fields the Development gate reads: written at the top of the brief's first page.
 const IDEA_FIELDS = [
@@ -125,13 +133,10 @@ function seriesCatalog(formType: FormType): Record<WorkflowStage, CatalogEntry[]
       ...(formType === "testimonial" ? [form("consent", "Consent and Release", "consent")] : []),
       earlierForm,
     ],
+    // The Recording Plan holds the roles, the episodes, the sessions they are recorded in and each session's call sheet.
     "Pre-production": [
       doc("production_pack", "Production Pack", ["Set design", "Rehearsal notes"]),
-      tool("storyboard", "Storyboard", "storyboard"),
-      tool("shot_list", "Shot List", "shotList"),
-      form("roles", "Roles", "roles"),
-      form("sessions", "Sessions", "sessions"),
-      form("call_sheet", "Call Sheet", "callSheet"),
+      ...planOrForms(),
       form("gear", "Gear", "gear"),
     ],
     Production: [
@@ -166,11 +171,7 @@ function documentaryCatalog(formType: FormType): Record<WorkflowStage, CatalogEn
     ],
     "Pre-production": [
       doc("treatment", "Treatment", ["Story structure", "Interview guide"]),
-      tool("storyboard", "Storyboard", "storyboard"),
-      tool("shot_list", "Shot List", "shotList"),
-      form("roles", "Roles", "roles"),
-      form("sessions", "Sessions", "sessions"),
-      form("call_sheet", "Call Sheet", "callSheet"),
+      ...planOrForms(),
       form("gear", "Gear", "gear"),
     ],
     Production: [
@@ -206,11 +207,7 @@ const devotionCatalog: Record<WorkflowStage, CatalogEntry[]> = {
   ],
   // The Recording Plan holds the roles, the devotions, the sessions they are recorded in and each session's call sheet;
   // a session's call sheet shows one storyboard and one shot list of the project's, chosen from these.
-  "Pre-production": [
-    doc("recording_plan", "Recording Plan", [{ title: "Cards and storage", storage: true }, "Notes"], { plan: true }),
-    tool("storyboard", "Storyboard", "storyboard"),
-    tool("shot_list", "Shot List", "shotList"),
-  ],
+  "Pre-production": [recordingPlan, tool("storyboard", "Storyboard", "storyboard"), tool("shot_list", "Shot List", "shotList")],
   Production: [form("recording_day_view", "Recording Day View", "recordingDayView"), form("storage", "Storage", "storage")],
   "Post production": [doc("edit_notes", "Edit Notes", ["Notes to the editor"]), form("review", "Review", "review")],
   "Marketing and distribution": [
@@ -218,6 +215,24 @@ const devotionCatalog: Record<WorkflowStage, CatalogEntry[]> = {
     doc("study_notes", "Study Notes", ["Study notes"]),
   ],
 };
+
+/**
+ * What a Recording Plan's items are called for each kind of project, and where they come from (build prompt v2,
+ * section 8: labels per type live in configuration, so they can change without code).
+ */
+export interface PlanLabels {
+  one: string; // "episode"
+  many: string; // "episodes"
+  title: string; // "Episodes"
+  source: string; // where the list is read from
+  detail: string; // the second column: a devotion's scripture, an episode's question
+}
+export const planLabels = (formType: FormType): PlanLabels =>
+  catalogTypeOf(formType) === "devotion"
+    ? { one: "devotion", many: "devotions", title: "Devotions", source: "the Devotional Script", detail: "Scripture" }
+    : catalogTypeOf(formType) === "documentary"
+      ? { one: "part", many: "parts", title: "Parts", source: "the Planned Parts in Development", detail: "Question" }
+      : { one: "episode", many: "episodes", title: "Episodes", source: "the Planned Episodes in Development", detail: "Question" };
 
 export const catalogTypeOf = (formType: FormType): CatalogType =>
   formType === "devotion" ? "devotion" : formType === "documentary_dof" || formType === "documentary_pitched" ? "documentary" : "series";

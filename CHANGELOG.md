@@ -82,6 +82,47 @@ on):
   review.
 - Switching it off brings the review back as a gate, as before. No data changes either way.
 
+The rest of the rework, built together (data version 22):
+
+- **The review, refined.** An approval from before the review documents counts: both earlier checkpoints approved,
+  the review passed by hand while it was a gate (with its note), or a project moved across after Development. Naming
+  reviewers after such an approval asks for a new review, and the banner and card say "New theological review
+  requested". The review tag on a project's board card is a button: it opens where the review stands, each
+  reviewer's decision and each time someone went ahead without it. Scheduling asks only when a session gets a date it
+  did not have.
+- **The Recording Plan for series and documentaries**, as devotions have it: Project roles (the usual six, each with
+  someone from the crew), the episodes (or a documentary's parts) from Development, each on one session, the
+  sessions with their ticks, and a call sheet per session. It replaces the Roles, Sessions and Call Sheet forms. The
+  Pre-production gate is now the same for every kind: each role on the plan needs a person.
+- **Live Shows and DOF Music on the five stages** (Development, Pre-production, Production, Post production,
+  Marketing and distribution), with their checklists in configuration. The upgrade moves every record across: Prep,
+  Build and Rehearse into Pre-production; Show and Wrap into Production; Review and Post Production into Post
+  production; Music's Idea into Development, Recording into Production, audio post, video editing and review into Post
+  production, Publish into Marketing and distribution. A live show leaves Development once its date is set and its
+  producer named.
+- **Recurring shows**: daily repeat; days made for the next 8 dates (changeable on the template); "Apply to this and
+  future days" (the day's call sheet becomes the template from that day on); "Cancel this date" (kept, marked
+  cancelled, left out of the schedule); a day's label (Morning, Afternoon, Evening, Late night, Full day). A live run
+  of show has camera, audio, graphics, status (planned, live, done, cut) and actual start and end.
+- **Equipment, Lending and Role kits.** New loan (borrower, phone, organisation, items, date out, expected back,
+  required), check-in a few at a time with condition, keep longer, call off, a printed receipt with signature lines,
+  overdue loans flagged. Role kits are edited there and offered on call sheets item by item. **General Use moves to
+  Lending**: a record with gear lists becomes a loan holding the same items (its open lists released, with a note);
+  the rest are archived; Content IDs keep working.
+- **Documents, Templates**: storyboards and shot lists with no Content ID, as templates or kept for practice or an
+  event; "Save as template" on a project's board or list; a project starts from one through "Start from".
+- **The Calendar absorbs Reminders.** Month and Agenda views; a recurring show sits on each of its dates (Fridays
+  only for Vespers), never a bar across months, and its days no longer stack bars; a multi-day event is one bar from
+  its first day to its last, and clicking a day on it shows that day's crew call, place, crew and run of show with its
+  call sheet. Loans due back and one's own reminders are on it. The Reminders view holds one's reminders ("+ Reminder",
+  or "Remind me…" on a day's session, show day, call sheet, deadline or loan; in the bell and by email a day or more
+  ahead; repeating) and the deadlines coming up (as the Reminders page had them, with sending to the team). The
+  Urgency view is the urgency report, filterable, sortable and printable. Reminders leaves the side menu; old links
+  open the Calendar on its Reminders view. The bell shows notifications, unread first, and marks them read.
+- **Google Calendar**, for those who link it and allow the calendar: "Add to Google Calendar" now also sends the
+  sessions and show days you are on the call sheet of (60 days ahead), and syncing again updates each event where it
+  is (a session moved to another day moves in Google), never adding one twice.
+
 ## Unreleased: one production system, with the call sheet at its centre
 
 Being built in phases. Phase 1, the production core:

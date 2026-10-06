@@ -53,7 +53,7 @@ await t("a dry run reports, part by part, what the upgrade from version 14 would
   const s = await version14Store();
   const before = await s.state.head();
   const report = (await upgradeStore(s, false))!;
-  assert.deepEqual([report.from, report.to, report.applied, report.backup], [14, 21, false, null]);
+  assert.deepEqual([report.from, report.to, report.applied, report.backup], [14, 22, false, null]);
   assert.deepEqual(await s.state.head(), before, "nothing was written");
   assert.equal(backups(s).size, 0, "and no copy was needed");
   const records = report.parts.find((p) => p.part === "records")!;
@@ -73,19 +73,19 @@ await t("a dry run reports, part by part, what the upgrade from version 14 would
     [...KEYS],
     "every part is counted",
   );
-  assert.match(describeUpgrade(report), /Would upgrade the data from version 14 to 21/);
+  assert.match(describeUpgrade(report), /Would upgrade the data from version 14 to 22/);
 });
 
 await t("the upgrade keeps a copy of the data first, saves it all at once, and running it again does nothing", async () => {
   const s = await version14Store();
   const report = (await upgradeStore(s, true))!;
   assert.equal(report.applied, true);
-  assert.match(report.backup ?? "", /before_v21/);
-  const copy = backups(s).get("before_v21")!;
+  assert.match(report.backup ?? "", /before_v22/);
+  const copy = backups(s).get("before_v22")!;
   assert.equal(copy.head.schemaVersion, 14, "the copy is of the data as it was");
   assert.equal(copy.items.filter((it) => it.k === "records").length, buildSeed().records.length);
   const head = (await s.state.head())!;
-  assert.equal(head.schemaVersion, 21);
+  assert.equal(head.schemaVersion, 22);
   // Nothing is lost. Version 19 gives each coming day of a live show its call sheet, and says so in the activity log.
   const grew = report.parts.filter((p) => p.before !== p.after);
   assert.deepEqual(
@@ -95,7 +95,7 @@ await t("the upgrade keeps a copy of the data first, saves it all at once, and r
   );
   assert.ok(grew.every((p) => p.after > p.before));
   const again = (await upgradeStore(s, true))!;
-  assert.deepEqual([again.from, again.applied, again.backup], [21, false, null]);
+  assert.deepEqual([again.from, again.applied, again.backup], [22, false, null]);
   assert.deepEqual(await s.state.head(), head, "nothing was written the second time");
 });
 
@@ -105,9 +105,9 @@ await t("data saved at version 16 is upgraded on first read: a copy first, then 
   old.settings.newDocuments = ["series"];
   await s.state.init(toItems(old), 16);
   const snap = (await snapshotFor(s, { personId: "DOF-P-HOP-001", role: "HOP" }))!.db;
-  assert.equal(snap.schemaVersion, 21);
-  assert.ok(backups(s).has("before_v21"), "a copy was kept first");
-  assert.equal(backups(s).get("before_v21")!.head.schemaVersion, 16);
+  assert.equal(snap.schemaVersion, 22);
+  assert.ok(backups(s).has("before_v22"), "a copy was kept first");
+  assert.equal(backups(s).get("before_v22")!.head.schemaVersion, 16);
   for (const id of [
     "DOF-SER-001-S1|Development|show_brief",
     "DOF-DEV-001|Development|devotional_script",

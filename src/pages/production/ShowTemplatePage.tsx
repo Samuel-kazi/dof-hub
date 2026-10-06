@@ -4,7 +4,7 @@ import { getRecord } from "../../services/access";
 import { describeRule, occurrencesBetween } from "../../services/recurrence";
 import { addDaysIso, fmtDate, todayIso } from "../../services/utils";
 import { roleOn } from "../../services/wrapped/team";
-import { canPlanShow, daysOfShow, getTemplate, updateShowTemplate } from "../../services/wrapped/production";
+import { canPlanShow, daysOfShow, getTemplate, updateShowTemplate, DEFAULT_HORIZON_COUNT } from "../../services/wrapped/production";
 import { listLocations } from "../../services/wrapped/locations";
 import { useApp } from "../../ui/AppContext";
 import { LevelField } from "../../ui/LevelField";
@@ -102,23 +102,24 @@ export function ShowTemplatePage({ id }: { id: string }) {
               onChange={(p) => report(attempt(() => updateShowTemplate(actor, t.id, { ownerPersonId: p })))}
             />
           </Field>
-          <Field label="Days made ahead (weeks)">
+          <Field label="Days made ahead (the next so many dates)">
             <input
               type="number"
-              aria-label="Days made ahead, in weeks"
+              aria-label="Days made ahead, as a number of dates"
               min={1}
-              max={26}
-              defaultValue={t.horizonWeeks}
+              max={52}
+              defaultValue={t.horizonCount ?? DEFAULT_HORIZON_COUNT}
               disabled={!plan}
               onBlur={(e) => {
                 const n = Number(e.target.value);
-                if (n !== t.horizonWeeks) report(attempt(() => updateShowTemplate(actor, t.id, { horizonWeeks: n })));
+                if (n !== t.horizonCount) report(attempt(() => updateShowTemplate(actor, t.id, { horizonCount: n })));
               }}
             />
           </Field>
         </div>
         <p className="muted">
-          Each day runs through the live pipeline (Prep, Build, Rehearse, Show, Wrap, Review, Post Production), due around its own date.
+          Each day runs through the five stages (Development, Pre-production, Production, Post production, Marketing and distribution), due
+          around its own date.
         </p>
       </section>
       <SectionNav />
@@ -135,7 +136,7 @@ export function ShowTemplatePage({ id }: { id: string }) {
       </Section>
       <LogisticsSection {...props} />
       <ContactsSection {...props} crewRows={crewContactRows(t.sheet, actor, (pid) => roleOn(pid, show) || null)} />
-      <RunOfShowSection {...props} />
+      <RunOfShowSection {...props} live />
       <TechnicalCheckSection {...props} canTick={false} />
       <RehearsalSection {...props} canTick={false} />
     </div>

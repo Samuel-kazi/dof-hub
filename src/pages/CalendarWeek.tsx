@@ -28,7 +28,7 @@ export function CalendarWeek({
   today: string;
   selected: string | null;
   onSelectDay: (date: string) => void;
-  onOpenEvent: (event: CalEvent) => void;
+  onOpenEvent: (event: CalEvent, date: string) => void; // the day of the bar that was clicked
 }) {
   const { lanes, dotsByDate } = layoutWeek(events, weekDates);
   const barSpace = lanes.length ? lanes.length * BAR_ROW + 6 : 0;
@@ -82,7 +82,14 @@ export function CalendarWeek({
                   color: textOn(seg.event.color),
                 }}
                 title={`${seg.event.title}${seg.event.detail ? `. ${seg.event.detail}` : ""}`}
-                onClick={() => onOpenEvent(seg.event)}
+                onClick={(ev) => {
+                  // Which day of the bar: a multi-day event opens the day clicked.
+                  const box = ev.currentTarget.getBoundingClientRect();
+                  const col = box.width
+                    ? Math.min(seg.span - 1, Math.max(0, Math.floor(((ev.clientX - box.left) / box.width) * seg.span)))
+                    : 0;
+                  onOpenEvent(seg.event, weekDates[seg.startCol - 1 + col] ?? seg.event.date);
+                }}
               >
                 {seg.event.title}
               </button>

@@ -637,7 +637,7 @@ export function PostProductionPanel({ rec }: { rec: ContentRecord }) {
   const { actor, attempt } = useApp();
   const write = canWrite(actor, rec);
   const [splitting, setSplitting] = useState(false);
-  if (rec.category !== "live" || rec.pipelineStage !== "Post Production") return null;
+  if (rec.category !== "live" || rec.pipelineStage !== "Post production") return null;
   const spinOffs = spinOffsOf(rec.contentId);
 
   return (
@@ -788,7 +788,7 @@ function SplitRecordingModal({ day, onClose }: { day: ContentRecord; onClose: ()
   );
 }
 
-const SPIN_OFF_LABEL: Record<"music" | "series", string> = { music: "Audio post-production", series: "Editorial" };
+const SPIN_OFF_LABEL: Record<"music" | "series", string> = { music: "Post production", series: "Editorial" };
 
 /**
  * A live show's strike plan: what comes down every night, and what stays rigged until the last day.

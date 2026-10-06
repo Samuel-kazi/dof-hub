@@ -6,6 +6,7 @@ import { loadDb, mutateState, withDb } from "./state";
 import type { GoogleDoc, Store } from "./stores";
 import { dueSoon, logSent, messageFor, remindersFor } from "../src/services/reminders";
 import { can } from "../src/services/permissions";
+import { instancesBetween } from "../src/services/productionInstances";
 
 // A person can choose to link a Google account. Nothing in the app needs it. When they do, they also
 // choose what it may be used for: putting their reminders in their Google Calendar, and sending
@@ -163,36 +164,92 @@ async function accessToken(store: Store, username: string, need: "calendar" | "g
 
 const addDay = (iso: string): string => new Date(Date.parse(`${iso}T12:00:00Z`) + 86400000).toISOString().slice(0, 10);
 
-/** Puts the person's coming reminders in their own Google Calendar. Adding twice does nothing extra. */
+interface CalendarItem {
+  key: string; // stable: the same item always has the same Google event
+  title: string;
+  detail: string;
+  date: string;
+  time: string;
+  end: string; // HH:MM, or empty
+  popupMinutes: number;
+}
+
+/**
+ * Puts the person's coming reminders, and the recording sessions and show days they are on the call sheet of (the next
+ * 60 days), in their own Google Calendar: one way, from the hub to Google. Each item is always the same event, so
+ * syncing again updates it (a session moved to another day moves in Google too) and never adds it twice. Opt-in: only
+ * for someone who linked Google and allowed the calendar.
+ */
 export async function addToCalendar(store: Store, who: Authed): Promise<{ added: number; already: number; failed: number }> {
   const token = await accessToken(store, who.user._id, "calendar");
-  const loaded = await loadDb(store, ["records", "callSheets", "manifests", "settings", "people", "counters", "members"]);
+  const loaded = await loadDb(store, [
+    "records",
+    "callSheets",
+    "manifests",
+    "settings",
+    "people",
+    "counters",
+    "members",
+    "recordingSessions",
+  ]);
   if (!loaded) throw new HttpError(503, "Not set up.");
-  const { rems, lead } = withDb(loaded.db, () => ({
-    rems: remindersFor(who.person.personId),
-    lead: loaded.db.settings.stageReminderHours,
-  }));
+  const items = withDb(loaded.db, (): CalendarItem[] => {
+    const lead = loaded.db.settings.stageReminderHours;
+    const out: CalendarItem[] = remindersFor(who.person.personId).map((r) => ({
+      key: r.key,
+      title: r.title,
+      detail: r.detail,
+      date: r.date,
+      time: r.time ?? "",
+      end: "",
+      popupMinutes: Math.min(40320, lead * 60),
+    }));
+    const today = new Date().toISOString().slice(0, 10);
+    const until = new Date(Date.now() + 60 * 86400000).toISOString().slice(0, 10);
+    for (const i of instancesBetween(who.actor, today, until)) {
+      const cs = i.callSheetId ? loaded.db.callSheets.find((c) => c.id === i.callSheetId) : undefined;
+      if (!i.date || i.status === "cancelled" || !cs?.crewPersonIds.includes(who.person.personId)) continue;
+      out.push({
+        key: `instance:${i.id}`,
+        title: `${i.projectTitle}: ${i.label}`,
+        detail: [cs.callTime && `Crew call ${cs.callTime}`, i.location || cs.location, cs.crewRoles[who.person.personId]]
+          .filter(Boolean)
+          .join(". "),
+        date: i.date,
+        time: cs.callTime || i.start,
+        end: i.end,
+        popupMinutes: 1440,
+      });
+    }
+    return out;
+  });
   const out = { added: 0, already: 0, failed: 0 };
-  for (const r of rems) {
+  for (const r of items) {
     const start = r.time ? { dateTime: `${r.date}T${r.time}:00`, timeZone: TIME_ZONE } : { date: r.date };
-    const end = r.time
-      ? {
-          dateTime: `${r.date}T${String(Math.min(23, Number(r.time.slice(0, 2)) + 8)).padStart(2, "0")}:${r.time.slice(3)}:00`,
-          timeZone: TIME_ZONE,
-        }
-      : { date: addDay(r.date) };
-    const res = await web()("https://www.googleapis.com/calendar/v3/calendars/primary/events", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id: createHash("sha1").update(r.key).digest("hex"),
-        summary: r.title,
-        description: `${r.detail}\n\nFrom the Dawn of Faith Production Hub.`,
-        start,
-        end,
-        reminders: { useDefault: false, overrides: [{ method: "popup", minutes: Math.min(40320, lead * 60) }] },
-      }),
+    const endTime =
+      r.end && r.time && r.end > r.time
+        ? r.end
+        : r.time
+          ? `${String(Math.min(23, Number(r.time.slice(0, 2)) + 8)).padStart(2, "0")}:${r.time.slice(3)}`
+          : "";
+    const end = r.time ? { dateTime: `${r.date}T${endTime}:00`, timeZone: TIME_ZONE } : { date: addDay(r.date) };
+    const id = createHash("sha1").update(r.key).digest("hex");
+    const body = JSON.stringify({
+      id,
+      summary: r.title,
+      description: `${r.detail}\n\nFrom the Dawn of Faith Production Hub.`,
+      start,
+      end,
+      reminders: { useDefault: false, overrides: [{ method: "popup", minutes: r.popupMinutes }] },
     });
+    const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+    // Update it where it is; if Google does not have it yet, add it.
+    const put = await web()(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${id}`, { method: "PUT", headers, body });
+    if (put.ok) {
+      out.already++;
+      continue;
+    }
+    const res = await web()("https://www.googleapis.com/calendar/v3/calendars/primary/events", { method: "POST", headers, body });
     if (res.ok) out.added++;
     else if (res.status === 409) out.already++;
     else out.failed++;

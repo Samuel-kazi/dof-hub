@@ -50,6 +50,7 @@ import { Access } from "../pages/Access";
 import { Reminders } from "../pages/Reminders";
 import { CalendarPage } from "../pages/Calendar";
 import { Soon } from "../pages/Soon";
+import { markNotificationsRead, notificationsFor } from "../services/wrapped/alerts";
 
 const ICONS: Record<ModuleKey, () => JSX.Element> = {
   dashboard: IconHome,
@@ -142,7 +143,7 @@ function routeFor(m: ModuleKey): Route {
 }
 
 export function Shell() {
-  const { actor, me, route, go, back, canBack, menu, toast, logout, notifications, clearNotifications, copyLink } = useApp();
+  const { actor, me, route, go, back, canBack, menu, toast, attempt, logout, notifications, clearNotifications, copyLink } = useApp();
   const db = useDb();
   const dockKey = `dof-dock-${actor.personId}`;
   const [wide, setWide] = useState(() => {
@@ -181,6 +182,10 @@ export function Shell() {
   const [palette, setPalette] = useState(false);
   // The new shell (build prompt v2): Settings opens from the profile menu, not the side menu; Ctrl+K searches.
   const shell = featureOn("shell");
+  // The Calendar absorbs Reminders (build prompt v2, section 12): the menu item goes, and old links open the Calendar.
+  const calendar2 = featureOn("calendar2");
+  const bell = calendar2 ? notificationsFor(actor.personId) : [];
+  const unread = bell.filter((n) => !n.readAt);
   const role = ROLES[actor.role];
   const active = moduleOfRoute(route);
   const reminders = getReminders(actor);
@@ -255,6 +260,15 @@ export function Shell() {
     e.stopPropagation();
     const r = e.currentTarget.getBoundingClientRect();
     menu({ clientX: r.right - 220, clientY: r.bottom + 6, preventDefault: () => {} }, [
+      ...bell.slice(0, 6).map((n) => ({
+        label: `${n.readAt ? "" : "● "}${n.title}${n.body ? `: ${n.body}` : ""}`,
+        onClick: () => {
+          if (!n.readAt) attempt(() => markNotificationsRead(actor, [n.id]));
+          if (n.link) window.location.hash = n.link;
+        },
+      })),
+      ...(unread.length ? [{ label: "Mark all as read", onClick: () => attempt(() => markNotificationsRead(actor, [])) }] : []),
+      ...(bell.length ? [{ label: "", divider: true, onClick: () => {} }] : []),
       ...notifications.slice(0, 5).map((n) => ({ label: `${n.title}: ${n.body}`, onClick: () => {} })),
       ...(notifications.length
         ? [
@@ -285,7 +299,7 @@ export function Shell() {
           </div>
         </div>
         {modulesFor(actor)
-          .filter((m) => !(shell && m === "settings"))
+          .filter((m) => !(shell && m === "settings") && !(calendar2 && m === "reminders"))
           .map((m) => {
             const Icon = ICONS[m];
             const built = BUILT.includes(m);
@@ -377,7 +391,9 @@ export function Shell() {
           </div>
           <button className="icon-btn" onClick={openBell} aria-label="Deadline reminders" title="Deadline reminders">
             <IconBell />
-            {reminders.length + notifications.length > 0 && <span className="dot">{reminders.length + notifications.length}</span>}
+            {reminders.length + notifications.length + unread.length > 0 && (
+              <span className="dot">{reminders.length + notifications.length + unread.length}</span>
+            )}
           </button>
           {shell ? (
             <button className="user-chip glass" onClick={openProfile} aria-haspopup="menu" aria-label={`${me.name}: profile menu`}>
@@ -432,7 +448,7 @@ export function Shell() {
             {route.n === "storage" && <Storage />}
             {route.n === "drive" && <DrivePage id={route.id} />}
             {route.n === "access" && <Access />}
-            {route.n === "reminders" && <Reminders />}
+            {route.n === "reminders" && (calendar2 ? <CalendarPage key="reminders" initialView="reminders" /> : <Reminders />)}
             {route.n === "calendar" && <CalendarPage />}
             {route.n === "documents" && <Documents />}
             {route.n === "doc" && <DocPage id={route.id} />}

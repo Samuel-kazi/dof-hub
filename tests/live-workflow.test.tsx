@@ -7,6 +7,7 @@ import { AppProvider } from "../src/ui/AppContext";
 import { RecordPage } from "../src/pages/RecordPage";
 import { login } from "../src/services/auth";
 import { setDb } from "../src/data/store";
+import { commit as commitDb } from "../src/data/store";
 import { buildSeed } from "../src/data/seed";
 import { getRecord } from "../src/services/access";
 import * as C from "../src/services/content";
@@ -36,6 +37,17 @@ function pushToStage(id: string, target: string) {
   const actor = hop();
   let r = getRecord(id)!;
   while (r.pipelineStage !== target) {
+    // A live day leaves Development with its show date and producer: given here when a new show has none yet.
+    if (r.pipelineStage === "Development") {
+      r.scheduledDate ??= "2026-10-02";
+      r.assigneePersonId ??= "DOF-P-HOP-001";
+      commitDb();
+    }
+    // Post production, no longer the last stage, asks first whether anything recorded needs it.
+    if (r.pipelineStage === "Post production" && r.postProductionNeeded == null) {
+      C.setPostProductionNeeded(actor, id, false, r.version);
+      r = getRecord(id)!;
+    }
     for (const task of r.tasks.filter((x) => x.stage === r.pipelineStage)) C.updateTask(actor, id, task.id, { done: true });
     C.setStageOutput(actor, id, true, r.version);
     r = getRecord(id)!;
@@ -46,18 +58,19 @@ function pushToStage(id: string, target: string) {
 
 t("a live day's pipeline rail shows the new stages in order", () => {
   const out = html("DOF-LIVE-001-D1");
-  for (const stage of ["Prep", "Build", "Rehearse", "Show", "Wrap", "Review", "Post Production"]) assert.match(out, new RegExp(stage));
+  for (const stage of ["Development", "Pre-production", "Production", "Post production", "Marketing and distribution"])
+    assert.match(out, new RegExp(stage));
   assert.doesNotMatch(out, /Streaming/);
 });
 
-t("the post-production fork only appears once a day reaches Post Production", () => {
+t("the post-production fork only appears once a day reaches Post production", () => {
   assert.doesNotMatch(html("DOF-LIVE-001-D1"), /something was recorded/);
-  pushToStage("DOF-LIVE-001-D1", "Post Production");
+  pushToStage("DOF-LIVE-001-D1", "Post production");
   assert.match(html("DOF-LIVE-001-D1"), /something was recorded/);
 });
 
 t("answering yes shows the split button and any recordings already split off", () => {
-  pushToStage("DOF-LIVE-001-D1", "Post Production");
+  pushToStage("DOF-LIVE-001-D1", "Post production");
   C.setPostProductionNeeded(hop(), "DOF-LIVE-001-D1", true);
   const before = html("DOF-LIVE-001-D1");
   assert.match(before, /Split off a recording/);
@@ -69,13 +82,15 @@ t("answering yes shows the split button and any recordings already split off", (
 });
 
 t("answering no does not ask for a split", () => {
-  pushToStage("DOF-LIVE-002-D2", "Post Production");
+  pushToStage("DOF-LIVE-002-D2", "Post production");
   C.setPostProductionNeeded(hop(), "DOF-LIVE-002-D2", false);
   assert.doesNotMatch(html("DOF-LIVE-002-D2"), /Split off a recording/);
 });
 
 t("every live day and its spin-off destinations render without error across the pipeline", () => {
-  for (const stage of categoryOf("live").stages.map((s) => s.name)) {
+  const names = categoryOf("live").stages.map((s) => s.name);
+  const from = names.indexOf(getRecord("DOF-LIVE-002-D4")!.pipelineStage!);
+  for (const stage of names.slice(from)) {
     pushToStage("DOF-LIVE-002-D4", stage);
     html("DOF-LIVE-002-D4");
   }
@@ -91,10 +106,10 @@ t("the show's own page shows its strike plan, but a day's page does not", () => 
   assert.doesNotMatch(html("DOF-LIVE-002-D1"), /Strike plan/);
 });
 
-t("a show with no strike plan yet says so, without breaking Wrap for its days", () => {
+t("a show with no strike plan yet says so, without breaking the strike (Production) for its days", () => {
   const show = C.createRecord(hop(), { category: "live", title: "New show" });
   assert.match(html(show.contentId), /No strike plan yet/);
-  pushToStage(`${show.contentId}-D1`, "Wrap");
+  pushToStage(`${show.contentId}-D1`, "Production");
   const day = getRecord(`${show.contentId}-D1`)!;
   assert.deepEqual(C.openTasks(day), []);
 });

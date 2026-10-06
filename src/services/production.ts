@@ -12,7 +12,14 @@ import type {
 } from "../types";
 import { RuleError } from "../types";
 import { categoryOf } from "../config/categories";
-import { DEFAULT_TECH_CHECK, EVENT_PLAN_FIELDS, MODE_LABEL, blankEventPlan, blankSheetContent } from "../config/callSheet";
+import {
+  DEFAULT_TECH_CHECK,
+  EVENT_PLAN_FIELDS,
+  MODE_LABEL,
+  SHEET_CONTENT_KEYS,
+  blankEventPlan,
+  blankSheetContent,
+} from "../config/callSheet";
 import { commit, getDb, nextCounter } from "../data/store";
 import { claimId, localId } from "../data/ids";
 import { canWrite, getRecord, isHop } from "./access";
@@ -82,6 +89,20 @@ export function sheetOfDay(day: ContentRecord): CallSheet | undefined {
   );
 }
 
+/** How many coming dates a new recurring show makes days for (build prompt v2: the next 8). */
+export const DEFAULT_HORIZON_COUNT = 8;
+export const MAX_HORIZON_COUNT = 52;
+
+/**
+ * The last date a recurring show's days are made up to: the date of its next `horizonCount` dates from today, or
+ * with no count (shows made before the count) so many weeks ahead.
+ */
+export function horizonEnd(t: ShowTemplate, today: string): string {
+  if (!t.horizonCount) return addDaysIso(today, t.horizonWeeks * 7);
+  const coming = occurrencesBetween(t.rule, today, addDaysIso(today, 3 * 366));
+  return coming[Math.min(t.horizonCount, coming.length) - 1] ?? today;
+}
+
 /** Whether a day still follows its show's template (made from it, and not changed by hand since). */
 export const followsTemplate = (day: ContentRecord): boolean => !!day.instance && !day.instance.locked;
 
@@ -90,7 +111,7 @@ export function offSchedule(day: ContentRecord, today = todayIso()): boolean {
   if (!day.instance || !day.scheduledDate || day.scheduledDate < today) return false;
   const t = getTemplate(day.instance.templateId);
   if (!t) return false;
-  const to = addDaysIso(today, t.horizonWeeks * 7);
+  const to = horizonEnd(t, today);
   return (
     day.instance.occurrence >= today &&
     day.instance.occurrence <= to &&
@@ -198,7 +219,7 @@ export interface ScheduleResult {
  */
 function syncSchedule(actor: Actor, show: ContentRecord, t: ShowTemplate, today: string): ScheduleResult {
   const out: ScheduleResult = { made: [], restored: [], removed: [], kept: [], booked: 0 };
-  const to = addDaysIso(today, t.horizonWeeks * 7);
+  const to = horizonEnd(t, today);
   const wanted = occurrencesBetween(t.rule, today, to);
   const wantedSet = new Set(wanted);
   const mine = daysOfShow(show.contentId, true).filter((d) => d.instance?.templateId === t.id);
@@ -316,6 +337,7 @@ export function createProduction(actor: Actor, input: ProductionInput): ContentR
       productionLevel: input.productionLevel ?? null,
       ownerPersonId: input.assigneePersonId || null,
       horizonWeeks: DEFAULT_HORIZON_WEEKS,
+      horizonCount: DEFAULT_HORIZON_COUNT,
       version: 1,
       createdAt: at,
       updatedAt: at,
@@ -366,6 +388,8 @@ export interface TemplatePatch {
   productionLevel?: ProductionLevel | null;
   ownerPersonId?: string | null;
   horizonWeeks?: number;
+  horizonCount?: number;
+  from?: string; // "this and future": only days on or after this date take the change (default: every coming day)
 }
 
 export interface TemplateResult {
@@ -433,12 +457,18 @@ export function updateShowTemplate(actor: Actor, templateId: string, patch: Temp
       throw new RuleError(`Make days from 1 to ${MAX_HORIZON_WEEKS} weeks ahead.`);
     t.horizonWeeks = patch.horizonWeeks;
   }
+  if (patch.horizonCount !== undefined) {
+    if (!Number.isInteger(patch.horizonCount) || patch.horizonCount < 1 || patch.horizonCount > MAX_HORIZON_COUNT)
+      throw new RuleError(`Make the next 1 to ${MAX_HORIZON_COUNT} days ahead.`);
+    t.horizonCount = patch.horizonCount;
+  }
   t.version += 1;
   t.updatedAt = new Date().toISOString();
   t.updatedBy = actor.personId;
   const today = todayIso();
   const out: TemplateResult = { updated: [], kept: [] };
-  for (const day of daysOfShow(show.contentId).filter((d) => d.instance?.templateId === t.id && (d.scheduledDate ?? "") >= today)) {
+  const from = patch.from && patch.from > today ? patch.from : today;
+  for (const day of daysOfShow(show.contentId).filter((d) => d.instance?.templateId === t.id && (d.scheduledDate ?? "") >= from)) {
     const cs = sheetOfDay(day);
     if (!cs || day.instance!.locked || cs.status === "final") {
       out.kept.push(day.contentId);
@@ -447,7 +477,7 @@ export function updateShowTemplate(actor: Actor, templateId: string, patch: Temp
     applyTemplateTo(actor, t, day, cs, today);
     out.updated.push(day.contentId);
   }
-  if (patch.horizonWeeks !== undefined) syncSchedule(actor, show, t, today);
+  if (patch.horizonWeeks !== undefined || patch.horizonCount !== undefined) syncSchedule(actor, show, t, today);
   logAudit(
     actor,
     "template",
@@ -505,7 +535,7 @@ export function recurringDue(today = todayIso()): boolean {
         .filter((d) => d.instance?.templateId === t.id)
         .map((d) => d.instance!.occurrence),
     );
-    if (occurrencesBetween(t.rule, today, addDaysIso(today, t.horizonWeeks * 7)).some((d) => !have.has(d))) return true;
+    if (occurrencesBetween(t.rule, today, horizonEnd(t, today)).some((d) => !have.has(d))) return true;
     for (const d of daysOfShow(show.contentId)) {
       const cs = d.instance ? sheetOfDay(d) : undefined;
       if (cs?.plannedGear.length && cs.status === "draft" && cs.date >= today && cs.date <= addDaysIso(today, GEAR_WINDOW_DAYS))
@@ -605,6 +635,59 @@ export function addEventDay(actor: Actor, showId: string, date: string): Content
   show.showEnd = all[all.length - 1] ?? null;
   show.version += 1;
   logAudit(actor, "event-day", "record", showId, `${day.contentId} on ${date}`);
+  commit();
+  return day;
+}
+
+// ── One occurrence, or this and future ──────────────────────
+
+/**
+ * "This and future occurrences": a day's call sheet, as it is now, becomes its show's template, and every later day
+ * still following the template takes it; this day follows the template again. Days before it keep what they have.
+ */
+export function applyDayToFuture(actor: Actor, dayId: string): TemplateResult {
+  const day = getRecord(dayId);
+  if (!day?.instance || !day.scheduledDate) throw new RuleError("This day was not made from a show's template.");
+  const cs = sheetOfDay(day);
+  if (!cs) throw new RuleError("This day has no call sheet.");
+  const sheet = Object.fromEntries(SHEET_CONTENT_KEYS.map((k) => [k, structuredClone(cs[k])])) as Partial<SheetContent>;
+  const out = updateShowTemplate(actor, day.instance.templateId, { sheet, from: day.scheduledDate });
+  const t = requireTemplate(day.instance.templateId);
+  Object.assign(day.instance, { locked: false, lockedAt: null, lockedBy: null, templateVersion: t.version });
+  day.version += 1;
+  logAudit(actor, "template", "record", day.contentId, "This and future: the day's call sheet is the template from here on");
+  commit();
+  return out;
+}
+
+/** Calls off one date of a recurring show: the day is kept, archived as cancelled, and the schedule leaves the date out. */
+export function cancelDay(actor: Actor, dayId: string, reason: string): ContentRecord {
+  const day = getRecord(dayId);
+  if (!day?.instance || !day.scheduledDate) throw new RuleError("Only a day of a recurring show is cancelled this way.");
+  const show = showForPlan(actor, day.parentId ?? "");
+  const why = reason.trim();
+  if (!why) throw new RuleError("Say why this date is cancelled.");
+  const t = requireTemplate(day.instance.templateId);
+  if (!t.rule.skipDates.includes(day.instance.occurrence)) t.rule.skipDates = [...t.rule.skipDates, day.instance.occurrence].sort();
+  t.version += 1;
+  day.archived = true;
+  day.closedReason = `Cancelled: ${why}`;
+  day.version += 1;
+  logAudit(actor, "day-cancelled", "record", day.contentId, `${show.title}, ${day.scheduledDate}: ${why}`);
+  commit();
+  return day;
+}
+
+export const DAY_LABELS = ["Morning", "Afternoon", "Evening", "Late night", "Full day"];
+
+/** A day's label: Morning, Afternoon, Evening, Late night, Full day, or a name of its own (empty takes it off). */
+export function setDayLabel(actor: Actor, dayId: string, label: string): ContentRecord {
+  const day = getRecord(dayId);
+  if (!day?.instance) throw new RuleError("Only a day of a show has a label here.");
+  showForPlan(actor, day.parentId ?? "");
+  const text = label.trim().slice(0, 60);
+  day.instance.label = text || null;
+  day.version += 1;
   commit();
   return day;
 }

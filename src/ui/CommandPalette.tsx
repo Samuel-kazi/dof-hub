@@ -40,7 +40,8 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
     if (mods.includes("calendar")) cmd("calendar", "Open the Calendar", "", () => open({ n: "calendar" }));
     cmd("callsheets", "Open Call Sheets", "", () => open({ n: "callsheets" }));
     if (mods.includes("equipment")) cmd("equipment", "Open Equipment", "", () => open({ n: "equipment" }));
-    if (mods.includes("equipment") && featureOn("lending")) cmd("loan", "New loan", "Lend equipment", () => open({ n: "equipment" }));
+    if (mods.includes("equipment") && featureOn("lending"))
+      cmd("loan", "New loan", "Lend equipment", () => open({ n: "equipment", tab: "lending" }));
     for (const cs of visibleCallSheets(actor).filter((c) => c.date === todayIso()))
       cmd(`print:${cs.id}`, "Print today's run sheet", cs.title, () => {
         requestPrint({ sheetId: cs.id, only: "run" });

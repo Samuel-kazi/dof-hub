@@ -25,8 +25,17 @@ import { getDb } from "../data/store";
 import { fmtDate, fmtShort, relativeDays, daysUntil } from "../services/utils";
 import { ItemFormModal, NewCheckoutModal, useItemActions } from "./EquipmentForms";
 import { PersonName } from "../ui/PersonName";
+import { featureOn } from "../services/wrapped/settings";
+import { KitsTab, LendingTab } from "./Lending";
 
-type Tab = "inventory" | "checkouts" | "incidents";
+type Tab = "inventory" | "checkouts" | "lending" | "kits" | "incidents";
+const TAB_LABEL: Record<Tab, string> = {
+  inventory: "Inventory",
+  checkouts: "Checkout lists",
+  lending: "Lending",
+  kits: "Role kits",
+  incidents: "Damage log",
+};
 const statusKey = (i: EquipmentItem): string =>
   i.baseStatus === "in-repair"
     ? "repair"
@@ -60,9 +69,9 @@ export function Equipment({ tab: initial }: { tab?: Tab }) {
           <p className="sub">Every item and every checkout list, tied to the project it was used on.</p>
         </div>
         <div className="seg" role="tablist">
-          {(["inventory", "checkouts", "incidents"] as Tab[]).map((t) => (
+          {(["inventory", "checkouts", ...(featureOn("lending") ? (["lending", "kits"] as Tab[]) : []), "incidents"] as Tab[]).map((t) => (
             <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}>
-              {t === "inventory" ? "Inventory" : t === "checkouts" ? "Checkout lists" : "Damage log"}
+              {TAB_LABEL[t]}
             </button>
           ))}
         </div>
@@ -76,6 +85,8 @@ export function Equipment({ tab: initial }: { tab?: Tab }) {
       </div>
       {tab === "inventory" && <Inventory actions={actions} />}
       {tab === "checkouts" && <Checkouts />}
+      {tab === "lending" && <LendingTab />}
+      {tab === "kits" && <KitsTab />}
       {tab === "incidents" && <Incidents />}
       {actions.modals}
       {adding && (

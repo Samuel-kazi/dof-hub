@@ -65,7 +65,7 @@ await t("a recurring show's panel: its schedule in words, its template, and its 
   for (const text of [
     "Recurring show",
     "Every Friday, from Oct 2, 2026",
-    "12 weeks ahead",
+    "for the next 8 dates",
     "Open the template",
     "Change the schedule",
     "Coming days",
@@ -88,7 +88,7 @@ await t("the template page: workflow, then the call sheet's sections, with how m
   const page = html("hop@dof.demo", <ShowTemplatePage id={t0.id} />);
   for (const text of [
     "Template: Friday Vespers",
-    "reaches the 12 coming days",
+    "reaches the 8 coming days",
     "Level of production",
     "Days made ahead",
     ...SECTIONS,

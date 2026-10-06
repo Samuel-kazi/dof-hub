@@ -323,6 +323,27 @@ switch it back in Settings, The rework). Projects get one new optional list, the
 before the review is done; nothing existing is changed. A project already reviewed on the earlier pitch and outline
 checkpoints counts as reviewed until reviewers are named on its brief, as before.
 
+### Data version 22: the rework's structure
+
+The first time a version with data version 22 starts, it keeps a copy (`before_v22`; in the demo and desktop app,
+`dof-hub-db-before-v22`), then:
+
+- **Live Shows and DOF Music move onto the five stages.** Each record's stage, the confirmation of each stage (a
+  merged stage is confirmed only if every stage in it was), its deadlines (the latest of a merged stage's), owners
+  (all of them, roles combined), checklist items, links and documents, and any workload estimates set in Settings.
+- **General Use moves to Lending.** A General Use record with gear checkout lists becomes a loan (borrower: the
+  record's title; the items, dates and notes of its lists); any still open is released with a note naming the loan,
+  so the gear is held once. Every General Use record is then archived, with why; its Content ID keeps working. Check
+  the new loans in Equipment, Lending after the upgrade and correct the borrower names.
+
+Running it again changes nothing. **Going back is restoring the copy** (as for version 15 above, with `v22`).
+Nothing needs setting up. The parts of the rework that can be switched off are in Settings, The rework (the menu,
+the review as a reminder, lending and kits, templates, the new Calendar); the stage change and the Recording Plan for
+series and documentaries are not switchable, since they change the data's shape.
+
+**Google Calendar**: nothing new to set up. It uses the calendar access already asked for (`calendar.events`), so
+people already linked do not link again. Events go to each person's main calendar.
+
 ## What this does not do yet
 
 - The **desktop app** is the local demo. The hosted site is the real one.
