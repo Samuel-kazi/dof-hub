@@ -4,6 +4,7 @@ import { getDb } from "../../data/store";
 import { canView } from "../../services/access";
 import { useApp } from "../../ui/AppContext";
 import { imageSrc, storeImage } from "./images";
+import { focusNext } from "../../ui/keys";
 
 // Pieces the Storyboard and Shot List share: a field that saves itself as people type (800 ms after they stop, and
 // when they leave it), an image slot (click or drop a picture to add it, replace or remove it), and the lists the
@@ -11,13 +12,18 @@ import { imageSrc, storeImage } from "./images";
 
 const SAVE_AFTER_MS = 800;
 
-/** A one-line field that keeps what is typed and saves it shortly after typing stops, or on leaving the field. */
+/**
+ * A one-line field that keeps what is typed and saves it shortly after typing stops, or on leaving the field. Enter
+ * saves it and moves to the next field (or, at the end of a row of a run sheet or shot list, adds a row below with
+ * `onEnterAdd`); Esc puts back what was there before the edit.
+ */
 export function SavedInput({
   value,
   onSave,
   disabled,
+  onEnterAdd,
   ...rest
-}: { value: string; onSave: (next: string) => void; disabled?: boolean } & Omit<
+}: { value: string; onSave: (next: string) => void; disabled?: boolean; onEnterAdd?: (draft: string) => void } & Omit<
   InputHTMLAttributes<HTMLInputElement>,
   "value" | "onChange"
 >) {
@@ -53,7 +59,24 @@ export function SavedInput({
       }}
       onBlur={flush}
       onKeyDown={(e) => {
-        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+          e.preventDefault(); // a dialog the field is in does not take this Enter as its own
+          if (onEnterAdd) {
+            // The row's last field: its words and the new row below go in one change.
+            clearTimeout(timer.current);
+            dirty.current = false;
+            onEnterAdd(latest.current);
+          } else {
+            flush();
+            focusNext(e.currentTarget);
+          }
+        } else if (e.key === "Escape" && dirty.current) {
+          e.preventDefault();
+          e.stopPropagation(); // put back the edit; a second Esc closes a dialog
+          clearTimeout(timer.current);
+          dirty.current = false;
+          setDraft(value);
+        }
         rest.onKeyDown?.(e);
       }}
     />

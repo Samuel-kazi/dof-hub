@@ -195,10 +195,19 @@ t("finalize blocks crew double-booking", () => {
   const other = CS.duplicateCallSheet(hop(), src.id, src.date).sheet; // same date, same crew
   throwsRule(() => CS.finalizeCallSheet(hop(), other.id), /double-booked/);
 });
-t("final call sheets are locked", () => {
+t("a final (published) call sheet stays open to edit; it locks once what it is for is in Post production", () => {
   const cs = getDb().callSheets[0];
   CS.finalizeCallSheet(crew2(), cs.id);
-  throwsRule(() => CS.updateCallSheet(crew2(), cs.id, { notes: "x" }), /final/);
+  CS.updateCallSheet(crew2(), cs.id, { notes: "x" });
+  assert.equal(CS.getCallSheet(cs.id)!.notes, "x");
+  // Every episode on it past shooting: locked, kept as the record of the day.
+  for (const id of cs.linkedEpisodeIds) {
+    const r = getDb().records.find((x) => x.contentId === id)!;
+    r.pipelineStage = "Editorial";
+  }
+  throwsRule(() => CS.updateCallSheet(crew2(), cs.id, { notes: "y" }), /locked/);
+  throwsRule(() => CS.reopenCallSheet(crew2(), cs.id), /locked/);
+  throwsRule(() => CS.deleteCallSheet(hop(), cs.id), /locked/);
 });
 t("volunteer cannot create or edit call sheets", () => {
   throwsRule(() => CS.createCallSheet(vol(), { contentId: "DOF-SER-001", date: "2099-01-01" }));

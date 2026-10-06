@@ -94,6 +94,7 @@ export const PageEditor = forwardRef<PageEditorHandle, Props>(function PageEdito
   const [state, setStateNow] = useState<SaveState>({ kind: "idle" });
   const [leftover, setLeftover] = useState<Draft | null>(null);
   const text = useRef<RichTextHandle | null>(null);
+  const subtitleInput = useRef<HTMLInputElement | null>(null);
   const status = useRef<SaveState>(state);
   const base = useRef({ version: page.version, title: page.title, subtitle: page.subtitle });
   const bodyTyped = useRef(false);
@@ -301,7 +302,17 @@ export const PageEditor = forwardRef<PageEditorHandle, Props>(function PageEdito
     );
 
   return (
-    <div className="pd-page" aria-label={`Page: ${title || "Untitled page"}`}>
+    <div
+      className="pd-page"
+      aria-label={`Page: ${title || "Untitled page"}`}
+      onKeyDown={(e) => {
+        // Ctrl+S (Cmd+S) saves at once, wherever the cursor is on the page.
+        if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "s") {
+          e.preventDefault();
+          if (write) saveRef.current();
+        }
+      }}
+    >
       <div className="pd-page-head">
         <input
           className="pd-title"
@@ -313,6 +324,17 @@ export const PageEditor = forwardRef<PageEditorHandle, Props>(function PageEdito
           onChange={(e) => {
             setTitle(e.target.value);
             typed();
+          }}
+          onKeyDown={(e) => {
+            // Enter goes on to the subtitle; Esc puts back the title as last saved.
+            if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              subtitleInput.current?.focus();
+            } else if (e.key === "Escape" && title !== base.current.title) {
+              e.preventDefault();
+              setTitle(base.current.title);
+              typed();
+            }
           }}
         />
         <div aria-live="polite">{savedLine}</div>
@@ -327,6 +349,18 @@ export const PageEditor = forwardRef<PageEditorHandle, Props>(function PageEdito
         onChange={(e) => {
           setSubtitle(e.target.value);
           typed();
+        }}
+        ref={subtitleInput}
+        onKeyDown={(e) => {
+          // Enter goes on to the writing; Esc puts back the subtitle as last saved.
+          if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+            e.preventDefault();
+            text.current?.focus();
+          } else if (e.key === "Escape" && subtitle !== base.current.subtitle) {
+            e.preventDefault();
+            setSubtitle(base.current.subtitle);
+            typed();
+          }
         }}
       />
       {leftover && (

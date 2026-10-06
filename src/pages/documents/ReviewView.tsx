@@ -142,7 +142,7 @@ export function ReviewBanner({ doc, write }: { doc: ProjectDocument; write: bool
 
 /** The reviewers, each one's decision, and Approve or Request changes for a named reviewer or the Head of Production. */
 function ReviewDecisions({ project, doc, write }: { project: Project; doc: ProjectDocument; write: boolean }) {
-  const { actor, attempt } = useApp();
+  const { actor, attempt, confirm } = useApp();
   const [ask, reasonModal] = useReason();
   const rows = reviewsOf(doc.id);
   const state = reviewStateOf(doc.id);
@@ -207,7 +207,17 @@ function ReviewDecisions({ project, doc, write }: { project: Project; doc: Proje
         <div className="wf-actions">
           <button
             className="btn primary"
-            onClick={() => attempt(() => decideDocumentReview(actor, doc.id, { status: "approved", note: "" }), "Approved")}
+            onClick={async () => {
+              if (
+                await confirm({
+                  title: `Approve ${doc.title}?`,
+                  body: "The theological review of the whole document is recorded as approved. A page edited afterwards shows that it changed after approval.",
+                  confirmLabel: "Approve",
+                  deliberate: true,
+                })
+              )
+                attempt(() => decideDocumentReview(actor, doc.id, { status: "approved", note: "" }), "Approved");
+            }}
           >
             {isHop(actor) && !named ? "Approve for every reviewer" : "Approve the whole document"}
           </button>

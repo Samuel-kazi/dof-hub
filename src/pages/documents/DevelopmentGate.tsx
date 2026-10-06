@@ -179,6 +179,7 @@ export function DevelopmentGate({ project, write }: { project: Project; write: b
         body: `The devotion is closed and archived, never deleted, with its Content ID. Reason: ${reason}`,
         confirmLabel: "Decline",
         danger: true,
+        deliberate: true,
       })
     )
       attempt(
@@ -257,6 +258,7 @@ export function DevelopmentGate({ project, write }: { project: Project; write: b
       {accepting && (
         <Modal
           title={`Accept ${project.title}?`}
+          deliberate
           onClose={() => setAccepting(false)}
           actions={
             <>

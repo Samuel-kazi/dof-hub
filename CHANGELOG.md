@@ -33,6 +33,35 @@ Phase 1, the foundations (no change on screen yet; each later part ships behind 
   copying one into a project; editing the copy never changes the template.
 - The daily cron runs at 06:45 Nairobi time instead of 00:05.
 
+Phase 2, the shell, call sheets open until Post production, and the keys (switch: "New menu, Settings in the profile
+menu, Ctrl+K search", on):
+
+- **Call sheets stay open to edit until their work reaches Post production**, published or not. Finalize asks first
+  ("Publish …?") and needs a click or Ctrl+Enter; a published sheet keeps its change log, and a change still clears
+  the confirmations it affects. "Reopen" is now "Back to draft". A sheet locks, and says why, once its recording
+  session is closed, once its show day reaches Post Production, or once everything linked to it is past shooting; a
+  sheet linked to nothing never locks. Reopening a session opens its sheet again. Locked sheets are marked in the list,
+  and leave "My call sheets".
+- The call sheets list filters by type (session, show day, other), by time (coming, past) and by project.
+- **Settings moves to the profile menu** (click your name: Settings, Sign out). The side menu no longer lists it.
+- **Ctrl+K (⌘K on a Mac)**, or the search button at the top: one box for projects, episodes and devotions apart,
+  the five-stage documents, recording sessions, documents, call sheets, crew (for those who may see the People page;
+  names and roles only), gear, loans and drives, each where the person may look, and a few commands (open the
+  Calendar, Call Sheets, Equipment or Settings; print today's run sheet). Arrow keys move, Enter opens, Esc closes.
+  In the document editor Ctrl+K still adds a link, as in most editors; the search button works there.
+- **Ctrl+,** opens Settings. **Ctrl+S** saves the field being typed in, and says "Saved"; on a document page it
+  saves the page.
+- **In a field, Enter saves and moves to the next field; Esc takes back what was typed.** In a longer text, Ctrl+Enter
+  saves. A page's title and subtitle move on with Enter.
+- **Enter in a row's last field adds a row right below it**, the cursor in its first field: a call sheet's run of show
+  (starting when the row ends), a session's run sheet (likewise) and a shot list.
+- **Dialogs**: opening one moves the keys into it; Enter presses its main button, Esc closes it; closing it gives the
+  cursor back. Deliberate actions (publish, approve, the greenlight, accept or decline) and every deletion or removal
+  are never confirmed by Enter alone: a click, or Ctrl+Enter, and the dialog says so.
+- Settings lists the parts of the rework with a switch each, for the Head of Production; parts still to come are
+  marked "Coming". Switching one off goes back to how things were, changing no data.
+- General Use stays in the Content Pipeline until lending (a later part) replaces it.
+
 ## Unreleased: one production system, with the call sheet at its centre
 
 Being built in phases. Phase 1, the production core:

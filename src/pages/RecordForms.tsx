@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { CategoryKey, ContentRecord, ProductionLevel } from "../types";
 import { LevelField } from "../ui/LevelField";
 import { getDb } from "../data/store";
-import { CATEGORIES, categoryOf, shootDateLabel } from "../config/categories";
+import { categoryOf, shootDateLabel } from "../config/categories";
 import { useApp } from "../ui/AppContext";
 import { Modal } from "../ui/Modal";
 import { Field } from "../ui/parts";
@@ -14,6 +14,7 @@ import { createProduction } from "../services/wrapped/production";
 import { weeklyFrom } from "../services/recurrence";
 import { todayIso } from "../services/utils";
 import { RuleEditor } from "./production/RuleEditor";
+import { pipelineCategories } from "../services/wrapped/settings";
 
 // Assigning someone also attaches them to the project (see ensureMember in the content service).
 function assigneeOptions() {
@@ -136,7 +137,7 @@ export function NewRecordModal({
         {!parent && (
           <Field label="Category">
             <select value={cat} onChange={(e) => setCat(e.target.value as CategoryKey)}>
-              {CATEGORIES.map((c) => (
+              {pipelineCategories().map((c) => (
                 <option key={c.key} value={c.key}>
                   {c.label}
                 </option>

@@ -12,6 +12,7 @@ import { GearPicker } from "../../ui/GearPicker";
 import { Empty, Field } from "../../ui/parts";
 import { PersonName } from "../../ui/PersonName";
 import { SavedInput } from "../documents/toolkit";
+import { useFocusRow } from "../../ui/keys";
 
 // The sections every call sheet has (Schedule, Crew, Talent, Location, Equipment, Logistics, Contacts, Run of Show,
 // Technical Check, Rehearsal), written once. A call sheet, a recording session's call sheet in the Recording Plan,
@@ -99,7 +100,7 @@ export function SectionNav({ only }: { only?: SheetSectionKey[] }) {
   );
 }
 
-/** A text area that saves when the person leaves it. */
+/** A text area that saves when the person leaves it, or on Ctrl+Enter (Cmd+Enter). Enter starts a new line; Esc puts back the edit. */
 export function SavedText({
   value,
   onSave,
@@ -134,6 +135,19 @@ export function SavedText({
       onBlur={() => {
         if (dirty.current && draft !== value) onSave(draft);
         dirty.current = false;
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+          e.preventDefault();
+          e.stopPropagation(); // saved here; a dialog it is in is not confirmed by it
+          if (dirty.current && draft !== value) onSave(draft);
+          dirty.current = false;
+        } else if (e.key === "Escape" && dirty.current) {
+          e.preventDefault();
+          e.stopPropagation();
+          dirty.current = false;
+          setDraft(value);
+        }
       }}
     />
   );
@@ -689,6 +703,8 @@ const endOf = (time: string, minutes: number): string => {
 
 export function RunOfShowSection({ value, editable, onChange, required }: SectionProps & { required?: boolean }) {
   const { update, remove, add } = useRows<RunItem>(value.runOfShow, "runOfShow", onChange);
+  // Enter in a row's last field adds a row below it, and the cursor goes to the new row's segment.
+  const focusRow = useFocusRow('input[aria-label="Segment"]');
   const people = getDb().people.filter(
     (p) => p.status === "active" && (p.category === "CRW" || p.category === "HOP" || p.category === "VOL"),
   );
@@ -729,7 +745,7 @@ export function RunOfShowSection({ value, editable, onChange, required }: Sectio
             </thead>
             <tbody>
               {items.map((it) => (
-                <tr key={it.id}>
+                <tr key={it.id} data-row={it.id}>
                   <td>
                     <input
                       type="time"
@@ -782,6 +798,18 @@ export function RunOfShowSection({ value, editable, onChange, required }: Sectio
                       value={it.notes}
                       disabled={!editable}
                       onSave={(v) => update(it.id, { notes: v.trim() })}
+                      onEnterAdd={(notes) => {
+                        const row: RunItem = {
+                          id: localId("RS"),
+                          time: endOf(it.time, it.durationMin),
+                          title: "New segment",
+                          durationMin: 10,
+                          ownerPersonId: null,
+                          notes: "",
+                        };
+                        sort([...value.runOfShow.map((x) => (x.id === it.id ? { ...x, notes: notes.trim() } : x)), row]);
+                        focusRow(row.id);
+                      }}
                     />
                   </td>
                   {editable && (

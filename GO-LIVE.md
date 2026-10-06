@@ -307,6 +307,15 @@ hour.
   as now.
 - Email from the demo or the desktop app: they have no server. Their reminders reach the bell only.
 
+### The rework, phase 2: the shell, call sheets and keys (no data change)
+
+Nothing to set up and no data version: the new menu (Settings in the profile menu, Ctrl+K search) ships on, and the
+Head of Production can switch it off in Settings, The rework, which goes back to the old menu without changing any
+data. Call sheets now stay open to edit after they are published, until their work reaches Post production, and are
+locked after that (a closed session's sheet, a show day in Post Production); existing published sheets become
+editable again, with their change log kept, and existing sheets of closed sessions show as locked. Nothing is
+rewritten in the data either way.
+
 ## What this does not do yet
 
 - The **desktop app** is the local demo. The hosted site is the real one.

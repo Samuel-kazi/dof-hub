@@ -195,7 +195,9 @@ await t("a template change reaches every coming day still following it; a day ed
   P.resetToTemplate(hop(), b.contentId);
   assert.equal(record(b.contentId).instance!.locked, false);
   assert.equal(sheet(b.contentId).location, "DOF Studio B");
-  throwsRule(() => P.resetToTemplate(hop(), c.contentId), /final/);
+  // A published sheet is not changed by the template on its own, but can be put back on it by hand.
+  P.resetToTemplate(hop(), c.contentId);
+  assert.equal(sheet(c.contentId).location, "DOF Studio B");
   // Moving a day's date by hand moves the day, and it keeps its own from then on.
   CS.updateCallSheet(hop(), sheet(a.contentId).id, { date: "2026-10-03" });
   assert.deepEqual(

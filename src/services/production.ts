@@ -25,6 +25,7 @@ import { can } from "./permissions";
 import { checkRule, occurrencesBetween, weekdayOf } from "./recurrence";
 import { applyContent, checkContent, cloneContent, tidyContent } from "./sheetContent";
 import { noteChanges, trackedOf } from "./sheetTracking";
+import { assertSheetOpen } from "./sheetLock";
 import { addDaysIso, fmtDate, isIsoDate, pad, todayIso } from "./utils";
 
 // One production system for live shows, with three ways of making its days. Every day (an instance) is a record of
@@ -470,7 +471,7 @@ export function resetToTemplate(actor: Actor, dayId: string): ContentRecord {
   const t = requireTemplate(day.instance.templateId);
   const cs = sheetOfDay(day);
   if (!cs) throw new RuleError("This day has no call sheet.");
-  if (cs.status === "final") throw new RuleError("This call sheet is final. Reopen it to put it back on the template.");
+  assertSheetOpen(cs);
   const today = todayIso();
   if ((day.scheduledDate ?? "") < today) throw new RuleError("A day that has passed is kept as it was.");
   day.instance.locked = false;

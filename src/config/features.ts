@@ -3,7 +3,7 @@
 // built yet stays off whatever is stored.
 
 export const FEATURES = [
-  { key: "shell", label: "New menu, Settings in the profile menu, Ctrl+K search", built: false },
+  { key: "shell", label: "New menu, Settings in the profile menu, Ctrl+K search", built: true },
   { key: "reviewNotGate", label: "Theological review as a reminder, not a gate", built: false },
   { key: "recordingPlanAll", label: "Recording Plan for series and documentaries", built: false },
   { key: "templates", label: "Storyboard and shot list templates in Documents", built: false },

@@ -518,6 +518,7 @@ export function EpisodePage({ ep, project }: { ep: Episode; project: Project }) 
                     title: `Mark ${ep.contentId} published?`,
                     body: "It is logged as published. When every planned episode is published, the project is complete.",
                     confirmLabel: "Published",
+                    deliberate: true,
                   })
                 )
                   attempt(() => publishEpisode(actor, ep.contentId), "Published");

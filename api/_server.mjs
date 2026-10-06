@@ -4197,6 +4197,38 @@ var itemHistory = (id2) => getDb().equipmentHistory.map((h, n) => ({ h, n })).fi
 var itemIncidents = (id2) => getDb().incidents.filter((i) => i.equipmentId === id2).sort((a, b) => b.at.localeCompare(a.at));
 var allIncidents = () => [...getDb().incidents].sort((a, b) => b.at.localeCompare(a.at));
 
+// src/services/sheetLock.ts
+var OPEN = { locked: false, why: "" };
+function pastShooting(r) {
+  if (r.episode) return r.episode.stage === "Post production" || r.episode.stage === "Marketing and distribution";
+  if (isComplete(r)) return true;
+  const stages = categoryOf(r.category).stages.map((s2) => s2.name);
+  const at = stages.indexOf(r.pipelineStage ?? "");
+  if (at < 0) return false;
+  if (r.category === "live") {
+    const post = stages.indexOf("Post Production");
+    return post >= 0 && at >= post;
+  }
+  return at > stages.indexOf(categoryOf(r.category).footageStage);
+}
+function sheetLock(cs) {
+  const db2 = getDb();
+  const session = db2.recordingSessions.find((s2) => s2.callSheetId === cs.id);
+  if (session)
+    return session.status === "Closed" ? { locked: true, why: `Recording session ${session.id} is closed: its episodes are in Post production.` } : OPEN;
+  if (cs.instanceId) {
+    const day = db2.records.find((r) => r.contentId === cs.instanceId);
+    return day && pastShooting(day) ? { locked: true, why: `${day.title} has reached Post production.` } : OPEN;
+  }
+  const linked = cs.linkedEpisodeIds.map((id2) => db2.records.find((r) => r.contentId === id2)).filter((r) => !!r && !r.archived);
+  if (linked.length && linked.every(pastShooting)) return { locked: true, why: "Everything on this sheet is in Post production." };
+  return OPEN;
+}
+function assertSheetOpen(cs) {
+  const l = sheetLock(cs);
+  if (l.locked) throw new RuleError(`This call sheet is locked. ${l.why}`);
+}
+
 // src/services/equipment-manifests.ts
 var getManifest = (id2) => getDb().manifests.find((m) => m.id === id2);
 function addDays(iso2, n) {
@@ -4617,6 +4649,7 @@ function bookOnSheet(actor, sheet, lines) {
   requireGearAccess(actor);
   const cs = getDb().callSheets.find((c) => c.id === sheet.id);
   if (!cs) throw new RuleError("Call sheet not found.");
+  assertSheetOpen(cs);
   const project = getRecord(cs.contentId);
   if (!project || !canWrite(actor, project)) throw new RuleError("You have view-only access to this project.");
   const existing = manifestForSheet(cs.id);
@@ -4645,6 +4678,8 @@ function answerableFor(...candidates) {
   return candidates.find(canAnswer) ?? getDb().people.find((p) => p.category === "HOP" && p.status === "active")?.personId;
 }
 function removeGearFromSheet(actor, sheetId, equipmentId) {
+  const cs = getDb().callSheets.find((c) => c.id === sheetId);
+  if (cs) assertSheetOpen(cs);
   const m = manifestForSheet(sheetId);
   if (!m) return;
   removeLine(actor, m.id, equipmentId);
@@ -6836,6 +6871,7 @@ function loadSheet(actor, id2, expectedVersion) {
   if (!cs) throw new RuleError("Call sheet not found.");
   const root = getRecord(cs.contentId);
   if (!root || !canWrite(actor, root)) throw new RuleError("You have view-only access to this project.");
+  assertSheetOpen(cs);
   if (expectedVersion !== void 0 && cs.version !== expectedVersion) throw new ConflictError();
   return cs;
 }
@@ -6846,7 +6882,6 @@ function updateCallSheet(actor, id2, input, expectedVersion) {
   const before = trackedOf(cs);
   const content = tidyContent(patch, cs);
   const planChanged = patch.title !== void 0 || patch.date !== void 0 || !onlyTicks(cs, content);
-  if (cs.status === "final" && planChanged) throw new RuleError("This call sheet is final. Reopen it to make changes.");
   checkContent(content, content.crewPersonIds ?? cs.crewPersonIds);
   if (patch.title !== void 0 && (!patch.title.trim() || patch.title.length > 300)) throw new RuleError("Give the call sheet a title.");
   if (patch.date !== void 0 && patch.date !== cs.date) {
@@ -6879,7 +6914,6 @@ function updateCallSheet(actor, id2, input, expectedVersion) {
 }
 function bookPlannedGear(actor, id2) {
   const cs = loadSheet(actor, id2);
-  if (cs.status === "final") throw new RuleError("This call sheet is final. Reopen it to make changes.");
   if (!cs.plannedGear.length) return { booked: 0, skipped: [] };
   const r = bookWhatIsFree(actor, { id: cs.id, contentId: cs.contentId, date: cs.date }, cs.plannedGear);
   cs.plannedGear = r.skipped.map((x) => x.line);
@@ -6945,6 +6979,7 @@ function confirmOnSheet(actor, sheetId, key2, confirmed) {
   const cs = getCallSheet(sheetId);
   const root = cs ? getRecord(cs.contentId) : void 0;
   if (!cs || !root || !canView(actor, root)) throw new RuleError("Call sheet not found.");
+  assertSheetOpen(cs);
   if (key2 !== actor.personId && !canWrite(actor, root))
     throw new RuleError("Only the person themself, or someone working on this project, can confirm for them.");
   const terms = confirmationTerms(cs, key2);
@@ -6992,11 +7027,7 @@ function checkRunItem(input) {
     if (!p || p.status !== "active") throw new RuleError("Choose an active person.");
   }
 }
-function editableSheet(actor, id2) {
-  const cs = loadSheet(actor, id2);
-  if (cs.status === "final") throw new RuleError("This call sheet is final. Reopen it to make changes.");
-  return cs;
-}
+var editableSheet = (actor, id2) => loadSheet(actor, id2);
 function addRunItem(actor, sheetId, input) {
   const cs = editableSheet(actor, sheetId);
   checkRunItem(input);
@@ -13491,7 +13522,7 @@ function resetToTemplate(actor, dayId) {
   const t2 = requireTemplate(day.instance.templateId);
   const cs = sheetOfDay(day);
   if (!cs) throw new RuleError("This day has no call sheet.");
-  if (cs.status === "final") throw new RuleError("This call sheet is final. Reopen it to put it back on the template.");
+  assertSheetOpen(cs);
   const today = todayIso();
   if ((day.scheduledDate ?? "") < today) throw new RuleError("A day that has passed is kept as it was.");
   day.instance.locked = false;
@@ -13989,6 +14020,7 @@ __export(settings_exports, {
   SETTINGS_EDITABLE: () => SETTINGS_EDITABLE,
   changePassword: () => changePassword2,
   featureOn: () => featureOn,
+  pipelineCategories: () => pipelineCategories,
   setFeature: () => setFeature,
   updateSettings: () => updateSettings,
   updateWorkspaceAppearance: () => updateWorkspaceAppearance
@@ -14026,7 +14058,7 @@ var FONT_PAIRINGS = [
 
 // src/config/features.ts
 var FEATURES = [
-  { key: "shell", label: "New menu, Settings in the profile menu, Ctrl+K search", built: false },
+  { key: "shell", label: "New menu, Settings in the profile menu, Ctrl+K search", built: true },
   { key: "reviewNotGate", label: "Theological review as a reminder, not a gate", built: false },
   { key: "recordingPlanAll", label: "Recording Plan for series and documentaries", built: false },
   { key: "templates", label: "Storyboard and shot list templates in Documents", built: false },
@@ -14091,6 +14123,7 @@ function changePassword2(actor, current3, next2) {
   logAudit(actor, "change-password", "person", actor.personId);
   commit();
 }
+var pipelineCategories = () => featureOn("lending") ? CATEGORIES.filter((c) => c.key !== "general") : CATEGORIES;
 function featureOn(key2) {
   const f2 = FEATURES.find((x) => x.key === key2);
   if (!f2?.built) return false;

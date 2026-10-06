@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import { useApp, type Route } from "./AppContext";
 import { didSaveFail, useDb } from "../data/store";
 import { modulesFor } from "../services/wrapped/permissions";
-import { CATEGORIES } from "../config/categories";
+import { featureOn, pipelineCategories } from "../services/wrapped/settings";
+import { CommandPalette, MOD_KEY } from "./CommandPalette";
 import { MODULE_LABELS, ROLES, type ModuleKey } from "../config/roles";
 import { getReminders } from "../services/wrapped/content";
 import { workflowDueSoon } from "../services/wrapped/reminders";
@@ -23,6 +24,7 @@ import {
   IconLogout,
   IconMenu,
   IconMoon,
+  IconSearch,
   IconSheet,
   IconSun,
   IconUsers,
@@ -176,6 +178,9 @@ export function Shell() {
       return !o;
     });
   const contentRef = useRef<HTMLElement>(null);
+  const [palette, setPalette] = useState(false);
+  // The new shell (build prompt v2): Settings opens from the profile menu, not the side menu; Ctrl+K searches.
+  const shell = featureOn("shell");
   const role = ROLES[actor.role];
   const active = moduleOfRoute(route);
   const reminders = getReminders(actor);
@@ -197,6 +202,44 @@ export function Shell() {
   useEffect(() => {
     contentRef.current?.scrollTo?.(0, 0);
   }, [route]);
+
+  // Ctrl+K (Cmd+K) opens search and commands; Ctrl+, (Cmd+,) opens Settings. From anywhere, even while typing,
+  // except where the place being typed in has the key for itself: in the document editor Ctrl+K adds a link.
+  useEffect(() => {
+    if (!shell) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const k = e.key.toLowerCase();
+      if (k === "k" && !e.defaultPrevented) {
+        e.preventDefault();
+        setPalette(true);
+      } else if (k === ",") {
+        e.preventDefault();
+        go({ n: "settings" });
+      } else if (k === "s" && !e.defaultPrevented) {
+        // Ctrl+S (Cmd+S) saves the field being typed in, at once, instead of opening the browser's "Save page".
+        e.preventDefault();
+        const el = document.activeElement as HTMLElement | null;
+        if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) {
+          el.blur(); // fields save as they are left
+          el.focus();
+          toast("Saved", "success");
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [shell, go, toast]);
+
+  const openProfile = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const r = e.currentTarget.getBoundingClientRect();
+    menu({ clientX: Math.max(8, r.right - 220), clientY: r.bottom + 6, preventDefault: () => {} }, [
+      { label: `Settings  (${MOD_KEY}+,)`, onClick: () => go({ n: "settings" }) },
+      { label: "", divider: true, onClick: () => {} },
+      { label: "Sign out", onClick: logout },
+    ]);
+  };
 
   // One heads-up on sign-in for stage deadlines inside the reminder window.
   useEffect(() => {
@@ -241,52 +284,54 @@ export function Shell() {
             <span>Production Hub</span>
           </div>
         </div>
-        {modulesFor(actor).map((m) => {
-          const Icon = ICONS[m];
-          const built = BUILT.includes(m);
-          const label = MODULE_LABELS[m];
-          return (
-            <div key={m} style={wide ? undefined : { display: "contents" }}>
-              <div className="dock-row" style={wide ? undefined : { display: "contents" }}>
-                <button
-                  className={`dock-item ${active === m ? "active" : ""} ${m === "pipeline" && wide ? "has-chev" : ""}`}
-                  data-tip={label}
-                  aria-label={label}
-                  aria-current={active === m ? "page" : undefined}
-                  onClick={() => go(routeFor(m))}
-                >
-                  <Icon />
-                  <span className="dock-label">{label}</span>
-                  {!built && <span className="soon">Next</span>}
-                </button>
-                {m === "pipeline" && wide && (
+        {modulesFor(actor)
+          .filter((m) => !(shell && m === "settings"))
+          .map((m) => {
+            const Icon = ICONS[m];
+            const built = BUILT.includes(m);
+            const label = MODULE_LABELS[m];
+            return (
+              <div key={m} style={wide ? undefined : { display: "contents" }}>
+                <div className="dock-row" style={wide ? undefined : { display: "contents" }}>
                   <button
-                    className={`dock-chev ${pipeOpen ? "open" : ""}`}
-                    aria-expanded={pipeOpen}
-                    aria-label={pipeOpen ? "Hide the categories" : "Show the categories"}
-                    title={pipeOpen ? "Hide the categories" : "Show the categories"}
-                    onClick={togglePipe}
+                    className={`dock-item ${active === m ? "active" : ""} ${m === "pipeline" && wide ? "has-chev" : ""}`}
+                    data-tip={label}
+                    aria-label={label}
+                    aria-current={active === m ? "page" : undefined}
+                    onClick={() => go(routeFor(m))}
                   >
-                    <IconChevron />
+                    <Icon />
+                    <span className="dock-label">{label}</span>
+                    {!built && <span className="soon">Next</span>}
                   </button>
+                  {m === "pipeline" && wide && (
+                    <button
+                      className={`dock-chev ${pipeOpen ? "open" : ""}`}
+                      aria-expanded={pipeOpen}
+                      aria-label={pipeOpen ? "Hide the categories" : "Show the categories"}
+                      title={pipeOpen ? "Hide the categories" : "Show the categories"}
+                      onClick={togglePipe}
+                    >
+                      <IconChevron />
+                    </button>
+                  )}
+                </div>
+                {m === "pipeline" && wide && pipeOpen && (
+                  <div className="dock-sub">
+                    {pipelineCategories().map((c) => (
+                      <button
+                        key={c.key}
+                        className={route.n === "pipeline" && route.category === c.key ? "active" : ""}
+                        onClick={() => go({ n: "pipeline", category: c.key })}
+                      >
+                        {c.label}
+                      </button>
+                    ))}
+                  </div>
                 )}
               </div>
-              {m === "pipeline" && wide && pipeOpen && (
-                <div className="dock-sub">
-                  {CATEGORIES.map((c) => (
-                    <button
-                      key={c.key}
-                      className={route.n === "pipeline" && route.category === c.key ? "active" : ""}
-                      onClick={() => go({ n: "pipeline", category: c.key })}
-                    >
-                      {c.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
+            );
+          })}
         <div className="dock-foot">Signed in as {role.label}</div>
       </nav>
 
@@ -304,6 +349,16 @@ export function Shell() {
             <IconMenu />
           </button>
           <div className="spacer" />
+          {shell && (
+            <button
+              className="icon-btn no-print"
+              onClick={() => setPalette(true)}
+              aria-label={`Search and commands (${MOD_KEY}+K)`}
+              title={`Search and commands (${MOD_KEY}+K)`}
+            >
+              <IconSearch />
+            </button>
+          )}
           <button
             className="icon-btn no-print"
             onClick={() => void copyLink()}
@@ -324,16 +379,28 @@ export function Shell() {
             <IconBell />
             {reminders.length + notifications.length > 0 && <span className="dot">{reminders.length + notifications.length}</span>}
           </button>
-          <div className="user-chip glass">
-            <Avatar person={me} />
-            <div>
-              {me.name}
-              <small>{me.name === role.label ? me.personId : role.label}</small>
-            </div>
-          </div>
-          <button className="icon-btn" onClick={logout} aria-label="Sign out" title="Sign out">
-            <IconLogout />
-          </button>
+          {shell ? (
+            <button className="user-chip glass" onClick={openProfile} aria-haspopup="menu" aria-label={`${me.name}: profile menu`}>
+              <Avatar person={me} />
+              <div>
+                {me.name}
+                <small>{me.name === role.label ? me.personId : role.label}</small>
+              </div>
+            </button>
+          ) : (
+            <>
+              <div className="user-chip glass">
+                <Avatar person={me} />
+                <div>
+                  {me.name}
+                  <small>{me.name === role.label ? me.personId : role.label}</small>
+                </div>
+              </div>
+              <button className="icon-btn" onClick={logout} aria-label="Sign out" title="Sign out">
+                <IconLogout />
+              </button>
+            </>
+          )}
         </header>
         <main className="content" ref={contentRef}>
           <div className="print-brand" aria-hidden="true">
@@ -373,6 +440,7 @@ export function Shell() {
           </ErrorBoundary>
         </main>
       </div>
+      {palette && <CommandPalette onClose={() => setPalette(false)} />}
     </div>
   );
 }

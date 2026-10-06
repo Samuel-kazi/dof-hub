@@ -6,6 +6,7 @@ import type { ModuleKey } from "../config/roles";
 import { getPerson } from "../services/wrapped/people";
 import { Modal } from "./Modal";
 import { PersonPanel, type PersonContext } from "./PersonPanel";
+import { MOD_KEY } from "./keys";
 
 export type Route =
   | { n: "dashboard" }
@@ -43,6 +44,9 @@ interface ConfirmOpts {
   body: string;
   confirmLabel?: string;
   danger?: boolean;
+  // A deliberate action (publish, approve, greenlight, accept or decline): Enter alone never confirms it, only a click
+  // or Ctrl+Enter (Cmd+Enter on a Mac). A danger confirmation (a delete, a removal) is always deliberate.
+  deliberate?: boolean;
 }
 
 interface Ctx {
@@ -289,6 +293,7 @@ export function AppProvider({ actor, onLogout, children }: { actor: Actor; onLog
       {confirmState && (
         <Modal
           title={confirmState.title}
+          deliberate={confirmState.deliberate || confirmState.danger}
           onClose={() => {
             confirmState.resolve(false);
             setConfirmState(null);
@@ -317,6 +322,11 @@ export function AppProvider({ actor, onLogout, children }: { actor: Actor; onLog
           }
         >
           <p className="sub">{confirmState.body}</p>
+          {(confirmState.deliberate || confirmState.danger) && (
+            <p className="muted" style={{ fontSize: ".84rem" }}>
+              Click {confirmState.confirmLabel ?? "Confirm"}, or press {MOD_KEY}+Enter.
+            </p>
+          )}
         </Modal>
       )}
       {leaving && (

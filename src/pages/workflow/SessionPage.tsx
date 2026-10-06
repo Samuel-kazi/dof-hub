@@ -38,6 +38,7 @@ import { Modal } from "../../ui/Modal";
 import { DateShift } from "../../ui/DateShift";
 import { CrewSelect, GatePanel } from "../../ui/workflow/shared";
 import { ConfigChecklist, useDraft, useReason } from "./common";
+import { focusNext, useFocusRow } from "../../ui/keys";
 import { PersonName } from "../../ui/PersonName";
 
 // One recording session: Pre-production while Planned (call sheet, gear, rehearsal), Production while Open (the
@@ -46,7 +47,17 @@ import { PersonName } from "../../ui/PersonName";
 const STATUSES: LogStatus[] = ["Recorded", "Pickup needed", "Not recorded"];
 const stageOf = (status: string) => (status === "Planned" ? "Pre-production" : status === "Open" ? "Production" : "Closed");
 
-function RunSheetRow({ sessionId, item, editable }: { sessionId: string; item: RunItem; editable: boolean }) {
+function RunSheetRow({
+  sessionId,
+  item,
+  editable,
+  onEnterAdd,
+}: {
+  sessionId: string;
+  item: RunItem;
+  editable: boolean;
+  onEnterAdd: (end: string) => void;
+}) {
   const { actor, attempt } = useApp();
   const [draft, setDraft, dirty, saved] = useDraft({
     time: item.time,
@@ -62,12 +73,19 @@ function RunSheetRow({ sessionId, item, editable }: { sessionId: string; item: R
       ? `${String(Math.floor(t / 60) % 24).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`
       : "";
   })();
+  // Enter moves to the next field (leaving one saves it); in the notes, it saves the row and adds one below.
+  const next = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+    e.preventDefault();
+    focusNext(e.currentTarget);
+  };
   return (
-    <tr>
+    <tr data-row={item.id}>
       <td>
         <input
           type="time"
           aria-label="Start"
+          onKeyDown={next}
           value={draft.time}
           disabled={!editable}
           onChange={(e) => setDraft({ ...draft, time: e.target.value })}
@@ -79,6 +97,7 @@ function RunSheetRow({ sessionId, item, editable }: { sessionId: string; item: R
         <input
           type="text"
           aria-label="Activity"
+          onKeyDown={next}
           value={draft.title}
           disabled={!editable}
           onChange={(e) => setDraft({ ...draft, title: e.target.value })}
@@ -98,6 +117,7 @@ function RunSheetRow({ sessionId, item, editable }: { sessionId: string; item: R
           type="number"
           min={0}
           aria-label="Minutes"
+          onKeyDown={next}
           style={{ width: 80 }}
           value={draft.durationMin}
           disabled={!editable}
@@ -109,6 +129,15 @@ function RunSheetRow({ sessionId, item, editable }: { sessionId: string; item: R
         <input
           type="text"
           aria-label="Notes"
+          onKeyDown={(e) => {
+            if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+            e.preventDefault();
+            if (dirty) {
+              if (!attempt(() => updateRunSheetItem(actor, sessionId, item.id, draft))) return;
+              saved();
+            }
+            onEnterAdd(end || draft.time);
+          }}
           value={draft.notes}
           disabled={!editable}
           onChange={(e) => setDraft({ ...draft, notes: e.target.value })}
@@ -310,6 +339,7 @@ function RecordingDay({ project, sessionId, editable }: { project: Project; sess
 /** A session's run sheet: the schedule of the day, which also sets the call sheet's call time. */
 export function RunSheetPanel({ sessionId, editable }: { sessionId: string; editable: boolean }) {
   const { actor, attempt, confirm } = useApp();
+  const focusRow = useFocusRow('input[aria-label="Activity"]');
   const session = getSession(sessionId);
   if (!session) return null;
   const id = sessionId;
@@ -317,6 +347,10 @@ export function RunSheetPanel({ sessionId, editable }: { sessionId: string; edit
   // A devotion's run sheet has a "Record: <title>" row for each devotion on the session.
   const devotion = getRecord(session.contentId)?.workflow?.formType === "devotion";
   const planned = rows.filter((r) => r.plannedEpisodeId).length;
+  const addAt = (time: string) => {
+    const item = attempt(() => addRunSheetItem(actor, id, { time, title: "New item", durationMin: 15, notes: "" }));
+    if (item) focusRow(item.id);
+  };
   return (
     <section className="glass panel" aria-label="Run sheet">
       <div className="wf-head">
@@ -360,7 +394,7 @@ export function RunSheetPanel({ sessionId, editable }: { sessionId: string; edit
             </thead>
             <tbody>
               {session.runSheet.map((item) => (
-                <RunSheetRow key={item.id} sessionId={id} item={item} editable={editable} />
+                <RunSheetRow key={item.id} sessionId={id} item={item} editable={editable} onEnterAdd={addAt} />
               ))}
             </tbody>
           </table>

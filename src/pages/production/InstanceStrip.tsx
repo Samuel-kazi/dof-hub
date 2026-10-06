@@ -5,6 +5,7 @@ import { fmtDate, todayIso } from "../../services/utils";
 import { nameOf } from "../../services/wrapped/people";
 import { getTemplate, resetToTemplate } from "../../services/wrapped/production";
 import { useApp } from "../../ui/AppContext";
+import { isSheetLocked } from "../../services/sheetLock";
 
 // Where a day of a recurring show stands with its template: following it (template changes reach it), or changed
 // by hand and keeping its own, with the way back. Shown on the day's call sheet and on the day itself.
@@ -39,7 +40,7 @@ export function InstanceStrip({ day, write }: { day: ContentRecord; write: boole
           Open the template
         </button>
       )}
-      {info.locked && write && t && !past && sheet?.status !== "final" && (
+      {info.locked && write && t && !past && sheet && !isSheetLocked(sheet) && (
         <button
           className="btn small"
           onClick={async () => {
