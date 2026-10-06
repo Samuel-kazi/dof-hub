@@ -618,7 +618,16 @@ var UNIQUE_RULES = [
     fields: ["token"],
     when: { field: "token", is: "string" },
     message: "That share link already exists. Make a new one."
-  }
+  },
+  // Productions (data version 19): a day of a show has one call sheet, and a show one template.
+  {
+    name: "day_call_sheet",
+    part: "callSheets",
+    fields: ["instanceId"],
+    when: { field: "instanceId", is: "string" },
+    message: "That day of the show already has its call sheet."
+  },
+  { name: "show_template", part: "showTemplates", fields: ["contentId"], message: "This show already has a template." }
 ];
 function valueAt(el, path) {
   let cur = el;
@@ -655,7 +664,8 @@ function uniqueViolations(part, elements) {
 function integrityProblems(db2) {
   const out = [];
   const parts = db2;
-  for (const part of [...WORKFLOW_PARTS, ...DOCUMENT_PARTS, "records"]) out.push(...uniqueViolations(part, parts[part] ?? []));
+  for (const part of [...WORKFLOW_PARTS, ...DOCUMENT_PARTS, "records", "callSheets", "showTemplates"])
+    out.push(...uniqueViolations(part, parts[part] ?? []));
   const records = new Set(db2.records.map((r) => r.contentId));
   const people = new Set(db2.people.map((p) => p.personId));
   const sessions = new Map((db2.recordingSessions ?? []).map((s2) => [s2.id, s2]));
@@ -772,6 +782,28 @@ function integrityProblems(db2) {
   for (const a of db2.allocations ?? [])
     if (a.sessionId && !sessions.has(a.sessionId)) missing("session", a.sessionId, `Storage entry ${a.id}`);
   for (const r of db2.shotListRows ?? []) if (!lists.has(r.shotListId)) missing("shot list", r.shotListId, `Row ${r.id}`);
+  const recordById = new Map(db2.records.map((r) => [r.contentId, r]));
+  const templates = new Map((db2.showTemplates ?? []).map((t2) => [t2.id, t2]));
+  for (const t2 of db2.showTemplates ?? []) {
+    const show2 = recordById.get(t2.contentId);
+    if (!show2) missing("show", t2.contentId, `Template ${t2.id}`);
+    else if (show2.production?.templateId !== t2.id) out.push(`Template ${t2.id} is not its show's template.`);
+  }
+  for (const r of db2.records) {
+    if (r.production?.templateId && !templates.has(r.production.templateId))
+      missing("template", r.production.templateId, `Show ${r.contentId}`);
+    if (r.instance) {
+      const t2 = templates.get(r.instance.templateId);
+      if (!t2) missing("template", r.instance.templateId, `Day ${r.contentId}`);
+      else if (t2.contentId !== r.parentId) out.push(`Day ${r.contentId} follows another show's template.`);
+    }
+  }
+  for (const c of db2.callSheets)
+    if (c.instanceId) {
+      const day = recordById.get(c.instanceId);
+      if (!day) missing("day", c.instanceId, `Call sheet ${c.id}`);
+      else if (day.parentId !== c.contentId) out.push(`Call sheet ${c.id} is for a day of another show.`);
+    }
   return out;
 }
 function assertIntegrity(db2) {
@@ -817,6 +849,8 @@ var KEYS = [
   "storyboardFrames",
   "shotLists",
   "shotListRows",
+  // Productions: recurring shows' templates (data version 19)
+  "showTemplates",
   "settings",
   "counters"
 ];
@@ -1242,31 +1276,31 @@ var dateInNairobi = (at) => {
   return `${part("year")}-${part("month")}-${part("day")}`;
 };
 var todayIso = () => dateInNairobi(/* @__PURE__ */ new Date());
-var addDaysIso = (iso, days) => {
-  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+var addDaysIso = (iso2, days) => {
+  const [y, m, d] = iso2.slice(0, 10).split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
 };
 var isIsoDate = (s2) => {
   if (typeof s2 !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(s2)) return false;
   return addDaysIso(s2, 0) === s2;
 };
-var dayNumber = (iso) => {
-  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+var dayNumber = (iso2) => {
+  const [y, m, d] = iso2.slice(0, 10).split("-").map(Number);
   return Math.round(Date.UTC(y, m - 1, d) / 864e5);
 };
-var daysUntil = (iso) => dayNumber(iso) - dayNumber(todayIso());
-var hoursUntilEndOfDay = (iso) => {
-  const end = Date.parse(`${iso.slice(0, 10)}T23:59:59${NAIROBI_OFFSET}`);
+var daysUntil = (iso2) => dayNumber(iso2) - dayNumber(todayIso());
+var hoursUntilEndOfDay = (iso2) => {
+  const end = Date.parse(`${iso2.slice(0, 10)}T23:59:59${NAIROBI_OFFSET}`);
   return (end - Date.now()) / 36e5;
 };
-var fmtDate = (iso) => {
-  if (!iso) return "Not set";
-  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+var fmtDate = (iso2) => {
+  if (!iso2) return "Not set";
+  const [y, m, d] = iso2.slice(0, 10).split("-").map(Number);
   return new Date(y, m - 1, d).toLocaleDateString(void 0, { day: "numeric", month: "short", year: "numeric" });
 };
-var fmtShort = (iso) => {
-  if (!iso) return "Not set";
-  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+var fmtShort = (iso2) => {
+  if (!iso2) return "Not set";
+  const [y, m, d] = iso2.slice(0, 10).split("-").map(Number);
   return new Date(y, m - 1, d).toLocaleDateString(void 0, { day: "numeric", month: "short" });
 };
 var pad = (n, width = 3) => String(n).padStart(width, "0");
@@ -1280,6 +1314,81 @@ function pickKeys(patch, keys) {
 }
 var STORED_FILE = /^\/api\/file\?id=[a-f0-9]{32}$/;
 var MEDIA_FILE = /^media:[A-Za-z0-9-]{1,80}\/[A-Za-z0-9_-]{1,80}\.(jpg|png|webp)$/;
+
+// src/config/callSheet.ts
+var SHEET_CONTENT_KEYS = [
+  "callTime",
+  "talentCall",
+  "startTime",
+  "wrapTime",
+  "location",
+  "locationAddress",
+  "locationNotes",
+  "format",
+  "notes",
+  "crewPersonIds",
+  "crewRoles",
+  "crewLeadId",
+  "talent",
+  "logistics",
+  "contacts",
+  "runOfShow",
+  "technicalCheck",
+  "rehearsal",
+  "plannedGear"
+];
+var DEFAULT_TECH_CHECK = [
+  "Cameras: white balance, focus and sync",
+  "Audio: mic levels and backup recording",
+  "Lighting: set and checked on camera",
+  "Recording media and batteries",
+  "Stream or recording test",
+  "Power and backup"
+];
+var blankLogistics = () => ({ transport: "", parking: "", meals: "", accommodation: "", other: "" });
+var blankRehearsal = () => ({ time: "", notes: "", done: false });
+function blankSheetContent() {
+  return {
+    callTime: "",
+    talentCall: "",
+    startTime: "",
+    wrapTime: "",
+    location: "",
+    locationAddress: "",
+    locationNotes: "",
+    format: "",
+    notes: "",
+    crewPersonIds: [],
+    crewRoles: {},
+    crewLeadId: null,
+    talent: [],
+    logistics: blankLogistics(),
+    contacts: [],
+    runOfShow: [],
+    technicalCheck: [],
+    rehearsal: blankRehearsal(),
+    plannedGear: []
+  };
+}
+var blankEventPlan = () => ({
+  overview: "",
+  venue: "",
+  audience: "",
+  travel: "",
+  accommodation: "",
+  budget: "",
+  notes: ""
+});
+var EVENT_PLAN_FIELDS = [
+  { key: "overview", label: "Overview", hint: "What the event is and what it is for" },
+  { key: "audience", label: "Audience", hint: "Who it is for, and how many are expected" },
+  { key: "venue", label: "Venue", hint: "Where it happens, and the venue's contact" },
+  { key: "travel", label: "Travel", hint: "How the team and gear get there and back" },
+  { key: "accommodation", label: "Accommodation", hint: "Where the team stays" },
+  { key: "budget", label: "Budget", hint: "What it may cost, and who approved it" },
+  { key: "notes", label: "Notes", hint: "Anything else for every day of the event" }
+];
+var MODE_LABEL = { recurring: "Recurring show", one_time: "One-time event", multi_day: "Multi-day event" };
 
 // src/data/seedGear.ts
 var stamp = (daysAgo, hour = 10) => {
@@ -2298,6 +2407,8 @@ function buildSeed() {
     records,
     callSheets: [
       {
+        ...blankSheetContent(),
+        instanceId: null,
         id: "DOF-CS-001",
         contentId: "DOF-SER-001",
         title: "Whispers of Why: Season 1 recording day",
@@ -2315,6 +2426,8 @@ function buildSeed() {
         createdAt: isoDay(-1)
       },
       {
+        ...blankSheetContent(),
+        instanceId: "DOF-LIVE-001-D1",
         id: "DOF-CS-002",
         contentId: "DOF-LIVE-001",
         title: "Sunday Live Service: Day 1, full broadcast",
@@ -2383,6 +2496,7 @@ function buildSeed() {
     storyboardFrames: [],
     shotLists: [],
     shotListRows: [],
+    showTemplates: [],
     ...gear,
     settings: {
       stageReminderHours: 24,
@@ -2401,6 +2515,7 @@ function buildSeed() {
 // src/services/content.ts
 var content_exports = {};
 __export(content_exports, {
+  MAX_DAYS_OF_SHOW: () => MAX_DAYS_OF_SHOW,
   PROJECT_STAGE: () => PROJECT_STAGE,
   RECORD_EDITABLE: () => RECORD_EDITABLE,
   addComment: () => addComment,
@@ -2439,6 +2554,7 @@ __export(content_exports, {
   isStale: () => isStale,
   leavesUnder: () => leavesUnder,
   levelLabel: () => levelLabel,
+  makeDay: () => makeDay,
   nextChildId: () => nextChildId,
   nextTopLevelId: () => nextTopLevelId,
   openTasks: () => openTasks,
@@ -2457,6 +2573,7 @@ __export(content_exports, {
   setStageDeadline: () => setStageDeadline,
   setStageOutput: () => setStageOutput,
   setStrikePlan: () => setStrikePlan,
+  showDates: () => showDates,
   spinOffCategories: () => spinOffCategories,
   spinOffsOf: () => spinOffsOf,
   splitRecording: () => splitRecording,
@@ -2896,7 +3013,8 @@ function visibleRecords(actor, includeArchived = false) {
 function visibleCallSheets(actor) {
   return getDb().callSheets.filter((cs) => {
     const root = getRecord(cs.contentId);
-    return !!root && canView(actor, root);
+    const day = cs.instanceId ? getRecord(cs.instanceId) : void 0;
+    return !!root && canView(actor, root) && !day?.archived;
   });
 }
 function redactPerson(actor, p) {
@@ -3105,6 +3223,7 @@ __export(equipment_exports, {
   applyConditionBreakdown: () => applyConditionBreakdown,
   attachManifest: () => attachManifest,
   availabilityOn: () => availabilityOn,
+  bookWhatIsFree: () => bookWhatIsFree,
   breakdownTotal: () => breakdownTotal,
   checkIn: () => checkIn,
   checkedOutFor: () => checkedOutFor,
@@ -3667,6 +3786,43 @@ function deleteItem(actor, id2) {
   commit();
 }
 
+// src/services/instances.ts
+var dayOfSheet = (sheetId) => {
+  const cs = getDb().callSheets.find((c) => c.id === sheetId);
+  return cs?.instanceId ? getDb().records.find((r) => r.contentId === cs.instanceId) : void 0;
+};
+function lockInstanceOfSheet(actor, sheetId) {
+  const day = dayOfSheet(sheetId);
+  if (!day?.instance || day.instance.locked) return;
+  day.instance.locked = true;
+  day.instance.lockedAt = (/* @__PURE__ */ new Date()).toISOString();
+  day.instance.lockedBy = actor.personId;
+  day.version += 1;
+  logAudit(actor, "instance-edited", "record", day.contentId, "changed by hand: later template changes pass it by");
+}
+var LIVE_STAGE_OFFSETS = { Prep: -3, Build: -1, Rehearse: 0, Show: 0, Wrap: 0, Review: 3, "Post Production": 7 };
+function anchorDeadlines(day, date2) {
+  const stages = categoryOf(day.category).stages;
+  const show2 = stages.findIndex((s2) => s2.name === categoryOf(day.category).footageStage);
+  day.stageDeadlines = Object.fromEntries(stages.map((s2, i) => [s2.name, addDaysIso(date2, LIVE_STAGE_OFFSETS[s2.name] ?? (i - show2) * 2)]));
+  for (const t2 of day.tasks) if (!t2.done) t2.dueDate = day.stageDeadlines[t2.stage] ?? t2.dueDate;
+}
+function moveDay(day, date2) {
+  day.scheduledDate = date2;
+  day.deadline = date2;
+  anchorDeadlines(day, date2);
+  day.version += 1;
+}
+function attachCrew(actor, projectId, personIds) {
+  const db2 = getDb();
+  for (const pid of personIds) {
+    const p = db2.people.find((x) => x.personId === pid);
+    if (!p || p.category === "HOP" || db2.members.some((m) => m.personId === pid && m.projectContentId === projectId)) continue;
+    db2.members.push({ personId: pid, projectContentId: projectId, roleOnProject: "Crew", canComment: p.category !== "VOL" });
+    logAudit(actor, "assign", "person", pid, `${projectId} (on a call sheet's crew)`);
+  }
+}
+
 // src/services/people.ts
 var people_exports = {};
 __export(people_exports, {
@@ -3939,8 +4095,8 @@ var allIncidents = () => [...getDb().incidents].sort((a, b) => b.at.localeCompar
 
 // src/services/equipment-manifests.ts
 var getManifest = (id2) => getDb().manifests.find((m) => m.id === id2);
-function addDays(iso, n) {
-  const [y, m, d] = iso.split("-").map(Number);
+function addDays(iso2, n) {
+  const [y, m, d] = iso2.split("-").map(Number);
   const dt = new Date(y, m - 1, d + n);
   const p = (x) => String(x).padStart(2, "0");
   return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`;
@@ -4349,6 +4505,11 @@ function manifestForSheet(sheetId) {
   return getDb().manifests.filter((m) => m.callSheetId === sheetId && m.status !== "released").sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
 }
 function addGearToSheet(actor, sheet, lines) {
+  const m = bookOnSheet(actor, sheet, lines);
+  lockInstanceOfSheet(actor, sheet.id);
+  return m;
+}
+function bookOnSheet(actor, sheet, lines) {
   requireGearAccess(actor);
   const cs = getDb().callSheets.find((c) => c.id === sheet.id);
   if (!cs) throw new RuleError("Call sheet not found.");
@@ -4366,30 +4527,50 @@ function addGearToSheet(actor, sheet, lines) {
     destination: "studio",
     status: "assigned",
     lines,
-    callSheetId: cs.id
+    callSheetId: cs.id,
+    // Booked by a person: they answer for it. Booked by the daily check (a show's template gear): the sheet's crew
+    // lead, else whoever is responsible for the show, else the Head of Production.
+    responsiblePersonId: actor.personId === "system" ? answerableFor(cs.crewLeadId, project.assigneePersonId) : void 0
   });
+}
+var canAnswer = (id2) => {
+  const p = id2 ? getPerson(id2) : void 0;
+  return !!p && p.status === "active" && (p.category === "CRW" || p.category === "HOP");
+};
+function answerableFor(...candidates) {
+  return candidates.find(canAnswer) ?? getDb().people.find((p) => p.category === "HOP" && p.status === "active")?.personId;
 }
 function removeGearFromSheet(actor, sheetId, equipmentId) {
   const m = manifestForSheet(sheetId);
   if (!m) return;
   removeLine(actor, m.id, equipmentId);
+  lockInstanceOfSheet(actor, sheetId);
+}
+function bookWhatIsFree(actor, dst, lines) {
+  const out = { booked: [], skipped: [] };
+  const existing = manifestForSheet(dst.id);
+  for (const l of lines) {
+    const item2 = getItem(l.equipmentId);
+    try {
+      checkLine(item2, l.quantity, dst.date, dst.date, existing?.id);
+      if (existing?.lines.some((x) => x.equipmentId === l.equipmentId)) continue;
+      out.booked.push({ equipmentId: l.equipmentId, quantity: l.quantity });
+    } catch (e) {
+      out.skipped.push({ line: l, reason: e instanceof RuleError ? e.message : `${item2?.name ?? l.equipmentId} could not be booked.` });
+    }
+  }
+  if (out.booked.length) bookOnSheet(actor, dst, out.booked);
+  return out;
 }
 function copyGearBetweenSheets(actor, srcSheetId, dst) {
   const src = manifestForSheet(srcSheetId);
   if (!src) return { copied: 0, skipped: [] };
-  const ok = [];
-  const skipped = [];
-  for (const l of src.lines) {
-    const item2 = getItem(l.equipmentId);
-    try {
-      checkLine(item2, l.quantity, dst.date, dst.date);
-      ok.push({ equipmentId: l.equipmentId, quantity: l.quantity });
-    } catch (e) {
-      skipped.push(e instanceof RuleError ? e.message : `${item2?.name ?? l.equipmentId} could not be copied.`);
-    }
-  }
-  if (ok.length) addGearToSheet(actor, dst, ok);
-  return { copied: ok.length, skipped };
+  const r = bookWhatIsFree(
+    actor,
+    dst,
+    src.lines.map((l) => ({ equipmentId: l.equipmentId, quantity: l.quantity }))
+  );
+  return { copied: r.booked.length, skipped: r.skipped.map((x) => x.reason) };
 }
 function rebookSheetGear(actor, sheetId, newDate) {
   const m = manifestForSheet(sheetId);
@@ -6183,6 +6364,7 @@ __export(callsheets_exports, {
   SHEET_EDITABLE: () => SHEET_EDITABLE,
   addRunItem: () => addRunItem,
   attachCallSheet: () => attachCallSheet,
+  bookPlannedGear: () => bookPlannedGear,
   callSheetForRecord: () => callSheetForRecord,
   createCallSheet: () => createCallSheet,
   crewConflicts: () => crewConflicts,
@@ -6205,6 +6387,161 @@ __export(callsheets_exports, {
   updateCallSheet: () => updateCallSheet,
   updateRunItem: () => updateRunItem
 });
+
+// src/services/sheetContent.ts
+function contentOf(src) {
+  const out = blankSheetContent();
+  for (const k of SHEET_CONTENT_KEYS) out[k] = structuredClone(src[k] ?? out[k]);
+  return out;
+}
+function cloneContent(src) {
+  const c = contentOf(src);
+  c.talent = c.talent.map((x) => ({ ...x, id: localId("TL") }));
+  c.contacts = c.contacts.map((x) => ({ ...x, id: localId("CT") }));
+  c.runOfShow = c.runOfShow.map((x) => ({ ...x, id: localId("RS") }));
+  c.technicalCheck = c.technicalCheck.map((x) => ({ ...x, id: localId("TC"), done: false, note: "" }));
+  c.rehearsal = { ...c.rehearsal, done: false };
+  return c;
+}
+function applyContent(target, content) {
+  const t2 = target;
+  for (const k of SHEET_CONTENT_KEYS) t2[k] = structuredClone(content[k]);
+}
+function onlyTicks(before, patch) {
+  for (const k of Object.keys(patch)) {
+    if (k === "technicalCheck") {
+      const now = patch.technicalCheck;
+      if (now.length !== before.technicalCheck.length) return false;
+      if (now.some((x, i) => x.id !== before.technicalCheck[i].id || x.label !== before.technicalCheck[i].label)) return false;
+    } else if (k === "rehearsal") {
+      const r = patch.rehearsal;
+      if (r.time !== before.rehearsal.time || r.notes !== before.rehearsal.notes) return false;
+    } else return false;
+  }
+  return true;
+}
+var TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+var checkTime = (v, what) => {
+  if (v !== "" && !TIME.test(v)) throw new RuleError(`Enter the ${what} as hours and minutes, for example 09:30.`);
+};
+var checkText = (v, what, max) => {
+  if (typeof v !== "string") throw new RuleError(`${what} must be text.`);
+  if (v.length > max) throw new RuleError(`Keep ${what.toLowerCase()} under ${max} characters.`);
+};
+var checkRows = (rows, what, max) => {
+  if (rows.length > max) throw new RuleError(`A sheet can list up to ${max} ${what}.`);
+  const ids2 = /* @__PURE__ */ new Set();
+  for (const r of rows) {
+    if (!r.id || ids2.has(r.id)) throw new RuleError(`Each line of ${what} needs its own ID.`);
+    ids2.add(r.id);
+  }
+};
+function checkTalent(t2) {
+  if (!t2.name.trim()) throw new RuleError("Give each person in Talent a name.");
+  checkText(t2.name, "A name", 120);
+  checkText(t2.role, "A role", 120);
+  checkText(t2.contact, "A contact", 200);
+  checkText(t2.notes, "Notes", 1e3);
+  checkTime(t2.callTime, "call time");
+}
+function checkContact(c) {
+  if (!c.name.trim()) throw new RuleError("Give each contact a name.");
+  checkText(c.name, "A name", 120);
+  checkText(c.role, "A role", 120);
+  checkText(c.phone, "A phone number", 60);
+  checkText(c.email, "An email", 200);
+}
+function checkItem(c) {
+  if (!c.label.trim()) throw new RuleError("Give each line of the technical check a name.");
+  checkText(c.label, "A line of the check", 200);
+  checkText(c.note, "A note", 1e3);
+}
+function checkRun(i) {
+  if (!TIME.test(i.time)) throw new RuleError("Enter each segment's start as hours and minutes, for example 09:30.");
+  if (!i.title.trim()) throw new RuleError("Give each segment a name.");
+  checkText(i.title, "A segment", 300);
+  checkText(i.notes, "Notes", 2e3);
+  if (!Number.isInteger(i.durationMin) || i.durationMin < 0 || i.durationMin > 600)
+    throw new RuleError("A segment runs from 0 to 600 minutes.");
+  if (i.ownerPersonId) {
+    const p = getDb().people.find((x) => x.personId === i.ownerPersonId);
+    if (!p || p.status !== "active") throw new RuleError("Choose an active person for each segment.");
+  }
+}
+function checkGear(g) {
+  if (!g.equipmentId) throw new RuleError("Choose the gear.");
+  if (!Number.isInteger(g.quantity) || g.quantity < 1) throw new RuleError("Gear quantities start at 1.");
+}
+function checkContent(patch, crewAfter) {
+  for (const [k, what] of [
+    ["callTime", "crew call"],
+    ["talentCall", "talent call"],
+    ["startTime", "start time"],
+    ["wrapTime", "wrap time"]
+  ])
+    if (patch[k] !== void 0) checkTime(patch[k], what);
+  if (patch.location !== void 0) checkText(patch.location, "The location", 500);
+  if (patch.locationAddress !== void 0) checkText(patch.locationAddress, "The address", 1e3);
+  if (patch.locationNotes !== void 0) checkText(patch.locationNotes, "Location notes", 4e3);
+  if (patch.format !== void 0) checkText(patch.format, "The format", 300);
+  if (patch.notes !== void 0) checkText(patch.notes, "Notes", 2e4);
+  const people = getDb().people;
+  if (patch.crewPersonIds !== void 0) {
+    if (patch.crewPersonIds.length > 200) throw new RuleError("A sheet can list up to 200 crew.");
+    for (const pid of patch.crewPersonIds) {
+      const p = people.find((x) => x.personId === pid);
+      if (!p || p.status !== "active") throw new RuleError("Choose active people for the crew.");
+      if (p.category === "PTR") throw new RuleError("Partners review work; put crew or volunteers on the crew.");
+    }
+  }
+  const crew = new Set(crewAfter ?? patch.crewPersonIds ?? []);
+  if (patch.crewRoles !== void 0)
+    for (const [pid, role] of Object.entries(patch.crewRoles)) {
+      checkText(role, "A crew role", 120);
+      if (crewAfter && !crew.has(pid)) throw new RuleError("Give roles only to people on the crew.");
+    }
+  if (patch.crewLeadId !== void 0 && patch.crewLeadId !== null && crewAfter && !crew.has(patch.crewLeadId))
+    throw new RuleError("The crew lead must be on the crew.");
+  if (patch.talent !== void 0) {
+    checkRows(patch.talent, "talent", 100);
+    patch.talent.forEach(checkTalent);
+  }
+  if (patch.contacts !== void 0) {
+    checkRows(patch.contacts, "contacts", 100);
+    patch.contacts.forEach(checkContact);
+  }
+  if (patch.technicalCheck !== void 0) {
+    checkRows(patch.technicalCheck, "technical checks", 100);
+    patch.technicalCheck.forEach(checkItem);
+  }
+  if (patch.runOfShow !== void 0) {
+    checkRows(patch.runOfShow, "segments", 200);
+    patch.runOfShow.forEach(checkRun);
+  }
+  if (patch.logistics !== void 0) for (const v of Object.values(patch.logistics)) checkText(v, "Logistics", 4e3);
+  if (patch.rehearsal !== void 0) {
+    checkTime(patch.rehearsal.time, "rehearsal time");
+    checkText(patch.rehearsal.notes, "Rehearsal notes", 4e3);
+  }
+  if (patch.plannedGear !== void 0) {
+    if (patch.plannedGear.length > 200) throw new RuleError("A sheet can plan up to 200 items of gear.");
+    patch.plannedGear.forEach(checkGear);
+  }
+}
+function tidyContent(patch, current3) {
+  const out = {};
+  for (const k of SHEET_CONTENT_KEYS) if (k in patch) out[k] = patch[k];
+  if (out.crewPersonIds) {
+    const crew = new Set(out.crewPersonIds);
+    const roles2 = out.crewRoles ?? current3.crewRoles;
+    out.crewRoles = Object.fromEntries(Object.entries(roles2).filter(([pid]) => crew.has(pid)));
+    const lead = out.crewLeadId !== void 0 ? out.crewLeadId : current3.crewLeadId;
+    out.crewLeadId = lead && crew.has(lead) ? lead : null;
+  }
+  return out;
+}
+
+// src/services/callsheets.ts
 var getCallSheet = (id2) => getDb().callSheets.find((c) => c.id === id2);
 function episodesOnDate(projectId, date2) {
   const root = getRecord(projectId);
@@ -6223,6 +6560,8 @@ function createCallSheet(actor, input) {
   if (!canWrite(actor, root)) throw new RuleError("You are not assigned to this project.");
   if (!input.date) throw new RuleError("Pick a date for the call sheet.");
   const cs = {
+    ...blankSheetContent(),
+    instanceId: null,
     id: claimId(`DOF-CS-${pad(nextCounter("callsheet"))}`),
     contentId: root.contentId,
     title: input.title?.trim() || `${root.title}: ${input.date}`,
@@ -6257,17 +6596,8 @@ function openOrCreateForRecord(actor, recordId) {
 function duplicateCallSheet(actor, id2, newDate) {
   const src = getCallSheet(id2);
   if (!src) throw new RuleError("Call sheet not found.");
-  const copy = createCallSheet(actor, {
-    contentId: src.contentId,
-    date: newDate,
-    title: `${src.title.replace(/:.*$/, "")}: ${newDate}`,
-    location: src.location,
-    callTime: src.callTime,
-    crewPersonIds: [...src.crewPersonIds],
-    format: src.format,
-    notes: src.notes
-  });
-  copy.runOfShow = src.runOfShow.map((x) => ({ ...x, id: localId("RS") }));
+  const copy = createCallSheet(actor, { contentId: src.contentId, date: newDate, title: `${src.title.replace(/:.*$/, "")}: ${newDate}` });
+  applyContent(copy, cloneContent(src));
   const gear = copyGearBetweenSheets(actor, src.id, { id: copy.id, contentId: copy.contentId, date: copy.date });
   logAudit(actor, "duplicate", "callsheet", copy.id, `from ${src.id}`);
   commit();
@@ -6295,20 +6625,52 @@ function loadSheet(actor, id2, expectedVersion) {
   if (expectedVersion !== void 0 && cs.version !== expectedVersion) throw new ConflictError();
   return cs;
 }
-var SHEET_EDITABLE = ["title", "location", "callTime", "crewPersonIds", "format", "notes", "date"];
+var SHEET_EDITABLE = ["title", "date", ...SHEET_CONTENT_KEYS];
 function updateCallSheet(actor, id2, input, expectedVersion) {
   const patch = pickKeys(input, SHEET_EDITABLE);
   const cs = loadSheet(actor, id2, expectedVersion);
-  if (cs.status === "final") throw new RuleError("This call sheet is final. Reopen it to make changes.");
+  const content = tidyContent(patch, cs);
+  const planChanged = patch.title !== void 0 || patch.date !== void 0 || !onlyTicks(cs, content);
+  if (cs.status === "final" && planChanged) throw new RuleError("This call sheet is final. Reopen it to make changes.");
+  checkContent(content, content.crewPersonIds ?? cs.crewPersonIds);
+  if (patch.title !== void 0 && (!patch.title.trim() || patch.title.length > 300)) throw new RuleError("Give the call sheet a title.");
   if (patch.date !== void 0 && patch.date !== cs.date) {
     if (!patch.date) throw new RuleError("Pick a date for the call sheet.");
     rebookSheetGear(actor, cs.id, patch.date);
+    const day = dayOfSheet(cs.id);
+    if (day) {
+      if (getDb().records.some(
+        (r) => r.parentId === day.parentId && r.contentId !== day.contentId && !r.archived && r.scheduledDate === patch.date
+      ))
+        throw new RuleError("Another day of this show is already on that date.");
+      moveDay(day, patch.date);
+    }
   }
-  Object.assign(cs, patch);
+  if (patch.title !== void 0) cs.title = patch.title.trim();
+  if (patch.date !== void 0) cs.date = patch.date;
+  if (content.crewPersonIds)
+    attachCrew(
+      actor,
+      cs.contentId,
+      content.crewPersonIds.filter((p) => !cs.crewPersonIds.includes(p))
+    );
+  Object.assign(cs, content);
   cs.version += 1;
+  if (planChanged) lockInstanceOfSheet(actor, cs.id);
   logAudit(actor, "update", "callsheet", id2, Object.keys(patch).join(", "));
   commit();
   return cs;
+}
+function bookPlannedGear(actor, id2) {
+  const cs = loadSheet(actor, id2);
+  if (cs.status === "final") throw new RuleError("This call sheet is final. Reopen it to make changes.");
+  if (!cs.plannedGear.length) return { booked: 0, skipped: [] };
+  const r = bookWhatIsFree(actor, { id: cs.id, contentId: cs.contentId, date: cs.date }, cs.plannedGear);
+  cs.plannedGear = r.skipped.map((x) => x.line);
+  cs.version += 1;
+  logAudit(actor, "book-planned-gear", "callsheet", id2, `${r.booked.length} booked, ${r.skipped.length} not free`);
+  commit();
+  return { booked: r.booked.length, skipped: r.skipped.map((x) => x.reason) };
 }
 function attachCallSheet(actor, id2, contentId, expectedVersion) {
   const cs = loadSheet(actor, id2, expectedVersion);
@@ -6400,8 +6762,6 @@ function checkRunItem(input) {
 function editableSheet(actor, id2) {
   const cs = loadSheet(actor, id2);
   if (cs.status === "final") throw new RuleError("This call sheet is final. Reopen it to make changes.");
-  if (!runOfShowRequired(cs) && cs.runOfShow.length === 0)
-    throw new RuleError("A run of show is for large productions. Set the level of production to Large on the day first.");
   return cs;
 }
 function addRunItem(actor, sheetId, input) {
@@ -6418,6 +6778,7 @@ function addRunItem(actor, sheetId, input) {
   cs.runOfShow.push(item2);
   cs.version += 1;
   logAudit(actor, "run-add", "callsheet", sheetId, `${item2.time} ${item2.title}`);
+  lockInstanceOfSheet(actor, sheetId);
   commit();
   return item2;
 }
@@ -6436,6 +6797,7 @@ function updateRunItem(actor, sheetId, itemId, patch) {
   Object.assign(item2, { ...next2, title: next2.title.trim(), notes: next2.notes.trim() });
   cs.version += 1;
   logAudit(actor, "run-update", "callsheet", sheetId, item2.title);
+  lockInstanceOfSheet(actor, sheetId);
   commit();
   return item2;
 }
@@ -6444,6 +6806,7 @@ function removeRunItem(actor, sheetId, itemId) {
   cs.runOfShow = cs.runOfShow.filter((x) => x.id !== itemId);
   cs.version += 1;
   logAudit(actor, "run-remove", "callsheet", sheetId, itemId);
+  lockInstanceOfSheet(actor, sheetId);
   commit();
 }
 function runOfShowTotals(cs) {
@@ -6527,13 +6890,13 @@ function plannedMinutes(projectId) {
 var checkDate = (d) => {
   if (d !== null && d !== void 0 && d !== "" && !isIsoDate(d)) throw new RuleError("Pick the session's date.");
 };
-var TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+var TIME2 = /^([01]\d|2[0-3]):[0-5]\d$/;
 function checkPlanFields(input) {
   if (input.name !== void 0 && input.name.trim().length > 120) throw new RuleError("Keep the session's name under 120 characters.");
   if (input.label !== void 0 && input.label !== null && !SESSION_LABELS.includes(input.label))
     throw new RuleError("Choose Morning, Afternoon, Evening, Late night or Full day.");
   for (const t2 of [input.startTime, input.endTime])
-    if (t2 !== void 0 && t2 !== null && t2 !== "" && !TIME.test(t2))
+    if (t2 !== void 0 && t2 !== null && t2 !== "" && !TIME2.test(t2))
       throw new RuleError("Enter the time as hours and minutes, for example 09:30.");
 }
 var isDevotion = (projectId) => getRecord(projectId)?.workflow?.formType === "devotion";
@@ -8076,7 +8439,9 @@ function blankRecord(id2, category2, title2, parentId, level2) {
     notes: "",
     seriesType: null,
     workflow: null,
-    episode: null
+    episode: null,
+    production: null,
+    instance: null
   };
 }
 function initPipeline(actor, r, stepDays = 4, startStage) {
@@ -8126,27 +8491,31 @@ function datesBetween(start, end) {
   for (let i = 0; i <= MAX_SHOW_DAYS; i++) {
     const dt = new Date(y, m - 1, d + i);
     const p = (x) => String(x).padStart(2, "0");
-    const iso = `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`;
-    if (iso > end) break;
-    out.push(iso);
+    const iso2 = `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`;
+    if (iso2 > end) break;
+    out.push(iso2);
   }
   return out;
+}
+function makeDay(actor, show2, date2, title2, input = {}) {
+  const day = blankRecord(nextChildId(show2), "live", title2, show2.contentId, 1);
+  day.scheduledDate = date2;
+  day.deadline = date2 ?? input.deadline ?? null;
+  day.assigneePersonId = input.assigneePersonId || null;
+  day.productionLevel = input.productionLevel ?? null;
+  initPipeline(actor, day);
+  if (day.assigneePersonId && day.pipelineStage) day.stageAssignees[day.pipelineStage] = [{ personId: day.assigneePersonId, roles: [] }];
+  getDb().records.push(day);
+  ensureMember(actor, day.assigneePersonId, day);
+  return day;
 }
 function createDays(actor, show2, input) {
   const dates = input.showStart ? datesBetween(input.showStart, input.showEnd || input.showStart) : [null];
   if (dates.length > MAX_SHOW_DAYS) throw new RuleError(`A live show can run for up to ${MAX_SHOW_DAYS} days. Add a longer one in parts.`);
-  dates.forEach((date2, i) => {
-    const day = blankRecord(nextChildId(show2), "live", `Day ${i + 1}`, show2.contentId, 1);
-    day.scheduledDate = date2;
-    day.deadline = date2 ?? input.deadline ?? null;
-    day.assigneePersonId = input.assigneePersonId || null;
-    day.productionLevel = input.productionLevel ?? null;
-    initPipeline(actor, day);
-    if (day.assigneePersonId && day.pipelineStage) day.stageAssignees[day.pipelineStage] = [{ personId: day.assigneePersonId, roles: [] }];
-    getDb().records.push(day);
-    ensureMember(actor, day.assigneePersonId, day);
-  });
+  dates.forEach((date2, i) => makeDay(actor, show2, date2, `Day ${i + 1}`, input));
 }
+var showDates = (start, end) => datesBetween(start, end);
+var MAX_DAYS_OF_SHOW = MAX_SHOW_DAYS;
 function createRecord(actor, input) {
   requireCan(actor, "pipeline.manage", "create a new project");
   if (!input.title.trim()) throw new RuleError("Give the project a title.");
@@ -8167,7 +8536,7 @@ function createRecord(actor, input) {
   if (r.assigneePersonId && r.pipelineStage) r.stageAssignees[r.pipelineStage] = [{ personId: r.assigneePersonId, roles: [] }];
   getDb().records.push(r);
   ensureMember(actor, r.assigneePersonId, r);
-  if (r.category === "live") createDays(actor, r, input);
+  if (r.category === "live" && !input.noDays) createDays(actor, r, input);
   logAudit(actor, "create", "record", r.contentId, r.title);
   commit();
   return r;
@@ -10268,10 +10637,78 @@ function upgradeToV18(db2) {
   db2.schemaVersion = 18;
   return db2;
 }
+function upgradeToV19(db2) {
+  db2.showTemplates ??= [];
+  const blank2 = blankSheetContent();
+  for (const cs of db2.callSheets) {
+    const sheet = cs;
+    for (const k of SHEET_CONTENT_KEYS) if (sheet[k] === void 0) sheet[k] = structuredClone(blank2[k]);
+    cs.instanceId ??= null;
+  }
+  for (const r of db2.records) {
+    r.production ??= null;
+    r.instance ??= null;
+  }
+  const today = todayIso();
+  const at = (/* @__PURE__ */ new Date()).toISOString();
+  const made = [];
+  const csNumbers = db2.callSheets.map((c) => Number(/^DOF-CS-(\d+)$/.exec(c.id)?.[1] ?? NaN)).filter((n) => !Number.isNaN(n));
+  let csNext = Math.max(db2.counters.callsheet ?? 0, ...csNumbers);
+  for (const show2 of db2.records.filter((r) => r.category === "live" && r.hierarchyLevel === 0)) {
+    const days = db2.records.filter((r) => r.parentId === show2.contentId && r.hierarchyLevel === 1);
+    if (!show2.production) {
+      const oneDay = days.filter((d) => !d.archived).length === 1;
+      show2.production = { mode: oneDay ? "one_time" : "multi_day", templateId: null, eventPlan: oneDay ? null : blankEventPlan() };
+    }
+    for (const day of days) {
+      const sheets = db2.callSheets.filter((c) => c.contentId === show2.contentId);
+      if (sheets.some((c) => c.instanceId === day.contentId)) continue;
+      const found = sheets.filter(
+        (c) => c.instanceId === null && (c.linkedEpisodeIds.includes(day.contentId) || !!day.scheduledDate && c.date === day.scheduledDate)
+      ).sort((a, b) => a.id.localeCompare(b.id))[0];
+      if (found) {
+        found.instanceId = day.contentId;
+        continue;
+      }
+      if (day.archived || !day.scheduledDate || day.scheduledDate < today) continue;
+      csNext += 1;
+      const id2 = `DOF-CS-${String(csNext).padStart(3, "0")}`;
+      db2.callSheets.push({
+        ...blankSheetContent(),
+        id: id2,
+        contentId: show2.contentId,
+        title: `${show2.title}: ${day.scheduledDate}`,
+        date: day.scheduledDate,
+        callTime: "08:00",
+        linkedEpisodeIds: [day.contentId],
+        equipmentIds: [],
+        instanceId: day.contentId,
+        status: "draft",
+        version: 1,
+        createdAt: at
+      });
+      made.push(`${id2} for ${day.contentId}`);
+    }
+  }
+  if (made.length) {
+    db2.counters.callsheet = csNext;
+    db2.audit.push({
+      id: logId("A"),
+      at,
+      byPersonId: "system",
+      action: "migrate-productions",
+      entity: "system",
+      entityId: "productions",
+      detail: `Every day of a live show has its call sheet: made ${made.join(", ")}.`
+    });
+  }
+  db2.schemaVersion = 19;
+  return db2;
+}
 
 // src/data/store.ts
 var KEY = "dof-hub-db";
-var SCHEMA_VERSION = 18;
+var SCHEMA_VERSION = 19;
 function migrate(old) {
   const gear = buildGearSeed();
   const next2 = {
@@ -10312,7 +10749,8 @@ var UPGRADES = {
   14: upgradeToV15,
   15: upgradeToV16,
   16: upgradeToV17,
-  17: upgradeToV18
+  17: upgradeToV18,
+  18: upgradeToV19
 };
 function upgradeDb(parsed) {
   let db2 = parsed.schemaVersion === 1 ? migrate(parsed) : parsed;
@@ -10872,6 +11310,8 @@ async function snapshotFor(store2, actor) {
       storyboardFrames: (db2.storyboardFrames ?? []).filter((f2) => boardIds.has(f2.storyboardId)),
       shotLists: lists,
       shotListRows: (db2.shotListRows ?? []).filter((r) => listIds.has(r.shotListId)),
+      // A show's template goes with the show.
+      showTemplates: (db2.showTemplates ?? []).filter((t2) => ids2.has(t2.contentId)),
       outbox: can(actor, "reminders.sendOthers") ? db2.outbox : db2.outbox.filter((o) => o.personId === actor.personId),
       settings,
       counters: db2.counters
@@ -11555,6 +11995,537 @@ function acceptDevotion(actor, projectId, note) {
   const script = documentOf(projectId, "Development", "devotional_script");
   const written = script ? pagesOf(script.id).filter(countsAsDevotion) : [];
   return written.length ? makeDevotionEpisodes(actor, projectId) : { made: [], updated: [], episodes: [] };
+}
+
+// src/services/production.ts
+var production_exports = {};
+__export(production_exports, {
+  BOARD_AHEAD_DAYS: () => BOARD_AHEAD_DAYS,
+  BOARD_PAST_DAYS: () => BOARD_PAST_DAYS,
+  DEFAULT_HORIZON_WEEKS: () => DEFAULT_HORIZON_WEEKS,
+  GEAR_WINDOW_DAYS: () => GEAR_WINDOW_DAYS,
+  MAX_HORIZON_WEEKS: () => MAX_HORIZON_WEEKS,
+  addEventDay: () => addEventDay,
+  canPlanShow: () => canPlanShow,
+  createProduction: () => createProduction,
+  daysOfShow: () => daysOfShow,
+  followsTemplate: () => followsTemplate,
+  getTemplate: () => getTemplate,
+  instanceTitle: () => instanceTitle,
+  isShow: () => isShow,
+  modeLabel: () => modeLabel,
+  offSchedule: () => offSchedule,
+  onBoard: () => onBoard,
+  productionOf: () => productionOf,
+  recurringDue: () => recurringDue,
+  resetToTemplate: () => resetToTemplate,
+  setShowSchedule: () => setShowSchedule,
+  sheetOfDay: () => sheetOfDay,
+  templateOfShow: () => templateOfShow,
+  topUpRecurring: () => topUpRecurring,
+  topUpShow: () => topUpShow,
+  updateEventPlan: () => updateEventPlan,
+  updateShowTemplate: () => updateShowTemplate
+});
+
+// src/services/recurrence.ts
+var DAY = 864e5;
+var toDay = (iso2) => {
+  const [y, m, d] = iso2.split("-").map(Number);
+  return Math.round(Date.UTC(y, m - 1, d) / DAY);
+};
+var fromDay = (n) => new Date(n * DAY).toISOString().slice(0, 10);
+var weekdayOf = (iso2) => new Date(toDay(iso2) * DAY).getUTCDay();
+var daysInMonth = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
+var iso = (y, m, d) => `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+var MAX_INTERVAL = 12;
+var MAX_COUNT = 520;
+function checkRule(rule) {
+  if (!isIsoDate(rule.startDate)) throw new RuleError("Pick the date the show starts.");
+  if (!Number.isInteger(rule.interval) || rule.interval < 1 || rule.interval > MAX_INTERVAL)
+    throw new RuleError(`It can repeat every 1 to ${MAX_INTERVAL} ${rule.freq === "weekly" ? "weeks" : "months"}.`);
+  if (rule.freq === "weekly") {
+    if (!rule.weekdays.length) throw new RuleError("Choose the day of the week it happens on.");
+    if (rule.weekdays.some((d) => !Number.isInteger(d) || d < 0 || d > 6)) throw new RuleError("Choose days of the week.");
+  } else if (rule.freq === "monthly") {
+    const byDay = rule.monthDay !== null;
+    if (byDay === (rule.nth !== null)) throw new RuleError("Choose either a day of the month or, say, the first Friday.");
+    if (byDay && (!Number.isInteger(rule.monthDay) || rule.monthDay < 1 || rule.monthDay > 31))
+      throw new RuleError("Choose a day of the month from 1 to 31.");
+    if (rule.nth && (![1, 2, 3, 4, -1].includes(rule.nth.week) || rule.nth.weekday < 0 || rule.nth.weekday > 6))
+      throw new RuleError("Choose the first, second, third, fourth or last day of the week in the month.");
+  } else throw new RuleError("Choose weekly or monthly.");
+  if (rule.until !== null && rule.count !== null) throw new RuleError("End it on a date or after a number of times, not both.");
+  if (rule.until !== null && (!isIsoDate(rule.until) || rule.until < rule.startDate))
+    throw new RuleError("It cannot end before it starts.");
+  if (rule.count !== null && (!Number.isInteger(rule.count) || rule.count < 1 || rule.count > MAX_COUNT))
+    throw new RuleError(`It can happen from 1 to ${MAX_COUNT} times.`);
+  for (const d of [...rule.skipDates, ...rule.extraDates])
+    if (!isIsoDate(d)) throw new RuleError("A date left out or added is not a date.");
+}
+function monthDates(rule, y, m) {
+  const last = daysInMonth(y, m);
+  if (rule.monthDay !== null) return [iso(y, m, Math.min(rule.monthDay, last))];
+  const { week, weekday } = rule.nth;
+  const first = weekdayOf(iso(y, m, 1));
+  const firstMatch = 1 + (weekday - first + 7) % 7;
+  if (week === -1) {
+    let d2 = firstMatch;
+    while (d2 + 7 <= last) d2 += 7;
+    return [iso(y, m, d2)];
+  }
+  const d = firstMatch + (week - 1) * 7;
+  return d <= last ? [iso(y, m, d)] : [];
+}
+function occurrences(rule, to) {
+  checkRule(rule);
+  const end = rule.until && rule.until < to ? rule.until : to;
+  const out = [];
+  const limit = rule.count ?? Infinity;
+  if (rule.freq === "weekly") {
+    const weekStart = toDay(rule.startDate) - weekdayOf(rule.startDate);
+    const days = [...new Set(rule.weekdays)].sort((a, b) => a - b);
+    for (let w = 0; out.length < limit; w += rule.interval) {
+      const sunday = weekStart + w * 7;
+      if (fromDay(sunday) > end) break;
+      for (const d of days) {
+        const date2 = fromDay(sunday + d);
+        if (date2 < rule.startDate) continue;
+        if (date2 > end || out.length >= limit) break;
+        out.push(date2);
+      }
+    }
+  } else {
+    let [y, m] = rule.startDate.split("-").map(Number);
+    while (out.length < limit) {
+      if (iso(y, m, 1) > end) break;
+      for (const date2 of monthDates(rule, y, m)) if (date2 >= rule.startDate && date2 <= end && out.length < limit) out.push(date2);
+      m += rule.interval;
+      while (m > 12) {
+        m -= 12;
+        y += 1;
+      }
+    }
+  }
+  const skip = new Set(rule.skipDates);
+  const extra = rule.extraDates.filter((d) => d >= rule.startDate && d <= to);
+  return [.../* @__PURE__ */ new Set([...out.filter((d) => !skip.has(d)), ...extra])].sort();
+}
+var occurrencesBetween = (rule, from, to) => occurrences(rule, to).filter((d) => d >= from);
+
+// src/services/production.ts
+var DEFAULT_HORIZON_WEEKS = 12;
+var MAX_HORIZON_WEEKS = 26;
+var GEAR_WINDOW_DAYS = 14;
+var BOARD_PAST_DAYS = 7;
+var BOARD_AHEAD_DAYS = 14;
+var MAX_NEW_PER_RUN = 60;
+var OFF_SCHEDULE = "No longer on the show's schedule";
+var SYSTEM2 = { personId: "system", role: "HOP" };
+var WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+var isShow = (r) => !!r && r.category === "live" && r.hierarchyLevel === 0;
+var daysOfShow = (showId, withArchived = false) => getDb().records.filter((r) => r.parentId === showId && r.hierarchyLevel === 1 && (withArchived || !r.archived)).sort((a, b) => (a.scheduledDate ?? "9999").localeCompare(b.scheduledDate ?? "9999") || a.contentId.localeCompare(b.contentId));
+function productionOf(show2) {
+  if (!isShow(show2)) return null;
+  if (show2.production) return show2.production;
+  return { mode: daysOfShow(show2.contentId).length === 1 ? "one_time" : "multi_day", templateId: null, eventPlan: null };
+}
+var modeLabel = (mode) => MODE_LABEL[mode];
+var getTemplate = (id2) => (getDb().showTemplates ?? []).find((t2) => t2.id === id2);
+var templateOfShow = (showId) => (getDb().showTemplates ?? []).find((t2) => t2.contentId === showId);
+function sheetOfDay(day) {
+  const sheets = getDb().callSheets;
+  return sheets.find((c) => c.instanceId === day.contentId) ?? (day.scheduledDate ? sheets.find((c) => c.contentId === day.parentId && c.instanceId === null && c.date === day.scheduledDate) : void 0);
+}
+var followsTemplate = (day) => !!day.instance && !day.instance.locked;
+function offSchedule(day, today = todayIso()) {
+  if (!day.instance || !day.scheduledDate || day.scheduledDate < today) return false;
+  const t2 = getTemplate(day.instance.templateId);
+  if (!t2) return false;
+  const to = addDaysIso(today, t2.horizonWeeks * 7);
+  return day.instance.occurrence >= today && day.instance.occurrence <= to && !occurrencesBetween(t2.rule, today, to).includes(day.instance.occurrence);
+}
+function onBoard(r, today = todayIso()) {
+  if (!r.instance || !r.scheduledDate) return true;
+  if (r.scheduledDate > addDaysIso(today, BOARD_AHEAD_DAYS)) return false;
+  if (r.scheduledDate < addDaysIso(today, -BOARD_PAST_DAYS)) return !isComplete(r);
+  return true;
+}
+var instanceTitle = (date2) => `${WEEKDAY_SHORT[weekdayOf(date2)]} ${fmtDate(date2)}`;
+var canPlanShow = (actor, show2) => canWrite(actor, show2) && (isHop(actor) || can(actor, "pipeline.manage") || show2.assigneePersonId === actor.personId);
+function showForPlan(actor, showId) {
+  const show2 = getRecord(showId);
+  if (!isShow(show2)) throw new RuleError("That show no longer exists.");
+  if (show2.archived) throw new RuleError("This show is closed.");
+  if (!canPlanShow(actor, show2))
+    throw new RuleError(
+      "Only the Head of Production, someone who manages the pipeline, or the show's responsible person can change how its days are made."
+    );
+  return show2;
+}
+function makeSheet(actor, show2, day, content) {
+  const cs = createCallSheet(actor, { contentId: show2.contentId, date: day.scheduledDate, title: `${show2.title}: ${day.title}` });
+  applyContent(cs, content);
+  cs.instanceId = day.contentId;
+  return cs;
+}
+function bookIfDue(actor, cs, today) {
+  if (!cs.plannedGear.length || cs.status === "final" || !hasGearAccess(actor)) return 0;
+  if (cs.date < today || cs.date > addDaysIso(today, GEAR_WINDOW_DAYS)) return 0;
+  const r = bookWhatIsFree(actor, { id: cs.id, contentId: cs.contentId, date: cs.date }, cs.plannedGear);
+  cs.plannedGear = r.skipped.map((x) => x.line);
+  if (r.booked.length) cs.version += 1;
+  return r.booked.length;
+}
+function startingContent(callTime, location) {
+  const c = blankSheetContent();
+  c.callTime = callTime || "08:00";
+  c.location = location.trim();
+  c.technicalCheck = DEFAULT_TECH_CHECK.map((label) => ({ id: localId("TC"), label, done: false, note: "" }));
+  return c;
+}
+function makeInstance(actor, show2, t2, date2, today) {
+  const day = makeDay(actor, show2, date2, instanceTitle(date2), { productionLevel: t2.productionLevel, assigneePersonId: t2.ownerPersonId });
+  day.instance = { templateId: t2.id, occurrence: date2, templateVersion: t2.version, locked: false, lockedAt: null, lockedBy: null };
+  anchorDeadlines(day, date2);
+  const cs = makeSheet(actor, show2, day, cloneContent(t2.sheet));
+  bookIfDue(actor, cs, today);
+  return day;
+}
+function untouched(day) {
+  if (day.tasks.some((t2) => t2.done) || day.links.length) return false;
+  if (day.pipelineStage !== categoryOf(day.category).stages[0].name || Object.values(day.stageOutputs).some(Boolean)) return false;
+  const cs = sheetOfDay(day);
+  if (!cs) return true;
+  if (cs.status === "final" || getDb().comments.some((c) => c.callSheetId === cs.id)) return false;
+  const m = manifestForSheet(cs.id);
+  return !m || m.status === "assigned";
+}
+function syncSchedule(actor, show2, t2, today) {
+  const out = { made: [], restored: [], removed: [], kept: [], booked: 0 };
+  const to = addDaysIso(today, t2.horizonWeeks * 7);
+  const wanted = occurrencesBetween(t2.rule, today, to);
+  const wantedSet = new Set(wanted);
+  const mine = daysOfShow(show2.contentId, true).filter((d) => d.instance?.templateId === t2.id);
+  const byDate = /* @__PURE__ */ new Map();
+  for (const d of mine) if (!byDate.has(d.instance.occurrence) || !d.archived) byDate.set(d.instance.occurrence, d);
+  for (const date2 of wanted) {
+    if (out.made.length >= MAX_NEW_PER_RUN) break;
+    const d = byDate.get(date2);
+    if (!d) out.made.push(makeInstance(actor, show2, t2, date2, today).contentId);
+    else if (d.archived && d.closedReason === OFF_SCHEDULE) {
+      d.archived = false;
+      d.closedReason = null;
+      d.version += 1;
+      out.restored.push(d.contentId);
+    }
+  }
+  for (const d of mine) {
+    if (d.archived || !d.scheduledDate || d.scheduledDate < today || wantedSet.has(d.instance.occurrence)) continue;
+    if (d.instance.occurrence > to && d.scheduledDate > to) continue;
+    if (d.instance.locked || !untouched(d)) {
+      out.kept.push(d.contentId);
+      continue;
+    }
+    const cs = sheetOfDay(d);
+    const m = cs ? manifestForSheet(cs.id) : void 0;
+    if (m?.status === "assigned") releaseManifest(actor, m.id);
+    d.archived = true;
+    d.closedReason = OFF_SCHEDULE;
+    d.version += 1;
+    out.removed.push(d.contentId);
+  }
+  for (const d of daysOfShow(show2.contentId).filter((x) => x.instance?.templateId === t2.id)) {
+    const cs = sheetOfDay(d);
+    if (cs) out.booked += bookIfDue(actor, cs, today);
+  }
+  if (out.made.length || out.restored.length || out.removed.length)
+    logAudit(
+      actor,
+      "schedule-sync",
+      "record",
+      show2.contentId,
+      [
+        out.made.length && `${out.made.length} days made`,
+        out.restored.length && `${out.restored.length} brought back`,
+        out.removed.length && `${out.removed.length} taken off`
+      ].filter(Boolean).join(", ")
+    );
+  return out;
+}
+function createProduction(actor, input) {
+  if (!input.title.trim()) throw new RuleError("Give the show a title.");
+  checkContent({ callTime: input.callTime ?? "", location: input.location ?? "" });
+  let dates = [];
+  if (input.mode === "one_time") {
+    if (!input.date || !isIsoDate(input.date)) throw new RuleError("Pick the date of the event.");
+    dates = [input.date];
+  } else if (input.mode === "multi_day") {
+    if (!input.startDate || !input.endDate || !isIsoDate(input.startDate) || !isIsoDate(input.endDate))
+      throw new RuleError("Pick the first and last day of the event.");
+    if (input.endDate <= input.startDate)
+      throw new RuleError("A multi-day event runs for at least two days. For one day, make it a one-time event.");
+    dates = showDates(input.startDate, input.endDate);
+    if (dates.length > MAX_DAYS_OF_SHOW || dates[dates.length - 1] !== input.endDate)
+      throw new RuleError(`An event can run for up to ${MAX_DAYS_OF_SHOW} days. Add a longer one in parts.`);
+  } else if (input.mode === "recurring") {
+    if (!input.rule) throw new RuleError("Set when the show happens.");
+    checkRule(input.rule);
+  } else throw new RuleError("Choose a recurring show, a one-time event or a multi-day event.");
+  const recurring = input.mode === "recurring";
+  const show2 = createRecord(actor, {
+    category: "live",
+    title: input.title,
+    showStart: recurring ? null : dates[0],
+    showEnd: recurring ? null : dates[dates.length - 1],
+    productionLevel: input.productionLevel ?? null,
+    assigneePersonId: input.assigneePersonId ?? null,
+    notes: input.notes ?? "",
+    noDays: recurring
+  });
+  show2.production = { mode: input.mode, templateId: null, eventPlan: input.mode === "multi_day" ? blankEventPlan() : null };
+  const content = startingContent(input.callTime ?? "", input.location ?? "");
+  const today = todayIso();
+  if (recurring) {
+    const at = (/* @__PURE__ */ new Date()).toISOString();
+    const t2 = {
+      id: claimId(`DOF-TPL-${pad(nextCounter("showTemplate"))}`),
+      contentId: show2.contentId,
+      rule: structuredClone(input.rule),
+      sheet: content,
+      productionLevel: input.productionLevel ?? null,
+      ownerPersonId: input.assigneePersonId || null,
+      horizonWeeks: DEFAULT_HORIZON_WEEKS,
+      version: 1,
+      createdAt: at,
+      updatedAt: at,
+      updatedBy: actor.personId
+    };
+    getDb().showTemplates.push(t2);
+    show2.production.templateId = t2.id;
+    show2.showStart = t2.rule.startDate;
+    show2.showEnd = t2.rule.until;
+    syncSchedule(actor, show2, t2, today);
+  } else
+    for (const day of daysOfShow(show2.contentId)) {
+      anchorDeadlines(day, day.scheduledDate);
+      makeSheet(actor, show2, day, cloneContent(content));
+    }
+  logAudit(actor, "create-production", "record", show2.contentId, modeLabel(input.mode));
+  commit();
+  return show2;
+}
+var requireTemplate = (id2) => {
+  const t2 = getTemplate(id2);
+  if (!t2) throw new RuleError("That show's template no longer exists.");
+  return t2;
+};
+function setShowSchedule(actor, templateId, rule) {
+  const t2 = requireTemplate(templateId);
+  const show2 = showForPlan(actor, t2.contentId);
+  checkRule(rule);
+  t2.rule = structuredClone(rule);
+  t2.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+  t2.updatedBy = actor.personId;
+  show2.showStart = rule.startDate;
+  show2.showEnd = rule.until;
+  show2.version += 1;
+  const r = syncSchedule(actor, show2, t2, todayIso());
+  logAudit(actor, "schedule", "record", show2.contentId, "schedule changed");
+  commit();
+  return r;
+}
+function applyTemplateTo(actor, t2, day, cs, today) {
+  const before = new Map(cs.technicalCheck.map((x) => [x.label, x]));
+  const next2 = cloneContent(t2.sheet);
+  next2.technicalCheck = next2.technicalCheck.map((x) => {
+    const old = before.get(x.label);
+    return old ? { ...x, done: old.done, note: old.note } : x;
+  });
+  next2.rehearsal.done = cs.rehearsal.done;
+  const m = manifestForSheet(cs.id);
+  if (m && m.status === "assigned" && hasGearAccess(actor)) {
+    for (const l of [...m.lines])
+      if (!t2.sheet.plannedGear.some((g) => g.equipmentId === l.equipmentId)) removeLine(actor, m.id, l.equipmentId);
+    const still = manifestForSheet(cs.id);
+    next2.plannedGear = next2.plannedGear.filter((g) => !still?.lines.some((l) => l.equipmentId === g.equipmentId));
+  } else if (m) next2.plannedGear = next2.plannedGear.filter((g) => !m.lines.some((l) => l.equipmentId === g.equipmentId));
+  applyContent(cs, next2);
+  cs.version += 1;
+  day.productionLevel = t2.productionLevel;
+  day.instance.templateVersion = t2.version;
+  day.version += 1;
+  bookIfDue(actor, cs, today);
+}
+function updateShowTemplate(actor, templateId, patch) {
+  const t2 = requireTemplate(templateId);
+  const show2 = showForPlan(actor, t2.contentId);
+  if (patch.sheet) {
+    const c = tidyContent(patch.sheet, t2.sheet);
+    checkContent(c, c.crewPersonIds ?? t2.sheet.crewPersonIds);
+    if (c.crewPersonIds) attachCrew(actor, show2.contentId, c.crewPersonIds);
+    Object.assign(t2.sheet, c);
+  }
+  if (patch.productionLevel !== void 0) {
+    if (patch.productionLevel !== null && !["small", "medium", "large"].includes(patch.productionLevel))
+      throw new RuleError("Choose small, medium or large.");
+    t2.productionLevel = patch.productionLevel;
+  }
+  if (patch.ownerPersonId !== void 0) {
+    const p = patch.ownerPersonId ? getDb().people.find((x) => x.personId === patch.ownerPersonId) : null;
+    if (patch.ownerPersonId && (!p || p.status !== "active" || p.category !== "CRW" && p.category !== "HOP"))
+      throw new RuleError("Choose someone from the crew to be responsible for each day.");
+    t2.ownerPersonId = patch.ownerPersonId || null;
+  }
+  if (patch.horizonWeeks !== void 0) {
+    if (!Number.isInteger(patch.horizonWeeks) || patch.horizonWeeks < 1 || patch.horizonWeeks > MAX_HORIZON_WEEKS)
+      throw new RuleError(`Make days from 1 to ${MAX_HORIZON_WEEKS} weeks ahead.`);
+    t2.horizonWeeks = patch.horizonWeeks;
+  }
+  t2.version += 1;
+  t2.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+  t2.updatedBy = actor.personId;
+  const today = todayIso();
+  const out = { updated: [], kept: [] };
+  for (const day of daysOfShow(show2.contentId).filter((d) => d.instance?.templateId === t2.id && (d.scheduledDate ?? "") >= today)) {
+    const cs = sheetOfDay(day);
+    if (!cs || day.instance.locked || cs.status === "final") {
+      out.kept.push(day.contentId);
+      continue;
+    }
+    applyTemplateTo(actor, t2, day, cs, today);
+    out.updated.push(day.contentId);
+  }
+  if (patch.horizonWeeks !== void 0) syncSchedule(actor, show2, t2, today);
+  logAudit(
+    actor,
+    "template",
+    "record",
+    show2.contentId,
+    `${Object.keys(patch).join(", ")}: ${out.updated.length} days follow, ${out.kept.length} kept`
+  );
+  commit();
+  return out;
+}
+function resetToTemplate(actor, dayId) {
+  const day = getRecord(dayId);
+  if (!day?.instance) throw new RuleError("This day was not made from a show's template.");
+  const show2 = getRecord(day.parentId ?? "");
+  if (!show2 || !canWrite(actor, show2) || day.archived) throw new RuleError("You have view-only access to this show.");
+  const t2 = requireTemplate(day.instance.templateId);
+  const cs = sheetOfDay(day);
+  if (!cs) throw new RuleError("This day has no call sheet.");
+  if (cs.status === "final") throw new RuleError("This call sheet is final. Reopen it to put it back on the template.");
+  const today = todayIso();
+  if ((day.scheduledDate ?? "") < today) throw new RuleError("A day that has passed is kept as it was.");
+  day.instance.locked = false;
+  day.instance.lockedAt = null;
+  day.instance.lockedBy = null;
+  applyTemplateTo(actor, t2, day, cs, today);
+  logAudit(actor, "reset-to-template", "record", day.contentId, `from ${t2.id}`);
+  commit();
+  return day;
+}
+function topUpShow(actor, showId) {
+  const show2 = getRecord(showId);
+  if (!isShow(show2) || show2.archived) throw new RuleError("That show no longer exists.");
+  if (!canWrite(actor, show2)) throw new RuleError("You have view-only access to this show.");
+  const t2 = show2.production?.templateId ? getTemplate(show2.production.templateId) : void 0;
+  if (!t2) throw new RuleError("This show does not repeat.");
+  const r = syncSchedule(actor, show2, t2, todayIso());
+  commit();
+  return r;
+}
+function recurringDue(today = todayIso()) {
+  for (const t2 of getDb().showTemplates ?? []) {
+    const show2 = getRecord(t2.contentId);
+    if (!isShow(show2) || show2.archived) continue;
+    const have = new Set(
+      daysOfShow(show2.contentId, true).filter((d) => d.instance?.templateId === t2.id).map((d) => d.instance.occurrence)
+    );
+    if (occurrencesBetween(t2.rule, today, addDaysIso(today, t2.horizonWeeks * 7)).some((d) => !have.has(d))) return true;
+    for (const d of daysOfShow(show2.contentId)) {
+      const cs = d.instance ? sheetOfDay(d) : void 0;
+      if (cs?.plannedGear.length && cs.status === "draft" && cs.date >= today && cs.date <= addDaysIso(today, GEAR_WINDOW_DAYS))
+        return true;
+    }
+  }
+  return false;
+}
+function topUpRecurring(today = todayIso()) {
+  const out = { made: 0, booked: 0 };
+  for (const t2 of [...getDb().showTemplates ?? []]) {
+    const show2 = getRecord(t2.contentId);
+    if (!isShow(show2) || show2.archived) continue;
+    const r = syncSchedule(SYSTEM2, show2, t2, today);
+    out.made += r.made.length + r.restored.length;
+    out.booked += r.booked;
+  }
+  return out;
+}
+function eventForPlan(actor, showId) {
+  const show2 = showForPlan(actor, showId);
+  if (productionOf(show2)?.mode !== "multi_day") throw new RuleError("Only a multi-day event has an Event Plan and days to add.");
+  return show2;
+}
+function updateEventPlan(actor, showId, patch) {
+  const show2 = eventForPlan(actor, showId);
+  const plan = { ...blankEventPlan(), ...show2.production?.eventPlan ?? {} };
+  for (const f2 of EVENT_PLAN_FIELDS) {
+    const v = patch[f2.key];
+    if (v === void 0) continue;
+    if (typeof v !== "string" || v.length > 4e3) throw new RuleError(`Keep the ${f2.label.toLowerCase()} under 4,000 characters.`);
+    plan[f2.key] = v;
+  }
+  show2.production = { ...show2.production ?? productionOf(show2), eventPlan: plan };
+  show2.version += 1;
+  logAudit(actor, "event-plan", "record", showId, Object.keys(patch).join(", "));
+  commit();
+  return plan;
+}
+function addEventDay(actor, showId, date2) {
+  const show2 = eventForPlan(actor, showId);
+  if (!isIsoDate(date2)) throw new RuleError("Pick the day's date.");
+  const days = daysOfShow(showId);
+  if (days.some((d) => d.scheduledDate === date2)) throw new RuleError("The event already has a day on that date.");
+  if (days.length >= MAX_DAYS_OF_SHOW)
+    throw new RuleError(`An event can run for up to ${MAX_DAYS_OF_SHOW} days. Add a longer one in parts.`);
+  const dated = days.filter((d) => d.scheduledDate);
+  const from = [...dated].reverse().find((d) => d.scheduledDate < date2) ?? dated[0];
+  const day = makeDay(actor, show2, date2, `Day ${days.length + 1}`, {
+    productionLevel: from?.productionLevel ?? show2.productionLevel,
+    assigneePersonId: from?.assigneePersonId ?? show2.assigneePersonId
+  });
+  anchorDeadlines(day, date2);
+  const fromSheet = from ? sheetOfDay(from) : void 0;
+  const cs = makeSheet(
+    actor,
+    show2,
+    day,
+    fromSheet ? cloneContent(fromSheet) : startingContent("", show2.production?.eventPlan?.venue ?? "")
+  );
+  const gear = fromSheet ? manifestForSheet(fromSheet.id) : void 0;
+  if (gear && hasGearAccess(actor)) {
+    const r = bookWhatIsFree(
+      actor,
+      { id: cs.id, contentId: cs.contentId, date: date2 },
+      gear.lines.map((l) => ({ equipmentId: l.equipmentId, quantity: l.quantity }))
+    );
+    cs.plannedGear = [...cs.plannedGear, ...r.skipped.map((x) => x.line)];
+  }
+  daysOfShow(showId).forEach((d, i) => {
+    if (/^Day \d+$/.test(d.title) && d.title !== `Day ${i + 1}`) {
+      d.title = `Day ${i + 1}`;
+      d.version += 1;
+    }
+  });
+  const all = daysOfShow(showId).map((d) => d.scheduledDate).filter((x) => !!x);
+  show2.showStart = all[0] ?? null;
+  show2.showEnd = all[all.length - 1] ?? null;
+  show2.version += 1;
+  logAudit(actor, "event-day", "record", showId, `${day.contentId} on ${date2}`);
+  commit();
+  return day;
 }
 
 // src/services/reminders.ts
@@ -12449,6 +13420,7 @@ var RPC_NAMES = {
   "callsheets": [
     "addRunItem",
     "attachCallSheet",
+    "bookPlannedGear",
     "createCallSheet",
     "deleteCallSheet",
     "duplicateCallSheet",
@@ -12478,6 +13450,7 @@ var RPC_NAMES = {
     "devotionalsOnRecordingDate",
     "getBlockedOnUser",
     "getReminders",
+    "makeDay",
     "removeFeatured",
     "removeLink",
     "removeStageOwner",
@@ -12549,6 +13522,7 @@ var RPC_NAMES = {
     "addLinePhoto",
     "addLines",
     "attachManifest",
+    "bookWhatIsFree",
     "checkIn",
     "copyGearBetweenSheets",
     "createItem",
@@ -12593,6 +13567,16 @@ var RPC_NAMES = {
     "resetPermissions",
     "setPersonGrant",
     "setRoleGrant"
+  ],
+  "production": [
+    "addEventDay",
+    "canPlanShow",
+    "createProduction",
+    "resetToTemplate",
+    "setShowSchedule",
+    "topUpShow",
+    "updateEventPlan",
+    "updateShowTemplate"
   ],
   "reminders": [
     "logSent"
@@ -12701,6 +13685,49 @@ var capability = enumOf(ALL_CAPABILITIES);
 var staffCategory = z2.enum(["CRW", "VOL", "PTR"]);
 var photo = z2.object({ url, caption: short(500).optional() });
 var line2 = z2.object({ equipmentId: id, quantity: count(1e5) });
+var runItem = z2.object({ id, time, title: short(), durationMin: count(600), ownerPersonId: ref.nullable(), notes: text2(2e3) });
+var sheetContent = z2.object({
+  callTime: time,
+  talentCall: time,
+  startTime: time,
+  wrapTime: time,
+  location: short(500),
+  locationAddress: short(1e3),
+  locationNotes: text2(4e3),
+  format: short(),
+  notes: text2(),
+  crewPersonIds: ids(200),
+  crewRoles: z2.record(id, short(120)),
+  crewLeadId: ref.nullable(),
+  talent: z2.array(z2.object({ id, name: short(120), role: short(120), contact: short(200), callTime: time, notes: text2(1e3) })).max(100),
+  logistics: z2.object({ transport: text2(4e3), parking: text2(4e3), meals: text2(4e3), accommodation: text2(4e3), other: text2(4e3) }),
+  contacts: z2.array(z2.object({ id, name: short(120), role: short(120), phone: short(60), email: short(200) })).max(100),
+  runOfShow: z2.array(runItem).max(200),
+  technicalCheck: z2.array(z2.object({ id, label: short(200), done: z2.boolean(), note: text2(1e3) })).max(100),
+  rehearsal: z2.object({ time, notes: text2(4e3), done: z2.boolean() }),
+  plannedGear: z2.array(line2).max(200)
+}).partial();
+var recurrence = z2.object({
+  freq: z2.enum(["weekly", "monthly"]),
+  interval: count(12),
+  weekdays: z2.array(count(6)).max(7),
+  monthDay: count(31).nullable(),
+  nth: z2.object({ week: z2.number().int().min(-1).max(4), weekday: count(6) }).nullable(),
+  startDate: date,
+  until: date.nullable(),
+  count: count(520).nullable(),
+  skipDates: z2.array(date).max(200),
+  extraDates: z2.array(date).max(200)
+});
+var eventPlan = z2.object({
+  overview: text2(4e3),
+  venue: text2(4e3),
+  audience: text2(4e3),
+  travel: text2(4e3),
+  accommodation: text2(4e3),
+  budget: text2(4e3),
+  notes: text2(4e3)
+}).partial();
 var args = (required, optional = []) => ({ required, optional });
 var InvalidArgs = class extends Error {
 };
@@ -12799,21 +13826,8 @@ var ACTIONS = {
   "callsheets.openOrCreateForRecord": args([id]),
   "callsheets.duplicateCallSheet": args([id, date]),
   "callsheets.resolveMismatches": args([id], [version]),
-  "callsheets.updateCallSheet": args(
-    [
-      id,
-      z2.object({
-        title: short().optional(),
-        location: short(500).optional(),
-        callTime: time.optional(),
-        crewPersonIds: ids(200).optional(),
-        format: short().optional(),
-        notes: text2().optional(),
-        date: date.optional()
-      })
-    ],
-    [version]
-  ),
+  "callsheets.updateCallSheet": args([id, sheetContent.extend({ title: short().optional(), date: date.optional() })], [version]),
+  "callsheets.bookPlannedGear": args([id]),
   "callsheets.attachCallSheet": args([id, id], [version]),
   "callsheets.finalizeCallSheet": args([id], [version]),
   "callsheets.reopenCallSheet": args([id]),
@@ -12834,6 +13848,31 @@ var ACTIONS = {
     })
   ]),
   "callsheets.removeRunItem": args([id, id]),
+  // Productions: recurring shows, one-time and multi-day events
+  "production.createProduction": args([
+    z2.object({
+      title: short(),
+      mode: z2.enum(["recurring", "one_time", "multi_day"]),
+      date: date.nullable().optional(),
+      startDate: date.nullable().optional(),
+      endDate: date.nullable().optional(),
+      rule: recurrence.nullable().optional(),
+      productionLevel: level.nullable().optional(),
+      assigneePersonId: ref.nullable().optional(),
+      callTime: time.optional(),
+      location: short(500).optional(),
+      notes: text2().optional()
+    })
+  ]),
+  "production.setShowSchedule": args([id, recurrence]),
+  "production.updateShowTemplate": args([
+    id,
+    z2.object({ sheet: sheetContent, productionLevel: level.nullable(), ownerPersonId: ref.nullable(), horizonWeeks: count(26) }).partial()
+  ]),
+  "production.resetToTemplate": args([id]),
+  "production.topUpShow": args([id]),
+  "production.updateEventPlan": args([id, eventPlan]),
+  "production.addEventDay": args([id, date]),
   // Projects and their pipeline
   "content.createRecord": args([
     z2.object({ category, ...recordFields }).partial().required({ category: true, title: true })
@@ -13262,6 +14301,7 @@ var modules = {
   equipment: equipment_exports,
   people: people_exports,
   permissions: permissions_exports,
+  production: production_exports,
   reminders: reminders_exports,
   settings: settings_exports,
   storage: storage_exports,
@@ -13448,7 +14488,7 @@ async function accessToken(store2, username, need) {
   }
   return tok.access_token;
 }
-var addDay = (iso) => new Date(Date.parse(`${iso}T12:00:00Z`) + 864e5).toISOString().slice(0, 10);
+var addDay = (iso2) => new Date(Date.parse(`${iso2}T12:00:00Z`) + 864e5).toISOString().slice(0, 10);
 async function addToCalendar(store2, who) {
   const token = await accessToken(store2, who.user._id, "calendar");
   const loaded = await loadDb(store2, ["records", "callSheets", "manifests", "settings", "people", "counters", "members"]);
@@ -13668,6 +14708,10 @@ async function dailyChecks(store2, force = false) {
     if (!loaded) return [];
     let moved = [];
     if (withDb(loaded.db, () => reviewWindowsDue(today))) moved = (await mutateState(store2, () => applyReviewWindows(today))).result;
+    if (withDb(loaded.db, () => recurringDue(today))) {
+      const made = (await mutateState(store2, () => topUpRecurring(today))).result;
+      if (made.made || made.booked) console.info(`Recurring shows: ${made.made} days made, ${made.booked} items of gear booked`);
+    }
     checkedOn.set(store2, today);
     if (moved.length) console.info(`Review windows passed: moved to Hold ${moved.join(", ")}`);
     return moved;

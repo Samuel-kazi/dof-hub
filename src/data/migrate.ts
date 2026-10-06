@@ -2,6 +2,7 @@ import type { ContentRecord, Database, DocRecord, DocRevision, DriveAllocation, 
 import { MUSIC_STAGE_MAP, categoryOf } from "../config/categories";
 import { templateOf } from "../config/docTemplates";
 import { CHECKLISTS } from "../config/workflow";
+import { SHEET_CONTENT_KEYS, blankEventPlan, blankSheetContent } from "../config/callSheet";
 import { DOCUMENT_PARTS, WORKFLOW_PARTS } from "./constraints";
 import { todayIso } from "../services/utils";
 import { migrateDocuments } from "./migrateDocuments";
@@ -522,5 +523,84 @@ export function upgradeToV18(db: Database): Database {
       detail: `Devotion call sheets moved into Recording Plan sessions: ${made.join(", ")}.`,
     });
   db.schemaVersion = 18;
+  return db;
+}
+
+/**
+ * Version 19: one production system. Every call sheet gains the sections every sheet now has (talent, logistics,
+ * contacts, technical check, rehearsal and the rest of its schedule), empty, and the day of a show it is for. A live
+ * show becomes a production: one day makes it a one-time event, any other number a multi-day event, with an empty
+ * Event Plan. Each day is linked to the call sheet already made for its date; a day still to come that has none gets
+ * a draft sheet, so every day has its call sheet. Nothing is moved or deleted. Running it again changes nothing.
+ */
+export function upgradeToV19(db: Database): Database {
+  db.showTemplates ??= [];
+  const blank = blankSheetContent();
+  for (const cs of db.callSheets) {
+    const sheet = cs as unknown as Record<string, unknown>;
+    for (const k of SHEET_CONTENT_KEYS) if (sheet[k] === undefined) sheet[k] = structuredClone(blank[k]);
+    cs.instanceId ??= null;
+  }
+  for (const r of db.records) {
+    r.production ??= null;
+    r.instance ??= null;
+  }
+  const today = todayIso();
+  const at = new Date().toISOString();
+  const made: string[] = [];
+  const csNumbers = db.callSheets.map((c) => Number(/^DOF-CS-(\d+)$/.exec(c.id)?.[1] ?? NaN)).filter((n) => !Number.isNaN(n));
+  let csNext = Math.max(db.counters.callsheet ?? 0, ...csNumbers);
+  for (const show of db.records.filter((r) => r.category === "live" && r.hierarchyLevel === 0)) {
+    const days = db.records.filter((r) => r.parentId === show.contentId && r.hierarchyLevel === 1);
+    if (!show.production) {
+      const oneDay = days.filter((d) => !d.archived).length === 1;
+      show.production = { mode: oneDay ? "one_time" : "multi_day", templateId: null, eventPlan: oneDay ? null : blankEventPlan() };
+    }
+    for (const day of days) {
+      const sheets = db.callSheets.filter((c) => c.contentId === show.contentId);
+      if (sheets.some((c) => c.instanceId === day.contentId)) continue;
+      const found = sheets
+        .filter(
+          (c) =>
+            c.instanceId === null && (c.linkedEpisodeIds.includes(day.contentId) || (!!day.scheduledDate && c.date === day.scheduledDate)),
+        )
+        .sort((a, b) => a.id.localeCompare(b.id))[0];
+      if (found) {
+        found.instanceId = day.contentId;
+        continue;
+      }
+      if (day.archived || !day.scheduledDate || day.scheduledDate < today) continue;
+      csNext += 1;
+      const id = `DOF-CS-${String(csNext).padStart(3, "0")}`;
+      db.callSheets.push({
+        ...blankSheetContent(),
+        id,
+        contentId: show.contentId,
+        title: `${show.title}: ${day.scheduledDate}`,
+        date: day.scheduledDate,
+        callTime: "08:00",
+        linkedEpisodeIds: [day.contentId],
+        equipmentIds: [],
+        instanceId: day.contentId,
+        status: "draft",
+        version: 1,
+        createdAt: at,
+      });
+      made.push(`${id} for ${day.contentId}`);
+    }
+  }
+  if (made.length) {
+    db.counters.callsheet = csNext;
+    db.audit.push({
+      id: logId("A"),
+      at,
+      byPersonId: "system",
+      action: "migrate-productions",
+      entity: "system",
+      entityId: "productions",
+      detail: `Every day of a live show has its call sheet: made ${made.join(", ")}.`,
+    });
+  }
+  db.schemaVersion = 19;
   return db;
 }

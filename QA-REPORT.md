@@ -103,3 +103,20 @@ Browser runs of the documents, all passing on the Phase 4 build: writing and sav
 and hosted 6 of 6. Each run starts its own server and stops it afterwards; a server left running from an earlier run
 had picked up file changes, and the page and the test then held two copies of the data (the cause of a false failure
 in the save-conflict check, which passes).
+
+## One production system (Phase 1: the production core)
+
+| Area | Tests |
+|---|---|
+| Recurrence | `recurrence` (8): weekly on chosen days and every N weeks keeping its rhythm, ending on a date or after a number of times, dates left out (still counted) and added, monthly by date (a short month using its last day) and by the first to fourth or last weekday, rules that cannot work refused in plain words, the rule in a sentence |
+| Productions | `production` (8): a one-time event's one day and call sheet, due around its own date; a multi-day event's days, Event Plan and a day added copying the day before (renumbered); a recurring show's 12 weeks of days made once and topped up later; a template change reaching only coming days still following it (ticks kept, edited and final days kept), crew attached to the show, put back on the template, a day's date moved by hand; a new schedule archiving untouched days, keeping edited ones, and bringing them back; template gear booked within two weeks, never double-booked, released when the template drops it; every section copied by Duplicate with nothing ticked; data version 19 |
+| Screens | `production-screens` (5): the recurring show's panel, the board's fortnight, the template page, every call sheet's ten sections and the day's place on its template, an event's plan and day tabs, a one-time event, printing any sheet and its run sheet alone |
+| Elsewhere | `actions`: the eight new actions and every call sheet section through the hosted server. `workflow`: any call sheet can have a run of show, a large production cannot be final without one. `workflow-model`, `workflow-server`, `storage`, `migrate`: data version 19. `recording-plan` and `workflow-screens`: the shared sections and the new Live Shows form |
+
+In a real browser (prod1, demo, 20 checks; 336 checks across all 16 browser scripts, all passing): a recurring show from the New form, its 12 weeks of days, a template change
+(crew with a role, talent, location) reaching them, a day edited by hand and passed by, then put back; ticking the
+technical check not counting as an edit; printing; the board's fortnight; a multi-day event with its plan and a day
+added; a one-time event; a phone with no sideways scroll; dark mode.
+
+Not covered yet: DOF Music keeps its own pipeline (see the Phase 1 notes); confirmations, warnings, saved locations,
+the change log and gear suggestions come in Phase 2.

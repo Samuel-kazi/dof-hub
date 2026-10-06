@@ -299,9 +299,13 @@ await t("each session's call sheet chooses one of the project's storyboards and 
     "Print call sheet",
     "Print run sheet only",
     "Crew call",
-    "Talent arrival",
-    "Start recording",
-    "Shoot details",
+    "Talent call",
+    "From the run sheet: 09:00",
+    "From the run sheet: 09:10",
+    'aria-label="Sections of the call sheet"',
+    "Technical Check",
+    "Rehearsal",
+    "Logistics",
     "Devotions, in order",
     "Run sheet",
     "Rebuild from episodes",
@@ -343,7 +347,7 @@ await t("anyone who can see the project can print; phones show only where the pr
     "Call sheet",
     "Studio A",
     "Crew call",
-    "Roles and contacts",
+    "<h2>Crew</h2>",
     "Floor manager",
     "Devotions, in order",
     "Record: Day 1",
@@ -352,7 +356,7 @@ await t("anyone who can see the project can print; phones show only where the pr
   const runOnly = html("crew4@dof.demo", <PrintedCallSheet job={{ sessionId: one.id, only: "run" }} />);
   assert.match(runOnly, /Run sheet/);
   assert.match(runOnly, /Record: Day 3/);
-  assert.ok(!runOnly.includes("Roles and contacts") && !runOnly.includes("Studio A"), "the run sheet alone");
+  assert.ok(!runOnly.includes("<h2>Crew</h2>") && !runOnly.includes("Studio A"), "the run sheet alone");
 });
 
 // ── Storage ──────────────────────────────────────────────────

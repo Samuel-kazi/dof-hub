@@ -2,10 +2,13 @@ import type { Actor, CallSheet, ContentRecord, ProductionLevel, RunItem } from "
 import { ConflictError, RuleError } from "../types";
 import { commit, getDb, nextCounter } from "../data/store";
 import { claimId, localId } from "../data/ids";
+import { SHEET_CONTENT_KEYS, blankSheetContent } from "../config/callSheet";
 import { canWrite, getRecord, rootOf } from "./access";
 import { leavesUnder } from "./content";
 import { logAudit } from "./audit";
-import { copyGearBetweenSheets, gearIssues, manifestForSheet, rebookSheetGear, releaseSheetGear } from "./equipment";
+import { bookWhatIsFree, copyGearBetweenSheets, gearIssues, manifestForSheet, rebookSheetGear, releaseSheetGear } from "./equipment";
+import { attachCrew, dayOfSheet, lockInstanceOfSheet, moveDay } from "./instances";
+import { applyContent, checkContent, cloneContent, onlyTicks, tidyContent } from "./sheetContent";
 import { getPerson } from "./people";
 import { pad, pickKeys } from "./utils";
 
@@ -45,6 +48,8 @@ export function createCallSheet(actor: Actor, input: CallSheetInput): CallSheet 
   if (!canWrite(actor, root)) throw new RuleError("You are not assigned to this project.");
   if (!input.date) throw new RuleError("Pick a date for the call sheet.");
   const cs: CallSheet = {
+    ...blankSheetContent(),
+    instanceId: null,
     id: claimId(`DOF-CS-${pad(nextCounter("callsheet"))}`),
     contentId: root.contentId,
     title: input.title?.trim() || `${root.title}: ${input.date}`,
@@ -78,7 +83,11 @@ export function openOrCreateForRecord(actor: Actor, recordId: string): { sheet: 
   return { sheet: createCallSheet(actor, { contentId: root.contentId, date: rec.scheduledDate }), created: true };
 }
 
-/** Crew, location, format and gear carry over. Episode links are re-resolved for the new date. */
+/**
+ * Everything on the sheet carries over to the new date (every section, with the technical check unticked), and its
+ * gear where it is free that day. Episode links are re-resolved for the new date. The copy belongs to no day of a
+ * show, even if the original did.
+ */
 export function duplicateCallSheet(
   actor: Actor,
   id: string,
@@ -86,17 +95,8 @@ export function duplicateCallSheet(
 ): { sheet: CallSheet; gear: { copied: number; skipped: string[] } } {
   const src = getCallSheet(id);
   if (!src) throw new RuleError("Call sheet not found.");
-  const copy = createCallSheet(actor, {
-    contentId: src.contentId,
-    date: newDate,
-    title: `${src.title.replace(/:.*$/, "")}: ${newDate}`,
-    location: src.location,
-    callTime: src.callTime,
-    crewPersonIds: [...src.crewPersonIds],
-    format: src.format,
-    notes: src.notes,
-  });
-  copy.runOfShow = src.runOfShow.map((x) => ({ ...x, id: localId("RS") }));
+  const copy = createCallSheet(actor, { contentId: src.contentId, date: newDate, title: `${src.title.replace(/:.*$/, "")}: ${newDate}` });
+  applyContent(copy, cloneContent(src));
   // Gear that is already booked on the new date is skipped and reported, never double-booked.
   const gear = copyGearBetweenSheets(actor, src.id, { id: copy.id, contentId: copy.contentId, date: copy.date });
   logAudit(actor, "duplicate", "callsheet", copy.id, `from ${src.id}`);
@@ -135,28 +135,69 @@ function loadSheet(actor: Actor, id: string, expectedVersion?: number): CallShee
   return cs;
 }
 
-/** The fields the call sheet form changes. Status, project, gear and run of show have their own actions and checks. */
-export const SHEET_EDITABLE = ["title", "location", "callTime", "crewPersonIds", "format", "notes", "date"] as const;
+/**
+ * The fields the call sheet's screen changes: its title and date, and every section's content (schedule, crew,
+ * talent, location, logistics, contacts, run of show, technical check, rehearsal, gear still to book). Status,
+ * project and booked gear have their own actions and checks.
+ */
+export const SHEET_EDITABLE = ["title", "date", ...SHEET_CONTENT_KEYS] as const;
+export type SheetPatch = Partial<Pick<CallSheet, (typeof SHEET_EDITABLE)[number]>>;
 
-export function updateCallSheet(
-  actor: Actor,
-  id: string,
-  input: Partial<Pick<CallSheet, (typeof SHEET_EDITABLE)[number]>>,
-  expectedVersion?: number,
-): CallSheet {
+export function updateCallSheet(actor: Actor, id: string, input: SheetPatch, expectedVersion?: number): CallSheet {
   const patch = pickKeys(input, SHEET_EDITABLE);
   const cs = loadSheet(actor, id, expectedVersion);
-  if (cs.status === "final") throw new RuleError("This call sheet is final. Reopen it to make changes.");
-  // Gear bookings follow the shoot date, or the change is refused.
+  const content = tidyContent(patch, cs);
+  // Ticking the technical check or the rehearsal is work on the day, done on a final sheet too; anything else is a
+  // change of plan, which a final sheet refuses until it is reopened.
+  const planChanged = patch.title !== undefined || patch.date !== undefined || !onlyTicks(cs, content);
+  if (cs.status === "final" && planChanged) throw new RuleError("This call sheet is final. Reopen it to make changes.");
+  checkContent(content, content.crewPersonIds ?? cs.crewPersonIds);
+  if (patch.title !== undefined && (!patch.title.trim() || patch.title.length > 300)) throw new RuleError("Give the call sheet a title.");
+  // Gear bookings follow the shoot date, or the change is refused; the day of a show moves with its sheet.
   if (patch.date !== undefined && patch.date !== cs.date) {
     if (!patch.date) throw new RuleError("Pick a date for the call sheet.");
     rebookSheetGear(actor, cs.id, patch.date);
+    const day = dayOfSheet(cs.id);
+    if (day) {
+      if (
+        getDb().records.some(
+          (r) => r.parentId === day.parentId && r.contentId !== day.contentId && !r.archived && r.scheduledDate === patch.date,
+        )
+      )
+        throw new RuleError("Another day of this show is already on that date.");
+      moveDay(day, patch.date);
+    }
   }
-  Object.assign(cs, patch);
+  if (patch.title !== undefined) cs.title = patch.title.trim();
+  if (patch.date !== undefined) cs.date = patch.date;
+  if (content.crewPersonIds)
+    attachCrew(
+      actor,
+      cs.contentId,
+      content.crewPersonIds.filter((p) => !cs.crewPersonIds.includes(p)),
+    );
+  Object.assign(cs, content);
   cs.version += 1;
+  if (planChanged) lockInstanceOfSheet(actor, cs.id);
   logAudit(actor, "update", "callsheet", id, Object.keys(patch).join(", "));
   commit();
   return cs;
+}
+
+/**
+ * Books the gear a sheet still has to book (a show template's gear, on a day more than two weeks ahead when it was
+ * made): whatever is free that day. Anything already booked or lent out stays on the list, with the reason.
+ */
+export function bookPlannedGear(actor: Actor, id: string): { booked: number; skipped: string[] } {
+  const cs = loadSheet(actor, id);
+  if (cs.status === "final") throw new RuleError("This call sheet is final. Reopen it to make changes.");
+  if (!cs.plannedGear.length) return { booked: 0, skipped: [] };
+  const r = bookWhatIsFree(actor, { id: cs.id, contentId: cs.contentId, date: cs.date }, cs.plannedGear);
+  cs.plannedGear = r.skipped.map((x) => x.line);
+  cs.version += 1;
+  logAudit(actor, "book-planned-gear", "callsheet", id, `${r.booked.length} booked, ${r.skipped.length} not free`);
+  commit();
+  return { booked: r.booked.length, skipped: r.skipped.map((x) => x.reason) };
 }
 
 /** Moves a call sheet, and any gear checked out under it, to a different project. */
@@ -231,7 +272,7 @@ export function deleteCallSheet(actor: Actor, id: string): void {
   commit();
 }
 
-// ── Run of show (large live productions) ─────────────────────
+// ── Run of show (every call sheet; a large production needs one before it is final) ──
 
 /** The days a call sheet covers. Each day of a live show carries its own level of production. */
 export function daysOf(cs: CallSheet): ContentRecord[] {
@@ -276,8 +317,6 @@ function checkRunItem(input: RunItemInput): void {
 function editableSheet(actor: Actor, id: string): CallSheet {
   const cs = loadSheet(actor, id);
   if (cs.status === "final") throw new RuleError("This call sheet is final. Reopen it to make changes.");
-  if (!runOfShowRequired(cs) && cs.runOfShow.length === 0)
-    throw new RuleError("A run of show is for large productions. Set the level of production to Large on the day first.");
   return cs;
 }
 
@@ -295,6 +334,7 @@ export function addRunItem(actor: Actor, sheetId: string, input: RunItemInput): 
   cs.runOfShow.push(item);
   cs.version += 1;
   logAudit(actor, "run-add", "callsheet", sheetId, `${item.time} ${item.title}`);
+  lockInstanceOfSheet(actor, sheetId);
   commit();
   return item;
 }
@@ -314,6 +354,7 @@ export function updateRunItem(actor: Actor, sheetId: string, itemId: string, pat
   Object.assign(item, { ...next, title: next.title.trim(), notes: next.notes.trim() });
   cs.version += 1;
   logAudit(actor, "run-update", "callsheet", sheetId, item.title);
+  lockInstanceOfSheet(actor, sheetId);
   commit();
   return item;
 }
@@ -323,6 +364,7 @@ export function removeRunItem(actor: Actor, sheetId: string, itemId: string): vo
   cs.runOfShow = cs.runOfShow.filter((x) => x.id !== itemId);
   cs.version += 1;
   logAudit(actor, "run-remove", "callsheet", sheetId, itemId);
+  lockInstanceOfSheet(actor, sheetId);
   commit();
 }
 

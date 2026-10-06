@@ -18,6 +18,7 @@ const MODULES = [
   "equipment",
   "people",
   "permissions",
+  "production",
   "reminders",
   "settings",
   "storage",

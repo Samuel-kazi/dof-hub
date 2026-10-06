@@ -43,6 +43,57 @@ const staffCategory = z.enum(["CRW", "VOL", "PTR"]);
 const photo = z.object({ url, caption: short(500).optional() });
 const line = z.object({ equipmentId: id, quantity: count(100_000) });
 
+// A call sheet's sections, as a sheet or a show template holds them (src/config/callSheet.ts). Every field optional:
+// a change sends only what changed. The services check the rest (times, crew, lengths).
+const runItem = z.object({ id, time, title: short(), durationMin: count(600), ownerPersonId: ref.nullable(), notes: text(2000) });
+const sheetContent = z
+  .object({
+    callTime: time,
+    talentCall: time,
+    startTime: time,
+    wrapTime: time,
+    location: short(500),
+    locationAddress: short(1000),
+    locationNotes: text(4000),
+    format: short(),
+    notes: text(),
+    crewPersonIds: ids(200),
+    crewRoles: z.record(id, short(120)),
+    crewLeadId: ref.nullable(),
+    talent: z.array(z.object({ id, name: short(120), role: short(120), contact: short(200), callTime: time, notes: text(1000) })).max(100),
+    logistics: z.object({ transport: text(4000), parking: text(4000), meals: text(4000), accommodation: text(4000), other: text(4000) }),
+    contacts: z.array(z.object({ id, name: short(120), role: short(120), phone: short(60), email: short(200) })).max(100),
+    runOfShow: z.array(runItem).max(200),
+    technicalCheck: z.array(z.object({ id, label: short(200), done: z.boolean(), note: text(1000) })).max(100),
+    rehearsal: z.object({ time, notes: text(4000), done: z.boolean() }),
+    plannedGear: z.array(line).max(200),
+  })
+  .partial();
+/** When a recurring show happens (src/services/recurrence.ts checks the rest). */
+const recurrence = z.object({
+  freq: z.enum(["weekly", "monthly"]),
+  interval: count(12),
+  weekdays: z.array(count(6)).max(7),
+  monthDay: count(31).nullable(),
+  nth: z.object({ week: z.number().int().min(-1).max(4), weekday: count(6) }).nullable(),
+  startDate: date,
+  until: date.nullable(),
+  count: count(520).nullable(),
+  skipDates: z.array(date).max(200),
+  extraDates: z.array(date).max(200),
+});
+const eventPlan = z
+  .object({
+    overview: text(4000),
+    venue: text(4000),
+    audience: text(4000),
+    travel: text(4000),
+    accommodation: text(4000),
+    budget: text(4000),
+    notes: text(4000),
+  })
+  .partial();
+
 // ── Argument lists ───────────────────────────────────────────
 
 export interface ActionSpec {
@@ -163,21 +214,8 @@ export const ACTIONS: Record<string, ActionSpec> = {
   "callsheets.openOrCreateForRecord": args([id]),
   "callsheets.duplicateCallSheet": args([id, date]),
   "callsheets.resolveMismatches": args([id], [version]),
-  "callsheets.updateCallSheet": args(
-    [
-      id,
-      z.object({
-        title: short().optional(),
-        location: short(500).optional(),
-        callTime: time.optional(),
-        crewPersonIds: ids(200).optional(),
-        format: short().optional(),
-        notes: text().optional(),
-        date: date.optional(),
-      }),
-    ],
-    [version],
-  ),
+  "callsheets.updateCallSheet": args([id, sheetContent.extend({ title: short().optional(), date: date.optional() })], [version]),
+  "callsheets.bookPlannedGear": args([id]),
   "callsheets.attachCallSheet": args([id, id], [version]),
   "callsheets.finalizeCallSheet": args([id], [version]),
   "callsheets.reopenCallSheet": args([id]),
@@ -198,6 +236,32 @@ export const ACTIONS: Record<string, ActionSpec> = {
     }),
   ]),
   "callsheets.removeRunItem": args([id, id]),
+
+  // Productions: recurring shows, one-time and multi-day events
+  "production.createProduction": args([
+    z.object({
+      title: short(),
+      mode: z.enum(["recurring", "one_time", "multi_day"]),
+      date: date.nullable().optional(),
+      startDate: date.nullable().optional(),
+      endDate: date.nullable().optional(),
+      rule: recurrence.nullable().optional(),
+      productionLevel: level.nullable().optional(),
+      assigneePersonId: ref.nullable().optional(),
+      callTime: time.optional(),
+      location: short(500).optional(),
+      notes: text().optional(),
+    }),
+  ]),
+  "production.setShowSchedule": args([id, recurrence]),
+  "production.updateShowTemplate": args([
+    id,
+    z.object({ sheet: sheetContent, productionLevel: level.nullable(), ownerPersonId: ref.nullable(), horizonWeeks: count(26) }).partial(),
+  ]),
+  "production.resetToTemplate": args([id]),
+  "production.topUpShow": args([id]),
+  "production.updateEventPlan": args([id, eventPlan]),
+  "production.addEventDay": args([id, date]),
 
   // Projects and their pipeline
   "content.createRecord": args([
@@ -674,6 +738,9 @@ export const NOT_ACTIONS: Record<string, string> = {
   "equipment.addLinePhoto": "not used by any screen",
   "equipment.releaseReservedFor": "internal step of deleting a project",
   "equipment.copyGearBetweenSheets": "internal step of duplicating a call sheet",
+  "equipment.bookWhatIsFree": "internal step of making or copying a call sheet",
+  "content.makeDay": "internal step of making a production's days",
+  "production.canPlanShow": "read only",
   "equipment.rebookSheetGear": "internal step of moving a call sheet",
   "equipment.releaseSheetGear": "internal step of deleting a call sheet",
   "permissions.can": "read only",

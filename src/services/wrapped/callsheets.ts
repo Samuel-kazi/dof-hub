@@ -3,6 +3,7 @@ import * as core from "../callsheets";
 import { rpc, serverOnly } from "../../data/rpc";
 export const addRunItem = rpc("callsheets.addRunItem", core.addRunItem);
 export const attachCallSheet = rpc("callsheets.attachCallSheet", core.attachCallSheet);
+export const bookPlannedGear = rpc("callsheets.bookPlannedGear", core.bookPlannedGear);
 export const createCallSheet = rpc("callsheets.createCallSheet", core.createCallSheet);
 export const deleteCallSheet = rpc("callsheets.deleteCallSheet", core.deleteCallSheet);
 export const duplicateCallSheet = rpc("callsheets.duplicateCallSheet", core.duplicateCallSheet);
@@ -14,4 +15,4 @@ export const resolveMismatches = rpc("callsheets.resolveMismatches", core.resolv
 export const updateCallSheet = rpc("callsheets.updateCallSheet", core.updateCallSheet);
 export const updateRunItem = rpc("callsheets.updateRunItem", core.updateRunItem);
 export { SHEET_EDITABLE, callSheetForRecord, crewConflicts, daysOf, duplicateOf, episodesOnDate, getCallSheet, getMismatches, runOfShowRequired, runOfShowTotals, sheetLevel, sortedRunOfShow } from "../callsheets";
-export type { CallSheetInput, Mismatch, RunItemInput } from "../callsheets";
+export type { CallSheetInput, Mismatch, RunItemInput, SheetPatch } from "../callsheets";

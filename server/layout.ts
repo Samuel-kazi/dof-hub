@@ -45,6 +45,8 @@ export const KEYS = [
   "storyboardFrames",
   "shotLists",
   "shotListRows",
+  // Productions: recurring shows' templates (data version 19)
+  "showTemplates",
   "settings",
   "counters",
 ] as const;

@@ -18,6 +18,7 @@ export const deletionImpact = rpc("content.deletionImpact", core.deletionImpact)
 export const devotionalsOnRecordingDate = rpc("content.devotionalsOnRecordingDate", core.devotionalsOnRecordingDate);
 export const getBlockedOnUser = rpc("content.getBlockedOnUser", core.getBlockedOnUser);
 export const getReminders = rpc("content.getReminders", core.getReminders);
+export const makeDay = rpc("content.makeDay", core.makeDay);
 export const removeFeatured = rpc("content.removeFeatured", core.removeFeatured);
 export const removeLink = rpc("content.removeLink", core.removeLink);
 export const removeStageOwner = rpc("content.removeStageOwner", core.removeStageOwner);
@@ -34,5 +35,5 @@ export const splitRecording = rpc("content.splitRecording", core.splitRecording)
 export const updateFeatured = rpc("content.updateFeatured", core.updateFeatured);
 export const updateRecord = rpc("content.updateRecord", core.updateRecord);
 export const updateTask = rpc("content.updateTask", core.updateTask);
-export { PROJECT_STAGE, RECORD_EDITABLE, blankRecord, canAdvance, canDelete, childKindFor, currentStageDeadline, daysInStage, deletionSummary, displayTitle, ensureStageTasks, featuredFor, getBreadcrumb, getChildren, getComments, getRollupStatus, isComplete, isOwnerNow, isStale, leavesUnder, levelLabel, nextChildId, nextTopLevelId, openTasks, ownersOf, productionUnits, riskOf, spinOffCategories, spinOffsOf, tasksOf, usesPipeline } from "../content";
-export type { DeletionImpact, FeaturedInput, LinkBatchInput, LinkInput, NewRecordInput, ProductionUnit, RecordPatch, Reminder, Risk, Rollup, SplitInput, TaskInput } from "../content";
+export { MAX_DAYS_OF_SHOW, PROJECT_STAGE, RECORD_EDITABLE, blankRecord, canAdvance, canDelete, childKindFor, currentStageDeadline, daysInStage, deletionSummary, displayTitle, ensureStageTasks, featuredFor, getBreadcrumb, getChildren, getComments, getRollupStatus, isComplete, isOwnerNow, isStale, leavesUnder, levelLabel, nextChildId, nextTopLevelId, openTasks, ownersOf, productionUnits, riskOf, showDates, spinOffCategories, spinOffsOf, tasksOf, usesPipeline } from "../content";
+export type { DayInput, DeletionImpact, FeaturedInput, LinkBatchInput, LinkInput, NewRecordInput, ProductionUnit, RecordPatch, Reminder, Risk, Rollup, SplitInput, TaskInput } from "../content";

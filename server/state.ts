@@ -476,6 +476,8 @@ export async function snapshotFor(store: Store, actor: Actor): Promise<{ revisio
       storyboardFrames: (db.storyboardFrames ?? []).filter((f) => boardIds.has(f.storyboardId)),
       shotLists: lists,
       shotListRows: (db.shotListRows ?? []).filter((r) => listIds.has(r.shotListId)),
+      // A show's template goes with the show.
+      showTemplates: (db.showTemplates ?? []).filter((t) => ids.has(t.contentId)),
       outbox: can(actor, "reminders.sendOthers") ? db.outbox : db.outbox.filter((o) => o.personId === actor.personId),
       settings,
       counters: db.counters,

@@ -3,6 +3,7 @@ export const RPC_NAMES: Record<string, string[]> = {
   "callsheets": [
     "addRunItem",
     "attachCallSheet",
+    "bookPlannedGear",
     "createCallSheet",
     "deleteCallSheet",
     "duplicateCallSheet",
@@ -32,6 +33,7 @@ export const RPC_NAMES: Record<string, string[]> = {
     "devotionalsOnRecordingDate",
     "getBlockedOnUser",
     "getReminders",
+    "makeDay",
     "removeFeatured",
     "removeLink",
     "removeStageOwner",
@@ -103,6 +105,7 @@ export const RPC_NAMES: Record<string, string[]> = {
     "addLinePhoto",
     "addLines",
     "attachManifest",
+    "bookWhatIsFree",
     "checkIn",
     "copyGearBetweenSheets",
     "createItem",
@@ -147,6 +150,16 @@ export const RPC_NAMES: Record<string, string[]> = {
     "resetPermissions",
     "setPersonGrant",
     "setRoleGrant"
+  ],
+  "production": [
+    "addEventDay",
+    "canPlanShow",
+    "createProduction",
+    "resetToTemplate",
+    "setShowSchedule",
+    "topUpShow",
+    "updateEventPlan",
+    "updateShowTemplate"
   ],
   "reminders": [
     "logSent"

@@ -7,6 +7,7 @@ export const addLine = rpc("equipment.addLine", core.addLine);
 export const addLinePhoto = rpc("equipment.addLinePhoto", core.addLinePhoto);
 export const addLines = rpc("equipment.addLines", core.addLines);
 export const attachManifest = rpc("equipment.attachManifest", core.attachManifest);
+export const bookWhatIsFree = rpc("equipment.bookWhatIsFree", core.bookWhatIsFree);
 export const checkIn = rpc("equipment.checkIn", core.checkIn);
 export const copyGearBetweenSheets = rpc("equipment.copyGearBetweenSheets", core.copyGearBetweenSheets);
 export const createItem = rpc("equipment.createItem", core.createItem);
@@ -32,4 +33,4 @@ export const setConditionBreakdown = rpc("equipment.setConditionBreakdown", core
 export const startRepair = rpc("equipment.startRepair", core.startRepair);
 export const updateItem = rpc("equipment.updateItem", core.updateItem);
 export { ITEM_EDITABLE, addDays, addUnits, allIncidents, allocateFifo, applyConditionBreakdown, availabilityOn, breakdownTotal, checkedOutFor, checkedOutManifests, displayStatus, endOf, familyOf, gearIssues, getItem, getManifest, goneOutDefaults, groupByFamily, groupSerializedByModel, inventoryReport, isOverdue, itemHistory, itemIncidents, manifestForSheet, manifestStatusView, manifestSummary, manifestsForContent, modelKeyOf, overdueManifests, pickerRows, qtyAssigned, qtyFree, qtyOut, removeFromThenWorst, removeWorstFirst, reservedFor, worstCondition } from "../equipment";
-export type { Availability, ConditionBreakdown, Family, ItemInput, ItemPatch, LineRequest, ManifestInput, PhotoInput, PickerRow, ReportGroup, ReportRow, ReturnInput, SheetRef, StatusView, UnitInput, UnitsInput } from "../equipment";
+export type { Availability, Booked, ConditionBreakdown, Family, ItemInput, ItemPatch, LineRequest, ManifestInput, PhotoInput, PickerRow, ReportGroup, ReportRow, ReturnInput, SheetRef, StatusView, UnitInput, UnitsInput } from "../equipment";
