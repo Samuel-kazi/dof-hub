@@ -5,6 +5,7 @@ import { RuleError } from "../types";
 import type { ModuleKey } from "../config/roles";
 import { getPerson } from "../services/wrapped/people";
 import { Modal } from "./Modal";
+import { PersonPanel, type PersonContext } from "./PersonPanel";
 
 export type Route =
   | { n: "dashboard" }
@@ -71,6 +72,8 @@ interface Ctx {
    * it: it saves what it can and returns null, or says what would be lost, and the person is asked first.
    */
   setLeaveGuard: (guard: (() => string | null) | null) => void;
+  /** Opens someone's contact card: their phone, email and role, as far as the viewer may see them. */
+  showPerson: (personId: string, context?: PersonContext) => void;
 }
 
 export interface AppNote {
@@ -110,6 +113,8 @@ export function AppProvider({ actor, onLogout, children }: { actor: Actor; onLog
     };
   }, []);
   const [printing, setPrinting] = useState<ReportDoc | null>(null);
+  const [personShown, setPersonShown] = useState<{ id: string; context?: PersonContext } | null>(null);
+  const showPerson = useCallback((id: string, context?: PersonContext) => setPersonShown({ id, context }), []);
 
   const leaveGuard = useRef<(() => string | null) | null>(null);
   const setLeaveGuard = useCallback((guard: (() => string | null) | null) => {
@@ -231,6 +236,7 @@ export function AppProvider({ actor, onLogout, children }: { actor: Actor; onLog
       shareLink,
       copyLink,
       setLeaveGuard,
+      showPerson,
     }),
     [
       actor,
@@ -251,6 +257,7 @@ export function AppProvider({ actor, onLogout, children }: { actor: Actor; onLog
       shareLink,
       copyLink,
       setLeaveGuard,
+      showPerson,
     ],
   );
 
@@ -337,6 +344,18 @@ export function AppProvider({ actor, onLogout, children }: { actor: Actor; onLog
         >
           <p className="sub">{leaving.why}</p>
         </Modal>
+      )}
+      {personShown && (
+        <PersonPanel
+          actor={actor}
+          personId={personShown.id}
+          context={personShown.context}
+          onClose={() => setPersonShown(null)}
+          onOpenPage={(id) => {
+            setPersonShown(null);
+            go({ n: "person", id });
+          }}
+        />
       )}
       {printing &&
         typeof document !== "undefined" &&

@@ -53,7 +53,7 @@ await t("a dry run reports, part by part, what the upgrade from version 14 would
   const s = await version14Store();
   const before = await s.state.head();
   const report = (await upgradeStore(s, false))!;
-  assert.deepEqual([report.from, report.to, report.applied, report.backup], [14, 19, false, null]);
+  assert.deepEqual([report.from, report.to, report.applied, report.backup], [14, 20, false, null]);
   assert.deepEqual(await s.state.head(), before, "nothing was written");
   assert.equal(backups(s).size, 0, "and no copy was needed");
   const records = report.parts.find((p) => p.part === "records")!;
@@ -73,19 +73,19 @@ await t("a dry run reports, part by part, what the upgrade from version 14 would
     [...KEYS],
     "every part is counted",
   );
-  assert.match(describeUpgrade(report), /Would upgrade the data from version 14 to 19/);
+  assert.match(describeUpgrade(report), /Would upgrade the data from version 14 to 20/);
 });
 
 await t("the upgrade keeps a copy of the data first, saves it all at once, and running it again does nothing", async () => {
   const s = await version14Store();
   const report = (await upgradeStore(s, true))!;
   assert.equal(report.applied, true);
-  assert.match(report.backup ?? "", /before_v19/);
-  const copy = backups(s).get("before_v19")!;
+  assert.match(report.backup ?? "", /before_v20/);
+  const copy = backups(s).get("before_v20")!;
   assert.equal(copy.head.schemaVersion, 14, "the copy is of the data as it was");
   assert.equal(copy.items.filter((it) => it.k === "records").length, buildSeed().records.length);
   const head = (await s.state.head())!;
-  assert.equal(head.schemaVersion, 19);
+  assert.equal(head.schemaVersion, 20);
   // Nothing is lost. Version 19 gives each coming day of a live show its call sheet, and says so in the activity log.
   const grew = report.parts.filter((p) => p.before !== p.after);
   assert.deepEqual(
@@ -95,7 +95,7 @@ await t("the upgrade keeps a copy of the data first, saves it all at once, and r
   );
   assert.ok(grew.every((p) => p.after > p.before));
   const again = (await upgradeStore(s, true))!;
-  assert.deepEqual([again.from, again.applied, again.backup], [19, false, null]);
+  assert.deepEqual([again.from, again.applied, again.backup], [20, false, null]);
   assert.deepEqual(await s.state.head(), head, "nothing was written the second time");
 });
 
@@ -105,9 +105,9 @@ await t("data saved at version 16 is upgraded on first read: a copy first, then 
   old.settings.newDocuments = ["series"];
   await s.state.init(toItems(old), 16);
   const snap = (await snapshotFor(s, { personId: "DOF-P-HOP-001", role: "HOP" }))!.db;
-  assert.equal(snap.schemaVersion, 19);
-  assert.ok(backups(s).has("before_v19"), "a copy was kept first");
-  assert.equal(backups(s).get("before_v19")!.head.schemaVersion, 16);
+  assert.equal(snap.schemaVersion, 20);
+  assert.ok(backups(s).has("before_v20"), "a copy was kept first");
+  assert.equal(backups(s).get("before_v20")!.head.schemaVersion, 16);
   for (const id of [
     "DOF-SER-001-S1|Development|show_brief",
     "DOF-DEV-001|Development|devotional_script",
@@ -169,6 +169,10 @@ await t("each person is sent the workflow data of the projects they may see, and
 
   const partner = await sent({ personId: "DOF-P-PTR-001", role: "PTR" });
   for (const part of WORKFLOW_PARTS) assert.equal(partner[part].length, 0, `a partner on no project gets no ${part}`);
+  // Saved locations are the team's: a partner gets only those on the call sheets they can see.
+  assert.equal(hop.locations.length, full.locations.length);
+  assert.equal(vol.locations.length, full.locations.length);
+  assert.deepEqual(partner.locations, []);
 });
 
 console.log(`\n${passed} passed`);

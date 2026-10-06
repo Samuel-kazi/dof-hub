@@ -24,6 +24,7 @@ import { anchorDeadlines, attachCrew } from "./instances";
 import { can } from "./permissions";
 import { checkRule, occurrencesBetween, weekdayOf } from "./recurrence";
 import { applyContent, checkContent, cloneContent, tidyContent } from "./sheetContent";
+import { noteChanges, trackedOf } from "./sheetTracking";
 import { addDaysIso, fmtDate, isIsoDate, pad, todayIso } from "./utils";
 
 // One production system for live shows, with three ways of making its days. Every day (an instance) is a record of
@@ -376,6 +377,7 @@ export interface TemplateResult {
  * ticked on the day), and gear the template no longer has is released. The day's level of production follows too.
  */
 function applyTemplateTo(actor: Actor, t: ShowTemplate, day: ContentRecord, cs: CallSheet, today: string): void {
+  const was = trackedOf(cs);
   const before = new Map(cs.technicalCheck.map((x) => [x.label, x]));
   const next = cloneContent(t.sheet);
   next.technicalCheck = next.technicalCheck.map((x) => {
@@ -392,6 +394,7 @@ function applyTemplateTo(actor: Actor, t: ShowTemplate, day: ContentRecord, cs: 
   } else if (m) next.plannedGear = next.plannedGear.filter((g) => !m.lines.some((l) => l.equipmentId === g.equipmentId));
   applyContent(cs, next);
   cs.version += 1;
+  noteChanges(actor, cs, was);
   day.productionLevel = t.productionLevel;
   day.instance!.templateVersion = t.version;
   day.version += 1;

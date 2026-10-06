@@ -55,6 +55,7 @@ const sheetContent = z
     location: short(500),
     locationAddress: short(1000),
     locationNotes: text(4000),
+    locationId: ref.nullable(),
     format: short(),
     notes: text(),
     crewPersonIds: ids(200),
@@ -236,6 +237,12 @@ export const ACTIONS: Record<string, ActionSpec> = {
     }),
   ]),
   "callsheets.removeRunItem": args([id, id]),
+  // Someone on the sheet will be there: a crew member's person ID, or "talent:<row ID>".
+  "callsheets.confirmOnSheet": args([id, id, z.boolean()]),
+  // Saved locations (src/services/locations.ts).
+  "locations.createLocation": args([z.object({ name: short(200), address: text(1000), notes: text(4000) }).partial()]),
+  "locations.updateLocation": args([id, z.object({ name: short(200), address: text(1000), notes: text(4000) }).partial()]),
+  "locations.archiveLocation": args([id, z.boolean()]),
 
   // Productions: recurring shows, one-time and multi-day events
   "production.createProduction": args([
@@ -648,6 +655,7 @@ export const ACTIONS: Record<string, ActionSpec> = {
   "workflow.updateRunSheetItem": args([id, id, runSheetItem.partial()]),
   "workflow.removeRunSheetItem": args([id, id]),
   "workflow.createSessionCallSheet": args([id]),
+  "workflow.duplicateSession": args([id, date]),
   // Production
   "workflow.addLogRow": args([id, z.object({ plannedEpisodeId: ref.nullable(), logDate: date.nullable(), ...logFields }).partial()]),
   "workflow.updateLogRow": args([compound, z.object({ logDate: date, ...logFields }).partial()]),
@@ -741,6 +749,7 @@ export const NOT_ACTIONS: Record<string, string> = {
   "equipment.bookWhatIsFree": "internal step of making or copying a call sheet",
   "content.makeDay": "internal step of making a production's days",
   "production.canPlanShow": "read only",
+  "locations.canKeepLocations": "read only",
   "equipment.rebookSheetGear": "internal step of moving a call sheet",
   "equipment.releaseSheetGear": "internal step of deleting a call sheet",
   "permissions.can": "read only",

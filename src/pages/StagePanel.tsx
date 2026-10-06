@@ -39,6 +39,7 @@ import { fmtDays, freeDaysBefore, overloadWarning } from "../services/workload";
 import { nameOf } from "../services/wrapped/people";
 import { docsForRecord } from "../services/wrapped/docs";
 import { fmtDateTime, fmtShort } from "../services/utils";
+import { PersonName } from "../ui/PersonName";
 
 const crew = () => getDb().people.filter((p) => p.status === "active" && (p.category === "CRW" || p.category === "HOP"));
 
@@ -111,7 +112,9 @@ export function StagePlan({ rec }: { rec: ContentRecord }) {
                     {list.map((o, n) => (
                       <div key={o.personId} className="owner-row">
                         <div className="grow">
-                          <b>{nameOf(o.personId)}</b>
+                          <b>
+                            <PersonName id={o.personId} />
+                          </b>
                           {leaf && n === 0 && i === idx && list.length > 1 && (
                             <span className="badge" style={{ marginLeft: 6 }}>
                               Lead

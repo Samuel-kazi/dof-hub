@@ -1,4 +1,4 @@
-import type { EventPlan, Logistics, Rehearsal, SheetContent } from "../types";
+import type { CallSheet, EquipCategoryKey, EventPlan, Logistics, Rehearsal, SheetContent } from "../types";
 
 // What every call sheet contains, whichever way its day was made (a recurring show's template, a one-time or
 // multi-day event, or a recording session): one shape, one list of sections, the same screens.
@@ -27,6 +27,7 @@ export const SHEET_CONTENT_KEYS = [
   "location",
   "locationAddress",
   "locationNotes",
+  "locationId",
   "format",
   "notes",
   "crewPersonIds",
@@ -72,6 +73,7 @@ export function blankSheetContent(): SheetContent {
     location: "",
     locationAddress: "",
     locationNotes: "",
+    locationId: null,
     format: "",
     notes: "",
     crewPersonIds: [],
@@ -109,3 +111,39 @@ export const EVENT_PLAN_FIELDS: { key: keyof EventPlan; label: string; hint: str
 
 /** Labels for the three ways a production makes its days. */
 export const MODE_LABEL = { recurring: "Recurring show", one_time: "One-time event", multi_day: "Multi-day event" } as const;
+
+/** What a new call sheet starts with besides its content: not shared yet, no one confirmed, nothing changed. */
+export const blankSheetTracking = (): Pick<CallSheet, "sharedAt" | "confirmations" | "changeLog"> => ({
+  sharedAt: null,
+  confirmations: {},
+  changeLog: [],
+});
+
+/** How many days before a sheet's date crew who have not confirmed are flagged. */
+export const CONFIRM_WARN_DAYS = 3;
+
+/**
+ * Gear to suggest for the roles on a sheet's crew: a role whose name has one of these words gets one item from each
+ * category. Suggestions are only offered; nothing is booked until someone adds it.
+ */
+export const ROLE_GEAR: { words: string[]; categories: EquipCategoryKey[] }[] = [
+  { words: ["camera", "dop", "cinematographer", "videographer", "shooter"], categories: ["camera"] },
+  { words: ["audio", "sound", "boom", "mixer"], categories: ["audio"] },
+  { words: ["light", "gaffer"], categories: ["lighting"] },
+  { words: ["stream", "switcher", "vision", "broadcast", "technical director"], categories: ["live"] },
+  { words: ["editor", "dit", "data", "media manager"], categories: ["computing"] },
+  { words: ["grip"], categories: ["power"] },
+  { words: ["worship", "musician", "band", "interpret"], categories: ["ministry"] },
+];
+
+/**
+ * The item a role needs most in each category, by words in its name: a camera operator needs a camera body before
+ * a lens or a tripod. Offered first, and what counts as having one. A category not listed counts any of its items.
+ */
+export const MAIN_GEAR: Partial<Record<EquipCategoryKey, string[]>> = {
+  camera: ["camera", "body", "camcorder"],
+  audio: ["microphone", "mic", "lavalier", "recorder"],
+  lighting: ["light", "panel", "fresnel"],
+  live: ["switcher", "encoder"],
+  computing: ["laptop", "workstation"],
+};

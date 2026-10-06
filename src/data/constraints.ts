@@ -178,7 +178,7 @@ export function uniqueViolations(part: string, elements: unknown[]): string[] {
 export function integrityProblems(db: Database): string[] {
   const out: string[] = [];
   const parts = db as unknown as Record<string, unknown[] | undefined>;
-  for (const part of [...WORKFLOW_PARTS, ...DOCUMENT_PARTS, "records", "callSheets", "showTemplates"])
+  for (const part of [...WORKFLOW_PARTS, ...DOCUMENT_PARTS, "records", "callSheets", "showTemplates", "locations"])
     out.push(...uniqueViolations(part, parts[part] ?? []));
 
   const records = new Set(db.records.map((r) => r.contentId));
@@ -330,6 +330,14 @@ export function integrityProblems(db: Database): string[] {
       if (!day) missing("day", c.instanceId, `Call sheet ${c.id}`);
       else if (day.parentId !== c.contentId) out.push(`Call sheet ${c.id} is for a day of another show.`);
     }
+  // A sheet picked from a saved location points at one that exists, and its confirmations are for people on it.
+  const locations = new Set((db.locations ?? []).map((l) => l.id));
+  for (const c of db.callSheets) {
+    if (c.locationId && !locations.has(c.locationId)) missing("saved location", c.locationId, `Call sheet ${c.id}`);
+    for (const key of Object.keys(c.confirmations ?? {}))
+      if (key.startsWith("talent:") ? !c.talent.some((t) => `talent:${t.id}` === key) : !c.crewPersonIds.includes(key))
+        out.push(`Call sheet ${c.id} has a confirmation for ${key}, who is not on it.`);
+  }
   return out;
 }
 

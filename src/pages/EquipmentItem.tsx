@@ -27,6 +27,7 @@ import { getDb } from "../data/store";
 import { nameOf } from "../services/wrapped/people";
 import { fmtDate, fmtShort, todayIso } from "../services/utils";
 import { useItemActions } from "./EquipmentForms";
+import { PersonName } from "../ui/PersonName";
 
 export function EquipmentItemPage({ id }: { id: string }) {
   const { actor, go, back, attempt, menu } = useApp();
@@ -209,7 +210,9 @@ export function EquipmentItemPage({ id }: { id: string }) {
                     {projectLabel(actor, active.contentId)}, {fmtShort(active.date)}
                     {active.expectedReturn ? ` to ${fmtShort(active.expectedReturn)}` : ""}
                   </p>
-                  <p className="muted">{nameOf(active.responsiblePersonId)} is responsible.</p>
+                  <p className="muted">
+                    <PersonName id={active.responsiblePersonId} /> is responsible.
+                  </p>
                   <div>
                     <button className="btn small" onClick={() => go({ n: "manifest", id: active.id })}>
                       Open checkout list

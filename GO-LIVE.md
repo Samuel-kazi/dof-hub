@@ -247,6 +247,25 @@ it, the same check runs on the first request each day; the desktop app and demo 
 booked by the daily check is in the name of the sheet's crew lead, else the show's responsible person, else the Head of
 Production.
 
+### Data version 20: call sheet improvements
+
+Call sheets gain confirmations, a change log once shared, saved locations, warnings and gear suggestions.
+
+The first time a version with data version 20 starts, it keeps a copy (`hub_items_before_v20` and
+`hub_meta_before_v20`; in the demo and desktop app, `dof-hub-db-before-v20`), then:
+- gives every call sheet and show template a saved location, none (`locationId: null`); the place typed on each sheet is
+  left as it was;
+- gives every call sheet its confirmations and change log, empty; a sheet already final is marked shared at that
+  moment, so changes to it are logged from then on;
+- adds the list of saved locations (`locations`), empty.
+Nothing is moved or deleted, and running it again changes nothing. `npm run db:upgrade` shows what it will do; going
+back is as for version 15 above, with `v20` in the names. Nothing has to be turned on.
+
+Who can do what: the Head of Production and crew keep the saved locations; everyone else picks from them, and a
+partner is sent only those on the call sheets they can see. Crew confirm for themselves; anyone who can work on the
+project can record a confirmation for someone else. A contact card shows only what the viewer was already allowed to
+see (volunteers' and partners' details stay with the Head of Production unless "See volunteer and partner contact details" is given).
+
 ## What this does not do yet
 
 - The **desktop app** is the local demo. The hosted site is the real one.

@@ -69,6 +69,7 @@ export {
   updateRunSheetItem,
   removeRunSheetItem,
   createSessionCallSheet,
+  duplicateSession,
   addLogRow,
   updateLogRow,
   removeLogRow,

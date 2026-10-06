@@ -22,9 +22,9 @@ import {
   type Family,
 } from "../services/wrapped/equipment";
 import { getDb } from "../data/store";
-import { nameOf } from "../services/wrapped/people";
 import { fmtDate, fmtShort, relativeDays, daysUntil } from "../services/utils";
 import { ItemFormModal, NewCheckoutModal, useItemActions } from "./EquipmentForms";
+import { PersonName } from "../ui/PersonName";
 
 type Tab = "inventory" | "checkouts" | "incidents";
 const statusKey = (i: EquipmentItem): string =>
@@ -371,7 +371,9 @@ function Checkouts() {
                       </div>
                     )}
                   </td>
-                  <td>{nameOf(m.responsiblePersonId)}</td>
+                  <td>
+                    <PersonName id={m.responsiblePersonId} />
+                  </td>
                   <td>{manifestSummary(m)}</td>
                   <td>
                     <span className={`badge ${s.tone}`}>{s.label}</span>
@@ -429,7 +431,9 @@ function Incidents() {
                     </span>
                     <div style={{ marginTop: 4 }}>{i.description}</div>
                   </td>
-                  <td>{nameOf(i.personId)}</td>
+                  <td>
+                    <PersonName id={i.personId} />
+                  </td>
                   <td>{projectLabel(actor, i.contentId)}</td>
                 </tr>
               );

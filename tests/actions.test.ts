@@ -571,6 +571,19 @@ await t("every action accepts the arguments its screen sends", async () => {
   await must("production.addEventDay", camp.contentId, "2026-12-03");
   await must("production.createProduction", { title: "Rally", mode: "one_time", date: "2026-11-14", productionLevel: "large" });
 
+  // Call sheet improvements: saved locations, confirmations, and a session copied to another date.
+  const hall = await must("locations.createLocation", { name: "Church hall", address: "Ngong Road", notes: "Gate B" });
+  await must("locations.updateLocation", hall.id, { notes: "Gate B, ask for the key" });
+  await must("callsheets.updateCallSheet", daySheet.id, {
+    locationId: hall.id,
+    location: "Church hall",
+    locationAddress: "Ngong Road",
+    crewPersonIds: ["DOF-P-CRW-001"],
+  });
+  await must("callsheets.confirmOnSheet", daySheet.id, "DOF-P-CRW-001", true);
+  await must("locations.archiveLocation", hall.id, true);
+  await must("workflow.duplicateSession", wow.session2, "2026-12-17");
+
   const missed = Object.keys(ACTIONS).filter((n) => !covered.has(n));
   assert.deepEqual(missed, [], `Add a call for: ${missed.join(", ")}`);
 });

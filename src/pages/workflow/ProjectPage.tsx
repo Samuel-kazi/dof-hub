@@ -4,7 +4,6 @@ import { formTypeOf } from "../../config/workflow";
 import { canWrite, isHop } from "../../services/access";
 import { can } from "../../services/wrapped/permissions";
 import { getBreadcrumb, updateRecord } from "../../services/wrapped/content";
-import { nameOf } from "../../services/wrapped/people";
 import { closeProject, projectSummary, setWorkflowDeadline, type Project } from "../../services/wrapped/workflow";
 import { fmtDate } from "../../services/utils";
 import { useApp } from "../../ui/AppContext";
@@ -12,6 +11,7 @@ import { Modal } from "../../ui/Modal";
 import { Field } from "../../ui/parts";
 import { StageRail, useReason } from "./common";
 import { ProjectDocuments } from "../documents/ProjectDocuments";
+import { PersonName } from "../../ui/PersonName";
 
 // A project of the five-stage workflow: a season of a series, a devotion or a documentary. Its stage is worked
 // out from its sessions and episodes. Below its header and stage tracker are its documents: Project Home, with a row
@@ -124,7 +124,7 @@ export function WorkflowProjectPage({ project }: { project: Project }) {
             </span>
             {project.deadline && <span className="muted">Publish {fmtDate(project.deadline)}</span>}
             <span className="muted">
-              Producer: {project.workflow.showProducerId ? nameOf(project.workflow.showProducerId) : "not named"}
+              Producer: <PersonName id={project.workflow.showProducerId} fallback="not named" role="Show producer" />
             </span>
           </div>
         </div>

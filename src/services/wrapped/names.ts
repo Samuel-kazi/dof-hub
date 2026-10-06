@@ -4,6 +4,7 @@ export const RPC_NAMES: Record<string, string[]> = {
     "addRunItem",
     "attachCallSheet",
     "bookPlannedGear",
+    "confirmOnSheet",
     "createCallSheet",
     "deleteCallSheet",
     "duplicateCallSheet",
@@ -131,6 +132,12 @@ export const RPC_NAMES: Record<string, string[]> = {
     "startRepair",
     "updateItem"
   ],
+  "locations": [
+    "archiveLocation",
+    "canKeepLocations",
+    "createLocation",
+    "updateLocation"
+  ],
   "people": [
     "assignToProject",
     "createPerson",
@@ -206,6 +213,7 @@ export const RPC_NAMES: Record<string, string[]> = {
     "createWorkflowProject",
     "decideCheckpoint",
     "decideGreenlight",
+    "duplicateSession",
     "moveToMarketing",
     "openSession",
     "publishEpisode",

@@ -664,7 +664,7 @@ function uniqueViolations(part, elements) {
 function integrityProblems(db2) {
   const out = [];
   const parts = db2;
-  for (const part of [...WORKFLOW_PARTS, ...DOCUMENT_PARTS, "records", "callSheets", "showTemplates"])
+  for (const part of [...WORKFLOW_PARTS, ...DOCUMENT_PARTS, "records", "callSheets", "showTemplates", "locations"])
     out.push(...uniqueViolations(part, parts[part] ?? []));
   const records = new Set(db2.records.map((r) => r.contentId));
   const people = new Set(db2.people.map((p) => p.personId));
@@ -804,6 +804,13 @@ function integrityProblems(db2) {
       if (!day) missing("day", c.instanceId, `Call sheet ${c.id}`);
       else if (day.parentId !== c.contentId) out.push(`Call sheet ${c.id} is for a day of another show.`);
     }
+  const locations = new Set((db2.locations ?? []).map((l) => l.id));
+  for (const c of db2.callSheets) {
+    if (c.locationId && !locations.has(c.locationId)) missing("saved location", c.locationId, `Call sheet ${c.id}`);
+    for (const key2 of Object.keys(c.confirmations ?? {}))
+      if (key2.startsWith("talent:") ? !c.talent.some((t2) => `talent:${t2.id}` === key2) : !c.crewPersonIds.includes(key2))
+        out.push(`Call sheet ${c.id} has a confirmation for ${key2}, who is not on it.`);
+  }
   return out;
 }
 function assertIntegrity(db2) {
@@ -851,6 +858,8 @@ var KEYS = [
   "shotListRows",
   // Productions: recurring shows' templates (data version 19)
   "showTemplates",
+  // Saved locations for call sheets (data version 20)
+  "locations",
   "settings",
   "counters"
 ];
@@ -1324,6 +1333,7 @@ var SHEET_CONTENT_KEYS = [
   "location",
   "locationAddress",
   "locationNotes",
+  "locationId",
   "format",
   "notes",
   "crewPersonIds",
@@ -1356,6 +1366,7 @@ function blankSheetContent() {
     location: "",
     locationAddress: "",
     locationNotes: "",
+    locationId: null,
     format: "",
     notes: "",
     crewPersonIds: [],
@@ -1389,6 +1400,11 @@ var EVENT_PLAN_FIELDS = [
   { key: "notes", label: "Notes", hint: "Anything else for every day of the event" }
 ];
 var MODE_LABEL = { recurring: "Recurring show", one_time: "One-time event", multi_day: "Multi-day event" };
+var blankSheetTracking = () => ({
+  sharedAt: null,
+  confirmations: {},
+  changeLog: []
+});
 
 // src/data/seedGear.ts
 var stamp = (daysAgo, hour = 10) => {
@@ -2408,12 +2424,17 @@ function buildSeed() {
     callSheets: [
       {
         ...blankSheetContent(),
+        ...blankSheetTracking(),
         instanceId: null,
         id: "DOF-CS-001",
         contentId: "DOF-SER-001",
         title: "Whispers of Why: Season 1 recording day",
         date: isoDay(2),
         location: "DOF Studio A",
+        locationAddress: "DOF Centre, Ngong Road, Nairobi",
+        locationId: "DOF-LOC-001",
+        crewRoles: { "DOF-P-CRW-002": "Camera 1", "DOF-P-CRW-003": "Audio" },
+        crewLeadId: "DOF-P-CRW-002",
         callTime: "08:00",
         linkedEpisodeIds: ["DOF-SER-001-S1-E02", "DOF-SER-001-S1-E03"],
         crewPersonIds: ["DOF-P-CRW-002", "DOF-P-CRW-003"],
@@ -2427,12 +2448,15 @@ function buildSeed() {
       },
       {
         ...blankSheetContent(),
+        ...blankSheetTracking(),
         instanceId: "DOF-LIVE-001-D1",
         id: "DOF-CS-002",
         contentId: "DOF-LIVE-001",
         title: "Sunday Live Service: Day 1, full broadcast",
         date: isoDay(1),
         location: "Main auditorium",
+        locationAddress: "DOF Centre, Ngong Road, Nairobi",
+        locationId: "DOF-LOC-002",
         callTime: "07:00",
         linkedEpisodeIds: ["DOF-LIVE-001-D1"],
         crewPersonIds: ["DOF-P-CRW-003"],
@@ -2497,6 +2521,29 @@ function buildSeed() {
     shotLists: [],
     shotListRows: [],
     showTemplates: [],
+    // Places the team films often, picked on a call sheet's Location section.
+    locations: [
+      {
+        id: "DOF-LOC-001",
+        name: "DOF Studio A",
+        address: "DOF Centre, Ngong Road, Nairobi",
+        notes: "Park behind the building. The studio key is at reception.",
+        archived: false,
+        createdAt: isoDay(-30),
+        createdBy: "DOF-P-HOP-001",
+        updatedAt: isoDay(-30)
+      },
+      {
+        id: "DOF-LOC-002",
+        name: "Main auditorium",
+        address: "DOF Centre, Ngong Road, Nairobi",
+        notes: "Load in through the side door by the stage. Power at stage left.",
+        archived: false,
+        createdAt: isoDay(-30),
+        createdBy: "DOF-P-HOP-001",
+        updatedAt: isoDay(-30)
+      }
+    ],
     ...gear,
     settings: {
       stageReminderHours: 24,
@@ -2506,7 +2553,7 @@ function buildSeed() {
       effortOverrides: {},
       appearance: { accent: "terracotta", fontPairing: "modern" }
     },
-    counters: { audit: 0, comment: 1, callsheet: 2, task: 6, link: 1, featured: 5, runitem: 5, doc: docN, docrev: revN, ...gear.counters }
+    counters: { audit: 0, comment: 1, callsheet: 2, location: 2, task: 6, link: 1, featured: 5, runitem: 5, doc: docN, docrev: revN, ...gear.counters }
   };
   syncRecordCounters(db2);
   return db2;
@@ -4044,7 +4091,7 @@ function inventoryReport(category2, includeOutOfService) {
     if (category2 !== "all" && cat.key !== category2) continue;
     const items = getDb().equipment.filter((i) => i.category === cat.key && (includeOutOfService || i.baseStatus === "active" || i.baseStatus === "in-repair")).sort((a, b) => a.id.localeCompare(b.id));
     if (!items.length) continue;
-    const rows = items.map((i) => ({
+    const rows2 = items.map((i) => ({
       id: i.id,
       name: i.name,
       detail: [i.make, i.model].filter(Boolean).join(" "),
@@ -4059,7 +4106,7 @@ function inventoryReport(category2, includeOutOfService) {
       packaging: i.packaging,
       accessories: i.accessories
     }));
-    groups.push({ category: cat.key, label: cat.label, rows, units: rows.reduce((n, r) => n + r.qty, 0) });
+    groups.push({ category: cat.key, label: cat.label, rows: rows2, units: rows2.reduce((n, r) => n + r.qty, 0) });
   }
   return groups;
 }
@@ -4441,10 +4488,10 @@ function manifestStatusView(m) {
 }
 function pickerRows(from, to, excludeManifestId) {
   const all = getDb().equipment;
-  const rows = [];
+  const rows2 = [];
   for (const i of all.filter((x) => x.trackingType === "serialized")) {
     const a = availabilityOn(i, from, to, excludeManifestId);
-    rows.push({
+    rows2.push({
       key: i.id,
       name: i.name,
       sub: [i.make, i.model].filter(Boolean).join(" ") + (i.make || i.model ? ", " : "") + i.id,
@@ -4463,7 +4510,7 @@ function pickerRows(from, to, excludeManifestId) {
     });
     const available = batches.reduce((n, b) => n + b.availableQty, 0);
     const total = f2.items.filter((b) => b.baseStatus === "active").reduce((n, b) => n + b.quantityTotal, 0);
-    rows.push({
+    rows2.push({
       key: f2.key,
       name: f2.name,
       sub: `${f2.key}, ${f2.items.length} batch${f2.items.length === 1 ? "" : "es"}`,
@@ -4475,7 +4522,7 @@ function pickerRows(from, to, excludeManifestId) {
       reason: available === 0 ? "None free for those dates" : ""
     });
   }
-  return rows.sort((a, b) => a.name.localeCompare(b.name));
+  return rows2.sort((a, b) => a.name.localeCompare(b.name));
 }
 function allocateFifo(familyKey, quantity, from, to, excludeManifestId) {
   const fam = groupByFamily(getDb().equipment).find((f2) => f2.key === familyKey);
@@ -4606,9 +4653,9 @@ function releaseSheetGear(actor, sheetId) {
 // src/services/driveUsage.ts
 var getDrive = (id2) => getDb().drives.find((d) => d.id === id2);
 function driveUsage(drive) {
-  const rows = getDb().allocations.filter((a) => a.driveId === drive.id);
+  const rows2 = getDb().allocations.filter((a) => a.driveId === drive.id);
   const by = /* @__PURE__ */ new Map();
-  for (const a of rows) {
+  for (const a of rows2) {
     const key2 = a.contentId ?? a.id;
     const cur = by.get(key2) ?? { contentId: a.contentId, label: a.label, gb: 0, kinds: /* @__PURE__ */ new Set() };
     cur.gb += a.sizeGB;
@@ -5683,10 +5730,10 @@ function removeDocumentLink(actor, linkId) {
 // src/services/documents/reviews.ts
 var reviewsOf = (documentId) => getDb().documentReviews.filter((r) => r.documentId === documentId);
 function reviewStateOf(documentId) {
-  const rows = reviewsOf(documentId);
-  if (!rows.length) return "no reviewers";
-  if (rows.some((r) => r.status === "changes_requested")) return "changes_requested";
-  return rows.every((r) => r.status === "approved") ? "approved" : "pending";
+  const rows2 = reviewsOf(documentId);
+  if (!rows2.length) return "no reviewers";
+  if (rows2.some((r) => r.status === "changes_requested")) return "changes_requested";
+  return rows2.every((r) => r.status === "approved") ? "approved" : "pending";
 }
 function setDocumentReviewers(actor, documentId, reviewerIds) {
   const { doc: doc2, project } = documentForWrite(actor, documentId);
@@ -5789,7 +5836,7 @@ var latestFirstDecision = (form2) => [...form2.decisions].reverse().find((d) => 
 function reviewGate(projectId, docKey, what) {
   const doc2 = documentOf(projectId, "Development", docKey);
   const state = doc2 ? reviewStateOf(doc2.id) : "no reviewers";
-  const rows = doc2 ? reviewsOf(doc2.id) : [];
+  const rows2 = doc2 ? reviewsOf(doc2.id) : [];
   const earlier = ["pitch", "outline_script"].every((k) => checkpoint(projectId, k)?.status === "Approved");
   if (state === "no reviewers" && earlier)
     return {
@@ -5799,7 +5846,7 @@ function reviewGate(projectId, docKey, what) {
       detail: "Approved on the earlier review checkpoints",
       overridable: true
     };
-  const detail = state === "approved" ? `Approved by ${rows.length === 1 ? "its reviewer" : `all ${rows.length} reviewers`}` : state === "no reviewers" ? "No reviewer named yet" : state === "changes_requested" ? "Changes requested" : `${rows.filter((r) => r.status === "approved").length} of ${rows.length} reviewers have approved`;
+  const detail = state === "approved" ? `Approved by ${rows2.length === 1 ? "its reviewer" : `all ${rows2.length} reviewers`}` : state === "no reviewers" ? "No reviewer named yet" : state === "changes_requested" ? "Changes requested" : `${rows2.filter((r) => r.status === "approved").length} of ${rows2.length} reviewers have approved`;
   return { key: "review", label: `Theological review of the ${what} approved`, met: state === "approved", detail, overridable: true };
 }
 var devotionPageReady = (p) => p.title.trim() !== "" && p.subtitle.trim() !== "" && textOf(p.bodyHtml) !== "";
@@ -6346,13 +6393,13 @@ function driveReportText(driveId) {
 }
 function fleetReportText() {
   const t2 = fleetTotals();
-  const rows = allDriveUsage();
+  const rows2 = allDriveUsage();
   return [
     "Storage report: all drives",
     `Date: ${fmtDate(todayIso())}`,
     `Total capacity ${fmtSize(t2.capacity)}, used ${fmtSize(t2.used)}, free ${fmtSize(t2.capacity - t2.used)}`,
     "",
-    ...rows.map(
+    ...rows2.map(
       (u) => `${u.drive.name}: ${fmtSize(u.usedGB)} of ${fmtSize(u.drive.capacityGB)} (${u.pct.toFixed(0)}%)${u.projects.length ? `. Projects: ${u.projects.map((p) => `${p.contentId ?? p.label} ${fmtSize(p.gb)}`).join(", ")}` : ""}`
     )
   ].join("\n");
@@ -6366,6 +6413,7 @@ __export(callsheets_exports, {
   attachCallSheet: () => attachCallSheet,
   bookPlannedGear: () => bookPlannedGear,
   callSheetForRecord: () => callSheetForRecord,
+  confirmOnSheet: () => confirmOnSheet,
   createCallSheet: () => createCallSheet,
   crewConflicts: () => crewConflicts,
   daysOf: () => daysOf,
@@ -6428,10 +6476,10 @@ var checkText = (v, what, max) => {
   if (typeof v !== "string") throw new RuleError(`${what} must be text.`);
   if (v.length > max) throw new RuleError(`Keep ${what.toLowerCase()} under ${max} characters.`);
 };
-var checkRows = (rows, what, max) => {
-  if (rows.length > max) throw new RuleError(`A sheet can list up to ${max} ${what}.`);
+var checkRows = (rows2, what, max) => {
+  if (rows2.length > max) throw new RuleError(`A sheet can list up to ${max} ${what}.`);
   const ids2 = /* @__PURE__ */ new Set();
-  for (const r of rows) {
+  for (const r of rows2) {
     if (!r.id || ids2.has(r.id)) throw new RuleError(`Each line of ${what} needs its own ID.`);
     ids2.add(r.id);
   }
@@ -6483,6 +6531,10 @@ function checkContent(patch, crewAfter) {
   if (patch.location !== void 0) checkText(patch.location, "The location", 500);
   if (patch.locationAddress !== void 0) checkText(patch.locationAddress, "The address", 1e3);
   if (patch.locationNotes !== void 0) checkText(patch.locationNotes, "Location notes", 4e3);
+  if (patch.locationId !== void 0 && patch.locationId !== null) {
+    const saved = (getDb().locations ?? []).find((l) => l.id === patch.locationId);
+    if (!saved || saved.archived) throw new RuleError("That saved location is no longer on the list.");
+  }
   if (patch.format !== void 0) checkText(patch.format, "The format", 300);
   if (patch.notes !== void 0) checkText(patch.notes, "Notes", 2e4);
   const people = getDb().people;
@@ -6531,6 +6583,13 @@ function checkContent(patch, crewAfter) {
 function tidyContent(patch, current3) {
   const out = {};
   for (const k of SHEET_CONTENT_KEYS) if (k in patch) out[k] = patch[k];
+  if (out.locationId === current3.locationId) delete out.locationId;
+  if (out.locationId === void 0 && current3.locationId && (out.location !== void 0 || out.locationAddress !== void 0)) {
+    const saved = (getDb().locations ?? []).find((l) => l.id === current3.locationId);
+    const name = out.location ?? current3.location;
+    const address = out.locationAddress ?? current3.locationAddress;
+    if (!saved || saved.name !== name.trim() || saved.address !== address.trim()) out.locationId = null;
+  }
   if (out.crewPersonIds) {
     const crew = new Set(out.crewPersonIds);
     const roles2 = out.crewRoles ?? current3.crewRoles;
@@ -6539,6 +6598,103 @@ function tidyContent(patch, current3) {
     out.crewLeadId = lead && crew.has(lead) ? lead : null;
   }
   return out;
+}
+
+// src/services/sheetTracking.ts
+function trackedOf(cs) {
+  return structuredClone({
+    date: cs.date,
+    callTime: cs.callTime,
+    talentCall: cs.talentCall,
+    startTime: cs.startTime,
+    wrapTime: cs.wrapTime,
+    location: placeOf(cs),
+    crew: cs.crewPersonIds,
+    roles: cs.crewRoles,
+    lead: cs.crewLeadId,
+    talent: cs.talent,
+    runOfShow: cs.runOfShow
+  });
+}
+var isTracked = (cs) => !!cs.sharedAt || Object.keys(cs.confirmations ?? {}).length > 0;
+var placeOf = (cs) => [cs.location.trim(), cs.locationAddress.trim()].filter(Boolean).join(", ");
+var nameOf2 = (personId) => personId ? getDb().people.find((p) => p.personId === personId)?.name ?? personId : "";
+var orNone = (v) => v || "not set";
+var talentCallOf = (cs, t2) => t2.callTime || cs.talentCall || cs.callTime;
+var talentLine = (t2) => `${t2.name}${t2.role ? ` (${t2.role})` : ""}${t2.callTime ? `, call ${t2.callTime}` : ""}`;
+var runLine = (i) => `${i.time} ${i.title} (${i.durationMin} min)`;
+function diffTracked(a, b) {
+  const out = [];
+  const add = (what, from, to) => out.push({ what, from, to });
+  if (a.date !== b.date) add("Date", a.date ? fmtDate(a.date) : "not set", b.date ? fmtDate(b.date) : "not set");
+  for (const [k, what] of [
+    ["callTime", "Crew call"],
+    ["talentCall", "Talent call"],
+    ["startTime", "Start"],
+    ["wrapTime", "Wrap"]
+  ])
+    if (a[k] !== b[k]) add(what, orNone(a[k]), orNone(b[k]));
+  if (a.location !== b.location) add("Location", orNone(a.location), orNone(b.location));
+  for (const pid of b.crew) if (!a.crew.includes(pid)) add("Crew added", "", `${nameOf2(pid)}${b.roles[pid] ? ` (${b.roles[pid]})` : ""}`);
+  for (const pid of a.crew) if (!b.crew.includes(pid)) add("Crew removed", nameOf2(pid), "");
+  for (const pid of b.crew)
+    if (a.crew.includes(pid) && (a.roles[pid] ?? "") !== (b.roles[pid] ?? ""))
+      add(`Role of ${nameOf2(pid)}`, orNone(a.roles[pid] ?? ""), orNone(b.roles[pid] ?? ""));
+  if (a.lead !== b.lead) add("Crew lead", nameOf2(a.lead) || "none", nameOf2(b.lead) || "none");
+  rows(a.talent, b.talent, talentLine, "Talent", add);
+  rows(a.runOfShow, b.runOfShow, runLine, "Run of show", add);
+  return out;
+}
+function rows(a, b, line3, what, add) {
+  const before = new Map(a.map((x) => [x.id, x]));
+  const after = new Map(b.map((x) => [x.id, x]));
+  for (const x of b) {
+    const old = before.get(x.id);
+    if (!old) add(`${what} added`, "", line3(x));
+    else if (line3(old) !== line3(x)) add(`${what} changed`, line3(old), line3(x));
+  }
+  for (const x of a) if (!after.has(x.id)) add(`${what} removed`, line3(x), "");
+}
+function confirmationTerms(cs, key2) {
+  if (key2.startsWith("talent:")) {
+    const t2 = cs.talent.find((x) => x.id === key2.slice(7));
+    return t2 ? { callTime: talentCallOf(cs, t2), location: placeOf(cs), role: t2.role } : null;
+  }
+  if (!cs.crewPersonIds.includes(key2)) return null;
+  return { callTime: cs.callTime, location: placeOf(cs), role: cs.crewRoles[key2] ?? "" };
+}
+function confirmationName(cs, key2) {
+  if (key2.startsWith("talent:")) return cs.talent.find((x) => x.id === key2.slice(7))?.name ?? "Talent";
+  return nameOf2(key2);
+}
+function confirmationHolds(cs, key2) {
+  const c = cs.confirmations[key2];
+  const now = confirmationTerms(cs, key2);
+  return !!c && !!now && c.callTime === now.callTime && c.location === now.location && c.role === now.role;
+}
+function whyStale(cs, key2) {
+  const c = cs.confirmations[key2];
+  const now = confirmationTerms(cs, key2);
+  if (!now) return key2.startsWith("talent:") ? "taken off the talent" : "taken off the crew";
+  const why = [c.callTime !== now.callTime && "call time", c.location !== now.location && "location", c.role !== now.role && "role"].filter(
+    Boolean
+  );
+  return `${why.join(" and ")} changed`;
+}
+function noteChanges(actor, cs, before) {
+  const tracked = isTracked(cs);
+  const at = (/* @__PURE__ */ new Date()).toISOString();
+  const lines = [];
+  const push = (x) => lines.push({ id: localId("CH", (id2) => cs.changeLog.some((c) => c.id === id2)), at, by: actor.personId, ...x });
+  if (tracked) for (const x of diffTracked(before, trackedOf(cs))) push(x);
+  for (const key2 of Object.keys(cs.confirmations ?? {}).sort()) {
+    if (confirmationHolds(cs, key2)) continue;
+    const gone = key2.startsWith("talent:") ? before.talent.find((x) => x.id === key2.slice(7))?.name : void 0;
+    push({ what: "Confirmation cleared", from: `${gone ?? confirmationName(cs, key2)} had confirmed`, to: whyStale(cs, key2) });
+    delete cs.confirmations[key2];
+  }
+  cs.changeLog.push(...lines);
+  return lines;
 }
 
 // src/services/callsheets.ts
@@ -6561,6 +6717,7 @@ function createCallSheet(actor, input) {
   if (!input.date) throw new RuleError("Pick a date for the call sheet.");
   const cs = {
     ...blankSheetContent(),
+    ...blankSheetTracking(),
     instanceId: null,
     id: claimId(`DOF-CS-${pad(nextCounter("callsheet"))}`),
     contentId: root.contentId,
@@ -6629,6 +6786,7 @@ var SHEET_EDITABLE = ["title", "date", ...SHEET_CONTENT_KEYS];
 function updateCallSheet(actor, id2, input, expectedVersion) {
   const patch = pickKeys(input, SHEET_EDITABLE);
   const cs = loadSheet(actor, id2, expectedVersion);
+  const before = trackedOf(cs);
   const content = tidyContent(patch, cs);
   const planChanged = patch.title !== void 0 || patch.date !== void 0 || !onlyTicks(cs, content);
   if (cs.status === "final" && planChanged) throw new RuleError("This call sheet is final. Reopen it to make changes.");
@@ -6656,6 +6814,7 @@ function updateCallSheet(actor, id2, input, expectedVersion) {
     );
   Object.assign(cs, content);
   cs.version += 1;
+  noteChanges(actor, cs, before);
   if (planChanged) lockInstanceOfSheet(actor, cs.id);
   logAudit(actor, "update", "callsheet", id2, Object.keys(patch).join(", "));
   commit();
@@ -6711,6 +6870,7 @@ function finalizeCallSheet(actor, id2, expectedVersion) {
   if (gear.length)
     throw new RuleError(`Gear needs attention before finalizing: ${gear[0]}${gear.length > 1 ? ` (and ${gear.length - 1} more)` : ""}`);
   cs.status = "final";
+  cs.sharedAt ??= (/* @__PURE__ */ new Date()).toISOString();
   cs.version += 1;
   logAudit(actor, "finalize", "callsheet", id2);
   commit();
@@ -6721,6 +6881,22 @@ function reopenCallSheet(actor, id2) {
   cs.status = "draft";
   cs.version += 1;
   logAudit(actor, "reopen", "callsheet", id2);
+  commit();
+  return cs;
+}
+function confirmOnSheet(actor, sheetId, key2, confirmed) {
+  const cs = getCallSheet(sheetId);
+  const root = cs ? getRecord(cs.contentId) : void 0;
+  if (!cs || !root || !canView(actor, root)) throw new RuleError("Call sheet not found.");
+  if (key2 !== actor.personId && !canWrite(actor, root))
+    throw new RuleError("Only the person themself, or someone working on this project, can confirm for them.");
+  const terms = confirmationTerms(cs, key2);
+  if (!terms)
+    throw new RuleError(key2.startsWith("talent:") ? "That person is no longer on the talent list." : "That person is not on the crew.");
+  cs.confirmations ??= {};
+  if (confirmed) cs.confirmations[key2] = { at: (/* @__PURE__ */ new Date()).toISOString(), by: actor.personId, ...terms };
+  else delete cs.confirmations[key2];
+  logAudit(actor, confirmed ? "confirm" : "unconfirm", "callsheet", sheetId, confirmationName(cs, key2));
   commit();
   return cs;
 }
@@ -6775,8 +6951,10 @@ function addRunItem(actor, sheetId, input) {
     ownerPersonId: input.ownerPersonId || null,
     notes: (input.notes ?? "").trim()
   };
+  const before = trackedOf(cs);
   cs.runOfShow.push(item2);
   cs.version += 1;
+  noteChanges(actor, cs, before);
   logAudit(actor, "run-add", "callsheet", sheetId, `${item2.time} ${item2.title}`);
   lockInstanceOfSheet(actor, sheetId);
   commit();
@@ -6794,8 +6972,10 @@ function updateRunItem(actor, sheetId, itemId, patch) {
     notes: patch.notes ?? item2.notes
   };
   checkRunItem(next2);
+  const before = trackedOf(cs);
   Object.assign(item2, { ...next2, title: next2.title.trim(), notes: next2.notes.trim() });
   cs.version += 1;
+  noteChanges(actor, cs, before);
   logAudit(actor, "run-update", "callsheet", sheetId, item2.title);
   lockInstanceOfSheet(actor, sheetId);
   commit();
@@ -6803,8 +6983,10 @@ function updateRunItem(actor, sheetId, itemId, patch) {
 }
 function removeRunItem(actor, sheetId, itemId) {
   const cs = editableSheet(actor, sheetId);
+  const before = trackedOf(cs);
   cs.runOfShow = cs.runOfShow.filter((x) => x.id !== itemId);
   cs.version += 1;
+  noteChanges(actor, cs, before);
   logAudit(actor, "run-remove", "callsheet", sheetId, itemId);
   lockInstanceOfSheet(actor, sheetId);
   commit();
@@ -6909,8 +7091,10 @@ function keepCallSheet(actor, session) {
   const sheet = session.callSheetId ? getDb().callSheets.find((c) => c.id === session.callSheetId) : void 0;
   if (!sheet) createSessionCallSheet(actor, session.id);
   else if (sheet.status === "draft" && sheet.date !== session.scheduledDate) {
+    const before = trackedOf(sheet);
     sheet.date = session.scheduledDate;
     sheet.version += 1;
+    noteChanges(actor, sheet, before);
     logAudit(actor, "update", "callsheet", sheet.id, `date ${session.scheduledDate}, with its session`);
   }
 }
@@ -7114,6 +7298,37 @@ ${lines.join("\n")}` : `Recording session ${session.id}.`
   commit();
   return sheet;
 }
+function duplicateSession(actor, sessionId, newDate) {
+  const src = requireSession(sessionId);
+  projectForWrite(actor, src.contentId);
+  if (!isIsoDate(newDate)) throw new RuleError("Pick the new session's date.");
+  const copy = createSession(actor, src.contentId, {
+    scheduledDate: newDate,
+    venue: src.venue,
+    name: src.name ?? "",
+    label: src.label ?? null,
+    startTime: src.startTime ?? null,
+    endTime: src.endTime ?? null
+  });
+  copy.storyboardId = src.storyboardId ?? null;
+  copy.shotListId = src.shotListId ?? null;
+  copy.storageDriveId = src.storageDriveId ?? null;
+  if (!isDevotion(src.contentId)) copy.runSheet = src.runSheet.map((x) => ({ ...x, id: localId("RS") }));
+  const srcSheet = src.callSheetId ? getDb().callSheets.find((c) => c.id === src.callSheetId) : void 0;
+  let sheet = null;
+  let gear = { copied: 0, skipped: [] };
+  if (srcSheet) {
+    sheet = copy.callSheetId ? getDb().callSheets.find((c) => c.id === copy.callSheetId) ?? null : null;
+    sheet ??= createSessionCallSheet(actor, copy.id);
+    const content = cloneContent(srcSheet);
+    content.notes = sheet.notes;
+    applyContent(sheet, content);
+    gear = copyGearBetweenSheets(actor, srcSheet.id, { id: sheet.id, contentId: sheet.contentId, date: sheet.date });
+  }
+  logAudit(actor, "duplicate", "session", copy.id, `from ${src.id}`);
+  commit();
+  return { session: copy, sheet, gear };
+}
 var RECORDED = ["Recorded", "Pickup needed"];
 function availableForLog(sessionId) {
   const db2 = getDb();
@@ -7225,9 +7440,9 @@ function closeSession(actor, sessionId) {
   const archived = [];
   if (!isDocumentary(project)) {
     const planned = new Map(db2.plannedEpisodes.map((p) => [p.id, p]));
-    const rows = rowsOf(sessionId).filter((r) => r.plannedEpisodeId && planned.has(r.plannedEpisodeId)).sort((a, b) => planned.get(a.plannedEpisodeId).episodeNumber - planned.get(b.plannedEpisodeId).episodeNumber);
+    const rows2 = rowsOf(sessionId).filter((r) => r.plannedEpisodeId && planned.has(r.plannedEpisodeId)).sort((a, b) => planned.get(a.plannedEpisodeId).episodeNumber - planned.get(b.plannedEpisodeId).episodeNumber);
     const label = categoryOf(project.category).workflow?.episodeLabel ?? "Episode";
-    for (const row of rows) {
+    for (const row of rows2) {
       const existing = db2.records.find((r) => r.episode?.plannedEpisodeId === row.plannedEpisodeId && !r.archived);
       if (RECORDED.includes(row.status)) {
         if (existing) {
@@ -7428,8 +7643,8 @@ function devotionPlacements(projectId) {
   const db2 = getDb();
   const sessions = new Map(liveSessions(projectId).map((s2) => [s2.id, s2]));
   return db2.plannedEpisodes.filter((p) => p.contentId === projectId && !p.archivedAt).sort((a, b) => a.episodeNumber - b.episodeNumber).map((p) => {
-    const rows = db2.sessionLogEntries.filter((e) => e.plannedEpisodeId === p.id && sessions.has(e.sessionId));
-    const row = rows.find((e) => e.status === "Recorded" || e.status === "Pickup needed") ?? rows[0];
+    const rows2 = db2.sessionLogEntries.filter((e) => e.plannedEpisodeId === p.id && sessions.has(e.sessionId));
+    const row = rows2.find((e) => e.status === "Recorded" || e.status === "Pickup needed") ?? rows2[0];
     const session = row ? sessions.get(row.sessionId) : void 0;
     const made = db2.records.some((r) => r.episode?.plannedEpisodeId === p.id && !r.archived);
     return {
@@ -7475,10 +7690,10 @@ function assignDevotion(actor, plannedId, sessionId) {
 }
 var sessionName = (s2) => s2 ? s2.name?.trim() || `Session ${s2.sessionNumber}` : "a session";
 function sheetTimes(runSheet) {
-  const rows = [...runSheet].sort((a, b) => a.time.localeCompare(b.time));
-  const at = (re) => rows.find((i) => re.test(i.title))?.time ?? null;
+  const rows2 = [...runSheet].sort((a, b) => a.time.localeCompare(b.time));
+  const at = (re) => rows2.find((i) => re.test(i.title))?.time ?? null;
   return {
-    crewCall: at(/crew call/i) ?? rows[0]?.time ?? null,
+    crewCall: at(/crew call/i) ?? rows2[0]?.time ?? null,
     talentArrival: at(/talent|guest arriv|host arriv/i),
     startRecording: at(/^(record\b|episode \d)/i),
     wrap: at(/^wrap/i)
@@ -7781,9 +7996,9 @@ function productionGate(s2) {
   const missing = [];
   if (s2.status !== "Open") missing.push("The session must be in Production (Open)");
   missing.push(...openRequired("wrap", s2.id).map((l) => `Wrap: ${l}`));
-  const rows = rowsOf(s2.id);
-  if (rows.length === 0) missing.push("At least one row in the session log");
-  for (const r of rows) if (!r.status) missing.push(`A status for log row "${r.itemLabel || r.plannedEpisodeId}"`);
+  const rows2 = rowsOf(s2.id);
+  if (rows2.length === 0) missing.push("At least one row in the session log");
+  for (const r of rows2) if (!r.status) missing.push(`A status for log row "${r.itemLabel || r.plannedEpisodeId}"`);
   return result(missing);
 }
 function editingGate(ep) {
@@ -9013,14 +9228,14 @@ function addLinks(actor, id2, input) {
   if (!stages.some((s2) => s2.name === stage)) throw new RuleError("That stage does not exist for this category.");
   if (input.kind === "final" && r.pipelineStage !== finalStageOf(r.category).name)
     throw new RuleError(`The final link is posted once this reaches ${finalStageOf(r.category).name}.`);
-  const rows = input.links.map((x) => ({ url: (x.url ?? "").trim(), note: (x.note ?? "").trim() })).filter((x) => x.url || x.note);
-  if (!rows.length) throw new RuleError(input.kind === "analysis" ? "Add a link or write the analysis." : "Paste at least one link.");
-  for (const row of rows) {
+  const rows2 = input.links.map((x) => ({ url: (x.url ?? "").trim(), note: (x.note ?? "").trim() })).filter((x) => x.url || x.note);
+  if (!rows2.length) throw new RuleError(input.kind === "analysis" ? "Add a link or write the analysis." : "Paste at least one link.");
+  for (const row of rows2) {
     if (input.kind !== "analysis" && !row.url) throw new RuleError("Every row needs a link. Remove the empty ones.");
     if (row.url && !/^https?:\/\//i.test(row.url))
       throw new RuleError(`"${row.url}" is not a link. Links must start with http:// or https://.`);
   }
-  const made = rows.map((row) => ({
+  const made = rows2.map((row) => ({
     id: localId("L", (x) => r.links.some((l) => l.id === x)),
     stage,
     kind: input.kind,
@@ -9808,10 +10023,10 @@ function ruleFor(formType2, section, field) {
   return null;
 }
 var blank = (v) => v === void 0 || v === null || v === "" || Array.isArray(v) && v.length === 0;
-function show(f2, v, nameOf2) {
+function show(f2, v, nameOf3) {
   switch (f2?.type) {
     case "crew":
-      return nameOf2(String(v));
+      return nameOf3(String(v));
     case "yesno":
       return v === "yes" ? "Yes" : v === "no" ? "No" : String(v);
     case "date":
@@ -9829,7 +10044,7 @@ function migrateDocuments(db2, options) {
   const { at } = options;
   const report = { lines: [], kept: [], extras: [], unaccounted: [], changed: false };
   const people = new Map(db2.people.map((p) => [p.personId, p.name]));
-  const nameOf2 = (id2) => people.get(id2) ?? id2;
+  const nameOf3 = (id2) => people.get(id2) ?? id2;
   const byId = new Map(db2.records.map((r) => [r.contentId, r]));
   const newDocument = (p, stage, key2) => {
     const entry = catalogEntry(p.workflow.formType, stage, key2);
@@ -9925,7 +10140,7 @@ function migrateDocuments(db2, options) {
         const heading = rule ? target.heading ?? "" : section.label;
         const parts = grouped.get(pageKey).parts;
         if (!parts.has(heading)) parts.set(heading, []);
-        parts.get(heading).push(labelled(def?.label ?? key2, show(def, v, nameOf2)));
+        parts.get(heading).push(labelled(def?.label ?? key2, show(def, v, nameOf3)));
         fields++;
       }
     }
@@ -9938,7 +10153,7 @@ function migrateDocuments(db2, options) {
           grouped.set(pageKey, { target: { doc: briefKey, stage: "Development", page: "Also from the old form" }, parts: /* @__PURE__ */ new Map() });
         const parts = grouped.get(pageKey).parts;
         if (!parts.has(sectionKey)) parts.set(sectionKey, []);
-        parts.get(sectionKey).push(labelled(key2, show(void 0, v, nameOf2)));
+        parts.get(sectionKey).push(labelled(key2, show(void 0, v, nameOf3)));
         report.extras.push({ contentId: p.contentId, field: `${sectionKey}: ${key2}` });
         fields++;
       }
@@ -10051,7 +10266,7 @@ function migrateDocuments(db2, options) {
         write(
           keeping(),
           "Theological review on the earlier form",
-          `<h3>${c.checkpoint === "pitch" ? "Pitch" : "Outline or script"}: ${escapeHtml(c.status)}</h3>` + (c.reviewerIds.length ? labelled("Reviewers", c.reviewerIds.map(nameOf2).join(", ")) : "") + (c.note ? labelled("Note", c.note) : "") + (c.decidedAt ? labelled("Decided", fmtDate(c.decidedAt.slice(0, 10))) : "")
+          `<h3>${c.checkpoint === "pitch" ? "Pitch" : "Outline or script"}: ${escapeHtml(c.status)}</h3>` + (c.reviewerIds.length ? labelled("Reviewers", c.reviewerIds.map(nameOf3).join(", ")) : "") + (c.note ? labelled("Note", c.note) : "") + (c.decidedAt ? labelled("Decided", fmtDate(c.decidedAt.slice(0, 10))) : "")
         );
       }
     }
@@ -10675,6 +10890,7 @@ function upgradeToV19(db2) {
       const id2 = `DOF-CS-${String(csNext).padStart(3, "0")}`;
       db2.callSheets.push({
         ...blankSheetContent(),
+        ...blankSheetTracking(),
         id: id2,
         contentId: show2.contentId,
         title: `${show2.title}: ${day.scheduledDate}`,
@@ -10705,10 +10921,23 @@ function upgradeToV19(db2) {
   db2.schemaVersion = 19;
   return db2;
 }
+function upgradeToV20(db2) {
+  db2.locations ??= [];
+  const at = (/* @__PURE__ */ new Date()).toISOString();
+  for (const cs of db2.callSheets) {
+    cs.locationId ??= null;
+    cs.confirmations ??= {};
+    cs.changeLog ??= [];
+    if (cs.sharedAt === void 0) cs.sharedAt = cs.status === "final" ? at : null;
+  }
+  for (const t2 of db2.showTemplates ?? []) t2.sheet.locationId ??= null;
+  db2.schemaVersion = 20;
+  return db2;
+}
 
 // src/data/store.ts
 var KEY = "dof-hub-db";
-var SCHEMA_VERSION = 19;
+var SCHEMA_VERSION = 20;
 function migrate(old) {
   const gear = buildGearSeed();
   const next2 = {
@@ -10750,7 +10979,8 @@ var UPGRADES = {
   15: upgradeToV16,
   16: upgradeToV17,
   17: upgradeToV18,
-  18: upgradeToV19
+  18: upgradeToV19,
+  19: upgradeToV20
 };
 function upgradeDb(parsed) {
   let db2 = parsed.schemaVersion === 1 ? migrate(parsed) : parsed;
@@ -11134,14 +11364,14 @@ async function changeAllData(store2, apply, backupLabel, fn) {
 }
 function describeUpgrade(r) {
   const head = r.from === r.to ? `The data is already at version ${r.to}. Nothing to do.` : `${r.applied ? "Upgraded" : "Would upgrade"} the data from version ${r.from} to ${r.to}.`;
-  const rows = r.parts.map(
+  const rows2 = r.parts.map(
     (p) => `  ${p.part.padEnd(24)} ${String(p.before).padStart(6)} \u2192 ${String(p.after).padEnd(6)} ${p.written ? `${p.written} written` : ""}${p.removed ? `, ${p.removed} removed` : ""}`
   );
   return [
     head,
     ...r.backup ? [`A copy of the data before the upgrade is in ${r.backup}.`] : [],
     "  part                     before \u2192 after",
-    ...rows
+    ...rows2
   ].join("\n");
 }
 async function loadDb(store2, _keys) {
@@ -11266,6 +11496,8 @@ async function snapshotFor(store2, actor) {
     const boardIds = new Set(boards.map((b) => b.id));
     const lists = (db2.shotLists ?? []).filter((l) => ids2.has(l.contentId));
     const listIds = new Set(lists.map((l) => l.id));
+    const sheets = visibleCallSheets(actor);
+    const sheetLocationIds = new Set(sheets.map((c) => c.locationId).filter((x) => !!x));
     const settings = { ...db2.settings };
     if (!hop)
       settings.permissions = {
@@ -11278,7 +11510,7 @@ async function snapshotFor(store2, actor) {
       people: db2.people.map((p) => redactPerson(actor, p)),
       members: hop ? db2.members : db2.members.filter((m) => ids2.has(m.projectContentId) || m.personId === actor.personId),
       records: recs,
-      callSheets: visibleCallSheets(actor),
+      callSheets: sheets,
       comments: db2.comments.filter((c) => ids2.has(c.contentId)),
       audit,
       equipment: can(actor, "equipment.use") ? db2.equipment : [],
@@ -11312,6 +11544,8 @@ async function snapshotFor(store2, actor) {
       shotListRows: (db2.shotListRows ?? []).filter((r) => listIds.has(r.shotListId)),
       // A show's template goes with the show.
       showTemplates: (db2.showTemplates ?? []).filter((t2) => ids2.has(t2.contentId)),
+      // Saved locations are for the team; a partner sees only those on the call sheets they can see.
+      locations: actor.role === "PTR" ? (db2.locations ?? []).filter((l) => sheetLocationIds.has(l.id)) : db2.locations ?? [],
       outbox: can(actor, "reminders.sendOthers") ? db2.outbox : db2.outbox.filter((o) => o.personId === actor.personId),
       settings,
       counters: db2.counters
@@ -11997,6 +12231,87 @@ function acceptDevotion(actor, projectId, note) {
   return written.length ? makeDevotionEpisodes(actor, projectId) : { made: [], updated: [], episodes: [] };
 }
 
+// src/services/locations.ts
+var locations_exports = {};
+__export(locations_exports, {
+  archiveLocation: () => archiveLocation,
+  canKeepLocations: () => canKeepLocations,
+  createLocation: () => createLocation,
+  getLocation: () => getLocation,
+  listLocations: () => listLocations,
+  sheetsUsing: () => sheetsUsing,
+  updateLocation: () => updateLocation
+});
+var listLocations = (includeArchived = false) => (getDb().locations ?? []).filter((l) => includeArchived || !l.archived).sort((a, b) => a.name.localeCompare(b.name));
+var getLocation = (id2) => (getDb().locations ?? []).find((l) => l.id === id2);
+var canKeepLocations = (actor) => actor.role === "HOP" || actor.role === "CRW";
+var LOCATION_EDITABLE = ["name", "address", "notes"];
+function check(input, self) {
+  if (input.name !== void 0) {
+    const name = input.name.trim();
+    if (!name) throw new RuleError("Give the location a name.");
+    if (name.length > 200) throw new RuleError("Keep the location's name under 200 characters.");
+    const same = (getDb().locations ?? []).find(
+      (l) => !l.archived && l.id !== self?.id && l.name.trim().toLowerCase() === name.toLowerCase()
+    );
+    if (same) throw new RuleError(`There is already a saved location called ${same.name}.`);
+  }
+  if (input.address !== void 0 && input.address.length > 1e3) throw new RuleError("Keep the address under 1,000 characters.");
+  if (input.notes !== void 0 && input.notes.length > 4e3) throw new RuleError("Keep the notes under 4,000 characters.");
+}
+function keeper(actor) {
+  if (!canKeepLocations(actor)) throw new RuleError("Only the Head of Production and crew can change saved locations.");
+}
+function createLocation(actor, input) {
+  keeper(actor);
+  const patch = pickKeys(input, LOCATION_EDITABLE);
+  if (patch.name === void 0) throw new RuleError("Give the location a name.");
+  check(patch);
+  const at = (/* @__PURE__ */ new Date()).toISOString();
+  const loc = {
+    id: claimId(`DOF-LOC-${pad(nextCounter("location"))}`),
+    name: patch.name.trim(),
+    address: (patch.address ?? "").trim(),
+    notes: (patch.notes ?? "").trim(),
+    archived: false,
+    createdAt: at,
+    createdBy: actor.personId,
+    updatedAt: at
+  };
+  (getDb().locations ??= []).push(loc);
+  logAudit(actor, "create", "location", loc.id, loc.name);
+  commit();
+  return loc;
+}
+function updateLocation(actor, id2, input) {
+  keeper(actor);
+  const loc = getLocation(id2);
+  if (!loc) throw new RuleError("That saved location no longer exists.");
+  const patch = pickKeys(input, LOCATION_EDITABLE);
+  check(patch, loc);
+  if (patch.name !== void 0) loc.name = patch.name.trim();
+  if (patch.address !== void 0) loc.address = patch.address.trim();
+  if (patch.notes !== void 0) loc.notes = patch.notes.trim();
+  loc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+  logAudit(actor, "update", "location", id2, Object.keys(patch).join(", "));
+  commit();
+  return loc;
+}
+function archiveLocation(actor, id2, archived) {
+  keeper(actor);
+  const loc = getLocation(id2);
+  if (!loc) throw new RuleError("That saved location no longer exists.");
+  if (!archived) check({ name: loc.name }, loc);
+  loc.archived = archived;
+  loc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+  logAudit(actor, archived ? "archive" : "restore", "location", id2, loc.name);
+  commit();
+  return loc;
+}
+function sheetsUsing(id2, today) {
+  return getDb().callSheets.filter((c) => c.locationId === id2 && c.date >= today).length;
+}
+
 // src/services/production.ts
 var production_exports = {};
 __export(production_exports, {
@@ -12336,6 +12651,7 @@ function setShowSchedule(actor, templateId, rule) {
   return r;
 }
 function applyTemplateTo(actor, t2, day, cs, today) {
+  const was = trackedOf(cs);
   const before = new Map(cs.technicalCheck.map((x) => [x.label, x]));
   const next2 = cloneContent(t2.sheet);
   next2.technicalCheck = next2.technicalCheck.map((x) => {
@@ -12352,6 +12668,7 @@ function applyTemplateTo(actor, t2, day, cs, today) {
   } else if (m) next2.plannedGear = next2.plannedGear.filter((g) => !m.lines.some((l) => l.equipmentId === g.equipmentId));
   applyContent(cs, next2);
   cs.version += 1;
+  noteChanges(actor, cs, was);
   day.productionLevel = t2.productionLevel;
   day.instance.templateVersion = t2.version;
   day.version += 1;
@@ -13121,6 +13438,7 @@ __export(workflow_exports, {
   decideCheckpoint: () => decideCheckpoint,
   decideGreenlight: () => decideGreenlight,
   devotionPlacements: () => devotionPlacements,
+  duplicateSession: () => duplicateSession,
   episodeOverdue: () => episodeOverdue,
   episodesOf: () => episodesOf,
   evaluateGate: () => evaluateGate,
@@ -13421,6 +13739,7 @@ var RPC_NAMES = {
     "addRunItem",
     "attachCallSheet",
     "bookPlannedGear",
+    "confirmOnSheet",
     "createCallSheet",
     "deleteCallSheet",
     "duplicateCallSheet",
@@ -13548,6 +13867,12 @@ var RPC_NAMES = {
     "startRepair",
     "updateItem"
   ],
+  "locations": [
+    "archiveLocation",
+    "canKeepLocations",
+    "createLocation",
+    "updateLocation"
+  ],
   "people": [
     "assignToProject",
     "createPerson",
@@ -13623,6 +13948,7 @@ var RPC_NAMES = {
     "createWorkflowProject",
     "decideCheckpoint",
     "decideGreenlight",
+    "duplicateSession",
     "moveToMarketing",
     "openSession",
     "publishEpisode",
@@ -13694,6 +14020,7 @@ var sheetContent = z2.object({
   location: short(500),
   locationAddress: short(1e3),
   locationNotes: text2(4e3),
+  locationId: ref.nullable(),
   format: short(),
   notes: text2(),
   crewPersonIds: ids(200),
@@ -13848,6 +14175,12 @@ var ACTIONS = {
     })
   ]),
   "callsheets.removeRunItem": args([id, id]),
+  // Someone on the sheet will be there: a crew member's person ID, or "talent:<row ID>".
+  "callsheets.confirmOnSheet": args([id, id, z2.boolean()]),
+  // Saved locations (src/services/locations.ts).
+  "locations.createLocation": args([z2.object({ name: short(200), address: text2(1e3), notes: text2(4e3) }).partial()]),
+  "locations.updateLocation": args([id, z2.object({ name: short(200), address: text2(1e3), notes: text2(4e3) }).partial()]),
+  "locations.archiveLocation": args([id, z2.boolean()]),
   // Productions: recurring shows, one-time and multi-day events
   "production.createProduction": args([
     z2.object({
@@ -14228,6 +14561,7 @@ var ACTIONS = {
   "workflow.updateRunSheetItem": args([id, id, runSheetItem.partial()]),
   "workflow.removeRunSheetItem": args([id, id]),
   "workflow.createSessionCallSheet": args([id]),
+  "workflow.duplicateSession": args([id, date]),
   // Production
   "workflow.addLogRow": args([id, z2.object({ plannedEpisodeId: ref.nullable(), logDate: date.nullable(), ...logFields }).partial()]),
   "workflow.updateLogRow": args([compound, z2.object({ logDate: date, ...logFields }).partial()]),
@@ -14299,6 +14633,7 @@ var modules = {
   docs: docs_exports,
   documents: documents_exports,
   equipment: equipment_exports,
+  locations: locations_exports,
   people: people_exports,
   permissions: permissions_exports,
   production: production_exports,

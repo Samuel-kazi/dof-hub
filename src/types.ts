@@ -248,6 +248,7 @@ export interface SheetContent {
   location: string;
   locationAddress: string;
   locationNotes: string;
+  locationId: string | null; // the saved location it was taken from, if any (data version 20)
   format: string;
   notes: string;
   crewPersonIds: string[];
@@ -651,6 +652,44 @@ export interface CallSheet extends SheetContent {
   status: "draft" | "final";
   version: number;
   createdAt: string;
+  // Data version 20
+  sharedAt: string | null; // first made final (issued to the team); from then on, changes are logged
+  confirmations: Record<string, Confirmation>; // by personId (crew) or "talent:<row id>"
+  changeLog: SheetChange[]; // changes made after it was shared or someone confirmed, newest last
+}
+
+/**
+ * Someone confirmed they will be there: at this call time, at this place, in this role. A change to any of the three
+ * clears it, so they confirm again.
+ */
+export interface Confirmation {
+  at: string;
+  by: string; // who ticked it: the person themself, or someone recording it for them
+  callTime: string;
+  location: string;
+  role: string;
+}
+
+/** A change made to a call sheet the team has already seen: what changed, from what to what, who and when. */
+export interface SheetChange {
+  id: string;
+  at: string;
+  by: string;
+  what: string; // "Crew call", "Location", "Crew", "Talent", "Date"…
+  from: string;
+  to: string;
+}
+
+/** A place the team records at again and again, picked on any call sheet or template. */
+export interface SavedLocation {
+  id: string; // LOC-xxxxxxxx
+  name: string;
+  address: string;
+  notes: string;
+  archived: boolean;
+  createdAt: string;
+  createdBy: string;
+  updatedAt: string;
 }
 
 export interface Comment {
@@ -911,6 +950,7 @@ export interface Database {
   shotLists: ShotList[];
   shotListRows: ShotListRow[];
   showTemplates: ShowTemplate[]; // data version 19
+  locations: SavedLocation[]; // data version 20
   settings: Settings;
   counters: Record<string, number>; // ID sequences, keyed by prefix
 }

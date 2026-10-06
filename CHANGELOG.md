@@ -46,6 +46,39 @@ Being built in phases. Phase 1, the production core:
   day is linked to the call sheet made for its date; and each coming day without one gets a draft call sheet. Nothing
   is moved or deleted.
 
+Phase 2, call sheet improvements:
+
+- **Duplicate to another date**, for a call sheet or a recording session, with "+1 day", "+1 week" and "+2 weeks"
+  beside the date. A copy carries every section, with ticks and confirmations cleared, and the gear that is free on the
+  new date (anything booked elsewhere or lent out is skipped and listed). A session's copy also takes its name, hours,
+  venue, storyboard, shot list and run sheet, and a copy of its call sheet; its episodes or devotions stay on the
+  original. "Duplicate…" is on the session's page and on each session in a devotion's Recording Plan.
+- **Warnings, never blocks**: a sheet still to come lists what it is missing (no crew call time, no location, no crew,
+  no crew lead) in a summary at the top and in the section concerned, and, from three days before the date, the crew
+  who have not confirmed. The Call sheets list shows "N to check".
+- **Confirmed ticks** for each person on the crew and each talent row. Crew tick their own (a crew member on the sheet
+  sees "Will you be there?" with one button); anyone working on the project can record it for someone else. A
+  confirmation records the call time, place and role it was given for: if any of the three changes, it is cleared, the
+  change log says so, and the person is asked again. Confirming works on a final sheet and does not stop a day
+  following its show's template.
+- **Saved locations**: a list of places with their address and notes, on the Call sheets page. The Head of Production
+  and crew add, edit and archive them (archived ones can be brought back). Any call sheet or show template picks one in
+  its Location section, which fills in the place, address and notes; "Save as a saved location" adds a sheet's place to
+  the list. A sheet keeps its own copy, so editing a saved location never rewrites sheets already made.
+- **Click a name to reach them**: crew names on call sheets, sessions, the Recording Plan's call sheets, stage owners,
+  the dashboard, equipment and checkout lists open a contact card with their role, phone (call or text) and email, as
+  far as the viewer may see them. Volunteers' and partners' details stay private as before.
+- **Change log**: once a sheet has been shared (first made final) or anyone has confirmed, every change to its date,
+  call times, location, crew (added, removed, roles, lead), talent and run of show is logged with who made it and
+  when, shown newest first under "Changes since it was shared or confirmed". The header shows when it was shared and
+  how many changes are logged.
+- **Gear suggestions** from the crew's roles (a camera for each camera operator, audio for the audio role, lights,
+  the switcher, an editing machine), offered in the Equipment section with one click to add. Nothing is added on its
+  own; gear already on the sheet, booked elsewhere or lent out that day is left out.
+- Data version 20: on first start, after keeping a copy, every call sheet and show template gains a saved location
+  (none), and every sheet its confirmations and change log (empty). A sheet already final counts as shared from then
+  on. The list of saved locations starts empty. Nothing is moved or deleted.
+
 ## Unreleased: documents for each stage (the documents rework)
 
 Being built in phases. The five stages, their names and order, the stage tracker, Content IDs and every form that

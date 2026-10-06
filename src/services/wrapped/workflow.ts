@@ -22,6 +22,7 @@ export const createSessionCallSheet = rpc("workflow.createSessionCallSheet", cor
 export const createWorkflowProject = rpc("workflow.createWorkflowProject", core.createWorkflowProject);
 export const decideCheckpoint = rpc("workflow.decideCheckpoint", core.decideCheckpoint);
 export const decideGreenlight = rpc("workflow.decideGreenlight", core.decideGreenlight);
+export const duplicateSession = rpc("workflow.duplicateSession", core.duplicateSession);
 export const moveToMarketing = rpc("workflow.moveToMarketing", core.moveToMarketing);
 export const openSession = rpc("workflow.openSession", core.openSession);
 export const publishEpisode = rpc("workflow.publishEpisode", core.publishEpisode);

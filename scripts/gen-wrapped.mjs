@@ -16,6 +16,7 @@ const MODULES = [
   "docs",
   "documents",
   "equipment",
+  "locations",
   "people",
   "permissions",
   "production",

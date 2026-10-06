@@ -2,14 +2,15 @@ import type { Actor, CallSheet, ContentRecord, ProductionLevel, RunItem } from "
 import { ConflictError, RuleError } from "../types";
 import { commit, getDb, nextCounter } from "../data/store";
 import { claimId, localId } from "../data/ids";
-import { SHEET_CONTENT_KEYS, blankSheetContent } from "../config/callSheet";
-import { canWrite, getRecord, rootOf } from "./access";
+import { SHEET_CONTENT_KEYS, blankSheetContent, blankSheetTracking } from "../config/callSheet";
+import { canView, canWrite, getRecord, rootOf } from "./access";
 import { leavesUnder } from "./content";
 import { logAudit } from "./audit";
 import { bookWhatIsFree, copyGearBetweenSheets, gearIssues, manifestForSheet, rebookSheetGear, releaseSheetGear } from "./equipment";
 import { attachCrew, dayOfSheet, lockInstanceOfSheet, moveDay } from "./instances";
 import { applyContent, checkContent, cloneContent, onlyTicks, tidyContent } from "./sheetContent";
 import { getPerson } from "./people";
+import { confirmationName, confirmationTerms, noteChanges, trackedOf } from "./sheetTracking";
 import { pad, pickKeys } from "./utils";
 
 export const getCallSheet = (id: string): CallSheet | undefined => getDb().callSheets.find((c) => c.id === id);
@@ -49,6 +50,7 @@ export function createCallSheet(actor: Actor, input: CallSheetInput): CallSheet 
   if (!input.date) throw new RuleError("Pick a date for the call sheet.");
   const cs: CallSheet = {
     ...blankSheetContent(),
+    ...blankSheetTracking(),
     instanceId: null,
     id: claimId(`DOF-CS-${pad(nextCounter("callsheet"))}`),
     contentId: root.contentId,
@@ -146,6 +148,7 @@ export type SheetPatch = Partial<Pick<CallSheet, (typeof SHEET_EDITABLE)[number]
 export function updateCallSheet(actor: Actor, id: string, input: SheetPatch, expectedVersion?: number): CallSheet {
   const patch = pickKeys(input, SHEET_EDITABLE);
   const cs = loadSheet(actor, id, expectedVersion);
+  const before = trackedOf(cs);
   const content = tidyContent(patch, cs);
   // Ticking the technical check or the rehearsal is work on the day, done on a final sheet too; anything else is a
   // change of plan, which a final sheet refuses until it is reopened.
@@ -178,6 +181,7 @@ export function updateCallSheet(actor: Actor, id: string, input: SheetPatch, exp
     );
   Object.assign(cs, content);
   cs.version += 1;
+  noteChanges(actor, cs, before);
   if (planChanged) lockInstanceOfSheet(actor, cs.id);
   logAudit(actor, "update", "callsheet", id, Object.keys(patch).join(", "));
   commit();
@@ -243,6 +247,7 @@ export function finalizeCallSheet(actor: Actor, id: string, expectedVersion?: nu
   if (gear.length)
     throw new RuleError(`Gear needs attention before finalizing: ${gear[0]}${gear.length > 1 ? ` (and ${gear.length - 1} more)` : ""}`);
   cs.status = "final";
+  cs.sharedAt ??= new Date().toISOString(); // issued to the team: from now on its changes are logged
   cs.version += 1;
   logAudit(actor, "finalize", "callsheet", id);
   commit();
@@ -254,6 +259,29 @@ export function reopenCallSheet(actor: Actor, id: string): CallSheet {
   cs.status = "draft";
   cs.version += 1;
   logAudit(actor, "reopen", "callsheet", id);
+  commit();
+  return cs;
+}
+
+/**
+ * Ticks (or unticks) that someone on the sheet will be there: a crew member by their person ID, a talent row as
+ * "talent:<row ID>". Crew confirm for themselves; anyone working on the project can record it for them, and for
+ * talent. It records the call time, place and role they said yes to, so a change to any of them clears it. It is
+ * not a change of plan: a final sheet takes it, and a day following its show's template keeps following it.
+ */
+export function confirmOnSheet(actor: Actor, sheetId: string, key: string, confirmed: boolean): CallSheet {
+  const cs = getCallSheet(sheetId);
+  const root = cs ? getRecord(cs.contentId) : undefined;
+  if (!cs || !root || !canView(actor, root)) throw new RuleError("Call sheet not found.");
+  if (key !== actor.personId && !canWrite(actor, root))
+    throw new RuleError("Only the person themself, or someone working on this project, can confirm for them.");
+  const terms = confirmationTerms(cs, key);
+  if (!terms)
+    throw new RuleError(key.startsWith("talent:") ? "That person is no longer on the talent list." : "That person is not on the crew.");
+  cs.confirmations ??= {};
+  if (confirmed) cs.confirmations[key] = { at: new Date().toISOString(), by: actor.personId, ...terms };
+  else delete cs.confirmations[key];
+  logAudit(actor, confirmed ? "confirm" : "unconfirm", "callsheet", sheetId, confirmationName(cs, key));
   commit();
   return cs;
 }
@@ -331,8 +359,10 @@ export function addRunItem(actor: Actor, sheetId: string, input: RunItemInput): 
     ownerPersonId: input.ownerPersonId || null,
     notes: (input.notes ?? "").trim(),
   };
+  const before = trackedOf(cs);
   cs.runOfShow.push(item);
   cs.version += 1;
+  noteChanges(actor, cs, before);
   logAudit(actor, "run-add", "callsheet", sheetId, `${item.time} ${item.title}`);
   lockInstanceOfSheet(actor, sheetId);
   commit();
@@ -351,8 +381,10 @@ export function updateRunItem(actor: Actor, sheetId: string, itemId: string, pat
     notes: patch.notes ?? item.notes,
   };
   checkRunItem(next);
+  const before = trackedOf(cs);
   Object.assign(item, { ...next, title: next.title.trim(), notes: next.notes.trim() });
   cs.version += 1;
+  noteChanges(actor, cs, before);
   logAudit(actor, "run-update", "callsheet", sheetId, item.title);
   lockInstanceOfSheet(actor, sheetId);
   commit();
@@ -361,8 +393,10 @@ export function updateRunItem(actor: Actor, sheetId: string, itemId: string, pat
 
 export function removeRunItem(actor: Actor, sheetId: string, itemId: string): void {
   const cs = editableSheet(actor, sheetId);
+  const before = trackedOf(cs);
   cs.runOfShow = cs.runOfShow.filter((x) => x.id !== itemId);
   cs.version += 1;
+  noteChanges(actor, cs, before);
   logAudit(actor, "run-remove", "callsheet", sheetId, itemId);
   lockInstanceOfSheet(actor, sheetId);
   commit();

@@ -16,7 +16,7 @@ import type {
   WorkflowChecklistItem,
 } from "../types";
 import { CHECKLISTS, CRITERIA, type ChecklistKey } from "../config/workflow";
-import { blankSheetContent } from "../config/callSheet";
+import { blankSheetContent, blankSheetTracking } from "../config/callSheet";
 import { buildSeed, isoDay, rec } from "./seed";
 import { episodeCode, plannedEpisodeId, sessionCode, syncRecordCounters, syncWorkflowCounters } from "./ids";
 
@@ -297,6 +297,7 @@ export function buildWorkflowFixture(options: WorkflowFixtureOptions = {}): Data
     const r01 = db.recordingSessions[0];
     const sheet: CallSheet = {
       ...blankSheetContent(),
+      ...blankSheetTracking(),
       instanceId: null,
       id: "DOF-CS-001",
       contentId: series.contentId,
@@ -311,6 +312,7 @@ export function buildWorkflowFixture(options: WorkflowFixtureOptions = {}): Data
       format: "Podcast, five episodes",
       notes: "",
       status: "final",
+      sharedAt: at,
       version: 2,
       createdAt: at,
     };

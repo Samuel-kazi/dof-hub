@@ -1431,6 +1431,13 @@ textarea {
   flex: 1;
   min-width: 200px;
 }
+.banner.ok {
+  border-color: var(--ok-line);
+}
+.banner.accent {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
 .comment {
   padding: 10px 0;
   border-bottom: 1px solid var(--line-soft);
@@ -4178,7 +4185,7 @@ button.link:hover {
 }
 .cs-crew li {
   display: grid;
-  grid-template-columns: minmax(150px, 1fr) minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(150px, 1fr) minmax(0, 1fr) auto auto auto;
   align-items: center;
   gap: 8px;
   padding: 6px 0;
@@ -4379,8 +4386,7 @@ button.link:hover {
   .cs-crew li:not(.on) {
     grid-template-columns: minmax(0, 1fr) auto;
   }
-  .cs-crew li > input[type="text"],
-  .cs-crew li > .cs-lead {
+  .cs-crew li > input[type="text"] {
     grid-column: 1 / -1;
   }
   .cs-checks li {
@@ -4405,4 +4411,135 @@ button.link:hover {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+/* Call sheet improvements: what a sheet is missing, who confirmed, what changed once shared, gear to suggest, saved
+   locations and the contact card a name opens. */
+.cs-warn {
+  margin: 0 0 10px;
+  padding: 8px 12px 8px 28px;
+  border-radius: 10px;
+  border: 1px solid var(--warn-line);
+  background: var(--warn-bg);
+  font-size: 0.88rem;
+}
+.cs-warn-list {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+.cs-warn-list a {
+  color: inherit;
+}
+.cs-confirm {
+  font-size: 0.84rem;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.cs-confirm.on {
+  color: var(--ok);
+}
+.cs-changes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.cs-changes li {
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.cs-changes li:last-child {
+  border-bottom: 0;
+}
+.cs-change-what s {
+  color: var(--ink-3);
+}
+.cs-suggest {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px dashed var(--glass-line);
+}
+.cs-suggest ul {
+  list-style: none;
+  margin: 0 0 6px;
+  padding: 0;
+}
+.cs-suggest li {
+  padding: 6px 0;
+}
+.cs-suggest-options {
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.date-shift {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.person-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+.person-link:hover,
+.person-link:focus-visible {
+  color: var(--accent-hi);
+}
+.person-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+.person-contact {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 14px;
+  margin: 0;
+}
+.person-contact dt {
+  color: var(--ink-3);
+}
+.person-contact dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.loc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.loc-list li {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) minmax(0, 1.4fr) minmax(0, 1.4fr) auto;
+  gap: 8px;
+  align-items: start;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.loc-list li.archived {
+  opacity: 0.6;
+}
+.loc-list input,
+.loc-list textarea {
+  width: 100%;
+  min-width: 0;
+}
+@media (max-width: 760px) {
+  .loc-list li {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media print {
+  .cs-warn,
+  .cs-suggest,
+  #sec-changes {
+    display: none;
+  }
 }

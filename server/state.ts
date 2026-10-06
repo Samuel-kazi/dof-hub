@@ -430,6 +430,8 @@ export async function snapshotFor(store: Store, actor: Actor): Promise<{ revisio
     const boardIds = new Set(boards.map((b) => b.id));
     const lists = (db.shotLists ?? []).filter((l) => ids.has(l.contentId));
     const listIds = new Set(lists.map((l) => l.id));
+    const sheets = visibleCallSheets(actor);
+    const sheetLocationIds = new Set(sheets.map((c) => c.locationId).filter((x): x is string => !!x));
     const settings = { ...db.settings };
     if (!hop)
       settings.permissions = {
@@ -444,7 +446,7 @@ export async function snapshotFor(store: Store, actor: Actor): Promise<{ revisio
       people: db.people.map((p) => redactPerson(actor, p)),
       members: hop ? db.members : db.members.filter((m) => ids.has(m.projectContentId) || m.personId === actor.personId),
       records: recs,
-      callSheets: visibleCallSheets(actor),
+      callSheets: sheets,
       comments: db.comments.filter((c) => ids.has(c.contentId)),
       audit,
       equipment: can(actor, "equipment.use") ? db.equipment : [],
@@ -478,6 +480,8 @@ export async function snapshotFor(store: Store, actor: Actor): Promise<{ revisio
       shotListRows: (db.shotListRows ?? []).filter((r) => listIds.has(r.shotListId)),
       // A show's template goes with the show.
       showTemplates: (db.showTemplates ?? []).filter((t) => ids.has(t.contentId)),
+      // Saved locations are for the team; a partner sees only those on the call sheets they can see.
+      locations: actor.role === "PTR" ? (db.locations ?? []).filter((l) => sheetLocationIds.has(l.id)) : (db.locations ?? []),
       outbox: can(actor, "reminders.sendOthers") ? db.outbox : db.outbox.filter((o) => o.personId === actor.personId),
       settings,
       counters: db.counters,

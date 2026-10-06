@@ -35,7 +35,7 @@ import { Empty, Field } from "../../ui/parts";
 import { CrewSelect } from "../../ui/workflow/shared";
 import { CallSheetBody } from "../CallSheets";
 import { useReason } from "../workflow/common";
-import { RunSheetPanel } from "../workflow/SessionPage";
+import { DuplicateSessionModal, RunSheetPanel } from "../workflow/SessionPage";
 import { imageSrc } from "./images";
 import type { FixedCard } from "./PageList";
 import { sheetContacts, usePrintCallSheet } from "./printCallSheet";
@@ -431,6 +431,7 @@ function SessionCard({
   onRemove: () => void;
 }) {
   const { actor, attempt, go } = useApp();
+  const [duplicating, setDuplicating] = useState(false);
   const edit = write && !project.archived && s.status !== "Closed";
   const save = (patch: Parameters<typeof updateSession>[2]) => attempt(() => updateSession(actor, s.id, patch));
   const here = placed.filter((x) => x.sessionId === s.id).length;
@@ -445,12 +446,18 @@ function SessionCard({
         <button className="btn small" onClick={() => go({ n: "session", id: s.id })}>
           Open the session
         </button>
+        {write && !project.archived && project.workflow.stage === "Pre-production" && (
+          <button className="btn small" onClick={() => setDuplicating(true)}>
+            Duplicate…
+          </button>
+        )}
         {write && s.status === "Planned" && !project.archived && (
           <button className="btn small ghost" onClick={onRemove}>
             Remove
           </button>
         )}
       </div>
+      {duplicating && <DuplicateSessionModal session={s} onClose={() => setDuplicating(false)} />}
       <div className="row">
         <Field label="Name">
           <SavedInput

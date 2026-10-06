@@ -2,7 +2,7 @@ import type { ContentRecord, Database, DocRecord, DocRevision, DriveAllocation, 
 import { MUSIC_STAGE_MAP, categoryOf } from "../config/categories";
 import { templateOf } from "../config/docTemplates";
 import { CHECKLISTS } from "../config/workflow";
-import { SHEET_CONTENT_KEYS, blankEventPlan, blankSheetContent } from "../config/callSheet";
+import { SHEET_CONTENT_KEYS, blankEventPlan, blankSheetContent, blankSheetTracking } from "../config/callSheet";
 import { DOCUMENT_PARTS, WORKFLOW_PARTS } from "./constraints";
 import { todayIso } from "../services/utils";
 import { migrateDocuments } from "./migrateDocuments";
@@ -574,6 +574,7 @@ export function upgradeToV19(db: Database): Database {
       const id = `DOF-CS-${String(csNext).padStart(3, "0")}`;
       db.callSheets.push({
         ...blankSheetContent(),
+        ...blankSheetTracking(),
         id,
         contentId: show.contentId,
         title: `${show.title}: ${day.scheduledDate}`,
@@ -602,5 +603,25 @@ export function upgradeToV19(db: Database): Database {
     });
   }
   db.schemaVersion = 19;
+  return db;
+}
+
+/**
+ * Version 20: call sheet improvements. Every sheet and show template gains a saved location (none), and every sheet
+ * the record of who confirmed and of what changed once it was shared, both empty. A sheet already final has been
+ * issued to the team, so its changes are logged from now on. The list of saved locations starts empty. Nothing is
+ * moved or deleted. Running it again changes nothing.
+ */
+export function upgradeToV20(db: Database): Database {
+  db.locations ??= [];
+  const at = new Date().toISOString();
+  for (const cs of db.callSheets) {
+    cs.locationId ??= null;
+    cs.confirmations ??= {};
+    cs.changeLog ??= [];
+    if (cs.sharedAt === undefined) cs.sharedAt = cs.status === "final" ? at : null;
+  }
+  for (const t of db.showTemplates ?? []) t.sheet.locationId ??= null;
+  db.schemaVersion = 20;
   return db;
 }

@@ -47,6 +47,8 @@ export const KEYS = [
   "shotListRows",
   // Productions: recurring shows' templates (data version 19)
   "showTemplates",
+  // Saved locations for call sheets (data version 20)
+  "locations",
   "settings",
   "counters",
 ] as const;
