@@ -2,10 +2,11 @@ import { useState } from "react";
 import { ReportButton } from "../ui/ReportDialog";
 import { can } from "../services/wrapped/permissions";
 import { onBoard } from "../services/wrapped/production";
+import { pipelineCategories } from "../services/wrapped/settings";
 import type { CategoryKey, ContentRecord } from "../types";
 import { useApp, type MenuItem } from "../ui/AppContext";
 import { useDb } from "../data/store";
-import { CATEGORIES, categoryOf, type CategoryConfig } from "../config/categories";
+import { categoryOf, type CategoryConfig } from "../config/categories";
 import { WORKFLOW_STAGE_NAMES } from "../config/workflow";
 import { canWrite, visibleRecords } from "../services/access";
 import {
@@ -71,7 +72,8 @@ export function Pipeline({ category }: { category?: CategoryKey }) {
   const rm = useRecordMenu();
   const cfg = category ? categoryOf(category) : null;
   const all = visibleRecords(actor);
-  const shownCategories = cfg ? [cfg] : CATEGORIES;
+  const offered = pipelineCategories();
+  const shownCategories = cfg ? [cfg] : offered;
   const legacyClosed = all.filter((r) => (!category || r.category === category) && r.pipelineStage === "Closed");
   // Series, devotions and documentaries run the five-stage workflow. Items made before it keep their old stages until
   // the existing data is moved over, so they get a board of their own underneath.
@@ -82,7 +84,10 @@ export function Pipeline({ category }: { category?: CategoryKey }) {
   const publishedCount = wfItems.filter((i) => i.category === category && i.level === "episode" && i.done).length;
   const closedCount = legacyClosed.length + wfClosed.length;
   const tops = all.filter(
-    (r) => r.hierarchyLevel === 0 && (!category || r.category === category) && (showClosed || r.pipelineStage !== "Closed"),
+    (r) =>
+      r.hierarchyLevel === 0 &&
+      (category ? r.category === category : offered.some((c) => c.key === r.category)) &&
+      (showClosed || r.pipelineStage !== "Closed"),
   );
   const effective = cfg ? view : "tree";
 
@@ -91,7 +96,7 @@ export function Pipeline({ category }: { category?: CategoryKey }) {
     const rect = e.currentTarget.getBoundingClientRect();
     menu(
       { clientX: rect.left - 120, clientY: rect.bottom + 6, preventDefault: () => {} },
-      CATEGORIES.map((c) => ({ label: `Add to ${c.label}`, onClick: () => setAdding(c.key) })),
+      offered.map((c) => ({ label: `Add to ${c.label}`, onClick: () => setAdding(c.key) })),
     );
   };
 
@@ -139,7 +144,7 @@ export function Pipeline({ category }: { category?: CategoryKey }) {
         <button className={`chip ${cfg ? "" : "on"}`} onClick={() => go({ n: "pipeline" })}>
           All
         </button>
-        {CATEGORIES.map((c) => (
+        {offered.map((c) => (
           <button key={c.key} className={`chip ${category === c.key ? "on" : ""}`} onClick={() => go({ n: "pipeline", category: c.key })}>
             {c.label}
           </button>

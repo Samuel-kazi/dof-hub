@@ -324,7 +324,9 @@ t("run of show segments are checked and can be edited or removed while the sheet
   assert.equal(CS.getCallSheet(id)!.runOfShow.find((x) => x.id === it.id)!.durationMin, 10);
   CS.removeRunItem(crew3(), id, it.id);
   CS.finalizeCallSheet(crew3(), id);
-  throwsRule(() => CS.addRunItem(crew3(), id, { time: "11:00", title: "Late", durationMin: 1 }), /final/);
+  // Published, it stays open: the run of show can still change (and the change is logged).
+  CS.addRunItem(crew3(), id, { time: "11:00", title: "Late", durationMin: 1 });
+  assert.ok(CS.getCallSheet(id)!.changeLog.some((c) => c.what === "Run of show added"));
 });
 t("every call sheet can have a run of show; a large production cannot be final without one", () => {
   const day = C.createChildRecord(hop(), "DOF-LIVE-001", { title: "Day 3", scheduledDate: isoDay(25) });

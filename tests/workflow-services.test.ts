@@ -161,31 +161,30 @@ await t("a devotion's days and a documentary's film are numbered under their own
 
 // ── Gates ────────────────────────────────────────────────────
 
-await t("Development gate: the short list of hard gates, the rest as notes that never block, and it passes once they are met", async () => {
-  const p = (await call("workflow.createWorkflowProject", { category: "series", title: "Gate test", seriesType: "podcast" })).contentId;
-  const g = W.evaluateGate("Development", "project", p);
-  assert.equal(g.passed, false);
-  assert.deepEqual(
-    g.missing.map((m) => m.split(" (")[0]),
-    [
-      "The logline and the core question written in the brief",
-      "Theological review of the brief approved",
-      "Greenlight decision recorded as Greenlight, and a show producer named",
-    ],
-  );
-  for (const note of [/No planned episodes listed yet/, /Handoff: Outline locked/])
-    assert.ok(
-      g.warnings.some((w) => note.test(w)),
-      `the notes should mention ${note}: ${g.warnings.join(" | ")}`,
+await t(
+  "Development gate: the short list of hard gates (the theological review not among them), the rest as notes, and it passes once they are met",
+  async () => {
+    const p = (await call("workflow.createWorkflowProject", { category: "series", title: "Gate test", seriesType: "podcast" })).contentId;
+    const g = W.evaluateGate("Development", "project", p);
+    assert.equal(g.passed, false);
+    assert.deepEqual(
+      g.missing.map((m) => m.split(" (")[0]),
+      ["The logline and the core question written in the brief", "Greenlight decision recorded as Greenlight, and a show producer named"],
     );
-  await throwsRule(() => call("workflow.advanceProject", p), /Not ready to leave Development/);
-  await throwsRule(
-    () => call("workflow.decideGreenlight", p, { outcome: "Greenlight", notes: "" }),
-    /Theological review of the brief approved/,
-  );
-  const ready = await readyProject();
-  assert.equal(getDb().records.find((r) => r.contentId === ready)!.workflow!.stage, "Pre-production");
-});
+    for (const note of [/No planned episodes listed yet/, /Handoff: Outline locked/])
+      assert.ok(
+        g.warnings.some((w) => note.test(w)),
+        `the notes should mention ${note}: ${g.warnings.join(" | ")}`,
+      );
+    await throwsRule(() => call("workflow.advanceProject", p), /Not ready to leave Development/);
+    await throwsRule(
+      () => call("workflow.decideGreenlight", p, { outcome: "Greenlight", notes: "" }),
+      /The logline and the core question written in the brief/,
+    );
+    const ready = await readyProject();
+    assert.equal(getDb().records.find((r) => r.contentId === ready)!.workflow!.stage, "Pre-production");
+  },
+);
 
 await t("a testimonial cannot be greenlit until consent and release is complete, with the person's agreement", async () => {
   const p = (await call("workflow.createWorkflowProject", { category: "series", title: "Stories", seriesType: "testimonial" })).contentId;

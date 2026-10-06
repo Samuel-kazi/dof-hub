@@ -11,6 +11,7 @@ import { attachCrew, dayOfSheet, lockInstanceOfSheet, moveDay } from "./instance
 import { applyContent, checkContent, cloneContent, onlyTicks, tidyContent } from "./sheetContent";
 import { getPerson } from "./people";
 import { confirmationName, confirmationTerms, noteChanges, trackedOf } from "./sheetTracking";
+import { assertSheetOpen } from "./sheetLock";
 import { pad, pickKeys } from "./utils";
 
 export const getCallSheet = (id: string): CallSheet | undefined => getDb().callSheets.find((c) => c.id === id);
@@ -128,11 +129,13 @@ export function resolveMismatches(actor: Actor, id: string, expectedVersion?: nu
   return cs;
 }
 
+/** A sheet to change: the person may write to its project, and its production has not moved on to Post production. */
 function loadSheet(actor: Actor, id: string, expectedVersion?: number): CallSheet {
   const cs = getCallSheet(id);
   if (!cs) throw new RuleError("Call sheet not found.");
   const root = getRecord(cs.contentId);
   if (!root || !canWrite(actor, root)) throw new RuleError("You have view-only access to this project.");
+  assertSheetOpen(cs);
   if (expectedVersion !== undefined && cs.version !== expectedVersion) throw new ConflictError();
   return cs;
 }
@@ -150,10 +153,9 @@ export function updateCallSheet(actor: Actor, id: string, input: SheetPatch, exp
   const cs = loadSheet(actor, id, expectedVersion);
   const before = trackedOf(cs);
   const content = tidyContent(patch, cs);
-  // Ticking the technical check or the rehearsal is work on the day, done on a final sheet too; anything else is a
-  // change of plan, which a final sheet refuses until it is reopened.
+  // Ticking the technical check or the rehearsal is work on the day; anything else is a change of plan, which stops a
+  // day following its show's template. A published (final) sheet takes both: its changes are logged (noteChanges).
   const planChanged = patch.title !== undefined || patch.date !== undefined || !onlyTicks(cs, content);
-  if (cs.status === "final" && planChanged) throw new RuleError("This call sheet is final. Reopen it to make changes.");
   checkContent(content, content.crewPersonIds ?? cs.crewPersonIds);
   if (patch.title !== undefined && (!patch.title.trim() || patch.title.length > 300)) throw new RuleError("Give the call sheet a title.");
   // Gear bookings follow the shoot date, or the change is refused; the day of a show moves with its sheet.
@@ -194,7 +196,6 @@ export function updateCallSheet(actor: Actor, id: string, input: SheetPatch, exp
  */
 export function bookPlannedGear(actor: Actor, id: string): { booked: number; skipped: string[] } {
   const cs = loadSheet(actor, id);
-  if (cs.status === "final") throw new RuleError("This call sheet is final. Reopen it to make changes.");
   if (!cs.plannedGear.length) return { booked: 0, skipped: [] };
   const r = bookWhatIsFree(actor, { id: cs.id, contentId: cs.contentId, date: cs.date }, cs.plannedGear);
   cs.plannedGear = r.skipped.map((x) => x.line);
@@ -273,6 +274,7 @@ export function confirmOnSheet(actor: Actor, sheetId: string, key: string, confi
   const cs = getCallSheet(sheetId);
   const root = cs ? getRecord(cs.contentId) : undefined;
   if (!cs || !root || !canView(actor, root)) throw new RuleError("Call sheet not found.");
+  assertSheetOpen(cs);
   if (key !== actor.personId && !canWrite(actor, root))
     throw new RuleError("Only the person themself, or someone working on this project, can confirm for them.");
   const terms = confirmationTerms(cs, key);
@@ -342,11 +344,7 @@ function checkRunItem(input: RunItemInput): void {
   }
 }
 
-function editableSheet(actor: Actor, id: string): CallSheet {
-  const cs = loadSheet(actor, id);
-  if (cs.status === "final") throw new RuleError("This call sheet is final. Reopen it to make changes.");
-  return cs;
-}
+const editableSheet = (actor: Actor, id: string): CallSheet => loadSheet(actor, id);
 
 export function addRunItem(actor: Actor, sheetId: string, input: RunItemInput): RunItem {
   const cs = editableSheet(actor, sheetId);

@@ -786,6 +786,10 @@ export const ACTIONS: Record<string, ActionSpec> = {
   "documents.acceptDevotion": args([id, text(2000)]),
   "documents.askForReviewAgain": args([compound]),
   "documents.setGateOverride": args([id, z.enum(["idea", "review", "greenlight", "guest", "pages"]), short(300).nullable()]),
+  "documents.noteUnreviewed": args([
+    id,
+    z.object({ action: z.enum(["schedule", "publish-sheet", "publish-episode"]), targetId: short(80), note: short(300) }),
+  ]),
 };
 
 /**

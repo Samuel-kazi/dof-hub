@@ -26,7 +26,7 @@ import { hasGearAccess, isOverdue, listManifests, manifestSummary, projectLabel 
 import { allDriveUsage, fleetTotals, forecast, hasStorageAccess, isNearlyFull } from "../services/wrapped/storage";
 import { crewWorkload } from "../services/workload";
 import { modulesFor } from "../services/wrapped/permissions";
-import { searchAll, type Hit } from "../services/search";
+import { KIND_LABEL, searchAll, type Hit } from "../services/search";
 import { onBoard, waitingOnPerson, workItems, type WorkItem } from "../services/workItems";
 import type { Route } from "../ui/AppContext";
 import { PersonName } from "../ui/PersonName";
@@ -59,27 +59,7 @@ function HeroSearch() {
   const box = useRef<HTMLDivElement>(null);
   const open = (h: Hit) => {
     setQ("");
-    go(
-      h.kind === "project"
-        ? { n: "record", id: h.id }
-        : h.kind === "session"
-          ? { n: "session", id: h.id }
-          : h.kind === "doc"
-            ? { n: "doc", id: h.id }
-            : h.kind === "callsheet"
-              ? { n: "callsheet", id: h.id }
-              : h.kind === "gear"
-                ? { n: "item", id: h.id }
-                : { n: "drive", id: h.id },
-    );
-  };
-  const KIND: Record<Hit["kind"], string> = {
-    project: "Project",
-    session: "Session",
-    doc: "Document",
-    callsheet: "Call sheet",
-    gear: "Gear",
-    drive: "Drive",
+    go(h.open);
   };
   return (
     <div className="hero-search" ref={box} role="search">
@@ -100,7 +80,7 @@ function HeroSearch() {
           } else if (e.key === "Enter" && hits[sel]) open(hits[sel]);
           else if (e.key === "Escape") setQ("");
         }}
-        placeholder="Search projects, sessions, documents, gear"
+        placeholder="Search projects, episodes, documents, crew, gear"
         aria-label="Search everything"
         autoComplete="off"
       />
@@ -119,7 +99,7 @@ function HeroSearch() {
                 onMouseEnter={() => setSel(i)}
                 onClick={() => open(h)}
               >
-                <span className="kind">{KIND[h.kind]}</span>
+                <span className="kind">{KIND_LABEL[h.kind]}</span>
                 <span className="grow" style={{ flex: 1, minWidth: 0 }}>
                   <span style={{ display: "block" }}>{h.title}</span>
                   <span className="cid">{h.sub}</span>

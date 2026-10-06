@@ -274,14 +274,24 @@ export function DecisionPanel({ project, write, active }: { project: Project; wr
   const closes = outcome === "Decline" || outcome === "Advice only";
   const record = async () => {
     if (!outcome) return;
+    // A greenlight decision is deliberate: a click (or Ctrl+Enter) and a confirmation, never a stray Enter.
     if (
-      closes &&
-      !(await confirm({
-        title: `${outcome}: close this project?`,
-        body: "The project is archived with your reason, and kept. It cannot be reopened from here.",
-        confirmLabel: outcome,
-        danger: true,
-      }))
+      !(await confirm(
+        closes
+          ? {
+              title: `${outcome}: close this project?`,
+              body: "The project is archived with your reason, and kept. It cannot be reopened from here.",
+              confirmLabel: outcome,
+              danger: true,
+              deliberate: true,
+            }
+          : {
+              title: `Record "${outcome}"?`,
+              body: "The decision is recorded on the project with its date and your notes.",
+              confirmLabel: outcome,
+              deliberate: true,
+            },
+      ))
     )
       return;
     if (attempt(() => decideGreenlight(actor, project.contentId, { outcome, notes, date }), `Recorded: ${outcome}`)) {

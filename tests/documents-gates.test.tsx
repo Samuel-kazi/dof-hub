@@ -1,7 +1,8 @@
 // Run with: npm test -- documents-gates
 // Phase 3 of the documents rework: the short gates out of Development, passing a gate by hand, the theological review
 // of the brief or script with its comments, the greenlight and the handoff, and a devotion's Accept or Decline. With a
-// project type's documents off, its gates are exactly as before.
+// project type's documents off, its gates are exactly as before. (All with the theological review as a gate, as it is
+// with the rework's switch for it off.)
 import assert from "node:assert/strict";
 import React from "react";
 import { renderToString } from "react-dom/server";
@@ -27,6 +28,9 @@ import { remindersFor } from "../src/services/reminders";
 let passed = 0;
 const t = async (name: string, fn: () => Promise<void> | void, through: "development" | "session1" = "development") => {
   setDb(buildWorkflowFixture({ through }));
+  // These are the gates with the theological review as a gate: the switch "Theological review as a reminder, not a
+  // gate" off. With it on (the default), see review-reminder.test.tsx.
+  getDb().settings.features = { reviewNotGate: false };
   enableRollback();
   try {
     await fn();

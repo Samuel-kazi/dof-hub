@@ -23,6 +23,7 @@ export const moveFrame = rpc("documents.moveFrame", core.moveFrame);
 export const moveFramesTo = rpc("documents.moveFramesTo", core.moveFramesTo);
 export const movePage = rpc("documents.movePage", core.movePage);
 export const moveShotRow = rpc("documents.moveShotRow", core.moveShotRow);
+export const noteUnreviewed = rpc("documents.noteUnreviewed", core.noteUnreviewed);
 export const removeDocumentLink = rpc("documents.removeDocumentLink", core.removeDocumentLink);
 export const renameShotList = rpc("documents.renameShotList", core.renameShotList);
 export const renameStoryboard = rpc("documents.renameStoryboard", core.renameStoryboard);
@@ -36,5 +37,5 @@ export const setGateOverride = rpc("documents.setGateOverride", core.setGateOver
 export const syncReviewThread = rpc("documents.syncReviewThread", core.syncReviewThread);
 export const updateFrame = rpc("documents.updateFrame", core.updateFrame);
 export const updateShotRow = rpc("documents.updateShotRow", core.updateShotRow);
-export { DEVOTION_PAGES_NEEDED, MAX_PAGE_HTML, commentsOf, devotionPageReady, documentHasContent, documentOf, estimatedMinutes, framesOf, getDocument, hardGates, hardGatesPass, linksOf, pagesOf, reviewStateOf, reviewsOf, rowsOfShotList, shotListsOf, shotNumbers, softNudges, storyboardsOf } from "../documents";
-export type { DevotionList, FrameEdit, HardGate, HardGateKey, NewBoard, PageEdit, PageInput, ReviewDecision, RowEdit } from "../documents";
+export { DEVOTION_PAGES_NEEDED, MAX_PAGE_HTML, REVIEW_ACTIONS, commentsOf, devotionPageReady, documentHasContent, documentOf, editedAfterApproval, estimatedMinutes, framesOf, getDocument, hardGates, hardGatesPass, hasTheologicalReview, linksOf, pagesOf, reviewIsGate, reviewNotesOf, reviewOutstanding, reviewStateOf, reviewsOf, rowsOfShotList, sheetOwnerId, shotListsOf, shotNumbers, softNudges, storyboardsOf, theologyStatus } from "../documents";
+export type { DevotionList, FrameEdit, HardGate, HardGateKey, NewBoard, PageEdit, PageInput, ReviewDecision, RowEdit, TheologyStatus } from "../documents";

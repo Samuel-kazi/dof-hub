@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import type { Actor, CallSheet } from "../src/types";
 import { RuleError } from "../src/types";
-import { enableRollback, getDb, setDb } from "../src/data/store";
+import { commit, enableRollback, getDb, setDb } from "../src/data/store";
 import { buildWorkflowFixture } from "../src/data/seedWorkflow";
 import { buildSeed } from "../src/data/seed";
 import { integrityProblems } from "../src/data/constraints";
@@ -389,6 +389,44 @@ await t("gear is suggested from the crew's roles, one per person, skipping gear 
 });
 
 // ── Data version 20 ──────────────────────────────────────────
+
+// ── Open until Post production ───────────────────────────────
+
+await t("a sheet stays open to edit, published or not, and locks once its session closes or its show day reaches Post Production", () => {
+  // A recording session's sheet: open while the session is to come or recording; locked once it is closed.
+  const s2 = getDb().recordingSessions.find((s) => s.contentId === "DOF-SER-001-S1" && s.sessionNumber === 2)!;
+  const sheet = W.createSessionCallSheet(hop(), s2.id);
+  CS.updateCallSheet(hop(), sheet.id, { location: "DOF Studio A", crewPersonIds: ["DOF-P-CRW-002"], crewLeadId: "DOF-P-CRW-002" });
+  CS.finalizeCallSheet(hop(), sheet.id);
+  CS.updateCallSheet(hop(), sheet.id, { callTime: "06:30" });
+  CS.confirmOnSheet(crew(2), sheet.id, "DOF-P-CRW-002", true);
+  E.addGearToSheet(hop(), { id: sheet.id, contentId: sheet.contentId, date: sheet.date }, [{ equipmentId: "DOF-EQ-CAM-001", quantity: 1 }]);
+  const session2 = () => getDb().recordingSessions.find((s) => s.id === s2.id)!;
+  session2().status = "Closed";
+  commit(); // kept, so a refused change rolling back does not undo it
+  throwsRule(() => CS.updateCallSheet(hop(), sheet.id, { callTime: "07:00" }), /locked\. Recording session .* is closed/);
+  throwsRule(() => CS.confirmOnSheet(crew(2), sheet.id, "DOF-P-CRW-002", false), /locked/);
+  throwsRule(
+    () =>
+      E.addGearToSheet(hop(), { id: sheet.id, contentId: sheet.contentId, date: sheet.date }, [
+        { equipmentId: "DOF-EQ-CAM-002", quantity: 1 },
+      ]),
+    /locked/,
+  );
+  throwsRule(() => E.removeGearFromSheet(hop(), sheet.id, "DOF-EQ-CAM-001"), /locked/);
+  session2().status = "Open"; // reopened: open again
+  commit();
+  CS.updateCallSheet(hop(), sheet.id, { callTime: "07:00" });
+  // A live show day's sheet: open through the show, locked once the day reaches Post Production.
+  const show = P.createProduction(hop(), { title: "Rally", mode: "one_time", date: "2026-10-20" });
+  const day = daysOfShow(show.contentId)[0];
+  const cs = sheetOfDay(day)!;
+  getDb().records.find((r) => r.contentId === day.contentId)!.pipelineStage = "Show";
+  CS.updateCallSheet(hop(), cs.id, { notes: "On the day" });
+  getDb().records.find((r) => r.contentId === day.contentId)!.pipelineStage = "Post Production";
+  commit();
+  throwsRule(() => CS.updateCallSheet(hop(), cs.id, { notes: "After" }), /locked\. .* has reached Post production/);
+});
 
 await t("upgrading to version 20 gives every sheet its saved location, confirmations and change log, empty, once", () => {
   const db = buildSeed();

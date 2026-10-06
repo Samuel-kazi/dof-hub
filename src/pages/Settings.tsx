@@ -7,7 +7,8 @@ import { getDb, resetDemoData, useDb } from "../data/store";
 import { ROLES } from "../config/roles";
 import { isHop } from "../services/access";
 import { can, customisations } from "../services/wrapped/permissions";
-import { changePassword, updateSettings, updateWorkspaceAppearance } from "../services/wrapped/settings";
+import { changePassword, featureOn, setFeature, updateSettings, updateWorkspaceAppearance } from "../services/wrapped/settings";
+import { FEATURES } from "../config/features";
 import { updateOwnProfile } from "../services/wrapped/people";
 import { CATEGORIES } from "../config/categories";
 import { ACCENTS, DENSITIES, FONT_PAIRINGS, FONT_SIZES } from "../config/appearance";
@@ -419,6 +420,8 @@ export function Settings() {
           </section>
         )}
 
+        {hop && <ReworkParts />}
+
         {hop && <MoveExistingPanel />}
 
         {hop && !isRemote() && (
@@ -447,5 +450,39 @@ export function Settings() {
         )}
       </>
     </div>
+  );
+}
+
+/**
+ * The parts of the rework, each switched on or off for everyone. A part ships on; switching it off goes back to how
+ * things were, without touching any data. Parts not built yet show as coming.
+ */
+function ReworkParts() {
+  const { actor, attempt } = useApp();
+  return (
+    <section className="glass panel" aria-label="Parts of the app">
+      <h2>Parts of the app</h2>
+      <p className="sub" style={{ marginBottom: 12 }}>
+        New parts arrive switched on. Switch one off to go back to how it was for everyone; nothing saved is lost either way.
+      </p>
+      <ul className="feature-list">
+        {FEATURES.map((f) => (
+          <li key={f.key}>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={featureOn(f.key)}
+                disabled={!f.built}
+                onChange={(e) =>
+                  attempt(() => setFeature(actor, f.key, e.target.checked), e.target.checked ? "Switched on" : "Switched off")
+                }
+              />
+              <span>{f.label}</span>
+            </label>
+            {!f.built && <span className="badge">Coming</span>}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

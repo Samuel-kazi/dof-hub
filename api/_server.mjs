@@ -4197,6 +4197,38 @@ var itemHistory = (id2) => getDb().equipmentHistory.map((h, n) => ({ h, n })).fi
 var itemIncidents = (id2) => getDb().incidents.filter((i) => i.equipmentId === id2).sort((a, b) => b.at.localeCompare(a.at));
 var allIncidents = () => [...getDb().incidents].sort((a, b) => b.at.localeCompare(a.at));
 
+// src/services/sheetLock.ts
+var OPEN = { locked: false, why: "" };
+function pastShooting(r) {
+  if (r.episode) return r.episode.stage === "Post production" || r.episode.stage === "Marketing and distribution";
+  if (isComplete(r)) return true;
+  const stages = categoryOf(r.category).stages.map((s2) => s2.name);
+  const at = stages.indexOf(r.pipelineStage ?? "");
+  if (at < 0) return false;
+  if (r.category === "live") {
+    const post = stages.indexOf("Post Production");
+    return post >= 0 && at >= post;
+  }
+  return at > stages.indexOf(categoryOf(r.category).footageStage);
+}
+function sheetLock(cs) {
+  const db2 = getDb();
+  const session = db2.recordingSessions.find((s2) => s2.callSheetId === cs.id);
+  if (session)
+    return session.status === "Closed" ? { locked: true, why: `Recording session ${session.id} is closed: its episodes are in Post production.` } : OPEN;
+  if (cs.instanceId) {
+    const day = db2.records.find((r) => r.contentId === cs.instanceId);
+    return day && pastShooting(day) ? { locked: true, why: `${day.title} has reached Post production.` } : OPEN;
+  }
+  const linked = cs.linkedEpisodeIds.map((id2) => db2.records.find((r) => r.contentId === id2)).filter((r) => !!r && !r.archived);
+  if (linked.length && linked.every(pastShooting)) return { locked: true, why: "Everything on this sheet is in Post production." };
+  return OPEN;
+}
+function assertSheetOpen(cs) {
+  const l = sheetLock(cs);
+  if (l.locked) throw new RuleError(`This call sheet is locked. ${l.why}`);
+}
+
 // src/services/equipment-manifests.ts
 var getManifest = (id2) => getDb().manifests.find((m) => m.id === id2);
 function addDays(iso2, n) {
@@ -4617,6 +4649,7 @@ function bookOnSheet(actor, sheet, lines) {
   requireGearAccess(actor);
   const cs = getDb().callSheets.find((c) => c.id === sheet.id);
   if (!cs) throw new RuleError("Call sheet not found.");
+  assertSheetOpen(cs);
   const project = getRecord(cs.contentId);
   if (!project || !canWrite(actor, project)) throw new RuleError("You have view-only access to this project.");
   const existing = manifestForSheet(cs.id);
@@ -4645,6 +4678,8 @@ function answerableFor(...candidates) {
   return candidates.find(canAnswer) ?? getDb().people.find((p) => p.category === "HOP" && p.status === "active")?.personId;
 }
 function removeGearFromSheet(actor, sheetId, equipmentId) {
+  const cs = getDb().callSheets.find((c) => c.id === sheetId);
+  if (cs) assertSheetOpen(cs);
   const m = manifestForSheet(sheetId);
   if (!m) return;
   removeLine(actor, m.id, equipmentId);
@@ -5784,6 +5819,130 @@ function removeDocumentLink(actor, linkId) {
   commit();
 }
 
+// src/services/settings.ts
+var settings_exports = {};
+__export(settings_exports, {
+  SETTINGS_EDITABLE: () => SETTINGS_EDITABLE,
+  changePassword: () => changePassword,
+  featureOn: () => featureOn,
+  pipelineCategories: () => pipelineCategories,
+  setFeature: () => setFeature,
+  updateSettings: () => updateSettings,
+  updateWorkspaceAppearance: () => updateWorkspaceAppearance
+});
+
+// src/config/appearance.ts
+var ACCENTS = [
+  { key: "terracotta", label: "Terracotta", dark: { accent: "#e8703a", hi: "#f28a55" }, light: { accent: "#dc5f26", hi: "#c2481a" } },
+  { key: "amber", label: "Amber", dark: { accent: "#d9a441", hi: "#e8bd66" }, light: { accent: "#b9812a", hi: "#96660f" } },
+  { key: "sage", label: "Sage", dark: { accent: "#6b9080", hi: "#87ac9c" }, light: { accent: "#4d7566", hi: "#365a4d" } },
+  { key: "ocean", label: "Ocean", dark: { accent: "#4f7cac", hi: "#6f9bc9" }, light: { accent: "#3a6389", hi: "#254a6b" } },
+  { key: "plum", label: "Plum", dark: { accent: "#a15c8f", hi: "#bd7cac" }, light: { accent: "#8a4576", hi: "#6c2e5b" } },
+  { key: "slate", label: "Slate", dark: { accent: "#5b6472", hi: "#77828f" }, light: { accent: "#454d59", hi: "#2f3540" } }
+];
+var FONT_PAIRINGS = [
+  {
+    key: "modern",
+    label: "Modern",
+    heading: `"Avenir Next", "SF Pro Display", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif`,
+    body: `"Avenir Next", "SF Pro Display", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif`
+  },
+  {
+    key: "editorial",
+    label: "Editorial",
+    heading: `Georgia, "Iowan Old Style", "Palatino Linotype", serif`,
+    body: `"Avenir Next", "SF Pro Display", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif`
+  },
+  {
+    key: "classic",
+    label: "Classic Serif",
+    heading: `Georgia, "Iowan Old Style", "Palatino Linotype", serif`,
+    body: `Georgia, "Iowan Old Style", "Times New Roman", serif`
+  }
+];
+
+// src/config/features.ts
+var FEATURES = [
+  { key: "shell", label: "New menu, Settings in the profile menu, Ctrl+K search", built: true },
+  { key: "reviewNotGate", label: "Theological review as a reminder, not a gate", built: true },
+  { key: "recordingPlanAll", label: "Recording Plan for series and documentaries", built: false },
+  { key: "templates", label: "Storyboard and shot list templates in Documents", built: false },
+  { key: "lending", label: "Equipment lending and role kits", built: false },
+  { key: "calendar2", label: "New Calendar with reminders, alerts and the urgency report", built: false },
+  { key: "liveFiveStages", label: "Live Shows and DOF Music on the five stages", built: false }
+];
+var FEATURE_KEYS = FEATURES.map((f2) => f2.key);
+
+// src/services/settings.ts
+var SETTINGS_EDITABLE = [
+  "stageReminderHours",
+  "storageWarningThreshold",
+  "checkoutReturnDays",
+  "workDays",
+  "effortOverrides"
+];
+function updateSettings(actor, input) {
+  requireCan(actor, "backend.settings", "change system settings");
+  const patch = pickKeys(input, SETTINGS_EDITABLE);
+  if (patch.stageReminderHours !== void 0 && !(patch.stageReminderHours >= 1 && patch.stageReminderHours <= 240)) {
+    throw new RuleError("Reminder window must be between 1 and 240 hours.");
+  }
+  if (patch.checkoutReturnDays !== void 0 && !(Number.isInteger(patch.checkoutReturnDays) && patch.checkoutReturnDays >= 1 && patch.checkoutReturnDays <= 60)) {
+    throw new RuleError("Return window must be a whole number of days, 1 to 60.");
+  }
+  if (patch.storageWarningThreshold !== void 0 && !(patch.storageWarningThreshold >= 50 && patch.storageWarningThreshold <= 99)) {
+    throw new RuleError("Flag drives as full between 50% and 99%.");
+  }
+  if (patch.workDays !== void 0 && !(Array.isArray(patch.workDays) && patch.workDays.length > 0 && patch.workDays.every((d) => Number.isInteger(d) && d >= 0 && d <= 6))) {
+    throw new RuleError("Choose at least one working day.");
+  }
+  if (patch.effortOverrides !== void 0) {
+    if (!patch.effortOverrides || typeof patch.effortOverrides !== "object" || Array.isArray(patch.effortOverrides))
+      throw new RuleError("Those stage estimates are not valid.");
+    for (const [key2, v] of Object.entries(patch.effortOverrides)) {
+      if (!Number.isFinite(v) || v < 0 || v > 30 || Math.round(v * 4) !== v * 4)
+        throw new RuleError(`${key2.split(":")[1] ?? key2}: use a number of days from 0 to 30, in steps of a quarter day.`);
+    }
+  }
+  Object.assign(getDb().settings, patch);
+  logAudit(actor, "settings", "settings", "system", Object.keys(patch).join(", "));
+  commit();
+}
+function updateWorkspaceAppearance(actor, input) {
+  if (!isHop(actor)) throw new RuleError("Only the Head of Production can change the workspace's accent colour and font.");
+  const patch = pickKeys(input, ["accent", "fontPairing"]);
+  if (patch.accent !== void 0 && !ACCENTS.some((a) => a.key === patch.accent))
+    throw new RuleError("Choose one of the accent colours offered.");
+  if (patch.fontPairing !== void 0 && !FONT_PAIRINGS.some((f2) => f2.key === patch.fontPairing))
+    throw new RuleError("Choose one of the font pairings offered.");
+  const db2 = getDb();
+  db2.settings.appearance = { ...db2.settings.appearance ?? { accent: "terracotta", fontPairing: "modern" }, ...patch };
+  logAudit(actor, "settings", "settings", "appearance", Object.keys(patch).join(", "));
+  commit();
+}
+function changePassword(actor, current3, next2) {
+  const u = getDb().users.find((x) => x.personId === actor.personId);
+  if (!u || u.password !== current3) throw new RuleError("Your current password is not correct.");
+  if (next2.length < 4) throw new RuleError("New password must be at least 4 characters.");
+  u.password = next2;
+  logAudit(actor, "change-password", "person", actor.personId);
+  commit();
+}
+var pipelineCategories = () => featureOn("lending") ? CATEGORIES.filter((c) => c.key !== "general") : CATEGORIES;
+function featureOn(key2) {
+  const f2 = FEATURES.find((x) => x.key === key2);
+  if (!f2?.built) return false;
+  return getDb().settings.features?.[key2] ?? true;
+}
+function setFeature(actor, key2, on) {
+  if (!isHop(actor)) throw new RuleError("Only the Head of Production switches parts of the app on and off.");
+  if (!FEATURE_KEYS.includes(key2)) throw new RuleError("There is no such part of the app.");
+  const s2 = getDb().settings;
+  s2.features = { ...s2.features ?? {}, [key2]: on };
+  logAudit(actor, on ? "feature-on" : "feature-off", "system", key2);
+  commit();
+}
+
 // src/services/documents/reviews.ts
 var reviewsOf = (documentId) => getDb().documentReviews.filter((r) => r.documentId === documentId);
 function reviewStateOf(documentId) {
@@ -5885,26 +6044,85 @@ function resolveReviewComment(actor, commentId, resolved = true) {
   return c;
 }
 
-// src/services/documents/gates.ts
-var DEVOTION_PAGES_NEEDED = 5;
+// src/services/documents/theology.ts
 var NOTE_MAX = 300;
-var text = (v) => typeof v === "string" ? v.trim() : "";
-var latestFirstDecision = (form2) => [...form2.decisions].reverse().find((d) => d.stage === 1);
-function reviewGate(projectId, docKey, what) {
-  const doc2 = documentOf(projectId, "Development", docKey);
+var reviewIsGate = () => !featureOn("reviewNotGate");
+var hasTheologicalReview = (p) => catalogFor(p.workflow.formType, "Development").some((e) => e.kind === "review");
+function approvedAt(documentId) {
+  if (reviewStateOf(documentId) !== "approved") return null;
+  return reviewsOf(documentId).reduce((at, r) => r.decidedAt && (!at || r.decidedAt > at) ? r.decidedAt : at, null);
+}
+function theologyStatus(projectId) {
+  const p = getDb().records.find((r) => r.contentId === projectId);
+  const what = catalogTypeOf(p.workflow.formType) === "devotion" ? "script" : "brief";
+  const doc2 = documentOf(projectId, "Development", briefKeyOf(p.workflow.formType));
   const state = doc2 ? reviewStateOf(doc2.id) : "no reviewers";
   const rows2 = doc2 ? reviewsOf(doc2.id) : [];
   const earlier = ["pitch", "outline_script"].every((k) => checkpoint(projectId, k)?.status === "Approved");
   if (state === "no reviewers" && earlier)
-    return {
-      key: "review",
-      label: `Theological review of the ${what} approved`,
-      met: true,
-      detail: "Approved on the earlier review checkpoints",
-      overridable: true
-    };
+    return { done: true, what, documentId: doc2?.id ?? null, detail: "Approved on the earlier review checkpoints", approvedAt: null };
   const detail = state === "approved" ? `Approved by ${rows2.length === 1 ? "its reviewer" : `all ${rows2.length} reviewers`}` : state === "no reviewers" ? "No reviewer named yet" : state === "changes_requested" ? "Changes requested" : `${rows2.filter((r) => r.status === "approved").length} of ${rows2.length} reviewers have approved`;
-  return { key: "review", label: `Theological review of the ${what} approved`, met: state === "approved", detail, overridable: true };
+  return { done: state === "approved", what, documentId: doc2?.id ?? null, detail, approvedAt: doc2 ? approvedAt(doc2.id) : null };
+}
+function reviewOutstanding(contentId) {
+  if (!contentId || reviewIsGate()) return null;
+  const db2 = getDb();
+  let r = db2.records.find((x) => x.contentId === contentId);
+  while (r && !isWorkflowProject(r) && r.parentId) r = db2.records.find((x) => x.contentId === r.parentId);
+  if (!r || !isWorkflowProject(r) || r.archived) return null;
+  const p = r;
+  if (!hasTheologicalReview(p) || theologyStatus(p.contentId).done) return null;
+  return p;
+}
+function sheetOwnerId(cs) {
+  const session = getDb().recordingSessions.find((s2) => s2.callSheetId === cs.id);
+  return session?.contentId ?? cs.linkedEpisodeIds[0] ?? cs.contentId;
+}
+function editedAfterApproval(documentId) {
+  const at = approvedAt(documentId);
+  if (!at) return /* @__PURE__ */ new Set();
+  return new Set(
+    getDb().documentPages.filter((pg) => pg.documentId === documentId && !pg.archivedAt && pg.updatedAt > at).map((pg) => pg.id)
+  );
+}
+var REVIEW_ACTIONS = {
+  schedule: "Scheduled a session",
+  "publish-sheet": "Published a call sheet",
+  "publish-episode": "Published an episode"
+};
+function noteUnreviewed(actor, contentId, input) {
+  const outstanding2 = reviewOutstanding(contentId);
+  if (!outstanding2) return null;
+  const p = projectForWrite2(actor, outstanding2.contentId);
+  if (!REVIEW_ACTIONS[input.action]) throw new RuleError("That is not something the review is asked about.");
+  const entry = {
+    at: nowStamp(),
+    byPersonId: actor.personId,
+    action: input.action,
+    targetId: String(input.targetId).slice(0, 80),
+    note: (input.note ?? "").trim().slice(0, NOTE_MAX)
+  };
+  p.workflow.aheadOfReview = [...p.workflow.aheadOfReview ?? [], entry];
+  logAudit(
+    actor,
+    "review-not-done",
+    "record",
+    p.contentId,
+    `${REVIEW_ACTIONS[entry.action]} (${entry.targetId}) before the theological review was done${entry.note ? `: ${entry.note}` : ""}`
+  );
+  commit();
+  return entry;
+}
+var reviewNotesOf = (p) => [...p.workflow.aheadOfReview ?? []].reverse();
+
+// src/services/documents/gates.ts
+var DEVOTION_PAGES_NEEDED = 5;
+var NOTE_MAX2 = 300;
+var text = (v) => typeof v === "string" ? v.trim() : "";
+var latestFirstDecision = (form2) => [...form2.decisions].reverse().find((d) => d.stage === 1);
+function reviewGate(projectId, what) {
+  const t2 = theologyStatus(projectId);
+  return { key: "review", label: `Theological review of the ${what} approved`, met: t2.done, detail: t2.detail, overridable: true };
 }
 var devotionPageReady = (p) => p.title.trim() !== "" && p.subtitle.trim() !== "" && textOf(p.bodyHtml) !== "";
 function hardGates(projectId) {
@@ -5935,7 +6153,8 @@ function hardGates(projectId) {
         detail: `${ready} of ${DEVOTION_PAGES_NEEDED} ready`,
         overridable: true
       }),
-      withOverride(reviewGate(projectId, "devotional_script", "script"))
+      // With the review a reminder rather than a gate, it is not on this list (./theology.ts).
+      ...reviewIsGate() ? [withOverride(reviewGate(projectId, "script"))] : []
     ];
   }
   const brief = form2.sections.brief ?? {};
@@ -5952,7 +6171,7 @@ function hardGates(projectId) {
       detail: missingIdea.length ? `Write ${missingIdea.join(" and ")} at the top of The idea` : "Both written",
       overridable: true
     }),
-    withOverride(reviewGate(projectId, briefKeyOf(p.workflow.formType), "brief")),
+    ...reviewIsGate() ? [withOverride(reviewGate(projectId, "brief"))] : [],
     // A testimonial records someone telling their own story: it is not greenlit without their consent and release.
     ...p.workflow.formType === "testimonial" ? [withOverride(consentGate(projectId))] : [],
     withOverride({
@@ -5992,7 +6211,7 @@ function setGateOverride(actor, projectId, key2, note) {
     form2.overrides = rest;
     logAudit(actor, "gate-override", "record", projectId, `Taken back: ${gate.label}`);
   } else {
-    const why = note.trim().slice(0, NOTE_MAX);
+    const why = note.trim().slice(0, NOTE_MAX2);
     if (!why) throw new RuleError("Write a short note of why this gate is passed by hand. It is kept with the project.");
     if (gate.met) throw new RuleError("This gate is already met.");
     form2.overrides = [...rest, { key: key2, note: why, byPersonId: actor.personId, at: nowStamp() }];
@@ -6836,6 +7055,7 @@ function loadSheet(actor, id2, expectedVersion) {
   if (!cs) throw new RuleError("Call sheet not found.");
   const root = getRecord(cs.contentId);
   if (!root || !canWrite(actor, root)) throw new RuleError("You have view-only access to this project.");
+  assertSheetOpen(cs);
   if (expectedVersion !== void 0 && cs.version !== expectedVersion) throw new ConflictError();
   return cs;
 }
@@ -6846,7 +7066,6 @@ function updateCallSheet(actor, id2, input, expectedVersion) {
   const before = trackedOf(cs);
   const content = tidyContent(patch, cs);
   const planChanged = patch.title !== void 0 || patch.date !== void 0 || !onlyTicks(cs, content);
-  if (cs.status === "final" && planChanged) throw new RuleError("This call sheet is final. Reopen it to make changes.");
   checkContent(content, content.crewPersonIds ?? cs.crewPersonIds);
   if (patch.title !== void 0 && (!patch.title.trim() || patch.title.length > 300)) throw new RuleError("Give the call sheet a title.");
   if (patch.date !== void 0 && patch.date !== cs.date) {
@@ -6879,7 +7098,6 @@ function updateCallSheet(actor, id2, input, expectedVersion) {
 }
 function bookPlannedGear(actor, id2) {
   const cs = loadSheet(actor, id2);
-  if (cs.status === "final") throw new RuleError("This call sheet is final. Reopen it to make changes.");
   if (!cs.plannedGear.length) return { booked: 0, skipped: [] };
   const r = bookWhatIsFree(actor, { id: cs.id, contentId: cs.contentId, date: cs.date }, cs.plannedGear);
   cs.plannedGear = r.skipped.map((x) => x.line);
@@ -6945,6 +7163,7 @@ function confirmOnSheet(actor, sheetId, key2, confirmed) {
   const cs = getCallSheet(sheetId);
   const root = cs ? getRecord(cs.contentId) : void 0;
   if (!cs || !root || !canView(actor, root)) throw new RuleError("Call sheet not found.");
+  assertSheetOpen(cs);
   if (key2 !== actor.personId && !canWrite(actor, root))
     throw new RuleError("Only the person themself, or someone working on this project, can confirm for them.");
   const terms = confirmationTerms(cs, key2);
@@ -6992,11 +7211,7 @@ function checkRunItem(input) {
     if (!p || p.status !== "active") throw new RuleError("Choose an active person.");
   }
 }
-function editableSheet(actor, id2) {
-  const cs = loadSheet(actor, id2);
-  if (cs.status === "final") throw new RuleError("This call sheet is final. Reopen it to make changes.");
-  return cs;
-}
+var editableSheet = (actor, id2) => loadSheet(actor, id2);
 function addRunItem(actor, sheetId, input) {
   const cs = editableSheet(actor, sheetId);
   checkRunItem(input);
@@ -11848,7 +12063,7 @@ async function login(store2, input, ip, agent) {
   const a = await authenticate(store2, token);
   return { token, user: publicUser(a) };
 }
-async function changePassword(store2, who, current3, next2) {
+async function changePassword2(store2, who, current3, next2) {
   const key2 = `pw:${who.user._id}`;
   await chargeAttempt(store2, [{ key: key2, max: LIMIT_PASSWORD_CHANGE }]);
   if (!await verifyPassword(String(current3 ?? ""), who.user.passwordHash))
@@ -12268,6 +12483,7 @@ var documents_exports = {};
 __export(documents_exports, {
   DEVOTION_PAGES_NEEDED: () => DEVOTION_PAGES_NEEDED,
   MAX_PAGE_HTML: () => MAX_PAGE_HTML,
+  REVIEW_ACTIONS: () => REVIEW_ACTIONS,
   acceptDevotion: () => acceptDevotion,
   addDocumentLink: () => addDocumentLink,
   addFrame: () => addFrame,
@@ -12288,24 +12504,30 @@ __export(documents_exports, {
   documentOf: () => documentOf,
   duplicateFrame: () => duplicateFrame,
   duplicateShotRow: () => duplicateShotRow,
+  editedAfterApproval: () => editedAfterApproval,
   ensureDocument: () => ensureDocument,
   estimatedMinutes: () => estimatedMinutes,
   framesOf: () => framesOf,
   getDocument: () => getDocument,
   hardGates: () => hardGates,
   hardGatesPass: () => hardGatesPass,
+  hasTheologicalReview: () => hasTheologicalReview,
   linksOf: () => linksOf,
   makeDevotionEpisodes: () => makeDevotionEpisodes,
   moveFrame: () => moveFrame,
   moveFramesTo: () => moveFramesTo,
   movePage: () => movePage,
   moveShotRow: () => moveShotRow,
+  noteUnreviewed: () => noteUnreviewed,
   pagesOf: () => pagesOf,
   removeDocumentLink: () => removeDocumentLink,
   renameShotList: () => renameShotList,
   renameStoryboard: () => renameStoryboard,
   resolveReviewComment: () => resolveReviewComment,
   restorePage: () => restorePage,
+  reviewIsGate: () => reviewIsGate,
+  reviewNotesOf: () => reviewNotesOf,
+  reviewOutstanding: () => reviewOutstanding,
   reviewStateOf: () => reviewStateOf,
   reviewsOf: () => reviewsOf,
   rowsOfShotList: () => rowsOfShotList,
@@ -12314,11 +12536,13 @@ __export(documents_exports, {
   saveStoryboardAsTemplate: () => saveStoryboardAsTemplate,
   setDocumentReviewers: () => setDocumentReviewers,
   setGateOverride: () => setGateOverride,
+  sheetOwnerId: () => sheetOwnerId,
   shotListsOf: () => shotListsOf,
   shotNumbers: () => shotNumbers,
   softNudges: () => softNudges,
   storyboardsOf: () => storyboardsOf,
   syncReviewThread: () => syncReviewThread,
+  theologyStatus: () => theologyStatus,
   updateFrame: () => updateFrame,
   updateShotRow: () => updateShotRow
 });
@@ -13491,7 +13715,7 @@ function resetToTemplate(actor, dayId) {
   const t2 = requireTemplate(day.instance.templateId);
   const cs = sheetOfDay(day);
   if (!cs) throw new RuleError("This day has no call sheet.");
-  if (cs.status === "final") throw new RuleError("This call sheet is final. Reopen it to put it back on the template.");
+  assertSheetOpen(cs);
   const today = todayIso();
   if ((day.scheduledDate ?? "") < today) throw new RuleError("A day that has passed is kept as it was.");
   day.instance.locked = false;
@@ -13981,128 +14205,6 @@ function alreadySent(personId, rems) {
     getDb().outbox.filter((o) => o.personId === personId && o.channel !== "calendar").flatMap((o) => o.keys)
   );
   return new Set(rems.filter((r) => sent.has(r.key)).map((r) => r.key));
-}
-
-// src/services/settings.ts
-var settings_exports = {};
-__export(settings_exports, {
-  SETTINGS_EDITABLE: () => SETTINGS_EDITABLE,
-  changePassword: () => changePassword2,
-  featureOn: () => featureOn,
-  setFeature: () => setFeature,
-  updateSettings: () => updateSettings,
-  updateWorkspaceAppearance: () => updateWorkspaceAppearance
-});
-
-// src/config/appearance.ts
-var ACCENTS = [
-  { key: "terracotta", label: "Terracotta", dark: { accent: "#e8703a", hi: "#f28a55" }, light: { accent: "#dc5f26", hi: "#c2481a" } },
-  { key: "amber", label: "Amber", dark: { accent: "#d9a441", hi: "#e8bd66" }, light: { accent: "#b9812a", hi: "#96660f" } },
-  { key: "sage", label: "Sage", dark: { accent: "#6b9080", hi: "#87ac9c" }, light: { accent: "#4d7566", hi: "#365a4d" } },
-  { key: "ocean", label: "Ocean", dark: { accent: "#4f7cac", hi: "#6f9bc9" }, light: { accent: "#3a6389", hi: "#254a6b" } },
-  { key: "plum", label: "Plum", dark: { accent: "#a15c8f", hi: "#bd7cac" }, light: { accent: "#8a4576", hi: "#6c2e5b" } },
-  { key: "slate", label: "Slate", dark: { accent: "#5b6472", hi: "#77828f" }, light: { accent: "#454d59", hi: "#2f3540" } }
-];
-var FONT_PAIRINGS = [
-  {
-    key: "modern",
-    label: "Modern",
-    heading: `"Avenir Next", "SF Pro Display", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif`,
-    body: `"Avenir Next", "SF Pro Display", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif`
-  },
-  {
-    key: "editorial",
-    label: "Editorial",
-    heading: `Georgia, "Iowan Old Style", "Palatino Linotype", serif`,
-    body: `"Avenir Next", "SF Pro Display", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif`
-  },
-  {
-    key: "classic",
-    label: "Classic Serif",
-    heading: `Georgia, "Iowan Old Style", "Palatino Linotype", serif`,
-    body: `Georgia, "Iowan Old Style", "Times New Roman", serif`
-  }
-];
-
-// src/config/features.ts
-var FEATURES = [
-  { key: "shell", label: "New menu, Settings in the profile menu, Ctrl+K search", built: false },
-  { key: "reviewNotGate", label: "Theological review as a reminder, not a gate", built: false },
-  { key: "recordingPlanAll", label: "Recording Plan for series and documentaries", built: false },
-  { key: "templates", label: "Storyboard and shot list templates in Documents", built: false },
-  { key: "lending", label: "Equipment lending and role kits", built: false },
-  { key: "calendar2", label: "New Calendar with reminders, alerts and the urgency report", built: false },
-  { key: "liveFiveStages", label: "Live Shows and DOF Music on the five stages", built: false }
-];
-var FEATURE_KEYS = FEATURES.map((f2) => f2.key);
-
-// src/services/settings.ts
-var SETTINGS_EDITABLE = [
-  "stageReminderHours",
-  "storageWarningThreshold",
-  "checkoutReturnDays",
-  "workDays",
-  "effortOverrides"
-];
-function updateSettings(actor, input) {
-  requireCan(actor, "backend.settings", "change system settings");
-  const patch = pickKeys(input, SETTINGS_EDITABLE);
-  if (patch.stageReminderHours !== void 0 && !(patch.stageReminderHours >= 1 && patch.stageReminderHours <= 240)) {
-    throw new RuleError("Reminder window must be between 1 and 240 hours.");
-  }
-  if (patch.checkoutReturnDays !== void 0 && !(Number.isInteger(patch.checkoutReturnDays) && patch.checkoutReturnDays >= 1 && patch.checkoutReturnDays <= 60)) {
-    throw new RuleError("Return window must be a whole number of days, 1 to 60.");
-  }
-  if (patch.storageWarningThreshold !== void 0 && !(patch.storageWarningThreshold >= 50 && patch.storageWarningThreshold <= 99)) {
-    throw new RuleError("Flag drives as full between 50% and 99%.");
-  }
-  if (patch.workDays !== void 0 && !(Array.isArray(patch.workDays) && patch.workDays.length > 0 && patch.workDays.every((d) => Number.isInteger(d) && d >= 0 && d <= 6))) {
-    throw new RuleError("Choose at least one working day.");
-  }
-  if (patch.effortOverrides !== void 0) {
-    if (!patch.effortOverrides || typeof patch.effortOverrides !== "object" || Array.isArray(patch.effortOverrides))
-      throw new RuleError("Those stage estimates are not valid.");
-    for (const [key2, v] of Object.entries(patch.effortOverrides)) {
-      if (!Number.isFinite(v) || v < 0 || v > 30 || Math.round(v * 4) !== v * 4)
-        throw new RuleError(`${key2.split(":")[1] ?? key2}: use a number of days from 0 to 30, in steps of a quarter day.`);
-    }
-  }
-  Object.assign(getDb().settings, patch);
-  logAudit(actor, "settings", "settings", "system", Object.keys(patch).join(", "));
-  commit();
-}
-function updateWorkspaceAppearance(actor, input) {
-  if (!isHop(actor)) throw new RuleError("Only the Head of Production can change the workspace's accent colour and font.");
-  const patch = pickKeys(input, ["accent", "fontPairing"]);
-  if (patch.accent !== void 0 && !ACCENTS.some((a) => a.key === patch.accent))
-    throw new RuleError("Choose one of the accent colours offered.");
-  if (patch.fontPairing !== void 0 && !FONT_PAIRINGS.some((f2) => f2.key === patch.fontPairing))
-    throw new RuleError("Choose one of the font pairings offered.");
-  const db2 = getDb();
-  db2.settings.appearance = { ...db2.settings.appearance ?? { accent: "terracotta", fontPairing: "modern" }, ...patch };
-  logAudit(actor, "settings", "settings", "appearance", Object.keys(patch).join(", "));
-  commit();
-}
-function changePassword2(actor, current3, next2) {
-  const u = getDb().users.find((x) => x.personId === actor.personId);
-  if (!u || u.password !== current3) throw new RuleError("Your current password is not correct.");
-  if (next2.length < 4) throw new RuleError("New password must be at least 4 characters.");
-  u.password = next2;
-  logAudit(actor, "change-password", "person", actor.personId);
-  commit();
-}
-function featureOn(key2) {
-  const f2 = FEATURES.find((x) => x.key === key2);
-  if (!f2?.built) return false;
-  return getDb().settings.features?.[key2] ?? true;
-}
-function setFeature(actor, key2, on) {
-  if (!isHop(actor)) throw new RuleError("Only the Head of Production switches parts of the app on and off.");
-  if (!FEATURE_KEYS.includes(key2)) throw new RuleError("There is no such part of the app.");
-  const s2 = getDb().settings;
-  s2.features = { ...s2.features ?? {}, [key2]: on };
-  logAudit(actor, on ? "feature-on" : "feature-off", "system", key2);
-  commit();
 }
 
 // src/services/team.ts
@@ -14615,6 +14717,7 @@ var RPC_NAMES = {
     "moveFramesTo",
     "movePage",
     "moveShotRow",
+    "noteUnreviewed",
     "removeDocumentLink",
     "renameShotList",
     "renameStoryboard",
@@ -15487,7 +15590,11 @@ var ACTIONS = {
   "documents.makeDevotionEpisodes": args([id]),
   "documents.acceptDevotion": args([id, text3(2e3)]),
   "documents.askForReviewAgain": args([compound]),
-  "documents.setGateOverride": args([id, z2.enum(["idea", "review", "greenlight", "guest", "pages"]), short(300).nullable()])
+  "documents.setGateOverride": args([id, z2.enum(["idea", "review", "greenlight", "guest", "pages"]), short(300).nullable()]),
+  "documents.noteUnreviewed": args([
+    id,
+    z2.object({ action: z2.enum(["schedule", "publish-sheet", "publish-episode"]), targetId: short(80), note: short(300) })
+  ])
 };
 
 // server/registry.ts
@@ -16258,7 +16365,7 @@ async function dispatch(store2, req2, res) {
     }
     case "POST /account/password": {
       const who = await signedIn(true);
-      await changePassword(store2, who, str(req2.body.current), str(req2.body.next));
+      await changePassword2(store2, who, str(req2.body.current), str(req2.body.next));
       return ok();
     }
     case "POST /accounts/create":

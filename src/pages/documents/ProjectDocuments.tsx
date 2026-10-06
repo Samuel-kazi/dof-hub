@@ -28,6 +28,7 @@ import { PageList } from "./PageList";
 import { PlanSectionView, PlannedDrive, planCards, type PlanSection } from "./RecordingPlan";
 import { DaySheetForm, EpisodeStrip, SessionPicker, defaultSession, formCards } from "./StagePanes";
 import { usePrintDocument } from "./printDocument";
+import { ReviewNotDone } from "../../ui/ReviewCheck";
 
 // A project's documents (the documents rework), StudioBinder style. Project Home has one coloured row per stage, each
 // with tiles: a document, a tool (Storyboard, Shot List) or a form. A tile opens full width, in three panes: the
@@ -452,22 +453,38 @@ export function ProjectDocuments({ project, write }: { project: Project; write: 
       editor.current = null;
       setOpened({ stage, key });
     });
-  if (!opened) return <ProjectHome project={project} write={write} onOpen={open} />;
-  return (
-    <DocumentView
-      key={`${opened.stage}|${opened.key}`}
+  // While the theological review is not done, the project says so above its home and every document.
+  const due = (
+    <ReviewNotDone
       project={project}
-      opened={opened}
-      write={write}
-      editor={editor}
-      leaveThen={leaveThen}
-      onOpen={open}
-      onHome={() =>
-        leaveThen(() => {
-          editor.current = null;
-          setOpened(null);
-        })
-      }
+      onOpen={opened?.key === "theological_review" ? undefined : () => open("Development", "theological_review")}
     />
+  );
+  if (!opened)
+    return (
+      <>
+        {due}
+        <ProjectHome project={project} write={write} onOpen={open} />
+      </>
+    );
+  return (
+    <>
+      {due}
+      <DocumentView
+        key={`${opened.stage}|${opened.key}`}
+        project={project}
+        opened={opened}
+        write={write}
+        editor={editor}
+        leaveThen={leaveThen}
+        onOpen={open}
+        onHome={() =>
+          leaveThen(() => {
+            editor.current = null;
+            setOpened(null);
+          })
+        }
+      />
+    </>
   );
 }

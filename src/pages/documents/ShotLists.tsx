@@ -20,6 +20,7 @@ import { useApp } from "../../ui/AppContext";
 import { Empty } from "../../ui/parts";
 import { NewBoardModal } from "./Storyboards";
 import { ImageSlot, SavedInput } from "./toolkit";
+import { useFocusRow } from "../../ui/keys";
 
 // The Shot List, in Pre-production: the project's lists on the left, each with its number of shots, and "+ New shot
 // list", which can start as a copy of any list the person may see. The chosen list is a table: a picture, the shot's
@@ -50,6 +51,7 @@ function Row({
   onSelect,
   onDragStart,
   onDrop,
+  onEnterAdd,
 }: {
   list: ShotList;
   row: ShotListRow;
@@ -61,6 +63,7 @@ function Row({
   onSelect: (on: boolean) => void;
   onDragStart: () => void;
   onDrop: () => void;
+  onEnterAdd: () => void; // Enter in the row's last field: a shot row below this one
 }) {
   const { actor, attempt, confirm, menu } = useApp();
   const save = (edit: RowEdit) => attempt(() => updateShotRow(actor, row.id, edit));
@@ -133,7 +136,7 @@ function Row({
   };
   if (row.rowType !== "shot")
     return (
-      <tr className={`pd-row-${row.rowType}${selected ? " on" : ""}`} {...dropProps}>
+      <tr className={`pd-row-${row.rowType}${selected ? " on" : ""}`} data-row={row.id} {...dropProps}>
         {lead}
         <td colSpan={7}>
           <div className="pd-row-wide">
@@ -144,6 +147,10 @@ function Row({
               placeholder={row.rowType === "setup" ? "Lighting, lens or camera setup" : "Section name"}
               aria-label={`${ROW_LABEL[row.rowType]}, row ${index + 1}`}
               onSave={(v) => save({ description: v })}
+              onEnterAdd={(v) => {
+                if (v !== row.description && !save({ description: v })) return;
+                onEnterAdd();
+              }}
             />
           </div>
         </td>
@@ -151,7 +158,7 @@ function Row({
       </tr>
     );
   return (
-    <tr className={selected ? "on" : undefined} {...dropProps}>
+    <tr className={selected ? "on" : undefined} data-row={row.id} {...dropProps}>
       {lead}
       <td className="pd-cell-image">
         <ImageSlot
@@ -211,6 +218,11 @@ function Row({
           disabled={!write}
           aria-label={`Estimated minutes of ${name}`}
           onSave={(v) => save({ estMinutes: v.trim() === "" ? null : Number(v) })}
+          onEnterAdd={(v) => {
+            const est = v.trim() === "" ? null : Number(v);
+            if (est !== row.estMinutes && !save({ estMinutes: est })) return;
+            onEnterAdd();
+          }}
         />
       </td>
       {options}
@@ -228,6 +240,14 @@ function ListView({ list, write }: { list: ShotList; write: boolean }) {
   const live = selected.filter((id) => rows.some((r) => r.id === id));
   const episode = list.episodeId ? getDb().records.find((r) => r.contentId === list.episodeId) : undefined;
   const add = (type: ShotRowType) => attempt(() => addShotRow(actor, list.id, type, {}));
+  const focusRow = useFocusRow('input[aria-label^="Description of"]');
+  // A shot row added right below row `index`, with the cursor in its description.
+  const addBelow = (index: number) => {
+    const row = attempt(() => addShotRow(actor, list.id, "shot", {}));
+    if (!row) return;
+    if (index + 1 < rows.length) attempt(() => moveShotRow(actor, row.id, index + 1));
+    focusRow(row.id);
+  };
   return (
     <div className="pd-board">
       <div className="pd-board-head">
@@ -309,6 +329,7 @@ function ListView({ list, write }: { list: ShotList; write: boolean }) {
                   if (dragging && dragging !== r.id) attempt(() => moveShotRow(actor, dragging, i));
                   setDragging(null);
                 }}
+                onEnterAdd={() => addBelow(i)}
               />
             ))}
             {rows.length === 0 && (

@@ -302,6 +302,16 @@ export interface ProjectWorkflow {
   sermonFormat: SermonFormat | null; // sermon series only
   migrated: boolean; // moved across from the earlier pipeline: gates it passed there count as met
   storageDriveId?: string | null; // the drive its footage is planned to go on (the Recording Plan's Cards and storage)
+  aheadOfReview?: ReviewNote[]; // each time someone went ahead before the theological review was done (build prompt v2, section 14)
+}
+
+/** Someone went ahead (scheduled a session, published a call sheet or an episode) before the theological review was done. */
+export interface ReviewNote {
+  at: string;
+  byPersonId: string;
+  action: "schedule" | "publish-sheet" | "publish-episode";
+  targetId: string; // the session, call sheet or episode
+  note: string; // their short note, possibly empty
 }
 
 export type PostStage = "Not started" | "Editing" | "Rough cut review" | "Final review" | "Approved";

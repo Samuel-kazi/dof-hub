@@ -11,7 +11,7 @@ import { instancesOf, type ProductionInstance } from "./productionInstances";
 import { sheetWarnings } from "./sheetAdvice";
 import { episodesOf, unscheduledPlanned, type Project } from "./workflow/common";
 import { episodeOverdue } from "./workflow/gates";
-import { hardGates } from "./documents/gates";
+import { hasTheologicalReview, theologyStatus } from "./documents/theology";
 import { addDaysIso, fmtDate, todayIso } from "./utils";
 
 // The urgency report (build prompt v2, section 12): each project gets a level, Critical, High, Watch or On track, and
@@ -122,8 +122,7 @@ function workflowProjectRow(p: Project, now: string, t: UrgencyThresholds, today
   const unassigned = greenlit ? unscheduledPlanned(p.contentId) : 0;
   instanceRules(f, instancesOf(p.contentId), now, t, today, unassigned);
   // The theological review is a reminder, never a gate: while it is not done the project is watched.
-  const review = hardGates(p.contentId).find((g) => g.key === "review");
-  if (review && !review.met && !review.override) f.add("Watch", "Theological review not done.");
+  if (hasTheologicalReview(p) && !theologyStatus(p.contentId).done) f.add("Watch", "Theological review not done.");
   if (unassigned > 0) f.add("Watch", `${plural(unassigned, "item")} not assigned to a session.`);
   const due = p.stageDeadlines[p.workflow.stage] ?? p.deadline;
   const dated = instancesOf(p.contentId).some((i) => i.date && i.status !== "cancelled");

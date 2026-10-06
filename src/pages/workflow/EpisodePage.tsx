@@ -32,6 +32,7 @@ import {
 import { asWebUrl } from "../../services/urls";
 import { fmtDateTime } from "../../services/utils";
 import { useApp } from "../../ui/AppContext";
+import { useReviewCheck } from "../../ui/ReviewCheck";
 import { Empty, Field } from "../../ui/parts";
 import { CrewSelect, GatePanel, OpenLinkButton, copyText, shareUrlOf } from "../../ui/workflow/shared";
 import { CheckpointCard, ConfigChecklist, useDraft } from "./common";
@@ -340,6 +341,7 @@ function Distribution({ ep, write }: { ep: Episode; write: boolean }) {
 
 export function EpisodePage({ ep, project }: { ep: Episode; project: Project }) {
   const { actor, go, attempt, confirm } = useApp();
+  const [reviewCheck, reviewModal] = useReviewCheck();
   const [learning, setLearning] = useState<string | null>(null);
   const write = canWrite(actor, project) && !project.archived && !ep.archived;
   const info = ep.episode;
@@ -513,14 +515,26 @@ export function EpisodePage({ ep, project }: { ep: Episode; project: Project }) 
               action="Done: published"
               disabled={!write}
               onDone={async () => {
+                // Before the theological review is done, the question about it is the confirmation.
+                const ok = await reviewCheck({
+                  contentId: ep.contentId,
+                  action: "publish-episode",
+                  targetId: ep.contentId,
+                  confirmLabel: "Publish anyway",
+                  deliberate: true,
+                });
+                if (!ok) return;
                 if (
-                  await confirm({
+                  !ok.asked &&
+                  !(await confirm({
                     title: `Mark ${ep.contentId} published?`,
                     body: "It is logged as published. When every planned episode is published, the project is complete.",
                     confirmLabel: "Published",
-                  })
+                    deliberate: true,
+                  }))
                 )
-                  attempt(() => publishEpisode(actor, ep.contentId), "Published");
+                  return;
+                if (attempt(() => publishEpisode(actor, ep.contentId), "Published")) ok.done();
               }}
             />
           )}
@@ -550,6 +564,7 @@ export function EpisodePage({ ep, project }: { ep: Episode; project: Project }) 
       )}
 
       <ShareLinks ep={ep} write={write} />
+      {reviewModal}
     </div>
   );
 }

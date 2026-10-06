@@ -21,6 +21,7 @@ import {
   type Availability,
 } from "./equipment-items";
 import { groupByFamily } from "./equipment-reports";
+import { assertSheetOpen } from "./sheetLock";
 
 export const getManifest = (id: string): Manifest | undefined => getDb().manifests.find((m) => m.id === id);
 
@@ -579,6 +580,7 @@ function bookOnSheet(actor: Actor, sheet: SheetRef, lines: LineRequest[]): Manif
   // can never be booked against another project's call sheet, or on a date the sheet does not have.
   const cs = getDb().callSheets.find((c) => c.id === sheet.id);
   if (!cs) throw new RuleError("Call sheet not found.");
+  assertSheetOpen(cs);
   const project = getRecord(cs.contentId);
   if (!project || !canWrite(actor, project)) throw new RuleError("You have view-only access to this project.");
   const existing = manifestForSheet(cs.id);
@@ -609,6 +611,8 @@ function answerableFor(...candidates: (string | null | undefined)[]): string | u
 }
 
 export function removeGearFromSheet(actor: Actor, sheetId: string, equipmentId: string): void {
+  const cs = getDb().callSheets.find((c) => c.id === sheetId);
+  if (cs) assertSheetOpen(cs);
   const m = manifestForSheet(sheetId);
   if (!m) return;
   removeLine(actor, m.id, equipmentId);

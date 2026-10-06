@@ -150,4 +150,21 @@ italic, underline, strikethrough, colour, highlight, alignment, bullets, numbers
 clear formatting), its shortcuts, saving 800 ms after the last keystroke with "Saving…" and "Saved @", "Save again" on
 a failure with the words kept, the warning before leaving, and pastes cleaned, are all there. Not there yet, for
 Phase 2: Ctrl or Cmd+S to save at once; Enter in a single-line field moving to the next, Esc putting the field back;
-Ctrl+Enter saving a multi-line field; Enter at the end of a run sheet or shot list row adding a row below.
+Ctrl+Enter saving a multi-line field; Enter at the end of a run sheet or shot list row adding a row below. (All in
+Phase 2, below.)
+
+## The rework, build prompt v2 (Phase 2: shell, call sheets open until Post production, keys)
+
+| Area | Tests |
+|---|---|
+| Shell and search | `shell-keyboard` (13): the shell ships on, only the Head of Production switches it, and switching changes no data; a part not built stays off; General Use stays in the pipeline until lending replaces it; with the shell on no Settings in the side menu, a profile menu and a search button, and off, as before; search finds projects and episodes apart, the five-stage documents (only on projects the person may see), crew (for those who may see the People page, no contact details), loans (by borrower, organisation or number; never for volunteers), each with where it opens; the palette's commands, none for Equipment for a volunteer, and printing today's run sheet; a dialog's buttons in its own actions row |
+| Call sheets | `shell-keyboard`: a published sheet stays editable and offers Back to draft; locked once its session closes, saying why and offering nothing; a show day's sheet locks at Post Production; a sheet linked to nothing never does. `callsheet-improvements`: changes refused on a locked sheet (fields, confirmations, gear on and off), allowed again when the session reopens. `rules`, `workflow`, `production`: a published sheet editable, its changes logged, put back on the template |
+| In a browser (Phase 2) | `shell-keys` (37 checks): the side menu, the profile menu, Ctrl+, and Ctrl+K (typing, Enter, Esc, a command); the call sheets filters; Enter adding a row in a run of show, a session's run sheet and a shot list with the cursor in the new row; Enter moving on, Esc taking back, Ctrl+S saving; publishing refused by Enter and done by Ctrl+Enter; a deletion refused by Enter, cancelled by Esc; a closed session's sheet locked; the switch in Settings; a phone. `prod2`: Finalize asks first, Enter alone does not publish, a published sheet edited in place |
+
+## The rework, build prompt v2 (Phase 3: the theological review as a reminder, not a gate)
+
+| Area | Tests |
+|---|---|
+| Not a gate | `review-reminder` (11): a documentary's gates are its idea and the greenlight, recorded before the review; switched off, the review is a gate again and there is no reminder; a devotion accepted without it; a project and each episode show it not done until approved, with where it stands; the urgency report watches it until approved; scheduling a session and publishing its call sheet go ahead (a session's sheet answers to its season); going ahead keeps who, what, when and the note (trimmed to 300), newest first, an episode's on its project, in the activity log, never by someone who may not write; nothing to note once approved; a page changed after the approval says so, the others do not; the banner with the notes and "Open the review", gone once approved; the board card; the review decided after Development while not approved, then kept as it was |
+| Gate mode | `documents-gates` runs with the switch off: the review as a gate, as before. `workflow-services`: the Development gate's short list without the review, the greenlight refused only for the idea |
+| In a browser | `review` (17 checks): the banner and Open the review; the review decidable after Development; the board card; scheduling a session asks, Cancel stops it, Continue (with Enter) schedules it and keeps the note; publishing a call sheet asks instead of the usual confirmation, Enter alone does not publish, Publish anyway does and keeps the note; the notes listed under the banner; approving removes the banner; a page changed afterwards marked in the list and the editor; once approved, publishing asks only the usual confirmation |

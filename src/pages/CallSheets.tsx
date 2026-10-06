@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { CallSheet, ContentRecord } from "../types";
 import { useApp } from "../ui/AppContext";
 import { getDb, useDb } from "../data/store";
@@ -25,9 +25,13 @@ import { roleOn } from "../services/wrapped/team";
 import { nameOf } from "../services/wrapped/people";
 import { addDaysIso, dateInNairobi, fmtDate, fmtDateTime, relativeDays, todayIso } from "../services/utils";
 import { sheetWarnings, gearSuggestions } from "../services/sheetAdvice";
+import { pipelineCategories } from "../services/wrapped/settings";
 import { changesOf, confirmationHolds } from "../services/sheetTracking";
 import { canKeepLocations, createLocation, listLocations } from "../services/wrapped/locations";
 import { PersonName } from "../ui/PersonName";
+import { isSheetLocked, sheetLock } from "../services/sheetLock";
+import { useReviewCheck } from "../ui/ReviewCheck";
+import { sheetOwnerId } from "../services/wrapped/documents";
 import { DateShift } from "../ui/DateShift";
 import { LocationsPanel } from "./production/LocationsPanel";
 import { Modal } from "../ui/Modal";
@@ -56,7 +60,7 @@ import {
   type ContactRow,
 } from "./production/SheetSections";
 import { RunSheetPanel } from "./workflow/SessionPage";
-import { usePrintCallSheet } from "./documents/printCallSheet";
+import { takePrintRequest, usePrintCallSheet } from "./documents/printCallSheet";
 import { sheetTimes } from "../services/wrapped/workflow";
 import { ReportButton, ReportDialog } from "../ui/ReportDialog";
 import {
@@ -77,8 +81,23 @@ export function CallSheets() {
   const [duplicating, setDuplicating] = useState<CallSheet | null>(null);
   const [downloading, setDownloading] = useState<CallSheet | null>(null);
   const [attaching, setAttaching] = useState<CallSheet | null>(null);
-  const sheets = visibleCallSheets(actor).sort((a, b) => a.date.localeCompare(b.date));
+  // Filters: the kind of production, upcoming or past, and the project.
+  const [type, setType] = useState<string>("");
+  const [when, setWhen] = useState<"all" | "upcoming" | "past">("all");
+  const [project, setProject] = useState<string>("");
+  const all = visibleCallSheets(actor).sort((a, b) => a.date.localeCompare(b.date));
   const today = todayIso();
+  const categoryOfSheet = (cs: CallSheet) => getRecord(cs.contentId)?.category ?? "";
+  const sheets = all.filter(
+    (cs) =>
+      (!type || categoryOfSheet(cs) === type) &&
+      (when === "all" || (when === "upcoming" ? cs.date >= today : cs.date < today)) &&
+      (!project || cs.contentId === project),
+  );
+  const sheetProjects = [...new Set(all.map((cs) => cs.contentId))]
+    .map((id) => getRecord(id))
+    .filter((r): r is ContentRecord => !!r)
+    .sort((a, b) => a.title.localeCompare(b.title));
   const writableProjects = visibleRecords(actor).filter((r) => r.hierarchyLevel === 0 && canWrite(actor, r));
 
   return (
@@ -94,9 +113,44 @@ export function CallSheets() {
           </button>
         )}
       </div>
+      {all.length > 0 && (
+        <div className="row cs-filters" role="group" aria-label="Filter call sheets">
+          <Field label="Type">
+            <select value={type} onChange={(e) => setType(e.target.value)}>
+              <option value="">Every type</option>
+              {pipelineCategories().map((c) => (
+                <option key={c.key} value={c.key}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="When">
+            <select value={when} onChange={(e) => setWhen(e.target.value as typeof when)}>
+              <option value="all">Upcoming and past</option>
+              <option value="upcoming">Upcoming</option>
+              <option value="past">Past</option>
+            </select>
+          </Field>
+          <Field label="Project">
+            <select value={project} onChange={(e) => setProject(e.target.value)}>
+              <option value="">Every project</option>
+              {sheetProjects.map((p) => (
+                <option key={p.contentId} value={p.contentId}>
+                  {p.title}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
+      )}
       <section className="glass panel">
         {sheets.length === 0 ? (
-          <Empty>No call sheets yet. Use the call sheet button on a pipeline record, or create one here.</Empty>
+          <Empty>
+            {all.length
+              ? "No call sheets match these filters."
+              : "No call sheets yet. Use the call sheet button on a pipeline record, or create one here."}
+          </Empty>
         ) : (
           <table className="table">
             <thead>
@@ -163,6 +217,7 @@ export function CallSheets() {
                       {drift && <span className="badge warn">Dates changed</span>}
                       {clash && <span className="badge bad">Crew clash</span>}
                       {toCheck > 0 && <span className="badge warn">{toCheck} to check</span>}
+                      {isSheetLocked(cs) && <span className="badge">Locked</span>}
                     </td>
                   </tr>
                 );
@@ -346,7 +401,14 @@ export function CallSheetPage({ id }: { id: string }) {
   useDb();
   const [duplicating, setDuplicating] = useState(false);
   const [print, printNode] = usePrintCallSheet();
+  const [reviewCheck, reviewModal] = useReviewCheck();
   const cs = getCallSheet(id);
+  // "Print today's run sheet" from Ctrl+K: printed once, when the page opens.
+  useEffect(() => {
+    const job = takePrintRequest(id);
+    if (job) print(job);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
   const root = cs ? getRecord(cs.contentId) : undefined;
 
   if (!cs || !root)
@@ -357,6 +419,8 @@ export function CallSheetPage({ id }: { id: string }) {
     );
 
   const write = canWrite(actor, root);
+  const lock = sheetLock(cs);
+  const open = write && !lock.locked;
 
   return (
     <div className="page">
@@ -371,6 +435,7 @@ export function CallSheetPage({ id }: { id: string }) {
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4, flexWrap: "wrap" }}>
             <span className="cid">{cs.id}</span>
             <span className={`badge ${cs.status === "final" ? "ok" : ""}`}>{cs.status === "final" ? "Final" : "Draft"}</span>
+            {lock.locked && <span className="badge">Locked</span>}
             {cs.sharedAt && <span className="badge">Shared {fmtDate(dateInNairobi(new Date(cs.sharedAt)))}</span>}
             {cs.changeLog.length > 0 && (
               <a className="badge warn" href="#sec-changes">
@@ -401,20 +466,42 @@ export function CallSheetPage({ id }: { id: string }) {
           Print…
         </button>
         <ReportButton scope="callsheet" params={{ callSheetId: cs.id }} label="Download…" />
-        {write &&
+        {open &&
           (cs.status === "draft" ? (
             <button
               className="btn primary"
-              onClick={() => attempt(() => finalizeCallSheet(actor, cs.id, cs.version), "Call sheet finalized")}
+              onClick={async () => {
+                // Publishing is deliberate: a click (or Ctrl+Enter) and a confirmation, never a stray Enter. Before the
+                // theological review is done, the question about it is that confirmation.
+                const ok = await reviewCheck({
+                  contentId: sheetOwnerId(cs),
+                  action: "publish-sheet",
+                  targetId: cs.id,
+                  confirmLabel: "Publish anyway",
+                  deliberate: true,
+                });
+                if (!ok) return;
+                if (
+                  !ok.asked &&
+                  !(await confirm({
+                    title: `Publish ${cs.title}?`,
+                    body: "The crew can rely on it from now on. It stays open to edit; every later change to its call time, place, crew, talent or schedule is logged, and clears the confirmations it affects.",
+                    confirmLabel: "Publish",
+                    deliberate: true,
+                  }))
+                )
+                  return;
+                if (attempt(() => finalizeCallSheet(actor, cs.id, cs.version), "Call sheet published")) ok.done();
+              }}
             >
               Finalize
             </button>
           ) : (
-            <button className="btn" onClick={() => attempt(() => reopenCallSheet(actor, cs.id), "Reopened as draft")}>
-              Reopen
+            <button className="btn" onClick={() => attempt(() => reopenCallSheet(actor, cs.id), "Back to draft")}>
+              Back to draft
             </button>
           ))}
-        {write && (
+        {open && (
           <button
             className="btn danger"
             onClick={async () => {
@@ -437,6 +524,7 @@ export function CallSheetPage({ id }: { id: string }) {
 
       <CallSheetBody cs={cs} root={root} />
       {printNode}
+      {reviewModal}
       {duplicating && (
         <DuplicateModal
           sheet={cs}
@@ -474,7 +562,9 @@ export function CallSheetBody({
   const { actor, go, attempt, toast } = useApp();
   const [comment, setComment] = useState("");
   const write = canWrite(actor, root);
-  const editable = write && cs.status === "draft";
+  // Open to edit, published or not, until its production moves on to Post production (src/services/sheetLock.ts).
+  const lock = sheetLock(cs);
+  const editable = write && !lock.locked;
   const mm = getMismatches(cs);
   const drift = mm.moved.length + mm.unlinked.length > 0;
   const clashes = crewConflicts(cs);
@@ -488,7 +578,7 @@ export function CallSheetBody({
   const roleHint = (pid: string) => roleOn(pid, root) || null;
   const props = { value: cs, editable, onChange: save };
   // Ticking the technical check and the rehearsal happens on the day, on a final sheet too.
-  const tickProps = { value: cs, editable: write, onChange: save };
+  const tickProps = { value: cs, editable, onChange: save };
   const warnings = sheetWarnings(cs, todayIso());
   const warnOf = (section: string) => warnings.filter((w) => w.section === section).map((w) => w.text);
   // Confirmations: crew tick their own; anyone working on the project records it for them, and for talent.
@@ -499,10 +589,10 @@ export function CallSheetBody({
       const by = c.by === key ? "" : `, recorded by ${nameOf(c.by)}`;
       return { confirmed: true, note: `Confirmed ${fmtDateTime(c.at)}${by}` };
     },
-    canTick: (key) => key === actor.personId || write,
+    canTick: (key) => !lock.locked && (key === actor.personId || write),
     onTick: (key, yes) => attempt(() => confirmOnSheet(actor, cs.id, key, yes), yes ? "Confirmed" : "Confirmation taken off"),
   };
-  const mine = cs.crewPersonIds.includes(actor.personId) && cs.date >= todayIso();
+  const mine = cs.crewPersonIds.includes(actor.personId) && cs.date >= todayIso() && !lock.locked;
   const locations = listLocations();
   const keepPlaces = canKeepLocations(actor);
   const saveLocation = () => {
@@ -641,10 +731,16 @@ export function CallSheetBody({
         <Field label="Notes">
           <SavedText label="Notes" value={cs.notes} disabled={!editable} onSave={(v) => save({ notes: v.trim() })} />
         </Field>
-        {cs.status === "final" && write && (
-          <p className="muted">
-            This call sheet is final: its plan is locked until it is reopened. The technical check and rehearsal can still be ticked.
-          </p>
+        {lock.locked ? (
+          <p className="muted">Locked: {lock.why} It is kept as the record of the day.</p>
+        ) : (
+          cs.status === "final" &&
+          write && (
+            <p className="muted">
+              Published. It stays open to edit: changes to its call time, place, crew, talent or schedule are logged, and clear the
+              confirmations they affect.
+            </p>
+          )
         )}
       </section>
 
@@ -691,8 +787,8 @@ export function CallSheetBody({
       ) : (
         <RunOfShowSection {...props} required={runOfShowRequired(cs)} />
       )}
-      <TechnicalCheckSection {...tickProps} editable={editable} onChange={save} canTick tickable={write} />
-      <RehearsalSection {...tickProps} editable={editable} onChange={save} canTick tickable={write} />
+      <TechnicalCheckSection {...tickProps} editable={editable} onChange={save} canTick tickable={editable} />
+      <RehearsalSection {...tickProps} editable={editable} onChange={save} canTick tickable={editable} />
       {(cs.sharedAt || cs.changeLog.length > 0) && <ChangeLog cs={cs} />}
 
       {!embedded && (

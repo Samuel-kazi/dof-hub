@@ -374,6 +374,21 @@ export function PrintedCallSheet({ job }: { job: CallSheetPrintJob }) {
 }
 
 /** A print button's helper: call print(job) to print it; render the returned node somewhere on the page. */
+/**
+ * A print asked for from somewhere else (the Ctrl+K "Print today's run sheet"): the call sheet's page picks it up once,
+ * when it opens.
+ */
+let pending: CallSheetPrintJob | null = null;
+export const requestPrint = (job: CallSheetPrintJob): void => {
+  pending = job;
+};
+export function takePrintRequest(sheetId: string): CallSheetPrintJob | null {
+  if (pending?.sheetId !== sheetId) return null;
+  const job = pending;
+  pending = null;
+  return job;
+}
+
 export function usePrintCallSheet(): [(job: CallSheetPrintJob) => void, React.ReactNode] {
   const [job, setJob] = useState<CallSheetPrintJob | null>(null);
   const print = (next: CallSheetPrintJob) => {

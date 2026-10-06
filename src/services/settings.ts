@@ -5,6 +5,7 @@ import { requireCan } from "./permissions";
 import { isHop } from "./access";
 import { ACCENTS, FONT_PAIRINGS } from "../config/appearance";
 import { FEATURES, FEATURE_KEYS, type FeatureKey } from "../config/features";
+import { CATEGORIES, type CategoryConfig } from "../config/categories";
 import { logAudit } from "./audit";
 import { pickKeys } from "./utils";
 
@@ -82,6 +83,15 @@ export function changePassword(actor: Actor, current: string, next: string): voi
 }
 
 // ── The rework's parts, switched on or off (src/config/features.ts) ──
+
+/**
+ * The categories the Content Pipeline offers. General Use is no longer one once lending (Equipment, Lending) replaces
+ * it (build prompt v2): with lending on it is left out of the menu, the filters, the board and the "Add" menus. Until
+ * then it stays, so gear can still go out for non-production use. Its records stay either way, and still open by their
+ * links and search.
+ */
+export const pipelineCategories = (): CategoryConfig[] =>
+  featureOn("lending") ? CATEGORIES.filter((c) => c.key !== "general") : CATEGORIES;
 
 /** Whether a part of the rework is on: one not built yet never is; a built one is, unless switched off. */
 export function featureOn(key: FeatureKey): boolean {
