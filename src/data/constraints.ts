@@ -284,7 +284,9 @@ export function integrityProblems(db: Database): string[] {
   const boards = new Set((db.storyboards ?? []).map((b) => b.id));
   const lists = new Set((db.shotLists ?? []).map((l) => l.id));
   for (const b of [...(db.storyboards ?? []), ...(db.shotLists ?? [])]) {
-    project(b.contentId, b.id);
+    // One kept in Documents (a template, or one for practice or an event) belongs to no project; a template never does.
+    if (b.contentId) project(b.contentId, b.id);
+    if (b.isTemplate && b.contentId) out.push(`${b.id} is a template but belongs to project ${b.contentId}.`);
     if (b.episodeId !== null && !records.has(b.episodeId)) missing("episode", b.episodeId, b.id);
   }
   for (const f of db.storyboardFrames ?? []) if (!boards.has(f.storyboardId)) missing("storyboard", f.storyboardId, `Frame ${f.id}`);

@@ -1,4 +1,4 @@
-import type { Actor, Attachment, EquipCategoryKey, EquipCondition, EquipmentItem, Manifest, TrackingType } from "../types";
+import type { Actor, Attachment, EquipCategoryKey, EquipCondition, EquipmentItem, Loan, Manifest, TrackingType } from "../types";
 import { RuleError } from "../types";
 import { commit, getDb } from "../data/store";
 import { claimId } from "../data/ids";
@@ -105,7 +105,7 @@ function qtyIn(item: EquipmentItem, status: Manifest["status"]): number {
 export const qtyOut = (i: EquipmentItem): number => qtyIn(i, "checked-out");
 export const qtyAssigned = (i: EquipmentItem): number => qtyIn(i, "assigned");
 export const qtyFree = (i: EquipmentItem): number =>
-  i.baseStatus === "active" ? Math.max(0, i.quantityTotal - qtyOut(i) - qtyAssigned(i)) : 0;
+  i.baseStatus === "active" ? Math.max(0, i.quantityTotal - qtyOut(i) - qtyAssigned(i) - qtyLent(i)) : 0;
 
 export function isOverdue(m: Manifest): boolean {
   return m.status === "checked-out" && !!m.expectedReturn && m.expectedReturn < todayIso();
@@ -125,31 +125,76 @@ export interface Availability {
   state: "ok" | "partial" | "conflict" | "repair" | "retired" | "lost";
   availableQty: number;
   conflicts: Manifest[];
+  lentTo: Loan[]; // loans holding it in those days (Equipment, Lending)
   reason: string;
 }
 
-export function availabilityOn(item: EquipmentItem, from: string, to: string, excludeManifestId?: string): Availability {
-  if (item.baseStatus === "in-repair") return { state: "repair", availableQty: 0, conflicts: [], reason: "In repair" };
-  if (item.baseStatus === "retired") return { state: "retired", availableQty: 0, conflicts: [], reason: "Retired" };
-  if (item.baseStatus === "lost") return { state: "lost", availableQty: 0, conflicts: [], reason: "Lost" };
+/**
+ * How many of an item are free in [from, to]: its total, less what productions have booked or taken out, and less
+ * what is lent out (a loan holds it until it comes back, past its expected return if late). The reason names the
+ * booking or the loan, with the day it is due back.
+ */
+export function availabilityOn(
+  item: EquipmentItem,
+  from: string,
+  to: string,
+  excludeManifestId?: string,
+  excludeLoanId?: string,
+): Availability {
+  if (item.baseStatus === "in-repair") return { state: "repair", availableQty: 0, conflicts: [], lentTo: [], reason: "In repair" };
+  if (item.baseStatus === "retired") return { state: "retired", availableQty: 0, conflicts: [], lentTo: [], reason: "Retired" };
+  if (item.baseStatus === "lost") return { state: "lost", availableQty: 0, conflicts: [], lentTo: [], reason: "Lost" };
   const conflicts = getDb().manifests.filter(
     (m) => isActive(m) && m.id !== excludeManifestId && m.lines.some((l) => l.equipmentId === item.id) && m.date <= to && from <= endOf(m),
   );
   const booked = conflicts.reduce((n, m) => n + m.lines.filter((l) => l.equipmentId === item.id).reduce((a, l) => a + l.quantity, 0), 0);
-  const availableQty = Math.max(0, item.quantityTotal - booked);
+  const lent = lentOn(item.id, from, to, excludeLoanId);
+  const onLoan = lent.reduce((n, x) => n + x.quantity, 0);
+  const availableQty = Math.max(0, item.quantityTotal - booked - onLoan);
+  const lentTo = lent.map((x) => x.loan);
+  const loanReason = (l: Loan) =>
+    `Lent to ${l.borrowerName} (${l.id}), ${l.expectedReturn < todayIso() ? "overdue since" : "due back"} ${fmtShort(l.expectedReturn)}`;
   if (availableQty === 0) {
     const c = conflicts[0];
     return {
       state: "conflict",
       availableQty,
       conflicts,
+      lentTo,
       reason: c
         ? `Booked for ${c.contentId}, ${fmtShort(c.date)}${endOf(c) !== c.date ? ` to ${fmtShort(endOf(c))}` : ""}`
-        : "Not available",
+        : lentTo.length
+          ? loanReason(lentTo[0])
+          : "Not available",
     };
   }
-  return { state: booked > 0 ? "partial" : "ok", availableQty, conflicts, reason: booked > 0 ? `${booked} booked elsewhere` : "" };
+  const reason = [booked > 0 ? `${booked} booked elsewhere` : "", lentTo.length ? `${onLoan} lent out (${loanReason(lentTo[0])})` : ""]
+    .filter(Boolean)
+    .join("; ");
+  return { state: booked + onLoan > 0 ? "partial" : "ok", availableQty, conflicts, lentTo, reason };
 }
+
+/**
+ * What loans hold of an item on any day in [from, to]: from the day it goes out until its expected return, or, once
+ * it is late, until it is checked back in (nobody knows when it will be back, so no later day can count on it).
+ */
+function lentOn(equipmentId: string, from: string, to: string, excludeLoanId?: string): { loan: Loan; quantity: number }[] {
+  const today = todayIso();
+  const out: { loan: Loan; quantity: number }[] = [];
+  for (const loan of getDb().loans ?? []) {
+    if (loan.status !== "out" || loan.id === excludeLoanId) continue;
+    const end = loan.expectedReturn < today ? "9999-12-31" : loan.expectedReturn;
+    if (loan.dateOut > to || end < from) continue;
+    const quantity = loan.lines
+      .filter((l) => l.equipmentId === equipmentId)
+      .reduce((n, l) => n + l.quantity - l.returns.reduce((a, r) => a + r.quantity, 0), 0);
+    if (quantity > 0) out.push({ loan, quantity });
+  }
+  return out;
+}
+
+/** How many of an item are lent out today. */
+export const qtyLent = (item: EquipmentItem): number => lentOn(item.id, todayIso(), todayIso()).reduce((n, x) => n + x.quantity, 0);
 
 export interface StatusView {
   label: string;
@@ -164,7 +209,15 @@ export function displayStatus(item: EquipmentItem): StatusView {
   const out = qtyOut(item);
   const asg = qtyAssigned(item);
   const overdue = getDb().manifests.some((m) => isOverdue(m) && m.lines.some((l) => l.equipmentId === item.id));
+  const lent = lentOn(item.id, todayIso(), todayIso());
+  const lentLate = lent.some((x) => x.loan.expectedReturn < todayIso());
   if (item.trackingType === "serialized") {
+    if (lent.length)
+      return {
+        label: lentLate ? "Loan overdue" : "Lent out",
+        tone: lentLate ? "bad" : "accent",
+        detail: `${lent[0].loan.borrowerName}, due back ${fmtShort(lent[0].loan.expectedReturn)}`,
+      };
     if (out)
       return overdue ? { label: "Overdue", tone: "bad", detail: "Not returned" } : { label: "Checked out", tone: "accent", detail: "" };
     if (asg) return { label: "Assigned", tone: "accent", detail: "In studio, reserved" };
@@ -172,7 +225,7 @@ export function displayStatus(item: EquipmentItem): StatusView {
   }
   const free = qtyFree(item);
   const detail = `${free} of ${item.quantityTotal} free`;
-  if (overdue) return { label: "Overdue", tone: "bad", detail };
+  if (overdue || lentLate) return { label: "Overdue", tone: "bad", detail };
   if (free > 0) return { label: "Available", tone: "ok", detail };
   return { label: out ? "All out" : "All assigned", tone: "accent", detail };
 }
@@ -526,6 +579,7 @@ export function retireItem(actor: Actor, id: string, kind: "retired" | "lost", n
   if (item.baseStatus === "retired" || item.baseStatus === "lost") throw new RuleError("This item is already out of service.");
   if (getDb().manifests.some((m) => isActive(m) && m.lines.some((l) => l.equipmentId === id)))
     throw new RuleError("This item is on an active checkout list. Check it in or release it first.");
+  if (lentOn(id, "0000-01-01", "9999-12-31").length) throw new RuleError("This item is lent out. Check it back in first.");
   item.baseStatus = kind;
   hist(actor, id, kind, note.trim() || (kind === "lost" ? "Marked lost" : "Retired from inventory"));
   logAudit(actor, kind, "equipment", id, note);
@@ -548,7 +602,9 @@ export function deleteItem(actor: Actor, id: string): void {
   const item = getItem(id);
   if (!item) throw new RuleError("Item not found.");
   const used =
-    getDb().manifests.some((m) => m.lines.some((l) => l.equipmentId === id)) || getDb().incidents.some((i) => i.equipmentId === id);
+    getDb().manifests.some((m) => m.lines.some((l) => l.equipmentId === id)) ||
+    getDb().incidents.some((i) => i.equipmentId === id) ||
+    (getDb().loans ?? []).some((l) => l.lines.some((x) => x.equipmentId === id));
   if (used) throw new RuleError("This item has checkout history. Retire it instead so the history is kept.");
   getDb().equipment = getDb().equipment.filter((e) => e.id !== id);
   getDb().equipmentHistory = getDb().equipmentHistory.filter((h) => h.equipmentId !== id);

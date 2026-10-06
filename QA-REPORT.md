@@ -136,3 +136,18 @@ sheet duplicated a week on; a saved location added and archived; a recording ses
 with no sideways scroll; dark mode.
 
 Not covered yet: alerts to crew when a shared sheet changes (in-app and email) come with Phase 4's alerts.
+
+## The rework, build prompt v2 (Phase 1: foundations, no screens)
+
+| Area | Tests |
+|---|---|
+| Foundations | `rework-foundations` (14): data version 21 adds the lists empty, marks boards as a project's own, changes nothing else, runs twice the same; the dry-run report lists each General Use record with its proposal, and what is stored of reminders; a part not built stays off whatever is stored, and only the Head of Production switches parts; sessions and show days read the same way, with their status; a lent item unavailable to bookings with the borrower and return date named, lending refused for booked gear and for volunteers, retiring refused while lent; partial returns, a late loan held until checked in, overdue, closed when all back, condition taken; keeping a loan longer only if free, calling it off; a role kit offered item by item with what is not free marked, nothing booked; a reminder on a session firing into each recipient's bell and following the session when it moves; email reminders a day or more ahead, queued by the morning run before they are due, never twice, repeating ones moving on; the email queue sending once, leasing, retrying five times, holding quiet hours; the urgency report's levels and reasons, late loans, most urgent first, thresholds from settings; storyboard and shot list templates copied into a project, never changed by the copy, kept by crew and the Head of Production |
+| Server | `workflow-server`: the morning run emails a reminder once, through the queue, which is never sent to a browser, and the bell gets it at its time, one's own only; templates go to the team, not to partners. `actions`: the fourteen new actions through the hosted server |
+| Elsewhere | `workflow-model`, `workflow-server`, `storage`, `migrate`: data version 21 |
+
+Checked by hand against section 4 of the brief, the editor: the toolbar (undo, redo, block style, text size, bold,
+italic, underline, strikethrough, colour, highlight, alignment, bullets, numbers, checklist, indent, outdent, link,
+clear formatting), its shortcuts, saving 800 ms after the last keystroke with "Saving…" and "Saved @", "Save again" on
+a failure with the words kept, the warning before leaving, and pastes cleaned, are all there. Not there yet, for
+Phase 2: Ctrl or Cmd+S to save at once; Enter in a single-line field moving to the next, Esc putting the field back;
+Ctrl+Enter saving a multi-line field; Enter at the end of a run sheet or shot list row adding a row below.

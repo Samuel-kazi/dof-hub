@@ -2,6 +2,37 @@
 
 What changed in each version, newest first. How to deploy is in GO-LIVE.md.
 
+## Unreleased: the rework (build prompt v2)
+
+Phase 1, the foundations (no change on screen yet; each later part ships behind its own switch in Settings):
+
+- Data version 21: lists for equipment loans, role kits, Calendar reminders, the bell's notifications, the email queue
+  and Google calendar links, all empty; storyboards and shot lists can be templates, or belong to no project (kept in
+  Documents); a switch for each part of the rework. General Use records are left as they are; the upgrade's dry run
+  lists each with a proposal (with gear checkouts: a loan; otherwise archived) for a decision.
+- One view of every production instance, a recording session or a show day: date, label, times, place, status (draft,
+  published, done, cancelled) and call sheet. The Calendar, the urgency report and search will read from it.
+- Lending: a loan (DOF-LOAN-0001) to a borrower, with phone, organisation, items, date out and expected return. A
+  lent item is unavailable to bookings and the conflict check until its expected return, and once late until it is
+  checked in; the clash names the borrower and the date. Items come back a few at a time; a serialized item takes the
+  condition it came back in. A loan can be kept longer if its items are free, or called off before anything comes back.
+- Role kits: a role's usual gear (for example a camera operator with an FX3), offered on a call sheet item by item to
+  the matching roles, with what is not free that day marked. Nothing is booked until someone accepts an item.
+- Reminders on anything with a date (a session or show day, a call sheet, an episode's or project's due date, a
+  loan's return) or standing alone, at the time, an hour, a day or a week before, or any number of minutes. They
+  follow their item when its date moves. A reminder standing alone can repeat daily, weekly or monthly.
+- The bell keeps notifications for each person; email goes through the workspace's Google Workspace account
+  (SMTP_USER and SMTP_PASS on the server), from a queue: each message once, five tries, held through a person's
+  quiet hours. On Vercel's free plan email reminders must be a day or more ahead (see GO-LIVE.md).
+- The urgency report's rules: each project gets Critical, High, Watch or On track and its reasons in plain words (an
+  episode overdue; a session or show day within 24 hours with no published call sheet or items not assigned; a gear
+  clash; due within 48 hours; no producer after the greenlight; theological review not done; items not assigned;
+  call sheet details missing; no recording date within 14 days of a due date), and each late loan. The numbers are
+  in settings.
+- Storyboards and shot lists: "Save as template", templates and practice boards kept in Documents, and "Use template"
+  copying one into a project; editing the copy never changes the template.
+- The daily cron runs at 06:45 Nairobi time instead of 00:05.
+
 ## Unreleased: one production system, with the call sheet at its centre
 
 Being built in phases. Phase 1, the production core:

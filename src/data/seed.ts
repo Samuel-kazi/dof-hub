@@ -718,6 +718,13 @@ export function buildSeed(): Database {
         updatedAt: isoDay(-30),
       },
     ],
+    // Data version 21: lending, role kits, the Calendar's reminders and alerts, emails, Google calendar links.
+    loans: [],
+    roleKits: [],
+    calendarReminders: [],
+    notifications: [],
+    emailQueue: [],
+    googleSyncLinks: [],
     ...gear,
     settings: {
       stageReminderHours: 24,
@@ -726,6 +733,7 @@ export function buildSeed(): Database {
       workDays: [1, 2, 3, 4, 5],
       effortOverrides: {},
       appearance: { accent: "terracotta", fontPairing: "modern" },
+      features: {},
     },
     counters: {
       audit: 0,

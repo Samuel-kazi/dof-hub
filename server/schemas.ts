@@ -4,6 +4,7 @@ import { ACCENTS, FONT_PAIRINGS } from "../src/config/appearance";
 import { CONDITIONS, EQUIP_CATEGORIES } from "../src/config/equipment";
 import { ALL_CAPABILITIES } from "../src/config/permissions";
 import { CRITERIA, FORM_TYPES, PROJECT_ROLE_DEFS, SERIES_TYPES, SESSION_LABELS } from "../src/config/workflow";
+import { FEATURE_KEYS } from "../src/config/features";
 
 // Every change the browser may ask the server to make, and the exact shape of what it may send.
 //
@@ -177,7 +178,34 @@ const webLink = z.string().max(2048);
 const workflowStage = z.enum(["Development", "Pre-production", "Production", "Post production", "Marketing and distribution"]);
 /** A storyboard or shot list's picture: a stored file's address, or a photo just shrunk in the browser (filed by the server). */
 const image = z.string().max(2_000_000).nullable();
-const newBoard = z.object({ name: short(500), episodeId: id.nullable().optional(), copyFrom: id.nullable().optional() });
+const newBoard = z.object({
+  name: short(500),
+  episodeId: id.nullable().optional(),
+  copyFrom: id.nullable().optional(),
+  template: z.boolean().optional(),
+});
+const roleKit = z
+  .object({
+    role: short(120),
+    keywords: z.array(short(40)).max(20),
+    cameraModel: short(80),
+    items: z.array(line).max(60),
+    notes: text(2000),
+  })
+  .partial();
+const reminder = z
+  .object({
+    targetType: z.enum(["instance", "callsheet", "episode", "project", "loan"]).nullable(),
+    targetId: ref.nullable(),
+    title: short(200),
+    date,
+    time,
+    offsetMinutes: count(60 * 24 * 60),
+    channels: z.array(z.enum(["app", "email"])).max(2),
+    recipientIds: ids(50),
+    repeat: z.enum(["none", "daily", "weekly", "monthly"]),
+  })
+  .partial();
 const frameEdit = z
   .object({ scene: short(40), imagePath: image, description: short(500), soundEffects: short(500), videoLink: webLink })
   .partial();
@@ -243,6 +271,40 @@ export const ACTIONS: Record<string, ActionSpec> = {
   "locations.createLocation": args([z.object({ name: short(200), address: text(1000), notes: text(4000) }).partial()]),
   "locations.updateLocation": args([id, z.object({ name: short(200), address: text(1000), notes: text(4000) }).partial()]),
   "locations.archiveLocation": args([id, z.boolean()]),
+  // Lending (src/services/lending.ts) and role kits (src/services/kits.ts).
+  "lending.createLoan": args([
+    z.object({
+      borrowerName: short(120),
+      borrowerPhone: short(60).optional(),
+      organisation: short(160).optional(),
+      dateOut: date,
+      expectedReturn: date,
+      notes: text(2000).optional(),
+      lines: z.array(line).min(1).max(200),
+    }),
+  ]),
+  "lending.updateLoan": args([
+    id,
+    z
+      .object({ borrowerName: short(120), borrowerPhone: short(60), organisation: short(160), expectedReturn: date, notes: text(2000) })
+      .partial(),
+  ]),
+  "lending.returnLoanItems": args([
+    id,
+    z
+      .array(z.object({ equipmentId: id, quantity: count(100_000), condition, note: text(500).optional() }))
+      .min(1)
+      .max(200),
+  ]),
+  "lending.cancelLoan": args([id, text(1000)]),
+  "kits.createKit": args([roleKit]),
+  "kits.updateKit": args([id, roleKit]),
+  "kits.deleteKit": args([id]),
+  // The Calendar's reminders and the bell (src/services/alerts.ts).
+  "alerts.createReminder": args([reminder]),
+  "alerts.updateReminder": args([id, reminder]),
+  "alerts.deleteReminder": args([id]),
+  "alerts.markNotificationsRead": args([ids(1000)]),
 
   // Productions: recurring shows, one-time and multi-day events
   "production.createProduction": args([
@@ -547,6 +609,8 @@ export const ACTIONS: Record<string, ActionSpec> = {
   "settings.updateWorkspaceAppearance": args([
     z.object({ accent: enumOf(ACCENTS.map((a) => a.key)), fontPairing: enumOf(FONT_PAIRINGS.map((f) => f.key)) }).partial(),
   ]),
+  // Switching a part of the rework on or off (src/config/features.ts).
+  "settings.setFeature": args([enumOf(FEATURE_KEYS), z.boolean()]),
 
   // Storage
   "storage.createDrive": args([
@@ -700,7 +764,10 @@ export const ACTIONS: Record<string, ActionSpec> = {
   "documents.decideDocumentReview": args([compound, z.object({ status: z.enum(["approved", "changes_requested"]), note: text(5000) })]),
   "documents.addReviewComment": args([id, text(5000)]),
   "documents.resolveReviewComment": args([id], [z.boolean()]),
-  "documents.createStoryboard": args([id, newBoard]),
+  // A project's Content ID, or null for one kept in Documents (a template, or one for practice or an event).
+  "documents.createStoryboard": args([id.nullable(), newBoard]),
+  "documents.saveStoryboardAsTemplate": args([id, short(500)]),
+  "documents.saveShotListAsTemplate": args([id, short(500)]),
   "documents.renameStoryboard": args([id, short(500)]),
   "documents.addFrame": args([id], [frameEdit]),
   "documents.updateFrame": args([id, frameEdit]),
@@ -708,7 +775,7 @@ export const ACTIONS: Record<string, ActionSpec> = {
   "documents.duplicateFrame": args([id]),
   "documents.deleteFrames": args([ids(500)]),
   "documents.moveFramesTo": args([ids(500), id]),
-  "documents.createShotList": args([id, newBoard]),
+  "documents.createShotList": args([id.nullable(), newBoard]),
   "documents.renameShotList": args([id, short(500)]),
   "documents.addShotRow": args([id, z.enum(["shot", "setup", "banner"])], [rowEdit]),
   "documents.updateShotRow": args([id, rowEdit]),
@@ -750,6 +817,7 @@ export const NOT_ACTIONS: Record<string, string> = {
   "content.makeDay": "internal step of making a production's days",
   "production.canPlanShow": "read only",
   "locations.canKeepLocations": "read only",
+  "documents.canKeepLibrary": "read only",
   "equipment.rebookSheetGear": "internal step of moving a call sheet",
   "equipment.releaseSheetGear": "internal step of deleting a call sheet",
   "permissions.can": "read only",

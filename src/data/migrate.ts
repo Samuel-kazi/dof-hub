@@ -625,3 +625,25 @@ export function upgradeToV20(db: Database): Database {
   db.schemaVersion = 20;
   return db;
 }
+
+/**
+ * Version 21: the rework's foundations (build prompt v2). Adds the lists for equipment loans, role kits, the
+ * Calendar's reminders, in-app notifications, the email queue and Google calendar links, all empty; marks every
+ * storyboard and shot list as a project's own, not a template; and gives the settings their switches for each part of
+ * the rework (empty: each part's default). General Use records are left exactly as they are: what becomes of them is
+ * decided from the dry-run report (src/data/reworkReport.ts). Nothing is moved or deleted. Running it again changes
+ * nothing.
+ */
+export function upgradeToV21(db: Database): Database {
+  db.loans ??= [];
+  db.roleKits ??= [];
+  db.calendarReminders ??= [];
+  db.notifications ??= [];
+  db.emailQueue ??= [];
+  db.googleSyncLinks ??= [];
+  for (const b of db.storyboards ?? []) b.isTemplate ??= false;
+  for (const l of db.shotLists ?? []) l.isTemplate ??= false;
+  db.settings.features ??= {};
+  db.schemaVersion = 21;
+  return db;
+}

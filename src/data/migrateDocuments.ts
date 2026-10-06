@@ -445,6 +445,7 @@ export function migrateDocuments(db: Database, options: DocumentMigrationOptions
       const list: ShotList = {
         id: localId("SL"),
         contentId: p.contentId,
+        isTemplate: false,
         episodeId: null,
         name: "Camera plan (from before the documents)",
         position: db.shotLists.filter((l) => l.contentId === p.contentId).length,

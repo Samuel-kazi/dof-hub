@@ -213,7 +213,7 @@ function FrameCard({
       </header>
       <ImageSlot
         path={frame.imagePath}
-        projectId={board.contentId}
+        projectId={board.contentId ?? "documents"}
         write={write}
         label={`frame ${n}`}
         onChange={(imagePath) => save({ imagePath })}

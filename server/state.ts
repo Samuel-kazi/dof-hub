@@ -9,6 +9,7 @@ import { can } from "../src/services/permissions";
 import { redactPerson, visibleCallSheets, visibleRecords } from "../src/services/access";
 import { APPEND_ONLY, KEYS, LOG_KEYS, assemble, elementsOf, extractFiles, loadedKeys, toItems, versionedKeys } from "./layout";
 import type { Commit, FileDoc, Head, Item, Store } from "./stores";
+import { describeRework, reworkReport, type ReworkReport } from "../src/data/reworkReport";
 
 setPersist(false); // the server never writes to a browser's storage
 
@@ -152,6 +153,7 @@ export interface UpgradeReport {
   applied: boolean;
   backup: string | null;
   parts: { part: string; before: number; after: number; written: number; removed: number }[];
+  rework?: ReworkReport; // what the rework needs decided about the data (src/data/reworkReport.ts)
 }
 
 async function countsOf(store: Store): Promise<Record<string, number>> {
@@ -177,10 +179,14 @@ export async function upgradeStore(store: Store, apply: boolean): Promise<Upgrad
     backup: null,
     parts: KEYS.map((k) => ({ part: k, before: before[k], after: before[k], written: 0, removed: 0 })),
   };
-  if (head.schemaVersion === CURRENT_SCHEMA) return report;
   const base = build(head, await store.state.items(loadedKeys()));
+  if (head.schemaVersion === CURRENT_SCHEMA) {
+    report.rework = reworkReport(base.db);
+    return report;
+  }
   const up = upgradeDb(structuredClone(base.db));
   if (!up) throw new Error(`The saved data is from version ${head.schemaVersion}, which this app does not know.`);
+  report.rework = reworkReport(up);
   const change = diff(base, up);
   change.expect = Object.fromEntries(versionedKeys().map((k) => [k, base.head.versions[k] ?? 0]));
   for (const p of report.parts) {
@@ -277,6 +283,7 @@ export function describeUpgrade(r: UpgradeReport): string {
     ...(r.backup ? [`A copy of the data before the upgrade is in ${r.backup}.`] : []),
     "  part                     before → after",
     ...rows,
+    ...(r.rework ? describeRework(r.rework) : []),
   ].join("\n");
 }
 
@@ -426,9 +433,11 @@ export async function snapshotFor(store: Store, actor: Actor): Promise<{ revisio
     // Project documents, storyboards and shot lists go with the projects they belong to.
     const documents = (db.projectDocuments ?? []).filter((d) => ids.has(d.contentId));
     const documentIds = new Set(documents.map((d) => d.id));
-    const boards = (db.storyboards ?? []).filter((b) => ids.has(b.contentId));
+    // Those kept in Documents (templates, and boards for practice or an event) go to everyone but partners.
+    const library = (contentId: string | null) => (contentId ? ids.has(contentId) : actor.role !== "PTR");
+    const boards = (db.storyboards ?? []).filter((b) => library(b.contentId));
     const boardIds = new Set(boards.map((b) => b.id));
-    const lists = (db.shotLists ?? []).filter((l) => ids.has(l.contentId));
+    const lists = (db.shotLists ?? []).filter((l) => library(l.contentId));
     const listIds = new Set(lists.map((l) => l.id));
     const sheets = visibleCallSheets(actor);
     const sheetLocationIds = new Set(sheets.map((c) => c.locationId).filter((x): x is string => !!x));
@@ -482,6 +491,16 @@ export async function snapshotFor(store: Store, actor: Actor): Promise<{ revisio
       showTemplates: (db.showTemplates ?? []).filter((t) => ids.has(t.contentId)),
       // Saved locations are for the team; a partner sees only those on the call sheets they can see.
       locations: actor.role === "PTR" ? (db.locations ?? []).filter((l) => sheetLocationIds.has(l.id)) : (db.locations ?? []),
+      // Loans and role kits go to people who use the equipment. Reminders to the people who made them or get them,
+      // notifications and Google calendar links to their own person. The email queue never leaves the server.
+      loans: can(actor, "equipment.use") ? (db.loans ?? []) : [],
+      roleKits: can(actor, "equipment.use") ? (db.roleKits ?? []) : [],
+      calendarReminders: (db.calendarReminders ?? []).filter(
+        (r) => hop || r.createdBy === actor.personId || r.recipientIds.includes(actor.personId),
+      ),
+      notifications: (db.notifications ?? []).filter((n) => n.personId === actor.personId),
+      emailQueue: [],
+      googleSyncLinks: (db.googleSyncLinks ?? []).filter((g) => g.personId === actor.personId),
       outbox: can(actor, "reminders.sendOthers") ? db.outbox : db.outbox.filter((o) => o.personId === actor.personId),
       settings,
       counters: db.counters,
