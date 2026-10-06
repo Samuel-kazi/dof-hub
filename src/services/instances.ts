@@ -30,7 +30,13 @@ export function lockInstanceOfSheet(actor: Actor, sheetId: string): void {
 }
 
 /** How many days before (minus) or after the day itself each stage of a live day is due. */
-const LIVE_STAGE_OFFSETS: Record<string, number> = { Prep: -3, Build: -1, Rehearse: 0, Show: 0, Wrap: 0, Review: 3, "Post Production": 7 };
+const LIVE_STAGE_OFFSETS: Record<string, number> = {
+  Development: -7,
+  "Pre-production": -1,
+  Production: 0,
+  "Post production": 3,
+  "Marketing and distribution": 7,
+};
 
 /**
  * Sets a day's stage deadlines from its own date, so a day weeks ahead is not due this week: prepared in the days

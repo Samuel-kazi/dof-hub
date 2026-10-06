@@ -1,5 +1,18 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import type { CheckItem, ContactEntry, GearRequest, Person, RunItem, SavedLocation, SheetContent, TalentEntry } from "../../types";
+import type {
+  CheckItem,
+  ContactEntry,
+  GearRequest,
+  Person,
+  RunItem,
+  RunStatus,
+  SavedLocation,
+  SheetContent,
+  TalentEntry,
+} from "../../types";
+
+// A live show's segments also say where they stand on the night.
+const RUN_STATUSES: RunStatus[] = ["Planned", "Live", "Done", "Cut"];
 import { LOGISTICS_FIELDS, SHEET_SECTIONS, type SheetSectionKey } from "../../config/callSheet";
 import { getDb } from "../../data/store";
 import { localId } from "../../data/ids";
@@ -701,7 +714,13 @@ const endOf = (time: string, minutes: number): string => {
   return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
 };
 
-export function RunOfShowSection({ value, editable, onChange, required }: SectionProps & { required?: boolean }) {
+export function RunOfShowSection({
+  value,
+  editable,
+  onChange,
+  required,
+  live = false,
+}: SectionProps & { required?: boolean; live?: boolean }) {
   const { update, remove, add } = useRows<RunItem>(value.runOfShow, "runOfShow", onChange);
   // Enter in a row's last field adds a row below it, and the cursor goes to the new row's segment.
   const focusRow = useFocusRow('input[aria-label="Segment"]');
@@ -739,6 +758,15 @@ export function RunOfShowSection({ value, editable, onChange, required }: Sectio
                 <th>Segment</th>
                 <th>Minutes</th>
                 <th>Who</th>
+                {live && (
+                  <>
+                    <th>Camera</th>
+                    <th>Audio</th>
+                    <th>Graphics</th>
+                    <th>Status</th>
+                    <th>Actual</th>
+                  </>
+                )}
                 <th>Notes</th>
                 {editable && <th />}
               </tr>
@@ -792,6 +820,48 @@ export function RunOfShowSection({ value, editable, onChange, required }: Sectio
                       ))}
                     </select>
                   </td>
+                  {live && (
+                    <>
+                      {(["camera", "audio", "graphics"] as const).map((k) => (
+                        <td key={k}>
+                          <SavedInput
+                            aria-label={`${k.charAt(0).toUpperCase() + k.slice(1)} for ${it.title}`}
+                            value={it[k] ?? ""}
+                            disabled={!editable}
+                            onSave={(v) => update(it.id, { [k]: v.trim() })}
+                          />
+                        </td>
+                      ))}
+                      <td>
+                        <select
+                          aria-label={`Status of ${it.title}`}
+                          value={it.status ?? "Planned"}
+                          disabled={!editable}
+                          onChange={(e) => update(it.id, { status: e.target.value as RunStatus })}
+                        >
+                          {RUN_STATUSES.map((st) => (
+                            <option key={st}>{st}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="cs-actual">
+                        <input
+                          type="time"
+                          aria-label={`Actual start of ${it.title}`}
+                          value={it.actualStart ?? ""}
+                          disabled={!editable}
+                          onChange={(e) => update(it.id, { actualStart: e.target.value })}
+                        />
+                        <input
+                          type="time"
+                          aria-label={`Actual end of ${it.title}`}
+                          value={it.actualEnd ?? ""}
+                          disabled={!editable}
+                          onChange={(e) => update(it.id, { actualEnd: e.target.value })}
+                        />
+                      </td>
+                    </>
+                  )}
                   <td>
                     <SavedInput
                       aria-label={`Notes on ${it.title}`}

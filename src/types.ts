@@ -174,11 +174,12 @@ export interface InstanceInfo {
   locked: boolean; // edited by hand: later template changes pass it by, until it is reset to the template
   lockedAt: string | null;
   lockedBy: string | null;
+  label?: string | null; // Morning, Afternoon, Evening, Late night, Full day, or a name of its own
 }
 
 /** When a recurring show happens. Dates are YYYY-MM-DD; weekdays 0 (Sunday) to 6 (Saturday). */
 export interface RecurrenceRule {
-  freq: "weekly" | "monthly";
+  freq: "daily" | "weekly" | "monthly";
   interval: number; // every N weeks or months
   weekdays: number[]; // weekly: the days of the week
   monthDay: number | null; // monthly: this day of the month (a shorter month uses its last day)
@@ -272,7 +273,8 @@ export interface ShowTemplate {
   sheet: SheetContent;
   productionLevel: ProductionLevel | null; // each day's level of production
   ownerPersonId: string | null; // responsible for each day
-  horizonWeeks: number; // how far ahead days are made
+  horizonWeeks: number; // how far ahead days are made, in weeks, unless horizonCount is set
+  horizonCount?: number | null; // or: the next so many dates (build prompt v2: the next 8 by default)
   version: number;
   createdAt: string;
   updatedAt: string;
@@ -652,7 +654,17 @@ export interface RunItem {
   durationMin: number;
   ownerPersonId: string | null;
   notes: string;
+  // A live show's run of show also has these (build prompt v2, section 7): who is on camera, audio and graphics for
+  // the segment, where it stands on the night, and when it actually started and ended.
+  camera?: string;
+  audio?: string;
+  graphics?: string;
+  status?: RunStatus;
+  actualStart?: string; // HH:MM
+  actualEnd?: string;
 }
+
+export type RunStatus = "Planned" | "Live" | "Done" | "Cut";
 
 export interface CallSheet extends SheetContent {
   id: string; // DOF-CS-001

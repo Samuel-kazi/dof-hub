@@ -11,7 +11,16 @@ import { DOCUMENT_PARTS, WORKFLOW_PARTS, integrityProblems, uniqueViolations } f
 import { buildWorkflowFixture } from "../src/data/seedWorkflow";
 import { buildSeed } from "../src/data/seed";
 import { upgradeDb, CURRENT_SCHEMA, commit, enableRollback, getDb, setDb, transaction } from "../src/data/store";
-import { upgradeToV15, upgradeToV16, upgradeToV17, upgradeToV18, upgradeToV19, upgradeToV20, upgradeToV21 } from "../src/data/migrate";
+import {
+  upgradeToV15,
+  upgradeToV16,
+  upgradeToV17,
+  upgradeToV18,
+  upgradeToV19,
+  upgradeToV20,
+  upgradeToV21,
+  upgradeToV22,
+} from "../src/data/migrate";
 import { codeNumber, episodeCode, episodeCounter, plannedEpisodeId, plannedCounter, sessionCode, sessionCounter } from "../src/data/ids";
 import { addDaysIso, dateInNairobi, hoursUntilEndOfDay, isIsoDate, todayIso } from "../src/services/utils";
 
@@ -52,11 +61,11 @@ t("series, devotions and documentaries use the workflow; Live Shows, Music and G
   for (const c of CATEGORIES) assert.equal(isWorkflowCategory(c.key), !!c.workflow);
   assert.deepEqual(
     categoryOf("live").stages.map((s) => s.name),
-    ["Prep", "Build", "Rehearse", "Show", "Wrap", "Review", "Post Production"],
+    ["Development", "Pre-production", "Production", "Post production", "Marketing and distribution"],
   );
   assert.deepEqual(
     categoryOf("music").stages.map((s) => s.name),
-    ["Idea", "Pre-production", "Recording", "Audio post-production", "Video editing", "Review", "Publish"],
+    ["Development", "Pre-production", "Production", "Post production", "Marketing and distribution"],
   );
   assert.deepEqual(
     categoryOf("general").stages.map((s) => s.name),
@@ -255,7 +264,7 @@ t("upgrading to versions 15 to 21 adds the workflow's and the documents' lists a
   const before = JSON.stringify(old);
   const up = upgradeDb(JSON.parse(before) as Database)!;
   assert.equal(up.schemaVersion, CURRENT_SCHEMA);
-  assert.equal(CURRENT_SCHEMA, 21);
+  assert.equal(CURRENT_SCHEMA, 22);
   for (const k of [...WORKFLOW_PARTS, ...DOCUMENT_PARTS]) assert.deepEqual(up[k], []);
   const was = JSON.parse(before) as Database;
   // Version 19 makes each live show a production (tests/production.test.ts); every other record is unchanged.
@@ -272,7 +281,7 @@ t("upgrading to versions 15 to 21 adds the workflow's and the documents' lists a
     "every record is exactly as it was, plus empty fields",
   );
   const twice = JSON.stringify(
-    upgradeToV21(upgradeToV20(upgradeToV19(upgradeToV18(upgradeToV17(upgradeToV16(upgradeToV15(structuredClone(up)))))))),
+    upgradeToV22(upgradeToV21(upgradeToV20(upgradeToV19(upgradeToV18(upgradeToV17(upgradeToV16(upgradeToV15(structuredClone(up))))))))),
   );
   assert.equal(twice, JSON.stringify(up), "running it again changes nothing");
   assert.equal(upgradeDb(up), up, "data already at the current version is left alone");
@@ -285,7 +294,7 @@ t("upgrading to version 17 moves every workflow project's Development form into 
   old.schemaVersion = 16;
   const formsBefore = JSON.stringify(old.developmentForms);
   const up = upgradeDb(structuredClone(old))!;
-  assert.equal(up.schemaVersion, 21);
+  assert.equal(up.schemaVersion, 22);
   assert.equal("newDocuments" in up.settings, false, "the setting is gone");
   for (const [id, key] of [
     ["DOF-SER-001-S1", "show_brief"],
@@ -298,7 +307,7 @@ t("upgrading to version 17 moves every workflow project's Development form into 
     );
   assert.equal(JSON.stringify(up.developmentForms), formsBefore, "the old forms are left exactly as they were");
   assert.equal(up.audit.filter((a) => a.action === "migrate-documents" && a.byPersonId === "system").length, 1);
-  const again = JSON.stringify(upgradeToV21(upgradeToV20(upgradeToV19(upgradeToV18(upgradeToV17(structuredClone(up)))))));
+  const again = JSON.stringify(upgradeToV22(upgradeToV21(upgradeToV20(upgradeToV19(upgradeToV18(upgradeToV17(structuredClone(up))))))));
   assert.equal(again, JSON.stringify(up), "running it again changes nothing");
   assert.deepEqual(integrityProblems(up), []);
 });
@@ -328,7 +337,7 @@ t("upgrading to version 18 gives a devotion's call sheets their sessions in its 
   }
   old.schemaVersion = 17;
   const up = upgradeDb(structuredClone(old))!;
-  assert.equal(up.schemaVersion, 21);
+  assert.equal(up.schemaVersion, 22);
   const made = up.recordingSessions.filter((s) => s.contentId === "DOF-DEV-001");
   assert.equal(made.length, 1, "one session for the sheet");
   const [s] = made;
@@ -346,7 +355,7 @@ t("upgrading to version 18 gives a devotion's call sheets their sessions in its 
   // Every session has the new fields, empty; roles their order.
   for (const x of up.recordingSessions) assert.equal(x.storageDriveId, null);
   for (const r of up.projectRoles) assert.equal(typeof r.position, "number");
-  const again = JSON.stringify(upgradeToV21(upgradeToV20(upgradeToV19(upgradeToV18(structuredClone(up))))));
+  const again = JSON.stringify(upgradeToV22(upgradeToV21(upgradeToV20(upgradeToV19(upgradeToV18(structuredClone(up)))))));
   assert.equal(again, JSON.stringify(up), "running it again changes nothing");
   assert.deepEqual(integrityProblems(up), []);
   // A devotion still in Development, or a series, keeps its sheets as they are.

@@ -46,7 +46,20 @@ const line = z.object({ equipmentId: id, quantity: count(100_000) });
 
 // A call sheet's sections, as a sheet or a show template holds them (src/config/callSheet.ts). Every field optional:
 // a change sends only what changed. The services check the rest (times, crew, lengths).
-const runItem = z.object({ id, time, title: short(), durationMin: count(600), ownerPersonId: ref.nullable(), notes: text(2000) });
+const runItem = z.object({
+  id,
+  time,
+  title: short(),
+  durationMin: count(600),
+  ownerPersonId: ref.nullable(),
+  notes: text(2000),
+  camera: short(120).optional(),
+  audio: short(120).optional(),
+  graphics: short(120).optional(),
+  status: z.enum(["Planned", "Live", "Done", "Cut"]).optional(),
+  actualStart: z.union([time, z.literal("")]).optional(),
+  actualEnd: z.union([time, z.literal("")]).optional(),
+});
 const sheetContent = z
   .object({
     callTime: time,
@@ -73,7 +86,7 @@ const sheetContent = z
   .partial();
 /** When a recurring show happens (src/services/recurrence.ts checks the rest). */
 const recurrence = z.object({
-  freq: z.enum(["weekly", "monthly"]),
+  freq: z.enum(["daily", "weekly", "monthly"]),
   interval: count(12),
   weekdays: z.array(count(6)).max(7),
   monthDay: count(31).nullable(),
@@ -325,8 +338,20 @@ export const ACTIONS: Record<string, ActionSpec> = {
   "production.setShowSchedule": args([id, recurrence]),
   "production.updateShowTemplate": args([
     id,
-    z.object({ sheet: sheetContent, productionLevel: level.nullable(), ownerPersonId: ref.nullable(), horizonWeeks: count(26) }).partial(),
+    z
+      .object({
+        sheet: sheetContent,
+        productionLevel: level.nullable(),
+        ownerPersonId: ref.nullable(),
+        horizonWeeks: count(26),
+        horizonCount: count(52),
+        from: date,
+      })
+      .partial(),
   ]),
+  "production.applyDayToFuture": args([id]),
+  "production.cancelDay": args([id, short(500)]),
+  "production.setDayLabel": args([id, short(60)]),
   "production.resetToTemplate": args([id]),
   "production.topUpShow": args([id]),
   "production.updateEventPlan": args([id, eventPlan]),

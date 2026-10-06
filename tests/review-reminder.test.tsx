@@ -194,7 +194,8 @@ await t("the project says the review is not done, above its home and every docum
   D.noteUnreviewed(crew(4), WOW, { action: "publish-sheet", targetId: "DOF-CS-001", note: "Crew needed it today" });
   const page = html(hop(), <WorkflowProjectPage project={project(WOW)} />);
   for (const text of [
-    "Theological review not done.",
+    "New theological review requested.",
+    "earlier: approved on the earlier review checkpoints",
     "0 of 1 reviewers have approved",
     "Open the review",
     "Gone ahead without it 1 time",

@@ -154,7 +154,7 @@ function itemsFor(personId: string, asOf: string): { items: LoadItem[]; undated:
         items.push({
           id: `${r.contentId}#shoot`,
           kind: "shoot",
-          label: `${cfg.footageStage === "Show" ? "Show" : "Shoot"}: ${subject}`,
+          label: `${cfg.key === "live" ? "Show" : "Shoot"}: ${subject}`,
           contentId: r.contentId,
           effort: 1,
           from: r.scheduledDate,

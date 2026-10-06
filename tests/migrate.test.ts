@@ -193,9 +193,9 @@ const { categoryOf } = await import("../src/config/categories");
 const W = await import("../src/services/workload");
 
 const db = getDb();
-assert.equal(db.schemaVersion, 21);
+assert.equal(db.schemaVersion, 22);
 assert.deepEqual(db.outbox, [], "the record of sent reminders exists");
-assert.equal(store["dof-hub-db-before-v21"], JSON.stringify(old), "a copy of the saved data is kept before it is upgraded");
+assert.equal(store["dof-hub-db-before-v22"], JSON.stringify(old), "a copy of the saved data is kept before it is upgraded");
 for (const part of [
   "developmentForms",
   "plannedEpisodes",
@@ -258,9 +258,9 @@ if (from === "1" || from === "2") {
   const stages = categoryOf("music").stages.map((s) => s.name);
   const t02 = db.records.find((r) => r.contentId === "DOF-MUS-001-A1-T02")!;
   assert.ok(stages.includes(t02.pipelineStage!), "old music stage is mapped");
-  assert.equal(t02.pipelineStage, "Idea");
+  assert.equal(t02.pipelineStage, "Development");
   assert.deepEqual(Object.keys(t02.stageOutputs), stages);
-  assert.equal(t02.stageDeadlines.Idea, "2030-01-05", "the item keeps its own due date");
+  assert.equal(t02.stageDeadlines.Development, "2030-01-05", "the item keeps its own due date");
 }
 // The current stage gets its documents and checklist.
 assert.ok(db.docs.length > 0 && db.docs.every((d) => db.docRevisions.some((v) => v.docId === d.id)), "documents have history");
@@ -272,11 +272,14 @@ const liveDay = db.records.find((r) => r.contentId === "DOF-LIVE-001-D1")!;
 assert.equal(liveShow.pipelineStage, null, "the show itself has no pipeline");
 assert.equal(liveDay.hierarchyLevel, 1);
 assert.equal(liveDay.parentId, "DOF-LIVE-001");
-assert.equal(liveDay.pipelineStage, "Show");
+assert.equal(liveDay.pipelineStage, "Production", "the show day, now on the five stages");
 if (from === "4" || from === "5") assert.equal(liveDay.productionLevel, "large", "the level moves to the day");
 assert.equal(liveDay.postProductionNeeded, null, "the post-production question is unanswered on old data");
 assert.equal(liveDay.spunOffFrom, null);
-assert.ok("Wrap" in liveDay.stageOutputs && liveDay.stageOutputs.Wrap === false, "the new Wrap stage exists, not yet confirmed");
+assert.ok(
+  "Production" in liveDay.stageOutputs && liveDay.stageOutputs.Production === false,
+  "the show and strike stage exists, not yet confirmed",
+);
 if (from === "8") {
   assert.equal(liveShow.strikePattern, null);
   assert.equal(liveShow.strikeChecklist, null);

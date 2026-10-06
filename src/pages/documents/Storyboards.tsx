@@ -14,12 +14,19 @@ import {
   storyboardsOf,
   updateFrame,
   type FrameEdit,
+  saveStoryboardAsTemplate,
 } from "../../services/wrapped/documents";
-import type { Project } from "../../services/wrapped/workflow";
 import { useApp } from "../../ui/AppContext";
 import { Modal } from "../../ui/Modal";
 import { Empty, Field } from "../../ui/parts";
 import { episodesOfProject, ImageSlot, SavedInput, startingPoints } from "./toolkit";
+import { canKeepLibrary } from "../../services/documents/boards";
+import { useReason } from "../workflow/common";
+
+/** Where boards belong: a project, or with no Content ID the Documents library (templates, practice boards). */
+export interface BoardScope {
+  contentId: string | null;
+}
 
 // The Storyboard, in Pre-production: the project's boards on the left, each with its number of frames, and "+ New
 // storyboard", which can start as a copy of any board the person may see. The chosen board's frames sit in a grid,
@@ -34,7 +41,7 @@ export function NewBoardModal({
   onMade,
   onClose,
 }: {
-  project: Project;
+  project: BoardScope;
   kind: "storyboard" | "shotList";
   onMade: (id: string) => void;
   onClose: () => void;
@@ -45,10 +52,11 @@ export function NewBoardModal({
   const [copyFrom, setCopyFrom] = useState("");
   const db = getDb();
   const groups = startingPoints(actor, kind === "storyboard" ? db.storyboards : db.shotLists);
-  const episodes = episodesOfProject(project.contentId);
+  const episodes = project.contentId ? episodesOfProject(project.contentId) : [];
+  const [template, setTemplate] = useState(!project.contentId);
   const what = kind === "storyboard" ? "storyboard" : "shot list";
   const make = () => {
-    const input = { name, episodeId: episodeId || null, copyFrom: copyFrom || null };
+    const input = { name, episodeId: episodeId || null, copyFrom: copyFrom || null, template: !project.contentId && template };
     const made = attempt(
       () => (kind === "storyboard" ? createStoryboard(actor, project.contentId, input) : createShotList(actor, project.contentId, input)),
       copyFrom ? `New ${what}, started from the one you chose` : `New ${what}`,
@@ -80,16 +88,23 @@ export function NewBoardModal({
             autoFocus
           />
         </Field>
-        <Field label="For one episode (optional)">
-          <select value={episodeId} onChange={(e) => setEpisodeId(e.target.value)}>
-            <option value="">The whole project</option>
-            {episodes.map((ep) => (
-              <option key={ep.contentId} value={ep.contentId}>
-                {ep.contentId}: {ep.title}
-              </option>
-            ))}
-          </select>
-        </Field>
+        {project.contentId ? (
+          <Field label="For one episode (optional)">
+            <select value={episodeId} onChange={(e) => setEpisodeId(e.target.value)}>
+              <option value="">The whole project</option>
+              {episodes.map((ep) => (
+                <option key={ep.contentId} value={ep.contentId}>
+                  {ep.contentId}: {ep.title}
+                </option>
+              ))}
+            </select>
+          </Field>
+        ) : (
+          <label className="check">
+            <input type="checkbox" checked={template} onChange={(e) => setTemplate(e.target.checked)} />
+            <span>A template, for projects to start from (otherwise kept here for practice or an event)</span>
+          </label>
+        )}
         <Field label="Start from">
           <select value={copyFrom} onChange={(e) => setCopyFrom(e.target.value)}>
             <option value="">A blank {what}</option>
@@ -282,8 +297,9 @@ function MoveFramesModal({ ids, others, onClose }: { ids: string[]; others: Stor
   );
 }
 
-function BoardView({ project, board, write }: { project: Project; board: Storyboard; write: boolean }) {
+function BoardView({ project, board, write }: { project: BoardScope; board: Storyboard; write: boolean }) {
   const { actor, attempt, confirm } = useApp();
+  const [ask, askModal] = useReason();
   const frames = framesOf(board.id);
   const others = storyboardsOf(project.contentId).filter((b) => b.id !== board.id);
   const [selected, setSelected] = useState<string[]>([]);
@@ -305,9 +321,26 @@ function BoardView({ project, board, write }: { project: Project; board: Storybo
           <h3>{board.name}</h3>
         )}
         {episode && <span className="badge">{episode.contentId}</span>}
+        {board.isTemplate && <span className="badge accent">Template</span>}
         <span className="muted">
           {frames.length} frame{frames.length === 1 ? "" : "s"}
         </span>
+        {project.contentId && canKeepLibrary(actor) && (
+          <button
+            className="btn small ghost"
+            onClick={async () => {
+              const name = await ask(
+                "Save as a template",
+                "The template's name. A copy goes to Documents, Templates; this board stays as it is.",
+                "Save as template",
+              );
+              if (name) attempt(() => saveStoryboardAsTemplate(actor, board.id, name), "Saved as a template in Documents");
+            }}
+          >
+            Save as template
+          </button>
+        )}
+        {askModal}
       </div>
       {write && frames.length > 0 && (
         <div className="pd-bulk">
@@ -385,7 +418,7 @@ function BoardView({ project, board, write }: { project: Project; board: Storybo
   );
 }
 
-export function StoryboardTool({ project, write }: { project: Project; write: boolean }) {
+export function StoryboardTool({ project, write }: { project: BoardScope; write: boolean }) {
   const boards = storyboardsOf(project.contentId);
   const [chosen, setChosen] = useState<string | null>(null);
   const [making, setMaking] = useState(false);

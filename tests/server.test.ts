@@ -306,13 +306,13 @@ await t("the server enforces the same rules as the app: view-only, jump in, and 
   const crew = await loginFor(hop, "DOF-P-CRW-002", "brian");
   assert.equal((await crew.act("content.addTask", "DOF-LIVE-001-D1", { label: "x" })).status, 400, "not on that project");
   assert.equal(
-    (await crew.act("content.addStageOwner", "DOF-LIVE-001-D1", "Show", "DOF-P-CRW-002", ["Camera operator"])).status,
+    (await crew.act("content.addStageOwner", "DOF-LIVE-001-D1", "Production", "DOF-P-CRW-002", ["Camera operator"])).status,
     200,
     "jumping in is allowed",
   );
   assert.equal((await crew.act("content.addTask", "DOF-LIVE-001-D1", { label: "x" })).status, 200, "and then they can help");
   assert.equal(
-    (await crew.act("content.addStageOwner", "DOF-LIVE-001-D1", "Show", "DOF-P-CRW-003", [])).status,
+    (await crew.act("content.addStageOwner", "DOF-LIVE-001-D1", "Production", "DOF-P-CRW-003", [])).status,
     400,
     "but not put others on it",
   );
@@ -428,6 +428,7 @@ await t("a wrong request body is a clear error, not a crash", async () => {
 // ── Google (Google itself is pretended) ──
 const realFetch = globalThis.fetch;
 const googleCalls: { url: string; body: string; auth?: string }[] = [];
+const googleEvents = new Set<string>();
 function pretendGoogle(opts: { calendar409?: boolean } = {}) {
   googleCalls.length = 0;
   globalThis.fetch = (async (input: any, init?: any) => {
@@ -449,7 +450,15 @@ function pretendGoogle(opts: { calendar409?: boolean } = {}) {
       const id = `x.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.y`;
       return new Response(JSON.stringify({ id_token: id, refresh_token: "REFRESH-SECRET", access_token: "ACCESS" }), { status: 200 });
     }
-    if (url.includes("/calendar/v3/")) return new Response("{}", { status: opts.calendar409 ? 409 : 200 });
+    if (url.includes("/calendar/v3/")) {
+      // Like Google: an event is updated where it is (404 if there is none), and added once (409 the second time).
+      const id = url.match(/\/events\/([0-9a-f]+)$/)?.[1];
+      if (init?.method === "PUT") return new Response("{}", { status: opts.calendar409 || googleEvents.has(id!) ? 200 : 404 });
+      const made = JSON.parse(String(init?.body ?? "{}")).id as string;
+      if (opts.calendar409 || googleEvents.has(made)) return new Response("{}", { status: 409 });
+      googleEvents.add(made);
+      return new Response("{}", { status: 200 });
+    }
     return new Response("{}", { status: 200 });
   }) as typeof fetch;
 }
@@ -539,15 +548,16 @@ await t("reminders can go into the person's Google Calendar, once each", async (
     const r = await crew.post("/api/google/calendar");
     assert.equal(r.status, 200);
     assert.ok(r.json.added > 0 && r.json.failed === 0, JSON.stringify(r.json));
-    const events = googleCalls.filter((c) => c.url.includes("/calendar/v3/"));
+    // Each item is tried as an update first (Google has none yet), then added.
+    const events = googleCalls.filter((c) => c.url.endsWith("/calendar/v3/calendars/primary/events"));
     assert.equal(events.length, r.json.added);
     assert.ok(events.every((e) => e.auth === "Bearer ACCESS"));
     const ids = events.map((e) => JSON.parse(e.body).id);
     assert.equal(new Set(ids).size, ids.length);
     assert.ok(ids.every((id: string) => /^[0-9a-f]{40}$/.test(id)));
-    pretendGoogle({ calendar409: true });
+    pretendGoogle();
     const again = await crew.post("/api/google/calendar");
-    assert.deepEqual([again.json.added, again.json.already > 0], [0, true]);
+    assert.deepEqual([again.json.added, again.json.already > 0], [0, true], "synced again: updated where they are, none added twice");
   } finally {
     globalThis.fetch = realFetch;
   }

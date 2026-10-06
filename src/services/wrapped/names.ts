@@ -181,9 +181,12 @@ export const RPC_NAMES: Record<string, string[]> = {
   ],
   "production": [
     "addEventDay",
+    "applyDayToFuture",
     "canPlanShow",
+    "cancelDay",
     "createProduction",
     "resetToTemplate",
+    "setDayLabel",
     "setShowSchedule",
     "topUpShow",
     "updateEventPlan",

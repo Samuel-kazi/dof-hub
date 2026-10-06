@@ -121,12 +121,13 @@ await t("accepting a devotion lists the usual roles; each is renamed, added or r
   throwsRule(() => W.setRolePerson(producer(), roles[0].id, "DOF-P-VOL-001"), /crew/i);
   W.setRolePerson(producer(), roles[0].id, null);
   assert.ok(gate().missing.includes("Role: Director needs a person"));
-  // A series keeps its required roles.
+  // A series' roles are its Recording Plan's too: each one needs a person.
   const wowRole = getDb().projectRoles.find((r) => r.contentId === WOW && r.roleKey === REQUIRED_ROLES[0])!;
   assert.ok(wowRole, "the fixture's season has the role");
-  getDb().projectRoles = getDb().projectRoles.filter((r) => r !== wowRole);
-  assert.ok(W.evaluateGate("Pre-production", "project", WOW).missing.includes(`Role: ${roleLabel(REQUIRED_ROLES[0])}`));
-  getDb().projectRoles.push(wowRole);
+  const holder = wowRole.crewId;
+  wowRole.crewId = null;
+  assert.ok(W.evaluateGate("Pre-production", "project", WOW).missing.includes(`Role: ${roleLabel(REQUIRED_ROLES[0])} needs a person`));
+  wowRole.crewId = holder;
   ok();
 });
 

@@ -27,7 +27,7 @@ function pastShooting(r: ContentRecord): boolean {
   const at = stages.indexOf(r.pipelineStage ?? "");
   if (at < 0) return false;
   if (r.category === "live") {
-    const post = stages.indexOf("Post Production");
+    const post = stages.indexOf("Post production");
     return post >= 0 && at >= post;
   }
   return at > stages.indexOf(categoryOf(r.category).footageStage);

@@ -32,7 +32,7 @@ const sheetOf = (id: string | null): CallSheet | undefined => (id ? getDb().call
 function dayDone(day: ContentRecord): boolean {
   if (isComplete(day)) return true;
   const stages = categoryOf("live").stages.map((s) => s.name);
-  const show = stages.indexOf("Show");
+  const show = stages.indexOf(categoryOf("live").footageStage);
   return show >= 0 && stages.indexOf(day.pipelineStage ?? "") > show;
 }
 
@@ -45,7 +45,7 @@ export function dayInstance(day: ContentRecord): ProductionInstance {
     id: day.contentId,
     projectId: day.parentId ?? day.contentId,
     projectTitle: show?.title ?? day.title,
-    label: day.title,
+    label: day.instance?.label ? `${day.title}, ${day.instance.label}` : day.title,
     date: day.scheduledDate,
     start: cs?.startTime || cs?.callTime || "",
     end: cs?.wrapTime ?? "",

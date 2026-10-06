@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { RecordingSession, SessionLabel } from "../../types";
 import { roleName, SESSION_LABELS } from "../../config/workflow";
+import { planLabels } from "../../config/documentCatalog";
 import { getDb } from "../../data/store";
 import { driveUsage } from "../../services/driveUsage";
 import { hasStorageAccess } from "../../services/storage";
@@ -57,8 +58,12 @@ const liveSessions = (projectId: string): RecordingSession[] =>
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
+/** What the plan's items are called for this project: devotions, episodes or parts. */
+const labelsOf = (projectId: string) => planLabels((getDb().records.find((r) => r.contentId === projectId) as Project).workflow.formType);
+
 /** The plan's section cards, with where each stands. */
 export function planCards(projectId: string): FixedCard[] {
+  const L = labelsOf(projectId);
   const roles = planRolesOf(projectId);
   const placed = devotionPlacements(projectId);
   const waiting = placed.filter((x) => !x.sessionId && !x.locked).length;
@@ -69,7 +74,7 @@ export function planCards(projectId: string): FixedCard[] {
     card("roles", "Project roles", roles.length ? `${roles.filter(roleHolder).length} of ${roles.length} have a person` : "No roles yet"),
     card(
       "devotions",
-      "Devotions",
+      L.title,
       placed.length
         ? `${placed.length - waiting} of ${placed.length} assigned${waiting ? ` · ${waiting} ${waiting === 1 ? "needs" : "need"} a session` : ""}`
         : "Not listed yet",
@@ -127,7 +132,8 @@ function RolesSection({ project, write }: { project: Project; write: boolean }) 
     <section className="glass panel rp-section" aria-label="Project roles">
       <h2>Project roles</h2>
       <p className="muted">
-        Each role needs someone from the crew before recording. {guest ? `The devotion's guest, ${guest}, is its host.` : ""}{" "}
+        Each role needs someone from the crew before recording.{" "}
+        {guest && project.workflow.formType === "devotion" ? `The devotion's guest, ${guest}, is its host.` : ""}{" "}
         {manage
           ? "Rename a role by typing over its name."
           : "The show producer, or someone who may assign other people's work, changes these."}
@@ -225,10 +231,12 @@ function DevotionsSection({ project, write }: { project: Project; write: boolean
   const sessions = new Map(liveSessions(project.contentId).map((s) => [s.id, s]));
   const waiting = placed.filter((x) => !x.sessionId && !x.locked).length;
   const pre = project.workflow.stage === "Pre-production";
+  const L = planLabels(project.workflow.formType);
+  const devotion = project.workflow.formType === "devotion";
   return (
-    <section className="glass panel rp-section" aria-label="Devotions">
+    <section className="glass panel rp-section" aria-label={L.title}>
       <div className="wf-head">
-        <h2>Devotions</h2>
+        <h2>{L.title}</h2>
         {placed.length > 0 && (
           <span className={`badge ${waiting ? "warn" : "ok"}`}>
             {placed.length - waiting} of {placed.length} assigned
@@ -236,17 +244,23 @@ function DevotionsSection({ project, write }: { project: Project; write: boolean
         )}
       </div>
       <p className="muted">
-        Read from the Devotional Script as it stands: each page is one devotion, with its topic and scripture. Each is recorded in one
-        session, ticked under Recording sessions.
+        {devotion
+          ? "Read from the Devotional Script as it stands: each page is one devotion, with its topic and scripture."
+          : `Read from ${L.source} as it stands.`}{" "}
+        Each is recorded in one session, ticked under Recording sessions.
       </p>
-      {placed[0]?.planned.question && (
+      {devotion && placed[0]?.planned.question && (
         <p className="pd-theme">
           Theme, shared by every devotion: <b>{placed[0].planned.question}</b>
         </p>
       )}
       {placed.length === 0 ? (
         <Empty>
-          {pre ? "The devotions are not listed from the script yet." : "The devotions are listed once the devotion is accepted."}
+          {!devotion
+            ? `No ${L.many} are planned yet. Add them in ${L.source}.`
+            : pre
+              ? "The devotions are not listed from the script yet."
+              : "The devotions are listed once the devotion is accepted."}
         </Empty>
       ) : (
         <div className="wf-scroll">
@@ -254,8 +268,8 @@ function DevotionsSection({ project, write }: { project: Project; write: boolean
             <thead>
               <tr>
                 <th>Content ID</th>
-                <th>Topic</th>
-                <th>Scripture</th>
+                <th>{devotion ? "Topic" : "Title"}</th>
+                <th>{L.detail}</th>
                 <th>Session</th>
               </tr>
             </thead>
@@ -264,7 +278,7 @@ function DevotionsSection({ project, write }: { project: Project; write: boolean
                 <tr key={x.planned.id}>
                   <td className="cid">{contentIdOf(x)}</td>
                   <td>{x.title}</td>
-                  <td>{x.scripture || <span className="muted">None given</span>}</td>
+                  <td>{(devotion ? x.scripture : x.planned.question) || <span className="muted">None given</span>}</td>
                   <td>
                     {x.sessionId ? (
                       sessionName(sessions.get(x.sessionId))
@@ -280,7 +294,7 @@ function DevotionsSection({ project, write }: { project: Project; write: boolean
           </table>
         </div>
       )}
-      {write && pre && (
+      {write && pre && devotion && (
         <div className="row" style={{ marginTop: 10 }}>
           <button
             className="btn"
@@ -323,6 +337,7 @@ function SessionsSection({ project, write }: { project: Project; write: boolean 
   const sessions = liveSessions(project.contentId);
   const removed = sessionsOf(project.contentId).filter((s) => s.archivedAt);
   const placed = devotionPlacements(project.contentId);
+  const L = planLabels(project.workflow.formType);
   const canAdd = write && !project.archived && project.workflow.stage === "Pre-production";
   const [reviewCheck, reviewModal] = useReviewCheck();
   const add = async () => {
@@ -349,7 +364,7 @@ function SessionsSection({ project, write }: { project: Project; write: boolean 
     <section className="glass panel rp-section" aria-label="Recording sessions">
       <h2>Recording sessions</h2>
       <p className="muted">
-        Tick the devotions each session records. A devotion is on one session: ticking it on another moves it there. A session's call sheet
+        Tick the {L.many} each session records. Each {L.one} is on one session: ticking it on another moves it there. A session's call sheet
         is made as soon as it has a date.
       </p>
       {sessions.length === 0 && <Empty>No sessions yet.</Empty>}
@@ -363,10 +378,10 @@ function SessionsSection({ project, write }: { project: Project; write: boolean 
           onRemove={async () => {
             const reason = await ask(
               `Remove ${sessionName(s)}`,
-              "Why? The session is kept, archived with this reason, and its devotions need a session again.",
+              `Why? The session is kept, archived with this reason, and its ${L.many} need a session again.`,
               "Remove session",
             );
-            if (reason) attempt(() => archiveSession(actor, s.id, reason), "Session removed. Its devotions need a session again.");
+            if (reason) attempt(() => archiveSession(actor, s.id, reason), `Session removed. Its ${L.many} need a session again.`);
           }}
         />
       ))}
@@ -441,6 +456,7 @@ function SessionCard({
   const { actor, attempt, go } = useApp();
   const [duplicating, setDuplicating] = useState(false);
   const [reviewCheck, reviewModal] = useReviewCheck();
+  const L = planLabels(project.workflow.formType);
   const edit = write && !project.archived && s.status !== "Closed";
   const save = (patch: Parameters<typeof updateSession>[2]) => attempt(() => updateSession(actor, s.id, patch));
   const here = placed.filter((x) => x.sessionId === s.id).length;
@@ -512,10 +528,12 @@ function SessionCard({
       </div>
       <fieldset className="rp-ticks">
         <legend>
-          Devotions on this session ({here} of {placed.length})
+          {L.title} on this session ({here} of {placed.length})
         </legend>
         {placed.length === 0 ? (
-          <p className="muted">The devotions are listed from the script under Devotions.</p>
+          <p className="muted">
+            The {L.many} are listed from {L.source}, under {L.title}.
+          </p>
         ) : (
           placed.map((x) => {
             const on = x.sessionId === s.id;
@@ -729,12 +747,13 @@ function RolesOnSheet({ project }: { project: Project }) {
 }
 
 function DevotionsOnSheet({ project, session }: { project: Project; session: RecordingSession }) {
+  const L = planLabels(project.workflow.formType);
   const here = devotionPlacements(project.contentId).filter((x) => x.sessionId === session.id);
   return (
-    <section className="glass panel" aria-label="Devotions on this session">
-      <h2>Devotions, in order</h2>
+    <section className="glass panel" aria-label={`${L.title} on this session`}>
+      <h2>{L.title}, in order</h2>
       {here.length === 0 ? (
-        <Empty>No devotions are ticked on this session yet.</Empty>
+        <Empty>No {L.many} are ticked on this session yet.</Empty>
       ) : (
         <ol className="rp-order">
           {here.map((x) => (

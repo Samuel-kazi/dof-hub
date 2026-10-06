@@ -71,8 +71,8 @@ await t("a one-time event has exactly one day and one call sheet, due around its
   assert.deepEqual([cs.date, cs.callTime, cs.location, cs.instanceId], ["2026-11-14", "07:30", "Kasarani", days[0].contentId]);
   assert.ok(cs.technicalCheck.length >= 4, "it starts with the usual technical check");
   assert.deepEqual(
-    [days[0].stageDeadlines.Prep, days[0].stageDeadlines.Show, days[0].stageDeadlines.Review],
-    ["2026-11-11", "2026-11-14", "2026-11-17"],
+    [days[0].stageDeadlines["Pre-production"], days[0].stageDeadlines.Production, days[0].stageDeadlines["Post production"]],
+    ["2026-11-13", "2026-11-14", "2026-11-17"],
   );
   throwsRule(() => P.addEventDay(hop(), show.contentId, "2026-11-15"), /Only a multi-day event/);
   throwsRule(() => P.createProduction(hop(), { title: "No date", mode: "one_time" }), /date of the event/);
@@ -122,7 +122,7 @@ await t("a multi-day event has an Event Plan and a day and call sheet for each d
 
 // ── Recurring shows ──────────────────────────────────────────
 
-await t("a recurring show makes a day and call sheet for each date of its schedule, 12 weeks ahead, once", () => {
+await t("a recurring show makes a day and call sheet for each of its next 8 dates, once, and tops them up", () => {
   const show = vespers();
   const t0 = templateOf(show.contentId);
   assert.equal(record(show.contentId).production!.templateId, t0.id);
@@ -135,10 +135,6 @@ await t("a recurring show makes a day and call sheet for each date of its schedu
     "2026-11-06",
     "2026-11-13",
     "2026-11-20",
-    "2026-11-27",
-    "2026-12-04",
-    "2026-12-11",
-    "2026-12-18",
   ]);
   const d1 = daysOfShow(show.contentId)[0];
   assert.equal(d1.title, "Fri Oct 2, 2026");
@@ -148,10 +144,10 @@ await t("a recurring show makes a day and call sheet for each date of its schedu
   const before = getDb().records.length;
   assert.deepEqual(topUpRecurring(), { made: 0, booked: 0 });
   assert.equal(getDb().records.length, before, "running it again makes nothing");
-  // Weeks later, the daily check makes the days that have come within 12 weeks.
+  // Weeks later, the daily check makes the days that are now among the next 8.
   assert.equal(recurringDue("2026-10-20"), true);
   assert.equal(topUpRecurring("2026-10-20").made, 3);
-  assert.equal(dates(show.contentId).at(-1), "2027-01-08");
+  assert.equal(dates(show.contentId).at(-1), "2026-12-11");
   // The board shows the days from a week ago to two weeks ahead.
   const days = daysOfShow(show.contentId);
   assert.deepEqual(
@@ -179,7 +175,7 @@ await t("a template change reaches every coming day still following it; a day ed
     sheet: { location: "DOF Studio B", crewPersonIds: ["DOF-P-CRW-001", "DOF-P-CRW-003"], crewRoles: { "DOF-P-CRW-001": "Camera" } },
   });
   assert.ok(r.kept.includes(b.contentId) && r.kept.includes(c.contentId));
-  assert.equal(r.updated.length, 10);
+  assert.equal(r.updated.length, 6);
   assert.equal(sheet(a.contentId).location, "DOF Studio B");
   assert.deepEqual(sheet(a.contentId).crewPersonIds, ["DOF-P-CRW-001", "DOF-P-CRW-003"]);
   assert.ok(
@@ -201,7 +197,7 @@ await t("a template change reaches every coming day still following it; a day ed
   // Moving a day's date by hand moves the day, and it keeps its own from then on.
   CS.updateCallSheet(hop(), sheet(a.contentId).id, { date: "2026-10-03" });
   assert.deepEqual(
-    [record(a.contentId).scheduledDate, record(a.contentId).stageDeadlines.Show, record(a.contentId).instance!.locked],
+    [record(a.contentId).scheduledDate, record(a.contentId).stageDeadlines.Production, record(a.contentId).instance!.locked],
     ["2026-10-03", "2026-10-03", true],
   );
   throwsRule(() => CS.updateCallSheet(hop(), sheet(a.contentId).id, { date: "2026-10-09" }), /already on that date/);
@@ -216,13 +212,13 @@ await t("a new schedule takes off coming days it no longer gives, unless they we
   const days = daysOfShow(show.contentId);
   CS.updateCallSheet(hop(), sheet(days[2].contentId).id, { notes: "Guest choir" }); // edited by hand
   const r = P.setShowSchedule(hop(), t0.id, { ...FRIDAYS, weekdays: [6], startDate: "2026-10-03" }); // Saturdays instead
-  assert.equal(r.removed.length, 11, "eleven untouched Fridays taken off (archived, not deleted)");
+  assert.equal(r.removed.length, 7, "seven untouched Fridays taken off (archived, not deleted)");
   assert.deepEqual(r.kept, [days[2].contentId], "the one edited by hand is left for a person to decide");
-  assert.equal(r.made.length, 12, "the Saturdays made");
+  assert.equal(r.made.length, 8, "the next 8 Saturdays made");
   assert.ok(record(days[0].contentId).archived && getDb().records.some((x) => x.contentId === days[0].contentId));
   assert.ok(!visibleCallSheets(hop()).some((cs) => cs.instanceId === days[0].contentId), "its sheet goes with it");
   const back = P.setShowSchedule(hop(), t0.id, FRIDAYS);
-  assert.equal(back.restored.length, 11, "back on Fridays: the same days come back");
+  assert.equal(back.restored.length, 7, "back on Fridays: the same days come back");
   assert.equal(record(days[0].contentId).archived, false);
   ok();
 });

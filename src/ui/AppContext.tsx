@@ -19,7 +19,7 @@ export type Route =
   | { n: "crew"; tab?: "crew" | "volunteers" | "partners" | "workload" }
   | { n: "person"; id: string }
   | { n: "soon"; module: ModuleKey }
-  | { n: "equipment"; tab?: "inventory" | "checkouts" | "incidents" }
+  | { n: "equipment"; tab?: "inventory" | "checkouts" | "lending" | "kits" | "incidents" }
   | { n: "item"; id: string }
   | { n: "manifest"; id: string }
   | { n: "documents" }

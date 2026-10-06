@@ -31,6 +31,8 @@ import { canKeepLocations, createLocation, listLocations } from "../services/wra
 import { PersonName } from "../ui/PersonName";
 import { isSheetLocked, sheetLock } from "../services/sheetLock";
 import { useReviewCheck } from "../ui/ReviewCheck";
+import { featureOn } from "../services/wrapped/settings";
+import { kitSuggestions } from "../services/wrapped/kits";
 import { sheetOwnerId } from "../services/wrapped/documents";
 import { DateShift } from "../ui/DateShift";
 import { LocationsPanel } from "./production/LocationsPanel";
@@ -785,7 +787,7 @@ export function CallSheetBody({
           <RunSheetPanel sessionId={session.id} editable={write && session.status !== "Closed" && !session.archivedAt} />
         </div>
       ) : (
-        <RunOfShowSection {...props} required={runOfShowRequired(cs)} />
+        <RunOfShowSection {...props} required={runOfShowRequired(cs)} live={root?.category === "live"} />
       )}
       <TechnicalCheckSection {...tickProps} editable={editable} onChange={save} canTick tickable={editable} />
       <RehearsalSection {...tickProps} editable={editable} onChange={save} canTick tickable={editable} />
@@ -926,6 +928,60 @@ function ChangeLog({ cs }: { cs: CallSheet }) {
   );
 }
 
+/**
+ * The role kits that match the crew's roles (Equipment, Role kits), item by item: one click adds an item that is free
+ * that day; one that is not says why. Only suggestions: nothing is booked until it is added.
+ */
+function KitSuggestions({ cs }: { cs: CallSheet }) {
+  const { actor, attempt } = useApp();
+  if (!featureOn("lending")) return null;
+  const kits = kitSuggestions(cs);
+  if (!kits.length) return null;
+  return (
+    <div className="cs-suggest" aria-label="Role kits">
+      <h3>Role kits for this crew</h3>
+      <ul>
+        {kits.map((k) => (
+          <li key={k.kit.id}>
+            <div>
+              <b>{k.kit.role}</b>
+              {k.kit.cameraModel && <span className="muted"> with {k.kit.cameraModel}</span>}{" "}
+              <span className="muted">for {k.roles.join(", ")}</span>
+            </div>
+            <div className="row cs-suggest-options">
+              {k.items.map((o) =>
+                o.free ? (
+                  <button
+                    key={o.item.id}
+                    className="btn small"
+                    title={o.item.id}
+                    onClick={() =>
+                      attempt(
+                        () =>
+                          addGearToSheet(actor, { id: cs.id, contentId: cs.contentId, date: cs.date }, [
+                            { equipmentId: o.item.id, quantity: o.quantity },
+                          ]),
+                        `${o.item.name} added`,
+                      )
+                    }
+                  >
+                    + {o.item.name}
+                    {o.quantity > 1 ? ` ×${o.quantity}` : ""}
+                  </button>
+                ) : (
+                  <span key={o.item.id} className="badge warn" title={o.reason}>
+                    {o.item.name}: not free ({o.reason})
+                  </span>
+                ),
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /** Gear the crew's roles usually need and the sheet does not have yet, free on its date: one click adds it. */
 function GearSuggestions({ cs }: { cs: CallSheet }) {
   const { actor, attempt } = useApp();
@@ -1048,6 +1104,7 @@ function GearPanel({ cs, editable, bare = false }: { cs: CallSheet; editable: bo
           })}
         </div>
       )}
+      {canEditGear && cs.date >= todayIso() && <KitSuggestions cs={cs} />}
       {canEditGear && cs.date >= todayIso() && <GearSuggestions cs={cs} />}
       {m && m.status === "assigned" && (
         <p className="muted" style={{ marginTop: 10, fontSize: ".84rem" }}>

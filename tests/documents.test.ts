@@ -656,11 +656,9 @@ await t("the catalogue follows the five stages for every type, and a devotion ha
     catalogFor("podcast", "Pre-production").map((e) => [e.key, e.kind]),
     [
       ["production_pack", "document"],
+      ["recording_plan", "document"],
       ["storyboard", "tool"],
       ["shot_list", "tool"],
-      ["roles", "form"],
-      ["sessions", "form"],
-      ["call_sheet", "form"],
       ["gear", "form"],
     ],
   );

@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import React from "react";
 import { renderToString } from "react-dom/server";
-import { getDb, setDb } from "../src/data/store";
+import { commit, getDb, setDb } from "../src/data/store";
 import { buildSeed } from "../src/data/seed";
 import { RuleError } from "../src/types";
 import { login } from "../src/services/auth";
@@ -113,7 +113,7 @@ t("a five day show becomes five days, each its own item", () => {
     days.map((d) => d.scheduledDate),
     [40, 41, 42, 43, 44].map(isoDay),
   );
-  assert.ok(days.every((d) => d.pipelineStage === "Prep" && d.productionLevel === "medium" && d.title.startsWith("Day ")));
+  assert.ok(days.every((d) => d.pipelineStage === "Development" && d.productionLevel === "medium" && d.title.startsWith("Day ")));
   assert.equal(show.pipelineStage, null, "the show itself has no pipeline");
   assert.equal(C.getRollupStatus(show.contentId).total, 5);
 });
@@ -330,10 +330,16 @@ t("a production unit is in progress if any of its days is, even once collapsed",
   );
 });
 
-// ── Live day: Prep → Build → Rehearse → Show → Wrap → Review → Post Production ──
+// ── Live day: Development → Pre-production → Production (show and strike) → Post production → Marketing and distribution ──
 function pushToStage(actor: ReturnType<typeof login>, id: string, target: string) {
   let r = getRecord(id)!;
   while (r.pipelineStage !== target) {
+    // A live day leaves Development with its show date and producer: given here when it has none yet.
+    if (r.category === "live" && r.pipelineStage === "Development" && (!r.scheduledDate || !r.assigneePersonId)) {
+      r.scheduledDate ??= "2026-10-02";
+      r.assigneePersonId ??= "DOF-P-HOP-001";
+      commit();
+    }
     for (const t of r.tasks.filter((t) => t.stage === r.pipelineStage)) C.updateTask(actor, id, t.id, { done: true });
     C.setStageOutput(actor, id, true, r.version);
     r = getRecord(id)!;
@@ -346,12 +352,12 @@ function pushToStage(actor: ReturnType<typeof login>, id: string, target: string
 t("Wrap pulls the show's nightly strike list every day, and adds the final list only on the last day", () => {
   const actor = login("hop@dof.demo", "demo");
   // DOF-LIVE-002 is seeded "continuous": daily = light security checks, final = the full rig
-  const d1 = pushToStage(actor, "DOF-LIVE-002-D1", "Wrap");
-  const d1Tasks = d1.tasks.filter((t) => t.stage === "Wrap").map((t) => t.label);
+  const d1 = pushToStage(actor, "DOF-LIVE-002-D1", "Production");
+  const d1Tasks = d1.tasks.filter((t) => t.stage === "Production").map((t) => t.label);
   assert.ok(d1Tasks.includes("Cover cameras and lenses"), "day 1 gets the nightly list");
   assert.ok(!d1Tasks.includes("Full rig: trusses, screens, staging"), "day 1 does not strike the full rig");
-  const d5 = pushToStage(actor, "DOF-LIVE-002-D5", "Wrap");
-  const d5Tasks = d5.tasks.filter((t) => t.stage === "Wrap").map((t) => t.label);
+  const d5 = pushToStage(actor, "DOF-LIVE-002-D5", "Production");
+  const d5Tasks = d5.tasks.filter((t) => t.stage === "Production").map((t) => t.label);
   assert.ok(
     d5Tasks.includes("Cover cameras and lenses") && d5Tasks.includes("Full rig: trusses, screens, staging"),
     "the last day gets both lists",
@@ -362,21 +368,21 @@ t("a live day with no strike checklist set gets no Wrap tasks, and does not bloc
   const actor = login("hop@dof.demo", "demo");
   const show = C.createRecord(actor, { category: "live", title: "No checklist yet" });
   const day = getRecord(`${show.contentId}-D1`)!;
-  const atWrap = pushToStage(actor, day.contentId, "Wrap");
-  assert.equal(atWrap.tasks.filter((t) => t.stage === "Wrap").length, 0);
+  const atWrap = pushToStage(actor, day.contentId, "Production");
+  assert.equal(atWrap.tasks.filter((t) => t.stage === "Production").length, 0);
   assert.deepEqual(C.openTasks(atWrap), []);
 });
 
-t("Post Production asks whether anything was recorded, and blocks being marked done until answered", () => {
+t("Post production asks whether anything was recorded, and blocks being marked done until answered", () => {
   const actor = login("hop@dof.demo", "demo");
-  const day = pushToStage(actor, "DOF-LIVE-001-D1", "Post Production");
+  const day = pushToStage(actor, "DOF-LIVE-001-D1", "Post production");
   assert.equal(day.postProductionNeeded, null);
   throwsRule(() => C.setStageOutput(actor, day.contentId, true, day.version), /whether anything recorded/);
 });
 
 t("saying yes requires an actual split before the day can be marked done; saying no does not", () => {
   const actor = login("hop@dof.demo", "demo");
-  const yes = pushToStage(actor, "DOF-LIVE-001-D1", "Post Production");
+  const yes = pushToStage(actor, "DOF-LIVE-001-D1", "Post production");
   C.setPostProductionNeeded(actor, yes.contentId, true);
   const afterYes = getRecord(yes.contentId)!;
   throwsRule(() => C.setStageOutput(actor, yes.contentId, true, afterYes.version), /Attach the recording/);
@@ -389,28 +395,28 @@ t("saying yes requires an actual split before the day can be marked done; saying
   );
   const afterSplit = getRecord(yes.contentId)!;
   C.setStageOutput(actor, yes.contentId, true, afterSplit.version); // now allowed
-  assert.equal(C.isComplete(getRecord(yes.contentId)!), true);
+  assert.equal(getRecord(yes.contentId)!.stageOutputs["Post production"], true, "Post production done");
 
-  const no = pushToStage(actor, "DOF-LIVE-002-D2", "Post Production");
+  const no = pushToStage(actor, "DOF-LIVE-002-D2", "Post production");
   C.setPostProductionNeeded(actor, no.contentId, false);
   const afterNo = getRecord(no.contentId)!;
   C.setStageOutput(actor, no.contentId, true, afterNo.version); // allowed straight away
-  assert.equal(C.isComplete(getRecord(no.contentId)!), true);
+  assert.equal(getRecord(no.contentId)!.stageOutputs["Post production"], true);
 });
 
-t("a recording split into Music starts at Audio post-production, skipping Recording", () => {
+t("a recording split into Music starts at Post production, skipping Production", () => {
   const actor = login("hop@dof.demo", "demo");
-  const day = pushToStage(actor, "DOF-LIVE-002-D3", "Post Production");
+  const day = pushToStage(actor, "DOF-LIVE-002-D3", "Post production");
   C.setPostProductionNeeded(actor, day.contentId, true);
   const album = getDb().records.find((r) => r.category === "music" && r.hierarchyLevel === 1)!;
   const made = C.splitRecording(actor, day.contentId, { destCategory: "music", parentId: album.contentId, title: "Live worship medley" });
-  assert.equal(made.pipelineStage, "Audio post-production");
+  assert.equal(made.pipelineStage, "Post production");
   assert.equal(made.category, "music");
 });
 
 t("splitting off a recording needs write access to both the live day and the destination", () => {
   const actor = login("hop@dof.demo", "demo");
-  const day = pushToStage(actor, "DOF-LIVE-001-D1", "Post Production");
+  const day = pushToStage(actor, "DOF-LIVE-001-D1", "Post production");
   const vol = login("volunteer1@dof.demo", "demo");
   throwsRule(() => C.splitRecording(vol, day.contentId, { destCategory: "series", parentId: "DOF-SER-001-S1", title: "x" }));
 });
@@ -477,7 +483,8 @@ t("a longer effort override raises the bar for staleness on that stage", () => {
 
 t("advancing or sending back a stage resets stageEnteredAt to now", () => {
   const actor = login("hop@dof.demo", "demo");
-  const r = getRecord("DOF-SER-001-S1-E01")!;
+  // A live day shown on the board (the season's episodes are folded away), idle in Pre-production for 40 days.
+  const r = getRecord("DOF-LIVE-002-D1")!;
   getDb().records.find((x) => x.contentId === r.contentId)!.stageEnteredAt = isoDay(-40);
   for (const task of r.tasks.filter((x) => x.stage === r.pipelineStage)) C.updateTask(actor, r.contentId, task.id, { done: true });
   C.setStageOutput(actor, r.contentId, true, getRecord(r.contentId)!.version);
@@ -507,7 +514,8 @@ t("a stalled item's reminder goes to whoever is responsible now, with 'no update
 
 t("a stalled item shows 'Stalled' on the Pipeline board and its own page", () => {
   const actor = login("hop@dof.demo", "demo");
-  const r = getRecord("DOF-SER-001-S1-E01")!;
+  // A live day shown on the board (the season's episodes are folded away), idle in Pre-production for 40 days.
+  const r = getRecord("DOF-LIVE-002-D1")!;
   getDb().records.find((x) => x.contentId === r.contentId)!.stageEnteredAt = isoDay(-40);
   assert.equal(C.riskOf(getRecord(r.contentId)!), "stale");
   void actor;
@@ -515,7 +523,8 @@ t("a stalled item shows 'Stalled' on the Pipeline board and its own page", () =>
 
 t("a stalled item renders as 'Stalled' on the Pipeline board and its own page", () => {
   const actor = login("hop@dof.demo", "demo");
-  const r = getRecord("DOF-SER-001-S1-E01")!;
+  // A live day shown on the board (the season's episodes are folded away), idle in Pre-production for 40 days.
+  const r = getRecord("DOF-LIVE-002-D1")!;
   getDb().records.find((x) => x.contentId === r.contentId)!.stageEnteredAt = isoDay(-40);
   const withCtx = (el: React.ReactElement) => React.createElement(AppProvider, { actor, onLogout: () => {} }, el);
   const pipelineHtml = renderToString(withCtx(React.createElement(Pipeline, {})));

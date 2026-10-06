@@ -67,17 +67,12 @@ await t("the new shell ships on; only the Head of Production switches it, and sw
   assert.equal(featureOn("shell"), true);
 });
 
-await t("a part not built yet stays off, whatever is stored", () => {
-  getDb().settings.features = { lending: true, calendar2: true };
-  commit();
-  assert.equal(featureOn("lending"), false);
-  assert.equal(featureOn("calendar2"), false);
-});
-
-await t("General Use stays in the pipeline until lending replaces it", () => {
+await t("General Use leaves the pipeline with lending on, and comes back with it off", () => {
+  assert.ok(!pipelineCategories().some((c) => c.key === "general"), "lending replaces General Use");
+  setFeature(hop(), "lending", false);
   assert.ok(
     pipelineCategories().some((c) => c.key === "general"),
-    "with lending not yet on, gear can still go out on General Use",
+    "with lending off, gear can go out on General Use again",
   );
 });
 
@@ -165,7 +160,7 @@ await t("the palette lists its commands and a search box; a volunteer gets no Eq
     "Ctrl+,",
   ])
     assert.ok(box.includes(text), text);
-  assert.ok(!box.includes("New loan"), "lending is not on yet");
+  assert.ok(box.includes("New loan"), "lending is on");
   assert.ok(!html(vol(), <CommandPalette onClose={() => {}} />).includes("Open Equipment"));
 });
 
@@ -214,15 +209,15 @@ await t("a published sheet stays open to edit and offers Back to draft; once loc
   assert.ok(!locked.includes("+ Segment"), "no rows to add");
 });
 
-await t("a show day's sheet locks at Post Production, and a sheet linked to nothing never locks", () => {
+await t("a show day's sheet locks at Post production, and a sheet linked to nothing never locks", () => {
   const show = P.createProduction(hop(), { title: "Rally", mode: "one_time", date: "2026-10-20" });
   const day = daysOfShow(show.contentId)[0];
   const cs = sheetOfDay(day)!;
   const rec = () => getDb().records.find((r) => r.contentId === day.contentId)!;
-  rec().pipelineStage = "Show";
+  rec().pipelineStage = "Production";
   commit();
   assert.equal(sheetLock(getDb().callSheets.find((c) => c.id === cs.id)!).locked, false, "open on the day itself");
-  rec().pipelineStage = "Post Production";
+  rec().pipelineStage = "Post production";
   commit();
   assert.match(sheetLock(getDb().callSheets.find((c) => c.id === cs.id)!).why, /has reached Post production/);
   const loose = CS.createCallSheet(hop(), { contentId: "DOF-SER-001", title: "Loose", date: "2026-10-01" });

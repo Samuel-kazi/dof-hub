@@ -175,10 +175,24 @@ export function canAdvance(r: ContentRecord): { ok: boolean; reason: string } {
   if (idx === stages.length - 1) return { ok: false, reason: "Already at the final stage." };
   const open = openTasks(r);
   if (open.length) return { ok: false, reason: `Finish ${open.map((t) => t.label).join(", ")} before leaving ${r.pipelineStage}.` };
+  // A live show leaves Development once its date is set and its producer named (build prompt v2, section 14).
+  if (r.category === "live" && r.pipelineStage === "Development") {
+    const missing = [!r.scheduledDate && "set the show date", !liveProducer(r) && "name the producer"].filter(Boolean);
+    if (missing.length) return { ok: false, reason: `Before leaving Development, ${missing.join(" and ")}.` };
+  }
   if (!r.stageOutputs[r.pipelineStage]) {
     return { ok: false, reason: `Confirm "${stages[idx].requiredOutput}" before leaving ${r.pipelineStage}.` };
   }
   return { ok: true, reason: "" };
+}
+
+/** A live day's producer: someone with the Producer role on the day or its show, or failing that the day's owner. */
+export function liveProducer(r: ContentRecord): string | null {
+  const show = r.parentId ? getDb().records.find((x) => x.contentId === r.parentId) : undefined;
+  for (const rec of [r, show])
+    for (const owners of Object.values(rec?.stageAssignees ?? {}))
+      for (const o of owners) if (o.roles?.includes("Producer")) return o.personId;
+  return r.assigneePersonId ?? show?.assigneePersonId ?? null;
 }
 
 /** Refusal for the earlier pipeline's actions on a record of the five-stage workflow. */
@@ -318,7 +332,8 @@ function wrapTasksFor(r: ContentRecord): string[] {
 export function ensureStageTasks(r: ContentRecord, stage: string): void {
   if (r.tasks.some((t) => t.stage === stage)) return;
   const def = categoryOf(r.category).stages.find((x) => x.name === stage);
-  const labels = stage === "Wrap" ? wrapTasksFor(r) : (def?.tasks ?? []);
+  // A live day's strike checklist is its Production stage's: the show, then the strike.
+  const labels = r.category === "live" && stage === categoryOf("live").footageStage ? wrapTasksFor(r) : (def?.tasks ?? []);
   for (const label of labels) {
     r.tasks.push({
       id: localId("T", (id) => r.tasks.some((t) => t.id === id)),
@@ -446,7 +461,7 @@ export function createChildRecord(actor: Actor, parentId: string, input: Omit<Ne
 
 // A recording made on a live day, spun off into its own item. It starts past the stages that assume
 // there is no footage yet, since the footage already exists — it lands where editing begins.
-const SPIN_OFF_START_STAGE: Record<"music" | "series", string> = { music: "Audio post-production", series: "Editorial" };
+const SPIN_OFF_START_STAGE: Record<"music" | "series", string> = { music: "Post production", series: "Editorial" };
 export const spinOffCategories: ("music" | "series")[] = ["music", "series"];
 
 export interface SplitInput {
@@ -519,9 +534,10 @@ export function setStrikePlan(
   const clean = (list: string[]) => list.map((s) => s.trim()).filter(Boolean);
   r.strikePattern = pattern;
   r.strikeChecklist = { daily: clean(daily), final: clean(final) };
-  // Any day already at or past Wrap keeps its checklist as it was when it entered; only days that have not reached Wrap yet pick up the change.
+  // Any day already at or past Production keeps its checklist as it was when it entered; only days that have not reached it yet pick up the change.
+  const strike = categoryOf("live").footageStage;
   for (const day of getChildren(id)) {
-    if (day.pipelineStage === "Wrap" && !day.tasks.some((t) => t.stage === "Wrap")) ensureStageTasks(day, "Wrap");
+    if (day.pipelineStage === strike && !day.tasks.some((t) => t.stage === strike)) ensureStageTasks(day, strike);
   }
   r.version += 1;
   logAudit(actor, "update", "record", id, "Strike plan");
@@ -624,7 +640,7 @@ export function setPostProductionNeeded(actor: Actor, id: string, needed: boolea
   const r = loadForWrite(actor, id, expectedVersion);
   if (r.category !== "live") throw new RuleError("Only live days ask this.");
   r.postProductionNeeded = needed;
-  r.stageOutputs["Post Production"] = false; // re-confirm after answering (or changing the answer)
+  r.stageOutputs["Post production"] = false; // re-confirm after answering (or changing the answer)
   r.version += 1;
   logAudit(actor, "output-cleared", "record", id, `Post-production needed: ${needed ? "yes" : "no"}`);
   commit();
@@ -634,7 +650,7 @@ export function setPostProductionNeeded(actor: Actor, id: string, needed: boolea
 export function setStageOutput(actor: Actor, id: string, present: boolean, expectedVersion?: number): void {
   const r = loadForWrite(actor, id, expectedVersion);
   if (!r.pipelineStage) throw new RuleError("This record has no pipeline.");
-  if (present && r.category === "live" && r.pipelineStage === "Post Production") {
+  if (present && r.category === "live" && r.pipelineStage === "Post production") {
     if (r.postProductionNeeded === null) throw new RuleError("First say whether anything recorded on this day needs post-production.");
     if (r.postProductionNeeded && !getDb().records.some((x) => x.spunOffFrom === r.contentId)) {
       throw new RuleError(

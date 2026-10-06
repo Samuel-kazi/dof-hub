@@ -3,7 +3,8 @@ import { getDb } from "../../data/store";
 import { getRecord } from "../../services/access";
 import { fmtDate, todayIso } from "../../services/utils";
 import { nameOf } from "../../services/wrapped/people";
-import { getTemplate, resetToTemplate } from "../../services/wrapped/production";
+import { applyDayToFuture, cancelDay, DAY_LABELS, getTemplate, resetToTemplate, setDayLabel } from "../../services/wrapped/production";
+import { useReason } from "../workflow/common";
 import { useApp } from "../../ui/AppContext";
 import { isSheetLocked } from "../../services/sheetLock";
 
@@ -12,6 +13,7 @@ import { isSheetLocked } from "../../services/sheetLock";
 
 export function InstanceStrip({ day, write }: { day: ContentRecord; write: boolean }) {
   const { actor, attempt, confirm, go } = useApp();
+  const [ask, reasonModal] = useReason();
   const info = day.instance;
   if (!info) return null;
   const show = getRecord(day.parentId ?? "");
@@ -57,6 +59,53 @@ export function InstanceStrip({ day, write }: { day: ContentRecord; write: boole
           Put back on the template
         </button>
       )}
+      {info.locked && write && t && !past && sheet && !isSheetLocked(sheet) && (
+        <button
+          className="btn small"
+          onClick={async () => {
+            if (
+              await confirm({
+                title: "Make this day's call sheet the template from here on?",
+                body: "This and future occurrences: the template takes this day's call sheet, and every later day still following the template takes it too. Days before this one keep what they have. This day follows the template again.",
+                confirmLabel: "This and future",
+              })
+            )
+              attempt(() => applyDayToFuture(actor, day.contentId), "The template and the days after this one have this call sheet");
+          }}
+        >
+          Apply to this and future days
+        </button>
+      )}
+      {write && t && !past && !day.archived && (
+        <>
+          <select
+            aria-label="Label of this day"
+            className="btn small"
+            value={info.label ?? ""}
+            onChange={(e) => attempt(() => setDayLabel(actor, day.contentId, e.target.value), "Label saved")}
+          >
+            <option value="">No label</option>
+            {DAY_LABELS.map((l) => (
+              <option key={l}>{l}</option>
+            ))}
+            {info.label && !DAY_LABELS.includes(info.label) && <option>{info.label}</option>}
+          </select>
+          <button
+            className="btn small danger"
+            onClick={async () => {
+              const why = await ask(
+                `Cancel ${fmtDate(day.scheduledDate ?? "")}?`,
+                "Why is this date cancelled? The day is kept, marked cancelled, and the schedule leaves the date out.",
+                "Cancel this date",
+              );
+              if (why) attempt(() => cancelDay(actor, day.contentId, why), "Date cancelled");
+            }}
+          >
+            Cancel this date
+          </button>
+        </>
+      )}
+      {reasonModal}
     </section>
   );
 }

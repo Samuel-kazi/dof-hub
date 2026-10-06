@@ -227,8 +227,9 @@ await t("Pre-production gate for a session: project roles and checklist, gear, r
   const sheet = await call("workflow.createSessionCallSheet", s);
   assert.ok(W.evaluateGate("Pre-production", "session", s).missing.includes("Gear selected from the Equipment picker"));
   assert.ok(W.evaluateGate("Pre-production", "session", s).missing.includes(`Call sheet ${sheet.id} issued (final)`));
-  await call("workflow.removeRole", `${project}|dop`);
-  assert.ok(W.evaluateGate("Pre-production", "session", s).missing.includes("Role: DOP"));
+  // The roles are the Recording Plan's: each one listed needs a person.
+  await call("workflow.setRolePerson", `${project}|dop`, null);
+  assert.ok(W.evaluateGate("Pre-production", "session", s).missing.includes("Role: DOP needs a person"));
   await throwsRule(() => call("workflow.openSession", s), /Not ready to leave Pre-production/);
 });
 

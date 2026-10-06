@@ -97,6 +97,17 @@ function checkRun(i: RunItem): void {
     const p = getDb().people.find((x) => x.personId === i.ownerPersonId);
     if (!p || p.status !== "active") throw new RuleError("Choose an active person for each segment.");
   }
+  // A live show's columns.
+  for (const [k, what] of [
+    ["camera", "Camera"],
+    ["audio", "Audio"],
+    ["graphics", "Graphics"],
+  ] as const)
+    if (i[k] !== undefined) checkText(i[k]!, what, 120);
+  if (i.status !== undefined && !["Planned", "Live", "Done", "Cut"].includes(i.status))
+    throw new RuleError("A segment is planned, live, done or cut.");
+  for (const t of [i.actualStart, i.actualEnd])
+    if (t && !TIME.test(t)) throw new RuleError("Enter actual times as hours and minutes, for example 09:30.");
 }
 function checkGear(g: GearRequest): void {
   if (!g.equipmentId) throw new RuleError("Choose the gear.");

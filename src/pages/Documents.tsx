@@ -28,6 +28,10 @@ import {
 import { nameOf } from "../services/wrapped/people";
 import { fmtDateTime, relativeDays } from "../services/utils";
 import { isRemote, loadDocHistory } from "../data/remote";
+import { featureOn } from "../services/wrapped/settings";
+import { canKeepLibrary } from "../services/documents/boards";
+import { StoryboardTool } from "./documents/Storyboards";
+import { ShotListTool } from "./documents/ShotLists";
 
 export function NewDocModal({
   contentId,
@@ -113,6 +117,10 @@ export function Documents() {
       (!q.trim() || `${d.title} ${d.id} ${d.contentId}`.toLowerCase().includes(q.trim().toLowerCase())),
   );
   const canCreate = getDb().records.some((r) => !r.archived && canWrite(actor, r));
+  // Templates (build prompt v2, section 13): storyboards and shot lists with no Content ID, to start projects' from,
+  // and boards kept for practice or an event. Crew and the Head of Production keep them.
+  const library = featureOn("templates") && actor.role !== "PTR";
+  const [view, setView] = useState<"documents" | "templates">("documents");
 
   return (
     <div className="page">
@@ -123,67 +131,94 @@ export function Documents() {
             Scripts, briefs and notes for every project. Everyone on a project can read them, crew can edit them, and every change is kept.
           </p>
         </div>
-        {canCreate && (
-          <button className="btn primary" onClick={() => setAdding(true)}>
-            <IconPlus /> New document
-          </button>
+        {library && (
+          <div className="seg" role="tablist" aria-label="Documents or templates">
+            <button
+              role="tab"
+              aria-selected={view === "documents"}
+              className={view === "documents" ? "on" : ""}
+              onClick={() => setView("documents")}
+            >
+              Documents
+            </button>
+            <button
+              role="tab"
+              aria-selected={view === "templates"}
+              className={view === "templates" ? "on" : ""}
+              onClick={() => setView("templates")}
+            >
+              Templates
+            </button>
+          </div>
+        )}
+        {view === "templates" && library ? (
+          <></>
+        ) : (
+          canCreate && (
+            <button className="btn primary" onClick={() => setAdding(true)}>
+              <IconPlus /> New document
+            </button>
+          )
         )}
       </div>
-      <section className="glass panel">
-        <div className="row" style={{ marginBottom: 14 }}>
-          <Field label="Search">
-            <input type="text" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Title, document ID or Content ID" />
-          </Field>
-          <Field label="Project">
-            <select value={project} onChange={(e) => setProject(e.target.value)}>
-              <option value="">All projects</option>
-              {projects.map((id) => (
-                <option key={id} value={id}>
-                  {getRecord(id)?.title ?? id}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </div>
-        {shown.length === 0 ? (
-          <Empty>No documents match. Documents are attached automatically when an item reaches a stage that needs one.</Empty>
-        ) : (
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Document</th>
-                <th>Content ID</th>
-                <th>Project</th>
-                <th>Attached at</th>
-                <th>Last edited</th>
-              </tr>
-            </thead>
-            <tbody>
-              {shown.map((d) => (
-                <tr key={d.id} className="clickable" onClick={() => go({ n: "doc", id: d.id })}>
-                  <td>
-                    <div>{d.title}</div>
-                    <span className="cid">{d.id}</span>
-                  </td>
-                  <td>
-                    <span className="cid" style={{ fontSize: ".86rem" }}>
-                      {d.contentId}
-                    </span>
-                  </td>
-                  <td>{getRecord(d.contentId)?.title ?? d.contentId}</td>
-                  <td>{d.stage ?? <span className="muted">Added by hand</span>}</td>
-                  <td>
-                    {relativeDays(d.updatedAt.slice(0, 10))}
-                    <div className="muted" style={{ fontSize: ".82rem" }}>
-                      {nameOf(d.updatedBy)}, version {d.version}
-                    </div>
-                  </td>
+      {view === "templates" && library && <TemplatesArea />}
+      {view === "documents" && (
+        <section className="glass panel">
+          <div className="row" style={{ marginBottom: 14 }}>
+            <Field label="Search">
+              <input type="text" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Title, document ID or Content ID" />
+            </Field>
+            <Field label="Project">
+              <select value={project} onChange={(e) => setProject(e.target.value)}>
+                <option value="">All projects</option>
+                {projects.map((id) => (
+                  <option key={id} value={id}>
+                    {getRecord(id)?.title ?? id}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+          {shown.length === 0 ? (
+            <Empty>No documents match. Documents are attached automatically when an item reaches a stage that needs one.</Empty>
+          ) : (
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Document</th>
+                  <th>Content ID</th>
+                  <th>Project</th>
+                  <th>Attached at</th>
+                  <th>Last edited</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
+              </thead>
+              <tbody>
+                {shown.map((d) => (
+                  <tr key={d.id} className="clickable" onClick={() => go({ n: "doc", id: d.id })}>
+                    <td>
+                      <div>{d.title}</div>
+                      <span className="cid">{d.id}</span>
+                    </td>
+                    <td>
+                      <span className="cid" style={{ fontSize: ".86rem" }}>
+                        {d.contentId}
+                      </span>
+                    </td>
+                    <td>{getRecord(d.contentId)?.title ?? d.contentId}</td>
+                    <td>{d.stage ?? <span className="muted">Added by hand</span>}</td>
+                    <td>
+                      {relativeDays(d.updatedAt.slice(0, 10))}
+                      <div className="muted" style={{ fontSize: ".82rem" }}>
+                        {nameOf(d.updatedBy)}, version {d.version}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
+      )}
       {adding && (
         <NewDocModal
           onClose={() => setAdding(false)}
@@ -653,6 +688,29 @@ export function DocPage({ id }: { id: string }) {
           </div>
         </Modal>
       )}
+    </div>
+  );
+}
+
+/** Documents, Templates: storyboards and shot lists that belong to no project. */
+function TemplatesArea() {
+  const { actor } = useApp();
+  const write = canKeepLibrary(actor);
+  return (
+    <div className="stack">
+      <p className="muted">
+        Templates are storyboards and shot lists to start a project&apos;s from: in a project, &quot;+ New storyboard&quot; or &quot;+ New
+        shot list&quot;, then Start from a template. Editing a project&apos;s copy never changes the template. Boards kept here for practice
+        or an event have no Content ID either. A project&apos;s board can be saved as a template from its own page.
+      </p>
+      <section className="glass panel" aria-label="Storyboard templates">
+        <h2>Storyboards</h2>
+        <StoryboardTool project={{ contentId: null }} write={write} />
+      </section>
+      <section className="glass panel" aria-label="Shot list templates">
+        <h2>Shot lists</h2>
+        <ShotListTool project={{ contentId: null }} write={write} />
+      </section>
     </div>
   );
 }

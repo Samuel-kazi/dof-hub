@@ -46,7 +46,7 @@ const text = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
 const latestFirstDecision = (form: DevelopmentForm) => [...form.decisions].reverse().find((d) => d.stage === 1);
 
 function reviewGate(projectId: string, what: string): Omit<HardGate, "override"> {
-  const t = theologyStatus(projectId);
+  const t = theologyStatus(projectId, false);
   return { key: "review", label: `Theological review of the ${what} approved`, met: t.done, detail: t.detail, overridable: true };
 }
 

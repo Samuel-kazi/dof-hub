@@ -160,12 +160,12 @@ t("music recording is tracked as audio and video, each with its own owner and da
   );
   assert.notEqual(tasks[0].assigneePersonId, tasks[1].assigneePersonId);
 });
-t("music follows idea, pre-production, recording, audio post, video editing, review, publish", () => {
+t("music follows the five stages, recording in Production with its two parts", () => {
   assert.deepEqual(
     categoryOf("music").stages.map((s) => s.name),
-    ["Idea", "Pre-production", "Recording", "Audio post-production", "Video editing", "Review", "Publish"],
+    ["Development", "Pre-production", "Production", "Post production", "Marketing and distribution"],
   );
-  assert.deepEqual(C.tasksOf(rec("DOF-MUS-001-A1-T01"), "Recording").length, 2);
+  assert.deepEqual(C.tasksOf(rec("DOF-MUS-001-A1-T01"), "Production").length, 2);
 });
 t("a new project starts with the checklist and documents for its first stage", () => {
   const p = C.createRecord(hop(), { category: "series", title: "New show" });

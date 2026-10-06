@@ -2,12 +2,15 @@
 import * as core from "../production";
 import { rpc, serverOnly } from "../../data/rpc";
 export const addEventDay = rpc("production.addEventDay", core.addEventDay);
+export const applyDayToFuture = rpc("production.applyDayToFuture", core.applyDayToFuture);
 export const canPlanShow = rpc("production.canPlanShow", core.canPlanShow);
+export const cancelDay = rpc("production.cancelDay", core.cancelDay);
 export const createProduction = rpc("production.createProduction", core.createProduction);
 export const resetToTemplate = rpc("production.resetToTemplate", core.resetToTemplate);
+export const setDayLabel = rpc("production.setDayLabel", core.setDayLabel);
 export const setShowSchedule = rpc("production.setShowSchedule", core.setShowSchedule);
 export const topUpShow = rpc("production.topUpShow", core.topUpShow);
 export const updateEventPlan = rpc("production.updateEventPlan", core.updateEventPlan);
 export const updateShowTemplate = rpc("production.updateShowTemplate", core.updateShowTemplate);
-export { BOARD_AHEAD_DAYS, BOARD_PAST_DAYS, DEFAULT_HORIZON_WEEKS, GEAR_WINDOW_DAYS, MAX_HORIZON_WEEKS, daysOfShow, followsTemplate, getTemplate, instanceTitle, isShow, modeLabel, offSchedule, onBoard, productionOf, recurringDue, sheetOfDay, templateOfShow, topUpRecurring } from "../production";
+export { BOARD_AHEAD_DAYS, BOARD_PAST_DAYS, DAY_LABELS, DEFAULT_HORIZON_COUNT, DEFAULT_HORIZON_WEEKS, GEAR_WINDOW_DAYS, MAX_HORIZON_COUNT, MAX_HORIZON_WEEKS, daysOfShow, followsTemplate, getTemplate, horizonEnd, instanceTitle, isShow, modeLabel, offSchedule, onBoard, productionOf, recurringDue, sheetOfDay, templateOfShow, topUpRecurring } from "../production";
 export type { ProductionInput, ScheduleResult, TemplatePatch, TemplateResult } from "../production";

@@ -75,7 +75,7 @@ export function encodeRoute(r: Route): string {
 }
 
 const CREW_TABS = new Set(["crew", "volunteers", "partners", "workload"]);
-const EQUIPMENT_TABS = new Set(["inventory", "checkouts", "incidents"]);
+const EQUIPMENT_TABS = new Set(["inventory", "checkouts", "incidents", "lending", "kits"]);
 
 /** The reverse of encodeRoute. Anything it does not recognise (a stale link, a typo) becomes the dashboard. */
 export function decodeRoute(path: string): Route {
@@ -103,7 +103,10 @@ export function decodeRoute(path: string): Route {
     case "soon":
       return arg && MODULE_KEYS.has(arg as ModuleKey) ? { n: "soon", module: arg as ModuleKey } : { n: "dashboard" };
     case "equipment":
-      return { n: "equipment", ...(arg && EQUIPMENT_TABS.has(arg) ? { tab: arg as "inventory" | "checkouts" | "incidents" } : {}) };
+      return {
+        n: "equipment",
+        ...(arg && EQUIPMENT_TABS.has(arg) ? { tab: arg as "inventory" | "checkouts" | "lending" | "kits" | "incidents" } : {}),
+      };
     case "item":
       return arg ? { n: "item", id: arg } : { n: "equipment" };
     case "manifest":

@@ -55,16 +55,23 @@ export function RuleEditor({
             value={value.freq}
             disabled={disabled}
             onChange={(e) =>
-              e.target.value === "weekly"
-                ? set({ freq: "weekly", weekdays: [startDay], monthDay: null, nth: null })
-                : set({ freq: "monthly", weekdays: [], monthDay: startDom, nth: null })
+              e.target.value === "daily"
+                ? set({ freq: "daily", weekdays: [], monthDay: null, nth: null })
+                : e.target.value === "weekly"
+                  ? set({ freq: "weekly", weekdays: [startDay], monthDay: null, nth: null })
+                  : set({ freq: "monthly", weekdays: [], monthDay: startDom, nth: null })
             }
           >
+            <option value="daily">Daily</option>
             <option value="weekly">Weekly</option>
             <option value="monthly">Monthly</option>
           </select>
         </Field>
-        <Field label={value.freq === "weekly" ? "Every how many weeks" : "Every how many months"}>
+        <Field
+          label={
+            value.freq === "daily" ? "Every how many days" : value.freq === "weekly" ? "Every how many weeks" : "Every how many months"
+          }
+        >
           <input
             type="number"
             aria-label="Every how many"
@@ -76,7 +83,7 @@ export function RuleEditor({
           />
         </Field>
       </div>
-      {value.freq === "weekly" ? (
+      {value.freq === "daily" ? null : value.freq === "weekly" ? (
         <fieldset className="rule-days" disabled={disabled}>
           <legend>On</legend>
           {WEEKDAY_NAMES.map((name, i) => (

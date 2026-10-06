@@ -32,7 +32,7 @@ export const DEFAULT_STAGE_EFFORT: Record<CategoryKey, Record<string, number>> =
     "Marketing and distribution": 0.3,
   },
   general: { "In use": 0 },
-  live: { Prep: 0.5, Build: 1.5, Rehearse: 0.5, Show: 1, Wrap: 0.5, Review: 0.5, "Post Production": 1 },
+  live: { Development: 0.5, "Pre-production": 2.5, Production: 1.5, "Post production": 1.5, "Marketing and distribution": 0.5 },
   documentary: {
     Idea: 1,
     Research: 3,
@@ -44,7 +44,7 @@ export const DEFAULT_STAGE_EFFORT: Record<CategoryKey, Record<string, number>> =
     "Post production": 5,
     "Marketing and distribution": 1,
   },
-  music: { Idea: 0.5, "Pre-production": 1, "Audio post-production": 2, "Video editing": 2, Review: 0.5, Publish: 0.5 },
+  music: { Development: 0.5, "Pre-production": 1, Production: 1, "Post production": 4.5, "Marketing and distribution": 0.5 },
 };
 
 /** The workflow's stages that are measured per episode, shown in Settings under each category that runs it. */
