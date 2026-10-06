@@ -1,24 +1,27 @@
 import type { Actor, DevelopmentForm, GateOverride } from "../../types";
 import { RuleError } from "../../types";
 import { commit } from "../../data/store";
-import { briefKeyOf, catalogTypeOf } from "../../config/documentCatalog";
+import { catalogTypeOf } from "../../config/documentCatalog";
 import { logAudit } from "../audit";
 import { textOf } from "../html";
-import { canDecide, checkpoint, formOf, nowStamp, type Project } from "../workflow/common";
+import { canDecide, formOf, nowStamp, type Project } from "../workflow/common";
 import { pagesOf, projectForWrite, projectOf } from "./common";
 import { documentOf } from "./pages";
-import { reviewsOf, reviewStateOf } from "./reviews";
+import { reviewIsGate, theologyStatus } from "./theology";
 import { formProblems } from "../workflow/forms";
 
 // The short list of what must be true before a project leaves Development (the documents rework). Everything else is
 // a nudge that never blocks (./nudges.ts).
 //
 //   Series and documentary   1. the logline and the core question written in the brief
-//                            2. the theological review of the brief approved
+//                            2. the theological review of the brief approved (only while the review is a gate)
 //                            3. the greenlight decision recorded as Greenlight, and a show producer named
 //   Devotion                 1. the guest's name and contact filled in
 //                            2. at least five devotion pages, each with its topic (the title), scripture and script
-//                            3. the theological review of the script approved
+//                            3. the theological review of the script approved (only while the review is a gate)
+//
+// With "Theological review as a reminder, not a gate" switched on (build prompt v2), the review is not a gate: see
+// ./theology.ts for the banner and the question asked before going ahead.
 //
 // The Head of Production, or someone given "Create projects", can pass a gate by hand with a short note: kept with the
 // project and in the activity log. The greenlight decision itself is never passed by hand: recording it is the way.
@@ -42,30 +45,9 @@ const text = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
 
 const latestFirstDecision = (form: DevelopmentForm) => [...form.decisions].reverse().find((d) => d.stage === 1);
 
-function reviewGate(projectId: string, docKey: string, what: string): Omit<HardGate, "override"> {
-  const doc = documentOf(projectId, "Development", docKey);
-  const state = doc ? reviewStateOf(doc.id) : "no reviewers";
-  const rows = doc ? reviewsOf(doc.id) : [];
-  // A project reviewed on the earlier pitch and outline checkpoints, before the documents, keeps that review: both of
-  // its checkpoints approved count, until reviewers are named on the document.
-  const earlier = (["pitch", "outline_script"] as const).every((k) => checkpoint(projectId, k)?.status === "Approved");
-  if (state === "no reviewers" && earlier)
-    return {
-      key: "review",
-      label: `Theological review of the ${what} approved`,
-      met: true,
-      detail: "Approved on the earlier review checkpoints",
-      overridable: true,
-    };
-  const detail =
-    state === "approved"
-      ? `Approved by ${rows.length === 1 ? "its reviewer" : `all ${rows.length} reviewers`}`
-      : state === "no reviewers"
-        ? "No reviewer named yet"
-        : state === "changes_requested"
-          ? "Changes requested"
-          : `${rows.filter((r) => r.status === "approved").length} of ${rows.length} reviewers have approved`;
-  return { key: "review", label: `Theological review of the ${what} approved`, met: state === "approved", detail, overridable: true };
+function reviewGate(projectId: string, what: string): Omit<HardGate, "override"> {
+  const t = theologyStatus(projectId);
+  return { key: "review", label: `Theological review of the ${what} approved`, met: t.done, detail: t.detail, overridable: true };
 }
 
 /** A devotion page that counts: a title, the scripture (its subtitle) and the script. */
@@ -101,7 +83,8 @@ export function hardGates(projectId: string): HardGate[] {
         detail: `${ready} of ${DEVOTION_PAGES_NEEDED} ready`,
         overridable: true,
       }),
-      withOverride(reviewGate(projectId, "devotional_script", "script")),
+      // With the review a reminder rather than a gate, it is not on this list (./theology.ts).
+      ...(reviewIsGate() ? [withOverride(reviewGate(projectId, "script"))] : []),
     ];
   }
   const brief = form.sections.brief ?? {};
@@ -118,7 +101,7 @@ export function hardGates(projectId: string): HardGate[] {
       detail: missingIdea.length ? `Write ${missingIdea.join(" and ")} at the top of The idea` : "Both written",
       overridable: true,
     }),
-    withOverride(reviewGate(projectId, briefKeyOf(p.workflow.formType), "brief")),
+    ...(reviewIsGate() ? [withOverride(reviewGate(projectId, "brief"))] : []),
     // A testimonial records someone telling their own story: it is not greenlit without their consent and release.
     ...(p.workflow.formType === "testimonial" ? [withOverride(consentGate(projectId))] : []),
     withOverride({

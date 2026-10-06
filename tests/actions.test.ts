@@ -489,6 +489,11 @@ await t("every action accepts the arguments its screen sends", async () => {
   await call("documents.acceptDevotion", wfDoc, "Ready"); // refused (not a devotion), but its arguments are accepted
   await call("documents.askForReviewAgain", brief); // refused (nobody asked for changes), but its arguments are accepted
   await call("documents.setGateOverride", wow.project, "idea", "Agreed in the planning meeting"); // its arguments are accepted
+  await call("documents.noteUnreviewed", wow.project, {
+    action: "schedule",
+    targetId: "DOF-SER-001-S1-R02",
+    note: "Review booked for Tuesday",
+  });
 
   // The Recording Plan (a devotion's, built on any project's roles and sessions) and where its footage is kept.
   await call("workflow.startPlanRoles", wow.project); // refused (the season has left Pre-production), but its arguments are accepted

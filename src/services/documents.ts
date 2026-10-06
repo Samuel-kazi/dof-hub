@@ -63,6 +63,18 @@ export { makeDevotionEpisodes, acceptDevotion } from "./documents/devotions";
 export { hardGates, hardGatesPass, setGateOverride, devotionPageReady, DEVOTION_PAGES_NEEDED } from "./documents/gates";
 export type { HardGate, HardGateKey } from "./documents/gates";
 export { softNudges } from "./documents/nudges";
+export {
+  editedAfterApproval,
+  hasTheologicalReview,
+  noteUnreviewed,
+  REVIEW_ACTIONS,
+  reviewIsGate,
+  reviewNotesOf,
+  reviewOutstanding,
+  sheetOwnerId,
+  theologyStatus,
+} from "./documents/theology";
+export type { TheologyStatus } from "./documents/theology";
 export type { DevotionList } from "./documents/devotions";
 
 export { pagesOf, getDocument, documentHasContent } from "./documents/common";

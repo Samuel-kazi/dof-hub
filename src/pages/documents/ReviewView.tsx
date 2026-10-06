@@ -9,8 +9,10 @@ import {
   askForReviewAgain,
   commentsOf,
   decideDocumentReview,
+  editedAfterApproval,
   pagesOf,
   resolveReviewComment,
+  reviewIsGate,
   reviewsOf,
   reviewStateOf,
   setDocumentReviewers,
@@ -147,8 +149,10 @@ function ReviewDecisions({ project, doc, write }: { project: Project; doc: Proje
   const rows = reviewsOf(doc.id);
   const state = reviewStateOf(doc.id);
   const ids = rows.map((r) => r.reviewerId);
-  // Decided while the project is in Development; afterwards it is kept as it was, and comments can still be added.
-  const open = write && project.workflow.stage === "Development";
+  // Decided while the project is in Development; afterwards it is kept as it was, and comments can still be added. With
+  // the review a reminder rather than a gate, a project can move on before it is approved, and it can still be decided.
+  const late = !reviewIsGate() && state !== "approved";
+  const open = write && (project.workflow.stage === "Development" || late);
   const choose = open && mayChooseReviewers(actor, project);
   const named = ids.includes(actor.personId);
   const mayDecide = open && rows.length > 0 && (named || isHop(actor));
@@ -202,6 +206,9 @@ function ReviewDecisions({ project, doc, write }: { project: Project; doc: Proje
       )}
       {!open && project.workflow.stage !== "Development" && (
         <p className="muted">The review was decided in Development, and is kept as it was.</p>
+      )}
+      {open && late && project.workflow.stage !== "Development" && (
+        <p className="muted">The project has moved on before this review was done. It can still be decided here.</p>
       )}
       {mayDecide && (
         <div className="wf-actions">
@@ -263,6 +270,7 @@ export function ReviewPanes({
   const pages = pagesOf(doc.id);
   const page = pages.find((p) => p.id === pageId) ?? pages[0];
   const comments = commentsOf(doc.id);
+  const changed = editedAfterApproval(doc.id);
   return (
     <>
       <div className="pd-pages">
@@ -276,7 +284,10 @@ export function ReviewPanes({
                   <span className="pd-card-text">
                     <span className="pd-card-title">{p.title || "Untitled page"}</span>
                     {p.subtitle && <span className="pd-card-sub">{p.subtitle}</span>}
-                    <span className="pd-card-snip">{open ? `${open} open comment${open === 1 ? "" : "s"}` : "No open comments"}</span>
+                    <span className="pd-card-snip">
+                      {changed.has(p.id) && <span className="badge warn">Edited after approval</span>}{" "}
+                      {open ? `${open} open comment${open === 1 ? "" : "s"}` : "No open comments"}
+                    </span>
                   </span>
                 </button>
               </li>
@@ -290,6 +301,11 @@ export function ReviewPanes({
           <div className="pd-with-comments">
             <article className="pd-read" aria-label={`Page: ${page.title}`}>
               <h2 className="pd-read-title">{page.title || "Untitled page"}</h2>
+              {changed.has(page.id) && (
+                <p className="banner warn" role="status">
+                  Edited after approval, on {fmtDateTime(page.updatedAt)}.
+                </p>
+              )}
               {page.subtitle && <p className="pd-read-sub">{page.subtitle}</p>}
               {pageFields(project, doc, page, pages).map(([label, value]) => (
                 <div key={label} className="pd-read-field">

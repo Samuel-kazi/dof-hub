@@ -30,6 +30,8 @@ import { changesOf, confirmationHolds } from "../services/sheetTracking";
 import { canKeepLocations, createLocation, listLocations } from "../services/wrapped/locations";
 import { PersonName } from "../ui/PersonName";
 import { isSheetLocked, sheetLock } from "../services/sheetLock";
+import { useReviewCheck } from "../ui/ReviewCheck";
+import { sheetOwnerId } from "../services/wrapped/documents";
 import { DateShift } from "../ui/DateShift";
 import { LocationsPanel } from "./production/LocationsPanel";
 import { Modal } from "../ui/Modal";
@@ -399,6 +401,7 @@ export function CallSheetPage({ id }: { id: string }) {
   useDb();
   const [duplicating, setDuplicating] = useState(false);
   const [print, printNode] = usePrintCallSheet();
+  const [reviewCheck, reviewModal] = useReviewCheck();
   const cs = getCallSheet(id);
   // "Print today's run sheet" from Ctrl+K: printed once, when the page opens.
   useEffect(() => {
@@ -468,16 +471,27 @@ export function CallSheetPage({ id }: { id: string }) {
             <button
               className="btn primary"
               onClick={async () => {
-                // Publishing is deliberate: a click (or Ctrl+Enter) and a confirmation, never a stray Enter.
+                // Publishing is deliberate: a click (or Ctrl+Enter) and a confirmation, never a stray Enter. Before the
+                // theological review is done, the question about it is that confirmation.
+                const ok = await reviewCheck({
+                  contentId: sheetOwnerId(cs),
+                  action: "publish-sheet",
+                  targetId: cs.id,
+                  confirmLabel: "Publish anyway",
+                  deliberate: true,
+                });
+                if (!ok) return;
                 if (
-                  await confirm({
+                  !ok.asked &&
+                  !(await confirm({
                     title: `Publish ${cs.title}?`,
                     body: "The crew can rely on it from now on. It stays open to edit; every later change to its call time, place, crew, talent or schedule is logged, and clears the confirmations it affects.",
                     confirmLabel: "Publish",
                     deliberate: true,
-                  })
+                  }))
                 )
-                  attempt(() => finalizeCallSheet(actor, cs.id, cs.version), "Call sheet published");
+                  return;
+                if (attempt(() => finalizeCallSheet(actor, cs.id, cs.version), "Call sheet published")) ok.done();
               }}
             >
               Finalize
@@ -510,6 +524,7 @@ export function CallSheetPage({ id }: { id: string }) {
 
       <CallSheetBody cs={cs} root={root} />
       {printNode}
+      {reviewModal}
       {duplicating && (
         <DuplicateModal
           sheet={cs}

@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import type { DocumentPage, ProjectDocument } from "../../types";
 import { textOf } from "../../services/html";
-import { addPage, archivePage, movePage, pagesOf, restorePage } from "../../services/wrapped/documents";
+import { addPage, archivePage, editedAfterApproval, movePage, pagesOf, restorePage } from "../../services/wrapped/documents";
 import { useApp } from "../../ui/AppContext";
 
 // The middle pane of an open document: its pages as cards, to open, drag into order, delete (kept, archived) and
@@ -38,6 +38,8 @@ export function PageList({
   const { actor, attempt, confirm, menu } = useApp();
   const [dragging, setDragging] = useState<string | null>(null);
   const deleted = doc ? pagesOf(doc.id, true).filter((p) => p.archivedAt) : [];
+  // A page of a reviewed document changed after the review approved it says so.
+  const changed = doc ? editedAfterApproval(doc.id) : new Set<string>();
   const remove = async (p: DocumentPage) => {
     if (
       await confirm({
@@ -95,7 +97,10 @@ export function PageList({
               <span className="pd-card-text">
                 <span className="pd-card-title">{p.title || "Untitled page"}</span>
                 {p.subtitle && <span className="pd-card-sub">{p.subtitle}</span>}
-                <span className="pd-card-snip">{textOf(p.bodyHtml).slice(0, 90) || "Nothing written yet"}</span>
+                <span className="pd-card-snip">
+                  {changed.has(p.id) && <span className="badge warn">Edited after approval</span>}{" "}
+                  {textOf(p.bodyHtml).slice(0, 90) || "Nothing written yet"}
+                </span>
               </span>
             </button>
             {write && (

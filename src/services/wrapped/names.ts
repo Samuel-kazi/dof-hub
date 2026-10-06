@@ -94,6 +94,7 @@ export const RPC_NAMES: Record<string, string[]> = {
     "moveFramesTo",
     "movePage",
     "moveShotRow",
+    "noteUnreviewed",
     "removeDocumentLink",
     "renameShotList",
     "renameStoryboard",

@@ -316,6 +316,13 @@ locked after that (a closed session's sheet, a show day in Post Production); exi
 editable again, with their change log kept, and existing sheets of closed sessions show as locked. Nothing is
 rewritten in the data either way.
 
+### The rework, phase 3: the theological review as a reminder (no data change)
+
+Nothing to set up and no data version. The review is no longer a gate out of Development (the Head of Production can
+switch it back in Settings, The rework). Projects get one new optional list, the notes kept when someone goes ahead
+before the review is done; nothing existing is changed. A project already reviewed on the earlier pitch and outline
+checkpoints counts as reviewed until reviewers are named on its brief, as before.
+
 ## What this does not do yet
 
 - The **desktop app** is the local demo. The hosted site is the real one.

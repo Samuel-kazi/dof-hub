@@ -22,6 +22,7 @@ import { CrewSelect } from "../../ui/workflow/shared";
 import { ConfigChecklist } from "./common";
 import { DecisionPanel } from "./Development";
 import { PersonName } from "../../ui/PersonName";
+import { askIfScheduling, useReviewCheck } from "../../ui/ReviewCheck";
 
 // Pre-production for the whole project: the producer assigns the roles, works through the project's checklist,
 // and schedules the recording sessions. A DOF-made documentary also gets its second greenlight here.
@@ -127,9 +128,13 @@ export function SessionsPanel({ project, write }: { project: Project; write: boo
   const isDoc = project.workflow.formType.startsWith("documentary");
   const sentToPost = getDb().records.some((r) => r.parentId === project.contentId && r.episode && !r.archived);
   const canSchedule = write && project.workflow.stage === "Pre-production" && !project.archived;
-  const add = () => {
+  const [reviewCheck, reviewModal] = useReviewCheck();
+  const add = async () => {
+    const ok = await askIfScheduling(reviewCheck, project.contentId, "new session", null, date || null);
+    if (!ok) return;
     const s = attempt(() => createSession(actor, project.contentId, { scheduledDate: date || null, venue }), "Session scheduled");
     if (s) {
+      ok.done(s.id);
       setDate("");
       setVenue("");
       go({ n: "session", id: s.id });
@@ -138,6 +143,7 @@ export function SessionsPanel({ project, write }: { project: Project; write: boo
   return (
     <section className="glass panel" aria-label="Recording sessions">
       <h2>Recording sessions</h2>
+      {reviewModal}
       {live.length === 0 ? (
         <Empty>
           {project.workflow.stage === "Development"
@@ -198,7 +204,7 @@ export function SessionsPanel({ project, write }: { project: Project; write: boo
             <input type="text" value={venue} onChange={(e) => setVenue(e.target.value)} placeholder="DOF Studio A" />
           </Field>
           <div style={{ flex: "none" }}>
-            <button className="btn primary" onClick={add}>
+            <button className="btn primary" onClick={() => void add()}>
               Schedule a session
             </button>
           </div>

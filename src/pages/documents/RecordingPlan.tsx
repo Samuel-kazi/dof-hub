@@ -31,6 +31,7 @@ import {
   type Project,
 } from "../../services/wrapped/workflow";
 import { useApp } from "../../ui/AppContext";
+import { askIfScheduling, useReviewCheck } from "../../ui/ReviewCheck";
 import { Empty, Field } from "../../ui/parts";
 import { CrewSelect } from "../../ui/workflow/shared";
 import { CallSheetBody } from "../CallSheets";
@@ -323,7 +324,10 @@ function SessionsSection({ project, write }: { project: Project; write: boolean 
   const removed = sessionsOf(project.contentId).filter((s) => s.archivedAt);
   const placed = devotionPlacements(project.contentId);
   const canAdd = write && !project.archived && project.workflow.stage === "Pre-production";
-  const add = () => {
+  const [reviewCheck, reviewModal] = useReviewCheck();
+  const add = async () => {
+    const ok = await askIfScheduling(reviewCheck, project.contentId, "new session", null, draft.date || null);
+    if (!ok) return;
     const made = attempt(
       () =>
         createSession(actor, project.contentId, {
@@ -336,7 +340,10 @@ function SessionsSection({ project, write }: { project: Project; write: boolean 
         }),
       "Session added",
     );
-    if (made) setDraft(NO_SESSION);
+    if (made) {
+      ok.done(made.id);
+      setDraft(NO_SESSION);
+    }
   };
   return (
     <section className="glass panel rp-section" aria-label="Recording sessions">
@@ -405,12 +412,13 @@ function SessionsSection({ project, write }: { project: Project; write: boolean 
               />
             </Field>
           </div>
-          <button className="btn primary" onClick={add}>
+          <button className="btn primary" onClick={() => void add()}>
             + Add session
           </button>
         </div>
       )}
       {reasonModal}
+      {reviewModal}
     </section>
   );
 }
@@ -432,6 +440,7 @@ function SessionCard({
 }) {
   const { actor, attempt, go } = useApp();
   const [duplicating, setDuplicating] = useState(false);
+  const [reviewCheck, reviewModal] = useReviewCheck();
   const edit = write && !project.archived && s.status !== "Closed";
   const save = (patch: Parameters<typeof updateSession>[2]) => attempt(() => updateSession(actor, s.id, patch));
   const here = placed.filter((x) => x.sessionId === s.id).length;
@@ -458,6 +467,7 @@ function SessionCard({
         )}
       </div>
       {duplicating && <DuplicateSessionModal session={s} onClose={() => setDuplicating(false)} />}
+      {reviewModal}
       <div className="row">
         <Field label="Name">
           <SavedInput
@@ -481,7 +491,11 @@ function SessionCard({
             type="date"
             value={s.scheduledDate ?? ""}
             disabled={!edit}
-            onChange={(e) => save({ scheduledDate: e.target.value || null })}
+            onChange={async (e) => {
+              const date = e.target.value || null;
+              const ok = await askIfScheduling(reviewCheck, project.contentId, s.id, s.scheduledDate, date);
+              if (ok && save({ scheduledDate: date })) ok.done();
+            }}
           />
         </Field>
       </div>

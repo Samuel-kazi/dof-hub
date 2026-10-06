@@ -39,6 +39,7 @@ import { DateShift } from "../../ui/DateShift";
 import { CrewSelect, GatePanel } from "../../ui/workflow/shared";
 import { ConfigChecklist, useDraft, useReason } from "./common";
 import { focusNext, useFocusRow } from "../../ui/keys";
+import { askIfScheduling, useReviewCheck } from "../../ui/ReviewCheck";
 import { PersonName } from "../../ui/PersonName";
 
 // One recording session: Pre-production while Planned (call sheet, gear, rehearsal), Production while Open (the
@@ -260,6 +261,7 @@ function LogRow({ row, editable, statusEditable }: { row: SessionLogEntry; edita
 
 function RecordingDay({ project, sessionId, editable }: { project: Project; sessionId: string; editable: boolean }) {
   const { actor, attempt } = useApp();
+  const [reviewCheck, reviewModal] = useReviewCheck();
   const s = getSession(sessionId)!;
   const [venue, setVenue] = useState(s.venue);
   const rows = rowsOf(sessionId);
@@ -275,13 +277,18 @@ function RecordingDay({ project, sessionId, editable }: { project: Project; sess
   return (
     <section className="glass panel" aria-label="Recording day">
       <h2>Recording day</h2>
+      {reviewModal}
       <div className="row" style={{ alignItems: "end" }}>
         <Field label="Date">
           <input
             type="date"
             value={s.scheduledDate ?? ""}
             disabled={!editable}
-            onChange={(e) => attempt(() => updateSession(actor, sessionId, { scheduledDate: e.target.value || null }))}
+            onChange={async (e) => {
+              const date = e.target.value || null;
+              const ok = await askIfScheduling(reviewCheck, s.contentId, sessionId, s.scheduledDate, date);
+              if (ok && attempt(() => updateSession(actor, sessionId, { scheduledDate: date }))) ok.done();
+            }}
           />
         </Field>
         <Field label="Venue">
@@ -447,10 +454,15 @@ export function DuplicateSessionModal({
   onMade?: (id: string) => void;
 }) {
   const { actor, attempt, toast } = useApp();
+  const [reviewCheck, reviewModal] = useReviewCheck();
   const [date, setDate] = useState(() => (session.scheduledDate ? addDaysIso(session.scheduledDate, 7) : ""));
-  const save = () => {
+  const save = async () => {
+    // The copy is a new session on a date: scheduling it.
+    const ok = await reviewCheck({ contentId: getSession(session.id)?.contentId, action: "schedule", targetId: session.id });
+    if (!ok) return;
     const r = attempt(() => duplicateSession(actor, session.id, date));
     if (!r) return;
+    ok.done(r.session.id);
     const skipped = r.gear.skipped.length ? ` Gear not free that day: ${r.gear.skipped.join(" ")}` : "";
     toast(
       `${r.session.id} made for ${fmtDate(date)}${r.sheet ? `, with call sheet ${r.sheet.id}` : ""}.${skipped}`,
@@ -468,7 +480,7 @@ export function DuplicateSessionModal({
           <button className="btn" onClick={onClose}>
             Cancel
           </button>
-          <button className="btn primary" disabled={!date} onClick={save}>
+          <button className="btn primary" disabled={!date} onClick={() => void save()}>
             Duplicate
           </button>
         </>
@@ -485,6 +497,7 @@ export function DuplicateSessionModal({
           stay on it.
         </p>
       </div>
+      {reviewModal}
     </Modal>
   );
 }

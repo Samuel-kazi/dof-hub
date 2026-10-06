@@ -62,6 +62,26 @@ menu, Ctrl+K search", on):
   marked "Coming". Switching one off goes back to how things were, changing no data.
 - General Use stays in the Content Pipeline until lending (a later part) replaces it.
 
+Phase 3, the theological review as a reminder, not a gate (switch: "Theological review as a reminder, not a gate",
+on):
+
+- **The review no longer holds anything up.** A series or documentary leaves Development on its logline and core
+  question and the greenlight with a show producer; a devotion is accepted on its guest and its five pages. The
+  greenlight can be recorded before the review. The other gates (a session's call sheet and gear, the wrap
+  checklist, the review link, the distribution link) are unchanged.
+- **While it is not approved, the project says so**: "Theological review not done", with where it stands (no reviewer
+  yet, 1 of 2 approved, changes requested) and "Open the review", above Project Home and every document; on the
+  project's board card; and in the urgency report (Watch).
+- **Going ahead is asked about, never refused**: scheduling a session (giving it a date, adding one with a date,
+  duplicating one), publishing a call sheet, and publishing an episode ask "Theological review not completed.
+  Continue?" with a short note. Continuing keeps who, what, when and the note with the project (listed under the
+  banner) and in the activity log; Cancel stops. Publishing stays deliberate: a click or Ctrl+Enter.
+- The review can still be decided after the project leaves Development while it is not approved; once approved it is
+  kept as it was.
+- **A page changed after the approval says "Edited after approval"**, in the page list, in the editor and in the
+  review.
+- Switching it off brings the review back as a gate, as before. No data changes either way.
+
 ## Unreleased: one production system, with the call sheet at its centre
 
 Being built in phases. Phase 1, the production core:

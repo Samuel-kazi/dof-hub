@@ -3,7 +3,7 @@ import type { DocumentPage, ProjectDocument } from "../../types";
 import { ConflictError, RuleError } from "../../types";
 import { changeSaved, lastChange } from "../../data/remote";
 import { cleanHtml, textOf } from "../../services/html";
-import { savePage, type PageEdit } from "../../services/wrapped/documents";
+import { editedAfterApproval, savePage, type PageEdit } from "../../services/wrapped/documents";
 import { nameOf } from "../../services/wrapped/people";
 import { fmtTime } from "../../services/utils";
 import { useApp } from "../../ui/AppContext";
@@ -338,6 +338,7 @@ export const PageEditor = forwardRef<PageEditorHandle, Props>(function PageEdito
           }}
         />
         <div aria-live="polite">{savedLine}</div>
+        {editedAfterApproval(page.documentId).has(page.id) && <span className="badge warn">Edited after approval</span>}
       </div>
       <input
         className="pd-subtitle"

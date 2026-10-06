@@ -5,6 +5,7 @@ import { workflowBoard, type WorkItem } from "../../services/workItems";
 import { fmtShort } from "../../services/utils";
 import { useApp } from "../../ui/AppContext";
 import { Empty } from "../../ui/parts";
+import { ReviewDueTag } from "../../ui/ReviewCheck";
 
 // The board for series, devotions and documentaries: a column per stage of the five-stage workflow, with the card
 // at the level that stage works at. A project shows in Development and Pre-production, a recording session in
@@ -68,6 +69,7 @@ export function WorkCard({ item }: { item: WorkItem }) {
       <span className="wf-chips">
         {item.overdue && <span className="badge bad">Overdue</span>}
         <GateBadge item={item} />
+        {item.level === "project" && <ReviewDueTag contentId={item.project.contentId} />}
       </span>
     </div>
   );
