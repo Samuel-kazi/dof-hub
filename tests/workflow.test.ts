@@ -326,13 +326,14 @@ t("run of show segments are checked and can be edited or removed while the sheet
   CS.finalizeCallSheet(crew3(), id);
   throwsRule(() => CS.addRunItem(crew3(), id, { time: "11:00", title: "Late", durationMin: 1 }), /final/);
 });
-t("small productions do not get a run of show until the day is set to large", () => {
+t("every call sheet can have a run of show; a large production cannot be final without one", () => {
   const day = C.createChildRecord(hop(), "DOF-LIVE-001", { title: "Day 3", scheduledDate: isoDay(25) });
   C.updateRecord(hop(), day.contentId, { productionLevel: "small" });
   const sheet = CS.createCallSheet(crew3(), { contentId: "DOF-LIVE-001", date: isoDay(25) });
-  throwsRule(() => CS.addRunItem(crew3(), sheet.id, { time: "09:00", title: "x", durationMin: 5 }), /large productions/);
+  assert.ok(CS.addRunItem(crew3(), sheet.id, { time: "09:00", title: "x", durationMin: 5 }), "a small production may have one too");
   C.updateRecord(hop(), day.contentId, { productionLevel: "large" });
-  assert.ok(CS.addRunItem(crew3(), sheet.id, { time: "09:00", title: "x", durationMin: 5 }));
+  CS.removeRunItem(crew3(), sheet.id, CS.getCallSheet(sheet.id)!.runOfShow[0].id);
+  throwsRule(() => CS.finalizeCallSheet(crew3(), sheet.id), /needs a run of show/);
 });
 t("duplicating a call sheet copies the run of show", () => {
   const res = CS.duplicateCallSheet(crew3(), "DOF-CS-002", isoDay(9));

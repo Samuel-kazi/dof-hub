@@ -208,7 +208,8 @@ t("the Add form makes workflow projects: a series asks its kind, a documentary w
   );
   assert.ok(season.includes("Season title (optional)"));
   const live = html(ROLES.hop, <NewRecordModal category="live" onClose={() => {}} onCreated={() => {}} />);
-  assert.ok(live.includes("First day of the show"), "Live Shows keep their form");
+  for (const text of ["How does it run?", "Recurring show", "One-time event", "Multi-day event", "Date of the event"])
+    assert.ok(live.includes(text), `a live show is made as a production: ${text}`);
 });
 
 t("the call sheet made for a session lists that session's episodes", () => {

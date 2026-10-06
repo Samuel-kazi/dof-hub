@@ -504,6 +504,73 @@ await t("every action accepts the arguments its screen sends", async () => {
   await must("workflow.setEpisodeAssets", e01, { sizeGB: 40 });
   await must("workflow.setEpisodeAssets", e01, { driveId: footageDrive, sizeGB: 45 });
 
+  // Productions: a recurring show from its template and schedule, a one-time and a multi-day event, and the sections
+  // every call sheet now has.
+  const fridays = {
+    freq: "weekly",
+    interval: 1,
+    weekdays: [5],
+    monthDay: null,
+    nth: null,
+    startDate: "2026-10-02",
+    until: null,
+    count: null,
+    skipDates: [],
+    extraDates: [],
+  };
+  const vespers = await must("production.createProduction", {
+    title: "Friday Vespers",
+    mode: "recurring",
+    rule: fridays,
+    callTime: "16:00",
+    location: "Studio A",
+  });
+  const tpl = ((await state()).showTemplates as Json[]).find((x) => x.contentId === vespers.contentId)!.id;
+  await must("production.updateShowTemplate", tpl, {
+    sheet: {
+      location: "Studio B",
+      talent: [{ id: "TL-aaaaaaaa", name: "Choir", role: "Performer", contact: "", callTime: "", notes: "" }],
+      plannedGear: [],
+    },
+    horizonWeeks: 8,
+    productionLevel: "medium",
+  });
+  await must("production.setShowSchedule", tpl, { ...fridays, weekdays: [5, 6], skipDates: ["2026-10-09"] });
+  await must("production.topUpShow", vespers.contentId);
+  const firstDay = ((await state()).records as Json[]).find((r) => r.parentId === vespers.contentId && r.instance)!.contentId;
+  const daySheet = ((await state()).callSheets as Json[]).find((c) => c.instanceId === firstDay)!;
+  await must(
+    "callsheets.updateCallSheet",
+    daySheet.id,
+    {
+      talentCall: "15:30",
+      startTime: "17:00",
+      wrapTime: "20:00",
+      locationAddress: "Ngong Road",
+      locationNotes: "Gate B",
+      crewPersonIds: ["DOF-P-CRW-001"],
+      crewRoles: { "DOF-P-CRW-001": "Camera" },
+      crewLeadId: "DOF-P-CRW-001",
+      logistics: { transport: "Van", parking: "", meals: "", accommodation: "", other: "" },
+      contacts: [{ id: "CT-aaaaaaaa", name: "Venue", role: "Manager", phone: "+254", email: "" }],
+      technicalCheck: [{ id: "TC-aaaaaaaa", label: "Audio", done: true, note: "" }],
+      rehearsal: { time: "15:00", notes: "", done: false },
+      runOfShow: [{ id: "RS-aaaaaaaa", time: "17:00", title: "Welcome", durationMin: 5, ownerPersonId: null, notes: "" }],
+    },
+    daySheet.version,
+  );
+  await must("production.resetToTemplate", firstDay);
+  await must("callsheets.bookPlannedGear", daySheet.id);
+  const camp = await must("production.createProduction", {
+    title: "Camp",
+    mode: "multi_day",
+    startDate: "2026-12-01",
+    endDate: "2026-12-02",
+  });
+  await must("production.updateEventPlan", camp.contentId, { overview: "Camp meeting", accommodation: "Dorms" });
+  await must("production.addEventDay", camp.contentId, "2026-12-03");
+  await must("production.createProduction", { title: "Rally", mode: "one_time", date: "2026-11-14", productionLevel: "large" });
+
   const missed = Object.keys(ACTIONS).filter((n) => !covered.has(n));
   assert.deepEqual(missed, [], `Add a call for: ${missed.join(", ")}`);
 });

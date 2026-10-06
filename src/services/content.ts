@@ -240,6 +240,7 @@ export interface NewRecordInput {
   showStart?: string | null; // series and live shows
   showEnd?: string | null;
   notes?: string;
+  noDays?: boolean; // a recurring show: its days come from its schedule (the production service). Never sent by a screen.
 }
 
 /** A new record with every field at its empty value. */
@@ -288,6 +289,8 @@ export function blankRecord(id: string, category: CategoryKey, title: string, pa
     seriesType: null,
     workflow: null,
     episode: null,
+    production: null,
+    instance: null,
   };
 }
 
@@ -353,22 +356,36 @@ function datesBetween(start: string, end: string): string[] {
   return out;
 }
 
+export interface DayInput {
+  productionLevel?: ProductionLevel | null;
+  assigneePersonId?: string | null;
+  deadline?: string | null;
+}
+
+/** One day of a live show: its own item, with its own pipeline. Its call sheet is made by the production service. */
+export function makeDay(actor: Actor, show: ContentRecord, date: string | null, title: string, input: DayInput = {}): ContentRecord {
+  const day = blankRecord(nextChildId(show), "live", title, show.contentId, 1);
+  day.scheduledDate = date;
+  day.deadline = date ?? input.deadline ?? null; // a live day is published on the day it is streamed
+  day.assigneePersonId = input.assigneePersonId || null;
+  day.productionLevel = input.productionLevel ?? null;
+  initPipeline(actor, day);
+  if (day.assigneePersonId && day.pipelineStage) day.stageAssignees[day.pipelineStage] = [{ personId: day.assigneePersonId, roles: [] }];
+  getDb().records.push(day);
+  ensureMember(actor, day.assigneePersonId, day);
+  return day;
+}
+
 /** A live show is made of days. Each is its own item, with its own pipeline, call sheet and run of show. */
 function createDays(actor: Actor, show: ContentRecord, input: NewRecordInput): void {
   const dates = input.showStart ? datesBetween(input.showStart, input.showEnd || input.showStart) : [null];
   if (dates.length > MAX_SHOW_DAYS) throw new RuleError(`A live show can run for up to ${MAX_SHOW_DAYS} days. Add a longer one in parts.`);
-  dates.forEach((date, i) => {
-    const day = blankRecord(nextChildId(show), "live", `Day ${i + 1}`, show.contentId, 1);
-    day.scheduledDate = date;
-    day.deadline = date ?? input.deadline ?? null; // a live day is published on the day it is streamed
-    day.assigneePersonId = input.assigneePersonId || null;
-    day.productionLevel = input.productionLevel ?? null;
-    initPipeline(actor, day);
-    if (day.assigneePersonId && day.pipelineStage) day.stageAssignees[day.pipelineStage] = [{ personId: day.assigneePersonId, roles: [] }];
-    getDb().records.push(day);
-    ensureMember(actor, day.assigneePersonId, day);
-  });
+  dates.forEach((date, i) => makeDay(actor, show, date, `Day ${i + 1}`, input));
 }
+
+/** The dates from a first to a last day, both included, for a show of up to 31 days. */
+export const showDates = (start: string, end: string): string[] => datesBetween(start, end);
+export const MAX_DAYS_OF_SHOW = MAX_SHOW_DAYS;
 
 /** Creates a top-level project (Head of Production only). */
 export function createRecord(actor: Actor, input: NewRecordInput): ContentRecord {
@@ -395,7 +412,7 @@ export function createRecord(actor: Actor, input: NewRecordInput): ContentRecord
   if (r.assigneePersonId && r.pipelineStage) r.stageAssignees[r.pipelineStage] = [{ personId: r.assigneePersonId, roles: [] }];
   getDb().records.push(r);
   ensureMember(actor, r.assigneePersonId, r);
-  if (r.category === "live") createDays(actor, r, input);
+  if (r.category === "live" && !input.noDays) createDays(actor, r, input);
   logAudit(actor, "create", "record", r.contentId, r.title);
   commit();
   return r;

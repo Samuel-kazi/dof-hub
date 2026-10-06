@@ -123,6 +123,15 @@ export const UNIQUE_RULES: UniqueRule[] = [
     when: { field: "token", is: "string" },
     message: "That share link already exists. Make a new one.",
   },
+  // Productions (data version 19): a day of a show has one call sheet, and a show one template.
+  {
+    name: "day_call_sheet",
+    part: "callSheets",
+    fields: ["instanceId"],
+    when: { field: "instanceId", is: "string" },
+    message: "That day of the show already has its call sheet.",
+  },
+  { name: "show_template", part: "showTemplates", fields: ["contentId"], message: "This show already has a template." },
 ];
 
 /** The value at a dotted path, such as "episode.episodeNumber". */
@@ -169,7 +178,8 @@ export function uniqueViolations(part: string, elements: unknown[]): string[] {
 export function integrityProblems(db: Database): string[] {
   const out: string[] = [];
   const parts = db as unknown as Record<string, unknown[] | undefined>;
-  for (const part of [...WORKFLOW_PARTS, ...DOCUMENT_PARTS, "records"]) out.push(...uniqueViolations(part, parts[part] ?? []));
+  for (const part of [...WORKFLOW_PARTS, ...DOCUMENT_PARTS, "records", "callSheets", "showTemplates"])
+    out.push(...uniqueViolations(part, parts[part] ?? []));
 
   const records = new Set(db.records.map((r) => r.contentId));
   const people = new Set(db.people.map((p) => p.personId));
@@ -296,6 +306,30 @@ export function integrityProblems(db: Database): string[] {
   for (const a of db.allocations ?? [])
     if (a.sessionId && !sessions.has(a.sessionId)) missing("session", a.sessionId, `Storage entry ${a.id}`);
   for (const r of db.shotListRows ?? []) if (!lists.has(r.shotListId)) missing("shot list", r.shotListId, `Row ${r.id}`);
+  // Productions: a show's template is its own, a day made from a template belongs to that template's show, and a
+  // day's call sheet is that day's show's.
+  const recordById = new Map(db.records.map((r) => [r.contentId, r]));
+  const templates = new Map((db.showTemplates ?? []).map((t) => [t.id, t]));
+  for (const t of db.showTemplates ?? []) {
+    const show = recordById.get(t.contentId);
+    if (!show) missing("show", t.contentId, `Template ${t.id}`);
+    else if (show.production?.templateId !== t.id) out.push(`Template ${t.id} is not its show's template.`);
+  }
+  for (const r of db.records) {
+    if (r.production?.templateId && !templates.has(r.production.templateId))
+      missing("template", r.production.templateId, `Show ${r.contentId}`);
+    if (r.instance) {
+      const t = templates.get(r.instance.templateId);
+      if (!t) missing("template", r.instance.templateId, `Day ${r.contentId}`);
+      else if (t.contentId !== r.parentId) out.push(`Day ${r.contentId} follows another show's template.`);
+    }
+  }
+  for (const c of db.callSheets)
+    if (c.instanceId) {
+      const day = recordById.get(c.instanceId);
+      if (!day) missing("day", c.instanceId, `Call sheet ${c.id}`);
+      else if (day.parentId !== c.contentId) out.push(`Call sheet ${c.id} is for a day of another show.`);
+    }
   return out;
 }
 

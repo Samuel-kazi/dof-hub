@@ -16,6 +16,7 @@ import type {
   WorkflowChecklistItem,
 } from "../types";
 import { CHECKLISTS, CRITERIA, type ChecklistKey } from "../config/workflow";
+import { blankSheetContent } from "../config/callSheet";
 import { buildSeed, isoDay, rec } from "./seed";
 import { episodeCode, plannedEpisodeId, sessionCode, syncRecordCounters, syncWorkflowCounters } from "./ids";
 
@@ -295,6 +296,8 @@ export function buildWorkflowFixture(options: WorkflowFixtureOptions = {}): Data
       db.recordingSessions.push(session(wow.contentId, n, isoDay(-7 + (n - 1) * 7), n === 1 ? "Closed" : "Planned"));
     const r01 = db.recordingSessions[0];
     const sheet: CallSheet = {
+      ...blankSheetContent(),
+      instanceId: null,
       id: "DOF-CS-001",
       contentId: series.contentId,
       title: `Whispers of Why: ${r01.id}`,

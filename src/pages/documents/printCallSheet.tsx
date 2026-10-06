@@ -1,23 +1,29 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import type { Actor, RecordingSession } from "../../types";
+import type { Actor, CallSheet, RecordingSession, RunItem } from "../../types";
+import { LOGISTICS_FIELDS } from "../../config/callSheet";
 import { roleName } from "../../config/workflow";
 import { getDb } from "../../data/store";
 import { getRecord, isHop, redactPerson } from "../../services/access";
 import { fmtDate, todayIso } from "../../services/utils";
 import { framesOf, rowsOfShotList, shotNumbers } from "../../services/wrapped/documents";
+import { getItem, manifestForSheet } from "../../services/wrapped/equipment";
 import { can } from "../../services/wrapped/permissions";
 import { nameOf } from "../../services/wrapped/people";
+import { roleOn } from "../../services/wrapped/team";
 import { devotionPlacements, planRolesOf, roleHolder, sessionName, sheetTimes, type Project } from "../../services/wrapped/workflow";
 import { useApp } from "../../ui/AppContext";
+import { crewContactRows, seesOutsideContacts } from "../production/SheetSections";
 import { imageSrc } from "./images";
 
-// Printing a session's call sheet, or its run sheet alone, on paper or to PDF through the browser's own print: one
-// clean page, black on white, headed with the project, the session's name, label and date. Anyone who can see the
-// project can print it (downloading a report still needs "Export reports").
+// Printing a call sheet, or its run sheet alone, on paper or to PDF through the browser's own print: one clean page,
+// black on white, headed with the project, the day (or session's name and label) and the date. Every section of the
+// sheet is printed, then, for a recording session, its devotions and its storyboard and shot list. Anyone who can see
+// the project can print it (downloading a report still needs "Export reports").
 
 export interface CallSheetPrintJob {
-  sessionId: string;
+  sheetId?: string; // the call sheet, or
+  sessionId?: string; // a recording session (its call sheet, if it has one, and its run sheet)
   only: "all" | "run";
 }
 
@@ -49,8 +55,8 @@ const endOf = (time: string, minutes: number): string => {
   return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
 };
 
-function RunSheetTable({ session }: { session: RecordingSession }) {
-  const rows = [...session.runSheet].sort((a, b) => a.time.localeCompare(b.time));
+function RunTable({ items }: { items: RunItem[] }) {
+  const rows = [...items].sort((a, b) => a.time.localeCompare(b.time));
   if (!rows.length) return <p>The run sheet is empty.</p>;
   return (
     <table className="report-table">
@@ -78,25 +84,46 @@ function RunSheetTable({ session }: { session: RecordingSession }) {
   );
 }
 
+const Pairs = ({ rows }: { rows: [string, string][] }) => (
+  <table className="report-pairs">
+    <tbody>
+      {rows.map(([k, v]) => (
+        <tr key={k}>
+          <th>{k}</th>
+          <td style={{ whiteSpace: "pre-wrap" }}>{v}</td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+);
+
 export function PrintedCallSheet({ job }: { job: CallSheetPrintJob }) {
   const { actor } = useApp();
   const db = getDb();
-  const s = db.recordingSessions.find((x) => x.id === job.sessionId);
-  const project = s ? (getRecord(s.contentId) as Project | undefined) : undefined;
-  if (!s || !project) return null;
-  const cs = s.callSheetId ? db.callSheets.find((c) => c.id === s.callSheetId) : undefined;
-  const when = [
-    s.label,
-    s.scheduledDate ? fmtDate(s.scheduledDate) : "No date yet",
-    s.startTime && `${s.startTime}${s.endTime ? `–${s.endTime}` : ""}`,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  let s: RecordingSession | undefined = job.sessionId ? db.recordingSessions.find((x) => x.id === job.sessionId) : undefined;
+  const cs: CallSheet | undefined = job.sheetId
+    ? db.callSheets.find((c) => c.id === job.sheetId)
+    : s?.callSheetId
+      ? db.callSheets.find((c) => c.id === s!.callSheetId)
+      : undefined;
+  if (!s && cs) s = db.recordingSessions.find((x) => x.callSheetId === cs.id);
+  const contentId = cs?.contentId ?? s?.contentId;
+  const project = contentId ? (getRecord(contentId) as Project | undefined) : undefined;
+  if (!project || (!cs && !s)) return null;
+  const day = cs?.instanceId ? getRecord(cs.instanceId) : undefined;
+  const date = cs?.date ?? s?.scheduledDate ?? null;
+  const from = s?.startTime ?? cs?.startTime ?? "";
+  const to = s?.endTime ?? cs?.wrapTime ?? "";
+  const name = s ? sessionName(s) : (day?.title ?? cs?.title ?? "");
+  // A recurring show's day is called by its date: the date is not said twice.
+  const dateText = date ? (name.includes(fmtDate(date)) ? null : fmtDate(date)) : "No date yet";
+  const when = [s ? s.label : null, dateText, from && `${from}${to ? `–${to}` : ""}`].filter(Boolean).join(" · ");
+  const run = s ? s.runSheet : (cs?.runOfShow ?? []);
   const head = (
     <header className="rp-print-head">
       <h1>{project.title}</h1>
       <p className="report-sub">
-        <b>{sessionName(s)}</b> · {when} · {job.only === "run" ? "Run sheet" : "Call sheet"} · printed {fmtDate(todayIso())}
+        <b>{name}</b> · {when} · {job.only === "run" ? "Run sheet" : "Call sheet"} · printed {fmtDate(todayIso())}
       </p>
     </header>
   );
@@ -104,87 +131,186 @@ export function PrintedCallSheet({ job }: { job: CallSheetPrintJob }) {
     return (
       <article className="report-page rp-print" aria-label="Printed run sheet">
         {head}
-        <RunSheetTable session={s} />
+        <RunTable items={run} />
       </article>
     );
-  const t = sheetTimes(s.runSheet);
-  const devotions = devotionPlacements(project.contentId).filter((x) => x.sessionId === s.id);
-  const frames = s.storyboardId ? framesOf(s.storyboardId) : [];
-  const shots = s.shotListId ? rowsOfShotList(s.shotListId).filter((r) => r.rowType !== "setup") : [];
-  const numbers = s.shotListId ? shotNumbers(s.shotListId) : new Map<string, number>();
-  // Every role, in the plan's order, with who holds it and their phone where the viewer may see it; then the guest.
-  const contacts = new Map(sheetContacts(project, actor).map((c) => [c.role, c]));
-  const rows = [
-    ...planRolesOf(project.contentId).map((r) => contacts.get(roleName(r)) ?? { role: roleName(r), name: "No one yet", phone: "" }),
-    ...[...contacts.values()].filter((c) => !planRolesOf(project.contentId).some((r) => roleName(r) === c.role)),
-  ];
+  const t = sheetTimes(run);
+  const time = (typed: string | undefined, fromRun: string | null) => typed || fromRun || "Not set";
+  const devotions = s ? devotionPlacements(project.contentId).filter((x) => x.sessionId === s!.id) : [];
+  const frames = s?.storyboardId ? framesOf(s.storyboardId) : [];
+  const shots = s?.shotListId ? rowsOfShotList(s.shotListId).filter((r) => r.rowType !== "setup") : [];
+  const numbers = s?.shotListId ? shotNumbers(s.shotListId) : new Map<string, number>();
+  const roleHint = (pid: string) => roleOn(pid, project) || null;
+  const open = seesOutsideContacts(actor);
+  // The crew on the sheet, then (for a recording session) the plan's role holders not on it and its guest.
+  const crew = cs ? crewContactRows(cs, actor, roleHint) : [];
+  const crewNames = new Set(crew.map((c) => c.name));
+  const planRows = s ? sheetContacts(project, actor).filter((c) => !crewNames.has(c.name)) : [];
+  const unfilled = s ? planRolesOf(project.contentId).filter((r) => !roleHolder(r)) : [];
+  const gear = cs ? manifestForSheet(cs.id) : undefined;
+  const logistics = cs
+    ? LOGISTICS_FIELDS.filter((f) => cs.logistics[f.key]).map((f) => [f.label, cs.logistics[f.key]] as [string, string])
+    : [];
   return (
     <article className="report-page rp-print" aria-label="Printed call sheet">
       {head}
-      <table className="report-pairs">
-        <tbody>
-          <tr>
-            <th>Venue</th>
-            <td>{cs?.location || s.venue || "Not set"}</td>
-          </tr>
-          {cs?.format && (
-            <tr>
-              <th>Format</th>
-              <td>{cs.format}</td>
-            </tr>
-          )}
-          <tr>
-            <th>Crew call</th>
-            <td>{t.crewCall ?? "Not on the run sheet"}</td>
-          </tr>
-          <tr>
-            <th>Talent arrival</th>
-            <td>{t.talentArrival ?? "Not on the run sheet"}</td>
-          </tr>
-          <tr>
-            <th>Start recording</th>
-            <td>{t.startRecording ?? "Not on the run sheet"}</td>
-          </tr>
-          <tr>
-            <th>Wrap</th>
-            <td>{t.wrap ?? "Not on the run sheet"}</td>
-          </tr>
-        </tbody>
-      </table>
-      <h2>Roles and contacts</h2>
-      <table className="report-table">
-        <thead>
-          <tr>
-            <th>Role</th>
-            <th>Name</th>
-            <th>Phone</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((c) => (
-            <tr key={`${c.role}|${c.name}`}>
-              <td>{c.role}</td>
-              <td>{c.name}</td>
-              <td>{c.phone}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <h2>Devotions, in order</h2>
-      {devotions.length === 0 ? (
-        <p>None ticked on this session yet.</p>
+      <h2>Schedule</h2>
+      <Pairs
+        rows={[
+          ["Crew call", time(cs?.callTime, t.crewCall)],
+          ["Talent call", time(cs?.talentCall, t.talentArrival)],
+          ["Start", time(cs?.startTime, t.startRecording)],
+          ["Wrap", time(cs?.wrapTime, t.wrap)],
+        ]}
+      />
+      <h2>Crew</h2>
+      {crew.length + planRows.length + unfilled.length === 0 ? (
+        <p>No crew on the sheet yet.</p>
       ) : (
-        <ol>
-          {devotions.map((x) => (
-            <li key={x.planned.id}>
-              {x.title}
-              {x.scripture ? ` (${x.scripture})` : ""}
-            </li>
-          ))}
-        </ol>
+        <table className="report-table">
+          <thead>
+            <tr>
+              <th>Role</th>
+              <th>Name</th>
+              <th>Phone</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...crew, ...planRows].map((c, i) => (
+              <tr key={`${c.name}|${i}`}>
+                <td>{c.role}</td>
+                <td>{c.name}</td>
+                <td>{c.phone}</td>
+              </tr>
+            ))}
+            {unfilled.map((r) => (
+              <tr key={r.id}>
+                <td>{roleName(r)}</td>
+                <td>No one yet</td>
+                <td />
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
-      <h2>Run sheet</h2>
-      <RunSheetTable session={s} />
+      {cs && cs.talent.length > 0 && (
+        <>
+          <h2>Talent</h2>
+          <table className="report-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Role</th>
+                <th>Contact</th>
+                <th>Call</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cs.talent.map((x) => (
+                <tr key={x.id}>
+                  <td>{x.name}</td>
+                  <td>{x.role}</td>
+                  <td>{open ? x.contact : "Private"}</td>
+                  <td>{x.callTime || cs.talentCall}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+      <h2>Location</h2>
+      <Pairs
+        rows={[
+          ["Location", cs?.location || s?.venue || "Not set"],
+          ...(cs?.locationAddress ? [["Address", cs.locationAddress] as [string, string]] : []),
+          ...(cs?.locationNotes ? [["Getting in", cs.locationNotes] as [string, string]] : []),
+          ...(cs?.format ? [["Format", cs.format] as [string, string]] : []),
+        ]}
+      />
+      {(gear?.lines.length || cs?.plannedGear.length) && (
+        <>
+          <h2>Equipment</h2>
+          <ul>
+            {(gear?.lines ?? []).map((l) => (
+              <li key={l.equipmentId}>
+                {getItem(l.equipmentId)?.name ?? l.equipmentId}
+                {l.quantity > 1 ? ` x ${l.quantity}` : ""}
+              </li>
+            ))}
+            {(cs?.plannedGear ?? []).map((g) => (
+              <li key={`p-${g.equipmentId}`}>
+                {getItem(g.equipmentId)?.name ?? g.equipmentId}
+                {g.quantity > 1 ? ` x ${g.quantity}` : ""} (not booked yet)
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {logistics.length > 0 && (
+        <>
+          <h2>Logistics</h2>
+          <Pairs rows={logistics} />
+        </>
+      )}
+      {cs && cs.contacts.length > 0 && (
+        <>
+          <h2>Contacts</h2>
+          <table className="report-table">
+            <tbody>
+              {cs.contacts.map((c) => (
+                <tr key={c.id}>
+                  <td>{c.role}</td>
+                  <td>{c.name}</td>
+                  <td>{open ? [c.phone, c.email].filter(Boolean).join(", ") : "Private"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+      {s && (
+        <>
+          <h2>Devotions, in order</h2>
+          {devotions.length === 0 ? (
+            <p>None ticked on this session yet.</p>
+          ) : (
+            <ol>
+              {devotions.map((x) => (
+                <li key={x.planned.id}>
+                  {x.title}
+                  {x.scripture ? ` (${x.scripture})` : ""}
+                </li>
+              ))}
+            </ol>
+          )}
+        </>
+      )}
+      <h2>{s ? "Run sheet" : "Run of show"}</h2>
+      <RunTable items={run} />
+      {cs && cs.technicalCheck.length > 0 && (
+        <>
+          <h2>Technical check</h2>
+          <ul className="rp-print-checks">
+            {cs.technicalCheck.map((c) => (
+              <li key={c.id}>
+                {c.done ? "☑" : "☐"} {c.label}
+                {c.note ? `: ${c.note}` : ""}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {cs && (cs.rehearsal.time || cs.rehearsal.notes) && (
+        <>
+          <h2>Rehearsal</h2>
+          <Pairs
+            rows={[
+              ["Time", cs.rehearsal.time || "Not set"],
+              ...(cs.rehearsal.notes ? [["What", cs.rehearsal.notes] as [string, string]] : []),
+            ]}
+          />
+        </>
+      )}
       {frames.length > 0 && (
         <>
           <h2>Storyboard</h2>

@@ -37,6 +37,8 @@ export function encodeRoute(r: Route): string {
       return `/record/${seg(r.id)}`;
     case "session":
       return `/session/${seg(r.id)}`;
+    case "template":
+      return `/template/${seg(r.id)}`;
     case "callsheets":
       return "/callsheets";
     case "callsheet":
@@ -88,6 +90,8 @@ export function decodeRoute(path: string): Route {
       return arg ? { n: "record", id: arg } : { n: "dashboard" };
     case "session":
       return arg ? { n: "session", id: arg } : { n: "pipeline" };
+    case "template":
+      return arg ? { n: "template", id: arg } : { n: "pipeline" };
     case "callsheets":
       return { n: "callsheets" };
     case "callsheet":

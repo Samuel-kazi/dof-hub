@@ -139,6 +139,142 @@ export interface ContentRecord {
   seriesType: SeriesType | null; // on a series itself (level 0): podcast, testimonial or sermon
   workflow: ProjectWorkflow | null; // on a project: a season of a series, a devotion, a documentary
   episode: EpisodeInfo | null; // on an episode, made when a recording session closes
+  // ── Productions (data version 19): how a live show's days are made, and where each came from ──
+  production?: ProductionInfo | null; // on a live show (level 0): recurring, one-time or multi-day
+  instance?: InstanceInfo | null; // on a day of a recurring show: the template it follows, unless edited
+}
+
+// ── Productions: one system, three ways of making its days ───
+// A recurring show makes a day (an instance) for each date of its schedule from its Show Template; a one-time event
+// has exactly one day; a multi-day event has an Event Plan and a day for each date. Every day has one call sheet.
+
+export type ProductionMode = "recurring" | "one_time" | "multi_day";
+
+export interface ProductionInfo {
+  mode: ProductionMode;
+  templateId: string | null; // recurring: its Show Template
+  eventPlan: EventPlan | null; // multi-day: the plan for the whole event
+}
+
+export interface EventPlan {
+  overview: string;
+  venue: string;
+  audience: string;
+  travel: string;
+  accommodation: string;
+  budget: string;
+  notes: string;
+}
+
+export interface InstanceInfo {
+  templateId: string; // the Show Template it was made from
+  occurrence: string; // the date the schedule gave it (kept if the day is moved)
+  templateVersion: number; // the template's version it last took
+  locked: boolean; // edited by hand: later template changes pass it by, until it is reset to the template
+  lockedAt: string | null;
+  lockedBy: string | null;
+}
+
+/** When a recurring show happens. Dates are YYYY-MM-DD; weekdays 0 (Sunday) to 6 (Saturday). */
+export interface RecurrenceRule {
+  freq: "weekly" | "monthly";
+  interval: number; // every N weeks or months
+  weekdays: number[]; // weekly: the days of the week
+  monthDay: number | null; // monthly: this day of the month (a shorter month uses its last day)
+  nth: { week: 1 | 2 | 3 | 4 | -1; weekday: number } | null; // monthly: the first to fourth, or last (-1), weekday
+  startDate: string;
+  until: string | null; // the last date it may fall on
+  count: number | null; // or how many times it happens in all
+  skipDates: string[]; // dates left out (a holiday)
+  extraDates: string[]; // dates added (a special service)
+}
+
+/** A line of a call sheet's technical check. */
+export interface CheckItem {
+  id: string;
+  label: string;
+  done: boolean;
+  note: string;
+}
+
+/** Someone who appears: a host, guest, speaker or performer. Free text, so outside talent needs no account. */
+export interface TalentEntry {
+  id: string;
+  name: string;
+  role: string;
+  contact: string;
+  callTime: string; // HH:MM, or empty for the sheet's talent call
+  notes: string;
+}
+
+/** Someone to call on the day who is not on the crew: the venue's manager, security, a driver. */
+export interface ContactEntry {
+  id: string;
+  name: string;
+  role: string;
+  phone: string;
+  email: string;
+}
+
+export interface Logistics {
+  transport: string;
+  parking: string;
+  meals: string;
+  accommodation: string;
+  other: string;
+}
+
+export interface Rehearsal {
+  time: string; // HH:MM, or empty
+  notes: string;
+  done: boolean;
+}
+
+/** A quantity of an item to book. */
+export interface GearRequest {
+  equipmentId: string;
+  quantity: number;
+}
+
+/**
+ * What a call sheet holds that a Show Template holds too. Copied whole when a sheet is made from a template, made
+ * for a new day of an event, or duplicated; a template change is copied to the days still following it.
+ */
+export interface SheetContent {
+  callTime: string; // crew call, HH:MM
+  talentCall: string;
+  startTime: string;
+  wrapTime: string;
+  location: string;
+  locationAddress: string;
+  locationNotes: string;
+  format: string;
+  notes: string;
+  crewPersonIds: string[];
+  crewRoles: Record<string, string>; // personId to their role on this sheet
+  crewLeadId: string | null;
+  talent: TalentEntry[];
+  logistics: Logistics;
+  contacts: ContactEntry[];
+  runOfShow: RunItem[];
+  technicalCheck: CheckItem[];
+  rehearsal: Rehearsal;
+  plannedGear: GearRequest[]; // gear still to book (a template's gear; booked on a day within two weeks of it)
+}
+
+/** A recurring show's standard crew, equipment, workflow, run of show and call sheet. */
+export interface ShowTemplate {
+  id: string; // DOF-TPL-001
+  contentId: string; // the show
+  rule: RecurrenceRule;
+  sheet: SheetContent;
+  productionLevel: ProductionLevel | null; // each day's level of production
+  ownerPersonId: string | null; // responsible for each day
+  horizonWeeks: number; // how far ahead days are made
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  updatedBy: string;
 }
 
 // ── The five-stage workflow ──────────────────────────────────
@@ -504,19 +640,14 @@ export interface RunItem {
   notes: string;
 }
 
-export interface CallSheet {
+export interface CallSheet extends SheetContent {
   id: string; // DOF-CS-001
   contentId: string; // top-level project the sheet belongs to
   title: string;
   date: string;
-  location: string;
-  callTime: string;
   linkedEpisodeIds: string[]; // fixed at creation, never live-recalculated
-  crewPersonIds: string[];
   equipmentIds: string[]; // populated by the Equipment module (phase 2)
-  runOfShow: RunItem[]; // used when the project's production level is large
-  format: string;
-  notes: string;
+  instanceId: string | null; // the day of a show it is for (data version 19)
   status: "draft" | "final";
   version: number;
   createdAt: string;
@@ -779,6 +910,7 @@ export interface Database {
   storyboardFrames: StoryboardFrame[];
   shotLists: ShotList[];
   shotListRows: ShotListRow[];
+  showTemplates: ShowTemplate[]; // data version 19
   settings: Settings;
   counters: Record<string, number>; // ID sequences, keyed by prefix
 }

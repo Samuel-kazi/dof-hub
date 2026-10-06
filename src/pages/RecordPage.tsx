@@ -37,6 +37,8 @@ import { useRecordMenu } from "./Pipeline";
 import { RecordExtras } from "./RecordExtras";
 import { RecordDetails } from "./RecordDetails";
 import { CastPanel } from "./CastPanel";
+import { InstanceStrip } from "./production/InstanceStrip";
+import { ProductionPanel } from "./production/ProductionPanel";
 import { LinksPanel, DevotionalPanel, PostProductionPanel, StageChecklist, StagePlan, StrikePlanPanel } from "./StagePanel";
 import { WorkflowProjectPage } from "./workflow/ProjectPage";
 import { EpisodePage } from "./workflow/EpisodePage";
@@ -130,7 +132,8 @@ export function RecordPage({ id }: { id: string }) {
             {existingSheet ? "Open call sheet" : "Create call sheet"}
           </button>
         )}
-        {kind && write && (
+        {/* A production's days come from its schedule, or (a multi-day event) are added in its panel below. */}
+        {kind && write && !rec.production && (
           <button className="btn primary" onClick={() => setAdding(true)}>
             <IconPlus /> Add {kind.toLowerCase()}
           </button>
@@ -183,6 +186,9 @@ export function RecordPage({ id }: { id: string }) {
           </div>
         )
       )}
+
+      {rec.category === "live" && rec.hierarchyLevel === 0 && <ProductionPanel show={rec} />}
+      {rec.instance && <InstanceStrip day={rec} write={write} />}
 
       {leaf && rec.category !== "general" && (stage || rec.pipelineStage === "Closed") && (
         <section className="glass panel" aria-label="Pipeline">

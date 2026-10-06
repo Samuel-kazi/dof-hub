@@ -66,7 +66,9 @@ export function visibleRecords(actor: Actor, includeArchived = false): ContentRe
 export function visibleCallSheets(actor: Actor): CallSheet[] {
   return getDb().callSheets.filter((cs) => {
     const root = getRecord(cs.contentId);
-    return !!root && canView(actor, root);
+    // A day a recurring show's schedule took off is archived, and its sheet goes with it (until the day comes back).
+    const day = cs.instanceId ? getRecord(cs.instanceId) : undefined;
+    return !!root && canView(actor, root) && !day?.archived;
   });
 }
 

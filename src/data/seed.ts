@@ -11,6 +11,7 @@ import type {
   StageTask,
 } from "../types";
 import { categoryOf } from "../config/categories";
+import { blankSheetContent } from "../config/callSheet";
 import { buildGearSeed } from "./seedGear";
 import { syncRecordCounters } from "./ids";
 import { fillTemplate, templateOf } from "../config/docTemplates";
@@ -596,6 +597,8 @@ export function buildSeed(): Database {
     records,
     callSheets: [
       {
+        ...blankSheetContent(),
+        instanceId: null,
         id: "DOF-CS-001",
         contentId: "DOF-SER-001",
         title: "Whispers of Why: Season 1 recording day",
@@ -613,6 +616,8 @@ export function buildSeed(): Database {
         createdAt: isoDay(-1),
       },
       {
+        ...blankSheetContent(),
+        instanceId: "DOF-LIVE-001-D1",
         id: "DOF-CS-002",
         contentId: "DOF-LIVE-001",
         title: "Sunday Live Service: Day 1, full broadcast",
@@ -681,6 +686,7 @@ export function buildSeed(): Database {
     storyboardFrames: [],
     shotLists: [],
     shotListRows: [],
+    showTemplates: [],
     ...gear,
     settings: {
       stageReminderHours: 24,

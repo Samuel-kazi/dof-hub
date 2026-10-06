@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { ServerResponse } from "node:http";
 import type { ShareLink } from "../src/types";
 import { applyReviewWindows, recordShareLink, resolveShareToken, reviewWindowsDue } from "../src/services/workflow";
+import { recurringDue, topUpRecurring } from "../src/services/production";
 import { asWebUrl } from "../src/services/urls";
 import { todayIso } from "../src/services/utils";
 import type { Authed } from "./accounts";
@@ -70,6 +71,11 @@ export async function dailyChecks(store: Store, force = false): Promise<string[]
     if (!loaded) return [];
     let moved: string[] = [];
     if (withDb(loaded.db, () => reviewWindowsDue(today))) moved = (await mutateState(store, () => applyReviewWindows(today))).result;
+    // Recurring shows: the coming days of each, up to its horizon, and gear booked for days within two weeks.
+    if (withDb(loaded.db, () => recurringDue(today))) {
+      const made = (await mutateState(store, () => topUpRecurring(today))).result;
+      if (made.made || made.booked) console.info(`Recurring shows: ${made.made} days made, ${made.booked} items of gear booked`);
+    }
     checkedOn.set(store, today);
     if (moved.length) console.info(`Review windows passed: moved to Hold ${moved.join(", ")}`);
     return moved;

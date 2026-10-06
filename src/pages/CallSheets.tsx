@@ -5,6 +5,7 @@ import { getDb, useDb } from "../data/store";
 import { canComment, canWrite, getRecord, visibleCallSheets, visibleRecords } from "../services/access";
 import {
   attachCallSheet,
+  bookPlannedGear,
   createCallSheet,
   crewConflicts,
   deleteCallSheet,
@@ -15,24 +16,40 @@ import {
   reopenCallSheet,
   resolveMismatches,
   updateCallSheet,
-  addRunItem,
-  daysOf,
-  removeRunItem,
   runOfShowRequired,
-  runOfShowTotals,
-  sheetLevel,
-  sortedRunOfShow,
-  updateRunItem,
+  type SheetPatch,
 } from "../services/wrapped/callsheets";
-import { addComment, featuredFor, getComments, updateRecord } from "../services/wrapped/content";
+import { addComment, featuredFor, getComments } from "../services/wrapped/content";
 import { roleOn } from "../services/wrapped/team";
-import { levelLabel } from "../config/production";
 import { nameOf } from "../services/wrapped/people";
 import { fmtDate, relativeDays } from "../services/utils";
 import { Modal } from "../ui/Modal";
 import { Empty, Field } from "../ui/parts";
 import { IconPlus } from "../ui/Icons";
 import { GearPicker } from "../ui/GearPicker";
+import { SavedInput } from "./documents/toolkit";
+import { InstanceStrip } from "./production/InstanceStrip";
+import {
+  ContactsSection,
+  CrewSection,
+  LocationSection,
+  LogisticsSection,
+  PlannedGear,
+  RehearsalSection,
+  RunOfShowSection,
+  SavedText,
+  ScheduleSection,
+  Section,
+  SectionNav,
+  TalentSection,
+  TechnicalCheckSection,
+  crewCandidates,
+  crewContactRows,
+  type ContactRow,
+} from "./production/SheetSections";
+import { RunSheetPanel } from "./workflow/SessionPage";
+import { usePrintCallSheet } from "./documents/printCallSheet";
+import { sheetTimes } from "../services/wrapped/workflow";
 import { ReportButton, ReportDialog } from "../ui/ReportDialog";
 import {
   addGearToSheet,
@@ -311,9 +328,10 @@ function AttachSheetModal({ sheet, onClose }: { sheet: CallSheet; onClose: () =>
 }
 
 export function CallSheetPage({ id }: { id: string }) {
-  const { actor, go, back, attempt, confirm } = useApp();
+  const { actor, go, back, attempt, confirm, menu } = useApp();
   useDb();
   const [duplicating, setDuplicating] = useState(false);
+  const [print, printNode] = usePrintCallSheet();
   const cs = getCallSheet(id);
   const root = cs ? getRecord(cs.contentId) : undefined;
 
@@ -349,6 +367,19 @@ export function CallSheetPage({ id }: { id: string }) {
             Duplicate
           </button>
         )}
+        <button
+          className="btn"
+          onClick={(e) => {
+            e.stopPropagation();
+            const r = e.currentTarget.getBoundingClientRect();
+            menu({ clientX: r.left, clientY: r.bottom + 6, preventDefault: () => {} }, [
+              { label: "Print call sheet", onClick: () => print({ sheetId: cs.id, only: "all" }) },
+              { label: "Print run sheet only", onClick: () => print({ sheetId: cs.id, only: "run" }) },
+            ]);
+          }}
+        >
+          Print…
+        </button>
         <ReportButton scope="callsheet" params={{ callSheetId: cs.id }} label="Download…" />
         {write &&
           (cs.status === "draft" ? (
@@ -385,6 +416,7 @@ export function CallSheetPage({ id }: { id: string }) {
       </div>
 
       <CallSheetBody cs={cs} root={root} />
+      {printNode}
       {duplicating && (
         <DuplicateModal
           sheet={cs}
@@ -400,56 +432,43 @@ export function CallSheetPage({ id }: { id: string }) {
 }
 
 /**
- * A call sheet's own sections: the warnings, its shoot details, the crew, the run of show, the gear and the comments.
- * Its page shows them under its header; a devotion's Recording Plan shows them on a session's tab (`embedded`), where
- * the session's devotions are listed by the plan itself.
- */
-/**
- * A call sheet's sections. Embedded (in a devotion's Recording Plan), the plan shows the session and its devotions, so
- * those are left out here; what the plan adds (roles, devotions, run sheet, storyboard and shot list) goes after the
- * crew, before the gear and comments.
+ * A call sheet's sections, the same for every call sheet: Schedule, Crew, Talent, Location, Equipment, Logistics,
+ * Contacts, Run of Show, Technical Check and Rehearsal, after its warnings and its title, format and notes. Its page
+ * shows them under its header; a devotion's Recording Plan shows them on a session's tab (`embedded`), where the
+ * session and its devotions are listed by the plan itself, and adds its own parts (`children`) before the comments.
+ * A recording session's run sheet is its Run of Show. Fields save when the person leaves them.
  */
 export function CallSheetBody({
   cs,
   root,
   embedded = false,
   children,
+  moreContacts,
 }: {
   cs: CallSheet;
   root: ContentRecord;
   embedded?: boolean;
   children?: React.ReactNode;
+  moreContacts?: ContactRow[];
 }) {
-  const { actor, go, attempt } = useApp();
+  const { actor, go, attempt, toast } = useApp();
   const [comment, setComment] = useState("");
-  const [draft, setDraft] = useState<Partial<CallSheet> | null>(null);
   const write = canWrite(actor, root);
   const editable = write && cs.status === "draft";
   const mm = getMismatches(cs);
   const drift = mm.moved.length + mm.unlinked.length > 0;
   const clashes = crewConflicts(cs);
-  const value = <K extends keyof CallSheet>(k: K): CallSheet[K] => (draft && k in draft ? draft[k] : cs[k]) as CallSheet[K];
-  const set = (patch: Partial<CallSheet>) => setDraft((d) => ({ ...(d ?? {}), ...patch }));
-  const dirty = !!draft && Object.keys(draft).length > 0;
-
   const db = getDb();
-  const projectMemberIds = new Set(db.members.filter((m) => m.projectContentId === cs.contentId).map((m) => m.personId));
-  const candidates = db.people.filter(
-    (p) => p.status === "active" && projectMemberIds.has(p.personId) && (p.category === "CRW" || p.category === "VOL"),
-  );
   const comments = getComments(cs.contentId, cs.id);
   // A sheet made for a recording session lists the episodes planned for it (the five-stage workflow).
   const session = db.recordingSessions.find((s) => s.callSheetId === cs.id);
   const sessionRows = session ? db.sessionLogEntries.filter((e) => e.sessionId === session.id) : [];
-
-  const save = () => {
-    if (!draft) return;
-    if (attempt(() => updateCallSheet(actor, cs.id, draft, cs.version), "Saved")) setDraft(null);
-  };
-  const toggleCrew = (pid: string, on: boolean) => {
-    const next = on ? [...cs.crewPersonIds, pid] : cs.crewPersonIds.filter((x) => x !== pid);
-    attempt(() => updateCallSheet(actor, cs.id, { crewPersonIds: next }, cs.version));
-  };
+  const day = cs.instanceId ? getRecord(cs.instanceId) : undefined;
+  const save = (patch: SheetPatch) => attempt(() => updateCallSheet(actor, cs.id, patch, cs.version));
+  const roleHint = (pid: string) => roleOn(pid, root) || null;
+  const props = { value: cs, editable, onChange: save };
+  // Ticking the technical check and the rehearsal happens on the day, on a final sheet too.
+  const tickProps = { value: cs, editable: write, onChange: save };
 
   return (
     <>
@@ -479,6 +498,7 @@ export function CallSheetBody({
           </div>
         </div>
       )}
+      {day?.instance && <InstanceStrip day={day} write={write} />}
 
       {session && !embedded && (
         <section className="glass panel" aria-label="Recording session">
@@ -512,117 +532,119 @@ export function CallSheetBody({
         </section>
       )}
 
-      <section className="glass panel">
-        <h2>Shoot details</h2>
-        <div className="stack">
-          <div className="row">
-            <Field label="Title">
-              <input type="text" value={value("title")} disabled={!editable} onChange={(e) => set({ title: e.target.value })} />
-            </Field>
-            <Field label="Date">
-              <input type="date" value={value("date")} disabled={!editable} onChange={(e) => set({ date: e.target.value })} />
-            </Field>
-            <Field label="Call time">
-              <input type="time" value={value("callTime")} disabled={!editable} onChange={(e) => set({ callTime: e.target.value })} />
-            </Field>
-          </div>
-          <div className="row">
-            <Field label="Location">
-              <input type="text" value={value("location")} disabled={!editable} onChange={(e) => set({ location: e.target.value })} />
-            </Field>
-            <Field label="Format">
-              <input type="text" value={value("format")} disabled={!editable} onChange={(e) => set({ format: e.target.value })} />
-            </Field>
-          </div>
-          <Field label="Notes">
-            <textarea value={value("notes")} disabled={!editable} onChange={(e) => set({ notes: e.target.value })} />
+      <section className="glass panel" aria-label="Call sheet">
+        <div className="cs-grid wide">
+          <Field label="Title">
+            <SavedInput
+              aria-label="Title"
+              value={cs.title}
+              disabled={!editable}
+              maxLength={300}
+              onSave={(v) => v.trim() && save({ title: v.trim() })}
+            />
           </Field>
-          {editable && dirty && (
-            <div>
-              <button className="btn primary" onClick={save}>
-                Save changes
-              </button>{" "}
-              <button className="btn ghost" onClick={() => setDraft(null)}>
-                Discard
-              </button>
-            </div>
-          )}
-          {cs.status === "final" && write && <p className="muted">Final call sheets are locked. Reopen to edit.</p>}
+          <Field label="Format">
+            <SavedInput
+              aria-label="Format"
+              value={cs.format}
+              placeholder="Live stream, recorded, podcast"
+              disabled={!editable}
+              onSave={(v) => save({ format: v.trim() })}
+            />
+          </Field>
         </div>
+        <Field label="Notes">
+          <SavedText label="Notes" value={cs.notes} disabled={!editable} onSave={(v) => save({ notes: v.trim() })} />
+        </Field>
+        {cs.status === "final" && write && (
+          <p className="muted">
+            This call sheet is final: its plan is locked until it is reopened. The technical check and rehearsal can still be ticked.
+          </p>
+        )}
       </section>
 
-      <div className={embedded ? undefined : "grid-2"}>
-        {!embedded && (
-          <section className="glass panel">
-            <h2>{root?.category === "live" ? "Days on this sheet" : "Episodes on this sheet"}</h2>
-            {cs.linkedEpisodeIds.length === 0 ? (
-              <Empty>No episodes were scheduled for this date when the sheet was created.</Empty>
-            ) : (
-              <div className="list">
-                {cs.linkedEpisodeIds.map((eid) => {
-                  const r = getRecord(eid);
-                  return r ? (
-                    <div key={eid} className="list-item" onClick={() => go({ n: "record", id: eid })}>
-                      <div className="grow">
-                        <div className="title">{r.category === "live" ? `${root?.title ?? ""}, ${r.title}` : r.title}</div>
-                        <span className="cid">{eid}</span>
-                        {(() => {
-                          const f = featuredFor(r);
-                          const hosts = [...f.inherited.map((x) => x.person), ...f.own.filter((x) => x.kind === "host")];
-                          const guests = f.own.filter((x) => x.kind === "guest");
-                          return hosts.length + guests.length > 0 ? (
-                            <div className="muted" style={{ fontSize: ".84rem" }}>
-                              {hosts.length > 0 && `Host: ${hosts.map((h) => h.name).join(", ")}. `}
-                              {guests.length > 0 && `Guest: ${guests.map((g) => g.name).join(", ")}.`}
-                            </div>
-                          ) : null;
-                        })()}
-                      </div>
-                      {r.scheduledDate !== cs.date && <span className="badge warn">Now {fmtDate(r.scheduledDate)}</span>}
-                    </div>
-                  ) : null;
-                })}
-              </div>
-            )}
-            <p className="muted" style={{ marginTop: 10, fontSize: ".84rem" }}>
-              Linked when the sheet was created. Changing an episode's date later flags a mismatch instead of changing this list.
-            </p>
-          </section>
-        )}
-        <section className="glass panel">
-          <h2>Crew</h2>
-          {candidates.length === 0 ? (
-            <Empty>No one is attached to this project yet.</Empty>
-          ) : (
-            <div className="stack">
-              {candidates.map((p) => {
-                const on = cs.crewPersonIds.includes(p.personId);
-                const clash = clashes.some((c) => c.personId === p.personId);
-                return (
-                  <label key={p.personId} className="check">
-                    <input type="checkbox" checked={on} disabled={!editable} onChange={(e) => toggleCrew(p.personId, e.target.checked)} />
-                    <span>
-                      {p.name} <span className="cid">{p.personId}</span>
-                      {root && roleOn(p.personId, root) && (
-                        <span className="badge accent" style={{ marginLeft: 8 }}>
-                          {roleOn(p.personId, root)}
-                        </span>
-                      )}
-                    </span>
-                    {clash && <span className="badge bad">Clash</span>}
-                  </label>
+      <SectionNav />
+      <ScheduleSection
+        {...props}
+        date={{ value: cs.date, onChange: (date) => save({ date }) }}
+        derived={sheetTimes(session ? session.runSheet : cs.runOfShow)}
+      />
+      <CrewSection
+        {...props}
+        candidates={crewCandidates(cs.contentId, cs.crewPersonIds)}
+        roleHint={roleHint}
+        clashes={new Map(clashes.map((c) => [c.personId, `Also on ${c.otherSheet.title}`]))}
+      />
+      <TalentSection {...props} />
+      <LocationSection {...props} />
+      <Section id="equipment" title="Equipment">
+        <GearPanel cs={cs} editable={editable} bare />
+        {(cs.plannedGear.length > 0 || editable) && (
+          <PlannedGear
+            {...props}
+            pickDate={cs.date}
+            onBook={() => {
+              const r = attempt(() => bookPlannedGear(actor, cs.id));
+              if (r)
+                toast(
+                  r.skipped.length ? `${r.booked} booked. Not free that day: ${r.skipped.join(" ")}` : `${r.booked} booked`,
+                  r.skipped.length ? "info" : "success",
                 );
+            }}
+          />
+        )}
+      </Section>
+      <LogisticsSection {...props} />
+      <ContactsSection {...props} crewRows={crewContactRows(cs, actor, roleHint)} more={moreContacts} />
+      {session ? (
+        <div id="sec-runOfShow" className="cs-section">
+          <RunSheetPanel sessionId={session.id} editable={write && session.status !== "Closed" && !session.archivedAt} />
+        </div>
+      ) : (
+        <RunOfShowSection {...props} required={runOfShowRequired(cs)} />
+      )}
+      <TechnicalCheckSection {...tickProps} editable={editable} onChange={save} canTick tickable={write} />
+      <RehearsalSection {...tickProps} editable={editable} onChange={save} canTick tickable={write} />
+
+      {!embedded && (
+        <section className="glass panel" aria-label="Linked to this sheet">
+          <h2>{root.category === "live" ? "Days on this sheet" : "Episodes on this sheet"}</h2>
+          {cs.linkedEpisodeIds.length === 0 ? (
+            <Empty>No episodes were scheduled for this date when the sheet was created.</Empty>
+          ) : (
+            <div className="list">
+              {cs.linkedEpisodeIds.map((eid) => {
+                const r = getRecord(eid);
+                return r ? (
+                  <div key={eid} className="list-item" onClick={() => go({ n: "record", id: eid })}>
+                    <div className="grow">
+                      <div className="title">{r.category === "live" ? `${root.title}, ${r.title}` : r.title}</div>
+                      <span className="cid">{eid}</span>
+                      {(() => {
+                        const f = featuredFor(r);
+                        const hosts = [...f.inherited.map((x) => x.person), ...f.own.filter((x) => x.kind === "host")];
+                        const guests = f.own.filter((x) => x.kind === "guest");
+                        return hosts.length + guests.length > 0 ? (
+                          <div className="muted" style={{ fontSize: ".84rem" }}>
+                            {hosts.length > 0 && `Host: ${hosts.map((h) => h.name).join(", ")}. `}
+                            {guests.length > 0 && `Guest: ${guests.map((g) => g.name).join(", ")}.`}
+                          </div>
+                        ) : null;
+                      })()}
+                    </div>
+                    {r.scheduledDate !== cs.date && <span className="badge warn">Now {fmtDate(r.scheduledDate)}</span>}
+                  </div>
+                ) : null;
               })}
             </div>
           )}
+          <p className="muted" style={{ marginTop: 10, fontSize: ".84rem" }}>
+            Linked when the sheet was created. Changing an episode's date later flags a mismatch instead of changing this list.
+          </p>
         </section>
-      </div>
+      )}
 
       {children}
-
-      {!embedded && <RunOfShowPanel cs={cs} editable={editable} />}
-
-      <GearPanel cs={cs} editable={editable} />
 
       <section className="glass panel">
         <h2>Comments</h2>
@@ -662,7 +684,8 @@ export function CallSheetBody({
   );
 }
 
-function GearPanel({ cs, editable }: { cs: CallSheet; editable: boolean }) {
+/** The gear booked for the sheet's date. `bare`: inside the Equipment section, without a panel of its own. */
+function GearPanel({ cs, editable, bare = false }: { cs: CallSheet; editable: boolean; bare?: boolean }) {
   const { actor, go, attempt } = useApp();
   const [picking, setPicking] = useState(false);
   const access = hasGearAccess(actor);
@@ -670,11 +693,12 @@ function GearPanel({ cs, editable }: { cs: CallSheet; editable: boolean }) {
   const issues = gearIssues(cs.id);
   const view = m ? manifestStatusView(m) : null;
   const canEditGear = editable && access && (!m || m.status === "assigned");
+  const Wrap = bare ? "div" : "section";
 
   return (
-    <section className="glass panel">
+    <Wrap className={bare ? "cs-gear" : "glass panel"}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
-        <h2 style={{ flex: 1 }}>Gear</h2>
+        {bare ? <h3 style={{ flex: 1 }}>Booked for {fmtDate(cs.date)}</h3> : <h2 style={{ flex: 1 }}>Gear</h2>}
         {view && <span className={`badge ${view.tone}`}>{view.label}</span>}
         {access && m && (
           <button className="btn small" onClick={() => go({ n: "manifest", id: m.id })}>
@@ -751,198 +775,6 @@ function GearPanel({ cs, editable }: { cs: CallSheet; editable: boolean }) {
           }}
         />
       )}
-    </section>
-  );
-}
-
-/** Minute-by-minute plan for a large live production. Fields save when you leave them. */
-function RunOfShowPanel({ cs, editable }: { cs: CallSheet; editable: boolean }) {
-  const { actor, go, attempt } = useApp();
-  const root = getRecord(cs.contentId);
-  const required = runOfShowRequired(cs);
-  const [time, setTime] = useState("");
-  const [title, setTitle] = useState("");
-  const [len, setLen] = useState("10");
-  const [owner, setOwner] = useState("");
-  const items = sortedRunOfShow(cs);
-  const totals = runOfShowTotals(cs);
-  const people = getDb().people.filter((p) => p.status === "active" && (p.category === "CRW" || p.category === "HOP"));
-  if (!root || (root.category !== "live" && items.length === 0)) return null;
-  const write = canWrite(actor, root);
-  const days = daysOf(cs);
-  const level = sheetLevel(cs);
-
-  if (!required && items.length === 0) {
-    return (
-      <section className="glass panel" aria-label="Run of show">
-        <h2>Run of show</h2>
-        <p className="muted">
-          {days.length
-            ? `${days.map((d) => d.title).join(", ")} ${days.length > 1 ? "are" : "is"} set as a ${levelLabel(level).toLowerCase()} production.`
-            : "No day of the show is linked to this sheet."}{" "}
-          A run of show is planned for large productions.
-        </p>
-        {write && days.length > 0 && (
-          <div style={{ marginTop: 12 }}>
-            <button
-              className="btn"
-              onClick={() => {
-                for (const d of days) {
-                  const ok = attempt(() => updateRecord(actor, d.contentId, { productionLevel: "large" }, d.version));
-                  if (!ok) return;
-                }
-              }}
-            >
-              {days.length > 1 ? "These are large productions" : "This is a large production"}
-            </button>
-          </div>
-        )}
-      </section>
-    );
-  }
-
-  const add = () => {
-    if (attempt(() => addRunItem(actor, cs.id, { time, title, durationMin: Number(len), ownerPersonId: owner || null }), "Segment added")) {
-      setTitle("");
-      setTime("");
-      setLen("10");
-      setOwner("");
-    }
-  };
-  const save = (itemId: string, patch: Parameters<typeof updateRunItem>[3]) => attempt(() => updateRunItem(actor, cs.id, itemId, patch));
-
-  return (
-    <section className="glass panel" aria-label="Run of show">
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
-        <h2 style={{ flex: 1 }}>Run of show</h2>
-        <button className="badge accent" style={{ cursor: "pointer" }} onClick={() => go({ n: "record", id: (days[0] ?? root).contentId })}>
-          {levelLabel(level)} production
-        </button>
-        {items.length > 0 && (
-          <span className="badge">
-            {totals.minutes} min, ends {totals.ends}
-          </span>
-        )}
-      </div>
-      {items.length === 0 ? (
-        <Empty>
-          {required
-            ? "A large production needs a run of show before the call sheet can be final. Add the first segment below."
-            : "No segments yet."}
-        </Empty>
-      ) : (
-        <table className="table">
-          <thead>
-            <tr>
-              <th style={{ width: 110 }}>Start</th>
-              <th>Segment</th>
-              <th style={{ width: 90 }}>Minutes</th>
-              <th style={{ width: 190 }}>Who</th>
-              <th>Notes</th>
-              {editable && <th />}
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((it) => (
-              <tr key={it.id}>
-                <td>
-                  <input
-                    type="time"
-                    defaultValue={it.time}
-                    disabled={!editable}
-                    onBlur={(e) => e.target.value !== it.time && save(it.id, { time: e.target.value })}
-                    aria-label="Start time"
-                  />
-                </td>
-                <td>
-                  <input
-                    type="text"
-                    defaultValue={it.title}
-                    disabled={!editable}
-                    onBlur={(e) => e.target.value !== it.title && save(it.id, { title: e.target.value })}
-                    aria-label="Segment"
-                  />
-                </td>
-                <td>
-                  <input
-                    type="number"
-                    min={0}
-                    defaultValue={it.durationMin}
-                    disabled={!editable}
-                    onBlur={(e) => Number(e.target.value) !== it.durationMin && save(it.id, { durationMin: Number(e.target.value) })}
-                    aria-label="Minutes"
-                  />
-                </td>
-                <td>
-                  <select
-                    value={it.ownerPersonId ?? ""}
-                    disabled={!editable}
-                    onChange={(e) => save(it.id, { ownerPersonId: e.target.value || null })}
-                    aria-label="Who"
-                  >
-                    <option value="">Unassigned</option>
-                    {people.map((p) => (
-                      <option key={p.personId} value={p.personId}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-                <td>
-                  <input
-                    type="text"
-                    defaultValue={it.notes}
-                    disabled={!editable}
-                    onBlur={(e) => e.target.value !== it.notes && save(it.id, { notes: e.target.value })}
-                    aria-label="Notes"
-                  />
-                </td>
-                {editable && (
-                  <td>
-                    <button className="btn small ghost" onClick={() => attempt(() => removeRunItem(actor, cs.id, it.id), "Removed")}>
-                      Remove
-                    </button>
-                  </td>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      {editable && (
-        <div className="task-add" style={{ marginTop: 14 }}>
-          <Field label="Start">
-            <input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
-          </Field>
-          <Field label="Segment">
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Worship, message, announcements"
-              onKeyDown={(e) => e.key === "Enter" && add()}
-            />
-          </Field>
-          <Field label="Minutes">
-            <input type="number" min={0} value={len} onChange={(e) => setLen(e.target.value)} />
-          </Field>
-          <Field label="Who">
-            <select value={owner} onChange={(e) => setOwner(e.target.value)}>
-              <option value="">Unassigned</option>
-              {people.map((p) => (
-                <option key={p.personId} value={p.personId}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <div style={{ flex: "none", minWidth: 0 }}>
-            <button className="btn primary" onClick={add}>
-              <IconPlus /> Add segment
-            </button>
-          </div>
-        </div>
-      )}
-    </section>
+    </Wrap>
   );
 }

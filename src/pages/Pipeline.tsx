@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ReportButton } from "../ui/ReportDialog";
 import { can } from "../services/wrapped/permissions";
+import { onBoard } from "../services/wrapped/production";
 import type { CategoryKey, ContentRecord } from "../types";
 import { useApp, type MenuItem } from "../ui/AppContext";
 import { useDb } from "../data/store";
@@ -178,7 +179,7 @@ export function Pipeline({ category }: { category?: CategoryKey }) {
       {effective === "board" && cfg && !wf && (
         <StageBoard
           cfg={cfg}
-          records={all.filter((r) => r.category === cfg.key && usesPipeline(r))}
+          records={all.filter((r) => r.category === cfg.key && usesPipeline(r) && onBoard(r))}
           closed={showClosed && closedCount > 0 ? legacyClosed : null}
           onContext={rm.onContext}
         />

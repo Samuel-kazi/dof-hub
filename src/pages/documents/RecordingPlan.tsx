@@ -551,14 +551,20 @@ function CallSheetsSection({
     );
   const cs = s.callSheetId ? getDb().callSheets.find((c) => c.id === s.callSheetId) : undefined;
   const edit = write && !project.archived && s.status !== "Closed";
-  const extras = (
+  // The call sheet itself shows the schedule (its times read from the run sheet when not typed), the crew's contacts
+  // and the run sheet. The plan adds its roles, the session's devotions and its storyboard and shot list, and, as
+  // contacts, the guest and any role holder not on the sheet's crew.
+  const planParts = (
     <>
-      <TimesAndContacts project={project} session={s} />
       <RolesOnSheet project={project} />
       <DevotionsOnSheet project={project} session={s} />
-      <RunSheetPanel sessionId={s.id} editable={edit} />
       <BoardsOnSheet project={project} session={s} edit={edit} onOpenTool={onOpenTool} />
     </>
+  );
+  const onCrew = new Set(cs?.crewPersonIds ?? []);
+  const moreContacts = sheetContacts(project, actor).filter(
+    (c) =>
+      c.role === "Guest (host)" || !planRolesOf(project.contentId).some((r) => r.crewId && onCrew.has(r.crewId) && roleName(r) === c.role),
   );
   return (
     <section className="rp-section rp-sheets" aria-label="Call sheets">
@@ -591,8 +597,8 @@ function CallSheetsSection({
         </div>
       </div>
       {cs ? (
-        <CallSheetBody key={cs.id} cs={cs} root={project} embedded>
-          {extras}
+        <CallSheetBody key={cs.id} cs={cs} root={project} embedded moreContacts={moreContacts}>
+          {planParts}
         </CallSheetBody>
       ) : (
         <>
@@ -612,7 +618,11 @@ function CallSheetsSection({
               </Empty>
             )}
           </section>
-          {extras}
+          <TimesAndContacts project={project} session={s} />
+          <RolesOnSheet project={project} />
+          <DevotionsOnSheet project={project} session={s} />
+          <RunSheetPanel sessionId={s.id} editable={edit} />
+          <BoardsOnSheet project={project} session={s} edit={edit} onOpenTool={onOpenTool} />
         </>
       )}
       {printNode}

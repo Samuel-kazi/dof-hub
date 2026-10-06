@@ -11,6 +11,7 @@ export type Route =
   | { n: "pipeline"; category?: CategoryKey }
   | { n: "record"; id: string }
   | { n: "session"; id: string }
+  | { n: "template"; id: string }
   | { n: "callsheets" }
   | { n: "callsheet"; id: string }
   | { n: "crew"; tab?: "crew" | "volunteers" | "partners" | "workload" }

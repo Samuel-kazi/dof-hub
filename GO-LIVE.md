@@ -225,6 +225,28 @@ needs "Export reports". Choosing a drive needs "Use storage" (crew and the Head 
 since drives are only sent to people who have it. Roles are changed by the show producer, the Head of Production, or
 someone given "Assign other people's work", as before.
 
+### Data version 19: one production system
+
+Live shows are productions: a recurring show (with its Show Template and schedule), a one-time event, or a multi-day
+event (with its Event Plan). Every call sheet has the same ten sections.
+
+The first time a version with data version 19 starts, it keeps a copy (`hub_items_before_v19` and
+`hub_meta_before_v19`; in the demo and desktop app, `dof-hub-db-before-v19`), then:
+- gives every call sheet the new sections, empty (what each already had is left as it was);
+- makes each live show a production: a show with one day becomes a one-time event, any other a multi-day event with an
+  empty Event Plan;
+- links each day to the call sheet made for its date, and makes a draft call sheet for each coming day that has none.
+  An audit entry ("migrate-productions") lists the sheets it made.
+Nothing is moved or deleted, and running it again changes nothing. `npm run db:upgrade` shows what it will do; going
+back is as for version 15 above, with `v19` in the names. The new list `showTemplates` is empty until a recurring show
+is made.
+
+**Recurring shows need the daily check.** The daily cron already in vercel.json (`/api/cron/daily`, set
+`CRON_SECRET`) now also makes each recurring show's coming days and books the gear of days within two weeks. Without
+it, the same check runs on the first request each day; the desktop app and demo run it on start and hourly. Gear
+booked by the daily check is in the name of the sheet's crew lead, else the show's responsible person, else the Head of
+Production.
+
 ## What this does not do yet
 
 - The **desktop app** is the local demo. The hosted site is the real one.

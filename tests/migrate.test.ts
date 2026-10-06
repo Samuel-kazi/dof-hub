@@ -193,9 +193,9 @@ const { categoryOf } = await import("../src/config/categories");
 const W = await import("../src/services/workload");
 
 const db = getDb();
-assert.equal(db.schemaVersion, 18);
+assert.equal(db.schemaVersion, 19);
 assert.deepEqual(db.outbox, [], "the record of sent reminders exists");
-assert.equal(store["dof-hub-db-before-v18"], JSON.stringify(old), "a copy of the saved data is kept before it is upgraded");
+assert.equal(store["dof-hub-db-before-v19"], JSON.stringify(old), "a copy of the saved data is kept before it is upgraded");
 for (const part of [
   "developmentForms",
   "plannedEpisodes",

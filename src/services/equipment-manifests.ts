@@ -6,6 +6,7 @@ import { hist, makeAttachment } from "./equipment-log";
 import { conditionRank } from "../config/equipment";
 import { canView, canWrite, getRecord, isHop } from "./access";
 import { logAudit } from "./audit";
+import { lockInstanceOfSheet } from "./instances";
 import { getPerson } from "./people";
 import { fmtShort, pad, todayIso } from "./utils";
 import {
@@ -565,7 +566,14 @@ export function manifestForSheet(sheetId: string): Manifest | undefined {
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
 }
 
+/** Books gear on a sheet, as asked by a person: a day that follows a show template stops following it. */
 export function addGearToSheet(actor: Actor, sheet: SheetRef, lines: LineRequest[]): Manifest {
+  const m = bookOnSheet(actor, sheet, lines);
+  lockInstanceOfSheet(actor, sheet.id);
+  return m;
+}
+
+function bookOnSheet(actor: Actor, sheet: SheetRef, lines: LineRequest[]): Manifest {
   requireGearAccess(actor);
   // Only the sheet's ID is taken from the caller. Its project and date come from the sheet itself, so gear
   // can never be booked against another project's call sheet, or on a date the sheet does not have.
@@ -586,32 +594,64 @@ export function addGearToSheet(actor: Actor, sheet: SheetRef, lines: LineRequest
     status: "assigned",
     lines,
     callSheetId: cs.id,
+    // Booked by a person: they answer for it. Booked by the daily check (a show's template gear): the sheet's crew
+    // lead, else whoever is responsible for the show, else the Head of Production.
+    responsiblePersonId: actor.personId === "system" ? answerableFor(cs.crewLeadId, project.assigneePersonId) : undefined,
   });
+}
+
+const canAnswer = (id: string | null | undefined): id is string => {
+  const p = id ? getPerson(id) : undefined;
+  return !!p && p.status === "active" && (p.category === "CRW" || p.category === "HOP");
+};
+function answerableFor(...candidates: (string | null | undefined)[]): string | undefined {
+  return candidates.find(canAnswer) ?? getDb().people.find((p) => p.category === "HOP" && p.status === "active")?.personId;
 }
 
 export function removeGearFromSheet(actor: Actor, sheetId: string, equipmentId: string): void {
   const m = manifestForSheet(sheetId);
   if (!m) return;
   removeLine(actor, m.id, equipmentId);
+  lockInstanceOfSheet(actor, sheetId);
+}
+
+export interface Booked {
+  booked: LineRequest[];
+  skipped: { line: LineRequest; reason: string }[];
+}
+
+/**
+ * Books on a sheet whatever of these is free on its date, never double-booking: anything already booked, lent out
+ * or out of service that day is skipped and reported. Used when a sheet is made or copied, and for a show
+ * template's gear; it is not a change of plan, so a day following its template keeps following it.
+ */
+export function bookWhatIsFree(actor: Actor, dst: SheetRef, lines: LineRequest[]): Booked {
+  const out: Booked = { booked: [], skipped: [] };
+  const existing = manifestForSheet(dst.id);
+  for (const l of lines) {
+    const item = getItem(l.equipmentId);
+    try {
+      checkLine(item, l.quantity, dst.date, dst.date, existing?.id);
+      if (existing?.lines.some((x) => x.equipmentId === l.equipmentId)) continue; // already on this sheet
+      out.booked.push({ equipmentId: l.equipmentId, quantity: l.quantity });
+    } catch (e) {
+      out.skipped.push({ line: l, reason: e instanceof RuleError ? e.message : `${item?.name ?? l.equipmentId} could not be booked.` });
+    }
+  }
+  if (out.booked.length) bookOnSheet(actor, dst, out.booked);
+  return out;
 }
 
 /** Copies gear to another sheet. Anything already booked on the new date is skipped and reported. */
 export function copyGearBetweenSheets(actor: Actor, srcSheetId: string, dst: SheetRef): { copied: number; skipped: string[] } {
   const src = manifestForSheet(srcSheetId);
   if (!src) return { copied: 0, skipped: [] };
-  const ok: LineRequest[] = [];
-  const skipped: string[] = [];
-  for (const l of src.lines) {
-    const item = getItem(l.equipmentId);
-    try {
-      checkLine(item, l.quantity, dst.date, dst.date);
-      ok.push({ equipmentId: l.equipmentId, quantity: l.quantity });
-    } catch (e) {
-      skipped.push(e instanceof RuleError ? e.message : `${item?.name ?? l.equipmentId} could not be copied.`);
-    }
-  }
-  if (ok.length) addGearToSheet(actor, dst, ok);
-  return { copied: ok.length, skipped };
+  const r = bookWhatIsFree(
+    actor,
+    dst,
+    src.lines.map((l) => ({ equipmentId: l.equipmentId, quantity: l.quantity })),
+  );
+  return { copied: r.booked.length, skipped: r.skipped.map((x) => x.reason) };
 }
 
 /** Moves a sheet's bookings to a new date, or refuses if any item is already booked there. */

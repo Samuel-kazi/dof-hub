@@ -2,6 +2,50 @@
 
 What changed in each version, newest first. How to deploy is in GO-LIVE.md.
 
+## Unreleased: one production system, with the call sheet at its centre
+
+Being built in phases. Phase 1, the production core:
+
+- **A live show is a production, made one of three ways**, chosen when it is made (Pipeline, Live Shows, Add live
+  show):
+  - **Recurring show** (Friday Vespers, the weekly Sabbath service): a schedule (weekly on chosen days, or monthly by
+    date or by "the first Friday", every so many weeks or months, from a first date, until a date, a number of times,
+    or with no end, with dates left out and added) and a **Show Template** holding the standard crew, gear, workflow
+    (level of production, who is responsible for each day), run of show and call sheet. A day and its call sheet are
+    made for each date, 12 weeks ahead (1 to 26, set on the template), and topped up every day by the daily check.
+  - **One-time event**: exactly one day and one call sheet.
+  - **Multi-day event**: an **Event Plan** (overview, audience, venue, travel, accommodation, budget, notes) and a day
+    and call sheet for each date, shown as tabs. A day added copies the call sheet of the day before it, with its gear
+    where it is free; the days are numbered again in date order.
+- One system, not three: every day is a record of its own (with its Content ID and the live pipeline, due around its
+  own date), with exactly one call sheet, and the same copying makes a template's days, an event's new day, and a
+  duplicated call sheet.
+- **A template change reaches every coming day that still follows it.** A day whose call sheet someone changes by
+  hand (any section, its date or its gear) keeps its own from then on, and says so; "Put back on the template" brings
+  it back. Ticking the technical check or the rehearsal, confirming and commenting are not changes. A final call sheet
+  is never changed by the template.
+- A new schedule makes the days it now gives and takes off (archives, never deletes) coming days it no longer gives,
+  unless they were changed by hand or work has started on them: those stay, marked "Off the schedule". A day comes
+  back if its date returns.
+- **Template gear** is booked on a day once the day is two weeks away, if it is free that day; anything already
+  booked or lent out stays on the sheet's "Still to book" list, with "Book what is free now". Nothing is ever
+  double-booked.
+- **Every call sheet has the same ten sections**: Schedule (crew call, talent call, start, wrap), Crew (with each
+  person's role and the crew lead), Talent, Location (with address and how to get in), Equipment, Logistics, Contacts,
+  Run of Show, Technical Check and Rehearsal, with a bar to jump between them on a phone. Fields save as you leave
+  them. The run of show is no longer only for large productions (a large one still needs it before it is final). A
+  recording session's call sheet shows its run sheet as its Run of Show, and the times read from it where none are
+  typed. The technical check and rehearsal can be ticked on a final sheet.
+- Putting someone on a call sheet's crew attaches them to the project, so they can open it. Any active crew member can
+  be chosen; volunteers attached to the project too; partners cannot be on the crew.
+- "Print…" on any call sheet prints the whole sheet, or its run sheet alone, on one clean page.
+- Duplicating a call sheet now copies every section (with the technical check unticked).
+- The pipeline board shows a recurring show's days from a week ago to two weeks ahead, and any older one not finished.
+- Data version 19: on first start, after keeping a copy, every call sheet gains the new sections, empty; each live
+  show becomes a production (one day: a one-time event; otherwise a multi-day event with an empty Event Plan); each
+  day is linked to the call sheet made for its date; and each coming day without one gets a draft call sheet. Nothing
+  is moved or deleted.
+
 ## Unreleased: documents for each stage (the documents rework)
 
 Being built in phases. The five stages, their names and order, the stage tracker, Content IDs and every form that
