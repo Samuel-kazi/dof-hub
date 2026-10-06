@@ -11676,7 +11676,7 @@ function describeRework(r) {
   const out = ["", "For the rework, to decide before its later parts:"];
   if (!r.generalUse.length) out.push("  General Use records: none.");
   else {
-    out.push(`  General Use records: ${r.generalUse.length}. Proposed: with gear checkouts, a loan; otherwise archived. IDs stay.`);
+    out.push(`  General Use records: ${r.generalUse.length}. Data version 22: with gear checkouts, a loan; otherwise archived. IDs stay.`);
     for (const g of r.generalUse)
       out.push(
         `    ${g.contentId.padEnd(16)} ${g.title}${g.archived ? " (archived)" : ""}: ${g.checkouts} checkout${g.checkouts === 1 ? "" : "s"}${g.openCheckouts ? ` (${g.openCheckouts} still out or reserved)` : ""}, ${g.callSheets} call sheet${g.callSheets === 1 ? "" : "s"}, ${g.documents} document${g.documents === 1 ? "" : "s"}, ${g.storage} storage entr${g.storage === 1 ? "y" : "ies"}. Proposed: ${g.proposal}.`
