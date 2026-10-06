@@ -6,6 +6,7 @@ import { canComment, canWrite, getRecord, visibleCallSheets, visibleRecords } fr
 import {
   attachCallSheet,
   bookPlannedGear,
+  confirmOnSheet,
   createCallSheet,
   crewConflicts,
   deleteCallSheet,
@@ -22,7 +23,13 @@ import {
 import { addComment, featuredFor, getComments } from "../services/wrapped/content";
 import { roleOn } from "../services/wrapped/team";
 import { nameOf } from "../services/wrapped/people";
-import { fmtDate, relativeDays } from "../services/utils";
+import { addDaysIso, dateInNairobi, fmtDate, fmtDateTime, relativeDays, todayIso } from "../services/utils";
+import { sheetWarnings, gearSuggestions } from "../services/sheetAdvice";
+import { changesOf, confirmationHolds } from "../services/sheetTracking";
+import { canKeepLocations, createLocation, listLocations } from "../services/wrapped/locations";
+import { PersonName } from "../ui/PersonName";
+import { DateShift } from "../ui/DateShift";
+import { LocationsPanel } from "./production/LocationsPanel";
 import { Modal } from "../ui/Modal";
 import { Empty, Field } from "../ui/parts";
 import { IconPlus } from "../ui/Icons";
@@ -45,6 +52,7 @@ import {
   TechnicalCheckSection,
   crewCandidates,
   crewContactRows,
+  type ConfirmProps,
   type ContactRow,
 } from "./production/SheetSections";
 import { RunSheetPanel } from "./workflow/SessionPage";
@@ -70,6 +78,7 @@ export function CallSheets() {
   const [downloading, setDownloading] = useState<CallSheet | null>(null);
   const [attaching, setAttaching] = useState<CallSheet | null>(null);
   const sheets = visibleCallSheets(actor).sort((a, b) => a.date.localeCompare(b.date));
+  const today = todayIso();
   const writableProjects = visibleRecords(actor).filter((r) => r.hierarchyLevel === 0 && canWrite(actor, r));
 
   return (
@@ -104,6 +113,7 @@ export function CallSheets() {
                 const mm = getMismatches(cs);
                 const drift = mm.moved.length + mm.unlinked.length > 0;
                 const clash = crewConflicts(cs).length > 0;
+                const toCheck = sheetWarnings(cs, today).length;
                 const write = canWrite(actor, getRecord(cs.contentId)!);
                 return (
                   <tr
@@ -152,6 +162,7 @@ export function CallSheets() {
                       <span className={`badge ${cs.status === "final" ? "ok" : ""}`}>{cs.status === "final" ? "Final" : "Draft"}</span>
                       {drift && <span className="badge warn">Dates changed</span>}
                       {clash && <span className="badge bad">Crew clash</span>}
+                      {toCheck > 0 && <span className="badge warn">{toCheck} to check</span>}
                     </td>
                   </tr>
                 );
@@ -165,6 +176,7 @@ export function CallSheets() {
           </p>
         )}
       </section>
+      <LocationsPanel />
       {creating && (
         <NewSheetModal
           projects={writableProjects.map((p) => ({ id: p.contentId, title: p.title }))}
@@ -245,7 +257,7 @@ function NewSheetModal({
 
 function DuplicateModal({ sheet, onClose, onCreated }: { sheet: CallSheet; onClose: () => void; onCreated: (c: CallSheet) => void }) {
   const { actor, attempt, toast } = useApp();
-  const [date, setDate] = useState("");
+  const [date, setDate] = useState(() => addDaysIso(sheet.date, 7));
   const save = () => {
     const res = attempt(() => duplicateCallSheet(actor, sheet.id, date), "Call sheet duplicated");
     if (!res) return;
@@ -262,7 +274,7 @@ function DuplicateModal({ sheet, onClose, onCreated }: { sheet: CallSheet; onClo
           <button className="btn" onClick={onClose}>
             Cancel
           </button>
-          <button className="btn primary" onClick={save}>
+          <button className="btn primary" disabled={!date} onClick={save}>
             Duplicate
           </button>
         </>
@@ -272,8 +284,10 @@ function DuplicateModal({ sheet, onClose, onCreated }: { sheet: CallSheet; onClo
         <Field label="New shoot date">
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} autoFocus />
         </Field>
+        <DateShift from={sheet.date} value={date} onChange={setDate} />
         <p className="muted">
-          Crew, location, format and gear carry over. Episodes are matched again for the new date, and gear already booked that day is
+          From {fmtDate(sheet.date)}. Every section carries over (crew, talent, location, schedule, run of show, logistics and the rest),
+          with ticks and confirmations cleared. Episodes are matched again for the new date, and gear already booked or lent out that day is
           skipped.
         </p>
       </div>
@@ -357,6 +371,12 @@ export function CallSheetPage({ id }: { id: string }) {
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4, flexWrap: "wrap" }}>
             <span className="cid">{cs.id}</span>
             <span className={`badge ${cs.status === "final" ? "ok" : ""}`}>{cs.status === "final" ? "Final" : "Draft"}</span>
+            {cs.sharedAt && <span className="badge">Shared {fmtDate(dateInNairobi(new Date(cs.sharedAt)))}</span>}
+            {cs.changeLog.length > 0 && (
+              <a className="badge warn" href="#sec-changes">
+                {cs.changeLog.length} change{cs.changeLog.length === 1 ? "" : "s"} logged
+              </a>
+            )}
             <button className="badge accent" style={{ cursor: "pointer" }} onClick={() => go({ n: "record", id: root.contentId })}>
               {root.title}
             </button>
@@ -469,6 +489,28 @@ export function CallSheetBody({
   const props = { value: cs, editable, onChange: save };
   // Ticking the technical check and the rehearsal happens on the day, on a final sheet too.
   const tickProps = { value: cs, editable: write, onChange: save };
+  const warnings = sheetWarnings(cs, todayIso());
+  const warnOf = (section: string) => warnings.filter((w) => w.section === section).map((w) => w.text);
+  // Confirmations: crew tick their own; anyone working on the project records it for them, and for talent.
+  const confirm: ConfirmProps = {
+    of: (key) => {
+      const c = cs.confirmations[key];
+      if (!c || !confirmationHolds(cs, key)) return { confirmed: false, note: "" };
+      const by = c.by === key ? "" : `, recorded by ${nameOf(c.by)}`;
+      return { confirmed: true, note: `Confirmed ${fmtDateTime(c.at)}${by}` };
+    },
+    canTick: (key) => key === actor.personId || write,
+    onTick: (key, yes) => attempt(() => confirmOnSheet(actor, cs.id, key, yes), yes ? "Confirmed" : "Confirmation taken off"),
+  };
+  const mine = cs.crewPersonIds.includes(actor.personId) && cs.date >= todayIso();
+  const locations = listLocations();
+  const keepPlaces = canKeepLocations(actor);
+  const saveLocation = () => {
+    const loc = attempt(() =>
+      createLocation(actor, { name: cs.location.trim(), address: cs.locationAddress.trim(), notes: cs.locationNotes.trim() }),
+    );
+    if (loc && attempt(() => updateCallSheet(actor, cs.id, { locationId: loc.id }, cs.version))) toast(`${loc.name} saved`, "success");
+  };
 
   return (
     <>
@@ -499,6 +541,49 @@ export function CallSheetBody({
         </div>
       )}
       {day?.instance && <InstanceStrip day={day} write={write} />}
+      {mine && (
+        <div className={`banner ${confirm.of(actor.personId).confirmed ? "ok" : "accent"} no-print`} role="status">
+          <div className="grow">
+            {confirm.of(actor.personId).confirmed ? <b>You confirmed you will be there.</b> : <b>Will you be there?</b>} {fmtDate(cs.date)},
+            crew call {cs.callTime || "not set yet"}
+            {cs.location ? `, ${cs.location}` : ""}
+            {cs.crewRoles[actor.personId] ? `, as ${cs.crewRoles[actor.personId]}` : ""}.
+          </div>
+          {confirm.of(actor.personId).confirmed ? (
+            <button className="btn small ghost" onClick={() => confirm.onTick(actor.personId, false)}>
+              I can no longer come
+            </button>
+          ) : (
+            <button className="btn small primary" onClick={() => confirm.onTick(actor.personId, true)}>
+              Confirm I will be there
+            </button>
+          )}
+        </div>
+      )}
+      {warnings.length > 0 && (
+        <div className="banner warn no-print" role="status" aria-label="Call sheet warnings">
+          <div className="grow">
+            <b>
+              {warnings.length} thing{warnings.length === 1 ? "" : "s"} to check before the day.
+            </b>
+            <ul className="cs-warn-list">
+              {warnings.map((w) => (
+                <li key={w.text}>
+                  <a
+                    href={`#sec-${w.section}`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      document.getElementById(`sec-${w.section}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    }}
+                  >
+                    {w.text}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
 
       {session && !embedded && (
         <section className="glass panel" aria-label="Recording session">
@@ -568,15 +653,18 @@ export function CallSheetBody({
         {...props}
         date={{ value: cs.date, onChange: (date) => save({ date }) }}
         derived={sheetTimes(session ? session.runSheet : cs.runOfShow)}
+        warn={warnOf("schedule")}
       />
       <CrewSection
         {...props}
         candidates={crewCandidates(cs.contentId, cs.crewPersonIds)}
         roleHint={roleHint}
         clashes={new Map(clashes.map((c) => [c.personId, `Also on ${c.otherSheet.title}`]))}
+        confirm={confirm}
+        warn={warnOf("crew")}
       />
-      <TalentSection {...props} />
-      <LocationSection {...props} />
+      <TalentSection {...props} confirm={confirm} />
+      <LocationSection {...props} saved={{ list: locations, onSave: keepPlaces ? saveLocation : undefined }} warn={warnOf("location")} />
       <Section id="equipment" title="Equipment">
         <GearPanel cs={cs} editable={editable} bare />
         {(cs.plannedGear.length > 0 || editable) && (
@@ -605,6 +693,7 @@ export function CallSheetBody({
       )}
       <TechnicalCheckSection {...tickProps} editable={editable} onChange={save} canTick tickable={write} />
       <RehearsalSection {...tickProps} editable={editable} onChange={save} canTick tickable={write} />
+      {(cs.sharedAt || cs.changeLog.length > 0) && <ChangeLog cs={cs} />}
 
       {!embedded && (
         <section className="glass panel" aria-label="Linked to this sheet">
@@ -653,7 +742,10 @@ export function CallSheetBody({
         ) : (
           comments.map((c) => (
             <div key={c.id} className="comment">
-              <b>{nameOf(c.byPersonId)}</b> <small>{new Date(c.at).toLocaleString()}</small>
+              <b>
+                <PersonName id={c.byPersonId} />
+              </b>{" "}
+              <small>{new Date(c.at).toLocaleString()}</small>
               <p>{c.text}</p>
             </div>
           ))
@@ -681,6 +773,109 @@ export function CallSheetBody({
         )}
       </section>
     </>
+  );
+}
+
+/**
+ * What changed on a sheet once it was shared or someone confirmed: call time, location, crew, talent and schedule,
+ * with who changed it and when, newest first. Confirmations a change cleared are listed too.
+ */
+function ChangeLog({ cs }: { cs: CallSheet }) {
+  const [all, setAll] = useState(false);
+  const changes = changesOf(cs);
+  const shown = all ? changes : changes.slice(0, 8);
+  return (
+    <section className="glass panel cs-section" id="sec-changes" aria-label="Changes">
+      <div className="wf-head">
+        <h2>Changes since it was shared or confirmed</h2>
+        {changes.length > 0 && <span className="badge warn">{changes.length}</span>}
+      </div>
+      {changes.length === 0 ? (
+        <Empty>
+          {cs.sharedAt
+            ? `Shared on ${fmtDateTime(cs.sharedAt)}. Nothing has changed since.`
+            : "Nothing has changed since anyone confirmed."}
+        </Empty>
+      ) : (
+        <ul className="cs-changes">
+          {shown.map((c) => (
+            <li key={c.id}>
+              <div className="cs-change-what">
+                <b>{c.what}</b>
+                {c.what === "Confirmation cleared" ? (
+                  <>
+                    : {c.from}, {c.to}
+                  </>
+                ) : c.from && c.to ? (
+                  <>
+                    : <s>{c.from}</s> to {c.to}
+                  </>
+                ) : (
+                  <>: {c.from || c.to}</>
+                )}
+              </div>
+              <small className="muted">
+                <PersonName id={c.by} />, {fmtDateTime(c.at)}
+              </small>
+            </li>
+          ))}
+        </ul>
+      )}
+      {changes.length > 8 && (
+        <button className="btn small ghost" onClick={() => setAll(!all)} aria-expanded={all}>
+          {all ? "Show the newest only" : `Show all ${changes.length} changes`}
+        </button>
+      )}
+    </section>
+  );
+}
+
+/** Gear the crew's roles usually need and the sheet does not have yet, free on its date: one click adds it. */
+function GearSuggestions({ cs }: { cs: CallSheet }) {
+  const { actor, attempt } = useApp();
+  const list = gearSuggestions(cs);
+  if (!list.length) return null;
+  return (
+    <div className="cs-suggest" aria-label="Suggested gear">
+      <h3>Suggested for the crew's roles</h3>
+      <ul>
+        {list.map((s) => (
+          <li key={s.category}>
+            <div>
+              <b>{s.label}</b>{" "}
+              <span className="muted">
+                for {s.roles.join(", ")}: {s.have} of {s.needed} on the sheet
+              </span>
+            </div>
+            {s.options.length === 0 ? (
+              <span className="muted">Nothing free on {fmtDate(cs.date)}.</span>
+            ) : (
+              <div className="row cs-suggest-options">
+                {s.options.map((o) => (
+                  <button
+                    key={o.item.id}
+                    className="btn small"
+                    title={o.item.id}
+                    onClick={() =>
+                      attempt(
+                        () =>
+                          addGearToSheet(actor, { id: cs.id, contentId: cs.contentId, date: cs.date }, [
+                            { equipmentId: o.item.id, quantity: 1 },
+                          ]),
+                        `${o.item.name} added`,
+                      )
+                    }
+                  >
+                    + {o.item.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+      <p className="muted">Only suggestions: nothing is booked until you add it. Gear booked elsewhere or lent out that day is left out.</p>
+    </div>
   );
 }
 
@@ -757,6 +952,7 @@ function GearPanel({ cs, editable, bare = false }: { cs: CallSheet; editable: bo
           })}
         </div>
       )}
+      {canEditGear && cs.date >= todayIso() && <GearSuggestions cs={cs} />}
       {m && m.status === "assigned" && (
         <p className="muted" style={{ marginTop: 10, fontSize: ".84rem" }}>
           Reserved in the studio for {fmtDate(cs.date)}. When it leaves the building, mark it as gone out on the checkout list.

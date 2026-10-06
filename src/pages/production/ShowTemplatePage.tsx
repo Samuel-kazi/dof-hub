@@ -5,6 +5,7 @@ import { describeRule, occurrencesBetween } from "../../services/recurrence";
 import { addDaysIso, fmtDate, todayIso } from "../../services/utils";
 import { roleOn } from "../../services/wrapped/team";
 import { canPlanShow, daysOfShow, getTemplate, updateShowTemplate } from "../../services/wrapped/production";
+import { listLocations } from "../../services/wrapped/locations";
 import { useApp } from "../../ui/AppContext";
 import { LevelField } from "../../ui/LevelField";
 import { Empty, Field } from "../../ui/parts";
@@ -128,7 +129,7 @@ export function ShowTemplatePage({ id }: { id: string }) {
         roleHint={(pid) => roleOn(pid, show) || null}
       />
       <TalentSection {...props} />
-      <LocationSection {...props} />
+      <LocationSection {...props} saved={{ list: listLocations() }} />
       <Section id="equipment" title="Equipment">
         <PlannedGear {...props} pickDate={next} template />
       </Section>

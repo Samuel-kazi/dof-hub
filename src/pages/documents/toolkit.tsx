@@ -155,13 +155,26 @@ export const episodesOfProject = (projectId: string): ContentRecord[] =>
     .sort((a, b) => a.contentId.localeCompare(b.contentId));
 
 /** Boards (or lists) someone may start a new one from: in this project or any other they may see, by project. */
-export function startingPoints<T extends { id: string; contentId: string; name: string }>(
+export function startingPoints<T extends { id: string; contentId: string | null; name: string; isTemplate?: boolean }>(
   actor: Actor,
   all: T[],
 ): { project: string; items: T[] }[] {
   const db = getDb();
   const groups = new Map<string, T[]>();
+  // Templates come first; the ones kept in Documents for practice or an event after them (anyone but a partner).
+  const library = actor.role === "PTR" ? [] : all.filter((it) => !it.contentId);
+  if (library.some((it) => it.isTemplate))
+    groups.set(
+      "Templates",
+      library.filter((it) => it.isTemplate),
+    );
+  if (library.some((it) => !it.isTemplate))
+    groups.set(
+      "Kept in Documents",
+      library.filter((it) => !it.isTemplate),
+    );
   for (const it of all) {
+    if (!it.contentId) continue;
     const p = db.records.find((r) => r.contentId === it.contentId);
     if (!p || !canView(actor, p)) continue;
     const key = `${p.title} (${p.contentId})`;

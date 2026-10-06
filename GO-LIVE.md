@@ -34,8 +34,19 @@ Optional, for the five-stage workflow:
 
 | Name | Value |
 |---|---|
-| `CRON_SECRET` | A long secret you make up (`openssl rand -base64 24`). Vercel uses it to run the daily check at 00:05 Nairobi time, which moves projects whose review window passed with no decision to Hold. Without it, the check still runs the first time anyone opens the site each day |
+| `CRON_SECRET` | A long secret you make up (`openssl rand -base64 24`). Vercel uses it to run the daily check early each morning (06:45 Nairobi time, give or take the hour on the free plan): it moves projects whose review window passed with no decision to Hold, tops up recurring shows, and sends the day's reminder emails. Without it, the check still runs the first time anyone opens the site each day |
 | `PUBLIC_BASE_URL` | Your site's address, for example `https://hub.dawnoffaith.tv`, if share links should use it rather than the address each person opened the site on |
+
+Optional, for reminder emails (Google Workspace):
+
+| Name | Value |
+|---|---|
+| `SMTP_USER` | The Workspace mailbox email is sent from, for example `hub@dawnoffaith.org`. A mailbox of its own is best |
+| `SMTP_PASS` | An **app password** for that mailbox: sign in as it, Google Account, Security, turn on 2-Step Verification, then App passwords. Not the mailbox's normal password |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM` | Leave unset for Google Workspace (`smtp.gmail.com`, `465`, and the mailbox itself as the sender) |
+
+Without `SMTP_USER` and `SMTP_PASS` nothing is emailed and nothing is queued; reminders still reach the bell. The
+password lives only in Vercel, never in the code. Google Workspace allows about 2,000 emails a day per mailbox.
 
 Save them for Production, Preview and Development, then **Redeploy** (Deployments, the three dots, Redeploy).
 
@@ -246,6 +257,55 @@ is made.
 it, the same check runs on the first request each day; the desktop app and demo run it on start and hourly. Gear
 booked by the daily check is in the name of the sheet's crew lead, else the show's responsible person, else the Head of
 Production.
+
+### Data version 20: call sheet improvements
+
+Call sheets gain confirmations, a change log once shared, saved locations, warnings and gear suggestions.
+
+The first time a version with data version 20 starts, it keeps a copy (`hub_items_before_v20` and
+`hub_meta_before_v20`; in the demo and desktop app, `dof-hub-db-before-v20`), then:
+- gives every call sheet and show template a saved location, none (`locationId: null`); the place typed on each sheet is
+  left as it was;
+- gives every call sheet its confirmations and change log, empty; a sheet already final is marked shared at that
+  moment, so changes to it are logged from then on;
+- adds the list of saved locations (`locations`), empty.
+Nothing is moved or deleted, and running it again changes nothing. `npm run db:upgrade` shows what it will do; going
+back is as for version 15 above, with `v20` in the names. Nothing has to be turned on.
+
+Who can do what: the Head of Production and crew keep the saved locations; everyone else picks from them, and a
+partner is sent only those on the call sheets they can see. Crew confirm for themselves; anyone who can work on the
+project can record a confirmation for someone else. A contact card shows only what the viewer was already allowed to
+see (volunteers' and partners' details stay with the Head of Production unless "See volunteer and partner contact details" is given).
+
+### Data version 21: the rework's foundations (build prompt v2, phase 1)
+
+Adds what the rework's later parts build on, with no change on screen yet: equipment loans, role kits, the Calendar's
+reminders, the bell's notifications, the email queue and Google calendar links (each an empty list), a "template" mark
+on storyboards and shot lists (all of today's are a project's own), and a switch for each part of the rework (all off
+until that part is built).
+
+The first time a version with data version 21 starts, it keeps a copy (`hub_items_before_v21` and
+`hub_meta_before_v21`; in the demo and desktop app, `dof-hub-db-before-v21`), then adds those. Nothing is moved or
+deleted, and running it again changes nothing. **General Use records are not touched.** `npm run db:upgrade` now also
+reports, for a decision before the lending part is built: every General Use record, with its checkouts, call sheets,
+documents and storage entries, and a proposal (one with gear checkouts becomes a loan; any other is archived; Content
+IDs keep working either way); and what is stored of reminders (only the log of reminders sent and each person's email
+and text choices, which carry over as they are: reminders themselves are worked out from dates). Going back is as for
+version 15 above, with `v21` in the names.
+
+**The daily cron moves to the morning.** vercel.json now runs `/api/cron/daily` at 03:45 UTC (06:45 in Nairobi), so
+reminder emails arrive at the start of the day. On the free plan Vercel runs it once a day, at some point within that
+hour.
+
+**What Vercel's free plan cannot do, so it is not built:**
+- Emails at an exact time. The server only runs on its own once a day, so an email reminder must be at least a day
+  ahead; it goes out in the morning run before it is due. "At the time" and "1 hour before" reminders reach the bell
+  only (exact whenever anyone has the app open: the bell is checked on every request, at most once a minute).
+- Instant retries of a failed email. A failed email is tried again with later requests (at most every five minutes)
+  or the next morning, five tries in all.
+- Live updates pushed to every screen at once (for the Live Control view later): screens refresh every 15 seconds,
+  as now.
+- Email from the demo or the desktop app: they have no server. Their reminders reach the bell only.
 
 ## What this does not do yet
 

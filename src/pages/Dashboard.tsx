@@ -15,7 +15,6 @@ import {
   riskOf,
   usesPipeline,
 } from "../services/wrapped/content";
-import { nameOf } from "../services/wrapped/people";
 import { daysUntil, fmtShort, fmtSize, relativeDays, todayIso } from "../services/utils";
 import { RiskBadge } from "../ui/parts";
 import { NewRecordModal } from "./RecordForms";
@@ -30,6 +29,7 @@ import { modulesFor } from "../services/wrapped/permissions";
 import { searchAll, type Hit } from "../services/search";
 import { onBoard, waitingOnPerson, workItems, type WorkItem } from "../services/workItems";
 import type { Route } from "../ui/AppContext";
+import { PersonName } from "../ui/PersonName";
 
 interface HorizonRow {
   key: string;
@@ -506,7 +506,7 @@ export function Dashboard() {
                   <div className="grow">
                     <div className="title">{itemTitle(i)}</div>
                     <div className="muted" style={{ fontSize: ".84rem" }}>
-                      {i.stage}: {i.step}, {nameOf(i.ownerId)}
+                      {i.stage}: {i.step}, <PersonName id={i.ownerId} fallback="no one yet" />
                     </div>
                   </div>
                   <span className="badge bad">Overdue</span>
@@ -517,7 +517,7 @@ export function Dashboard() {
                   <div className="grow">
                     <div className="title">{displayTitle(r)}</div>
                     <div className="muted" style={{ fontSize: ".84rem" }}>
-                      {r.pipelineStage}, {nameOf(r.assigneePersonId)}
+                      {r.pipelineStage}, <PersonName id={r.assigneePersonId} fallback="Unassigned" />
                     </div>
                   </div>
                   <RiskBadge record={r} />
@@ -553,7 +553,7 @@ export function Dashboard() {
                       <div className="grow">
                         <div className="title">{projectLabel(actor, m.contentId)}</div>
                         <div className="muted" style={{ fontSize: ".84rem" }}>
-                          {nameOf(m.responsiblePersonId)}, {manifestSummary(m)}
+                          <PersonName id={m.responsiblePersonId} />, {manifestSummary(m)}
                         </div>
                       </div>
                       {isOverdue(m) ? (

@@ -178,7 +178,7 @@ export function uniqueViolations(part: string, elements: unknown[]): string[] {
 export function integrityProblems(db: Database): string[] {
   const out: string[] = [];
   const parts = db as unknown as Record<string, unknown[] | undefined>;
-  for (const part of [...WORKFLOW_PARTS, ...DOCUMENT_PARTS, "records", "callSheets", "showTemplates"])
+  for (const part of [...WORKFLOW_PARTS, ...DOCUMENT_PARTS, "records", "callSheets", "showTemplates", "locations"])
     out.push(...uniqueViolations(part, parts[part] ?? []));
 
   const records = new Set(db.records.map((r) => r.contentId));
@@ -284,7 +284,9 @@ export function integrityProblems(db: Database): string[] {
   const boards = new Set((db.storyboards ?? []).map((b) => b.id));
   const lists = new Set((db.shotLists ?? []).map((l) => l.id));
   for (const b of [...(db.storyboards ?? []), ...(db.shotLists ?? [])]) {
-    project(b.contentId, b.id);
+    // One kept in Documents (a template, or one for practice or an event) belongs to no project; a template never does.
+    if (b.contentId) project(b.contentId, b.id);
+    if (b.isTemplate && b.contentId) out.push(`${b.id} is a template but belongs to project ${b.contentId}.`);
     if (b.episodeId !== null && !records.has(b.episodeId)) missing("episode", b.episodeId, b.id);
   }
   for (const f of db.storyboardFrames ?? []) if (!boards.has(f.storyboardId)) missing("storyboard", f.storyboardId, `Frame ${f.id}`);
@@ -330,6 +332,14 @@ export function integrityProblems(db: Database): string[] {
       if (!day) missing("day", c.instanceId, `Call sheet ${c.id}`);
       else if (day.parentId !== c.contentId) out.push(`Call sheet ${c.id} is for a day of another show.`);
     }
+  // A sheet picked from a saved location points at one that exists, and its confirmations are for people on it.
+  const locations = new Set((db.locations ?? []).map((l) => l.id));
+  for (const c of db.callSheets) {
+    if (c.locationId && !locations.has(c.locationId)) missing("saved location", c.locationId, `Call sheet ${c.id}`);
+    for (const key of Object.keys(c.confirmations ?? {}))
+      if (key.startsWith("talent:") ? !c.talent.some((t) => `talent:${t.id}` === key) : !c.crewPersonIds.includes(key))
+        out.push(`Call sheet ${c.id} has a confirmation for ${key}, who is not on it.`);
+  }
   return out;
 }
 

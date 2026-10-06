@@ -157,7 +157,7 @@ function Row({
         <ImageSlot
           compact
           path={row.imagePath}
-          projectId={list.contentId}
+          projectId={list.contentId ?? "documents"}
           write={write}
           label={name}
           onChange={(imagePath) => save({ imagePath })}

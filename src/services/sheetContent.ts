@@ -115,6 +115,10 @@ export function checkContent(patch: Partial<SheetContent>, crewAfter?: string[])
   if (patch.location !== undefined) checkText(patch.location, "The location", 500);
   if (patch.locationAddress !== undefined) checkText(patch.locationAddress, "The address", 1000);
   if (patch.locationNotes !== undefined) checkText(patch.locationNotes, "Location notes", 4000);
+  if (patch.locationId !== undefined && patch.locationId !== null) {
+    const saved = (getDb().locations ?? []).find((l) => l.id === patch.locationId);
+    if (!saved || saved.archived) throw new RuleError("That saved location is no longer on the list.");
+  }
   if (patch.format !== undefined) checkText(patch.format, "The format", 300);
   if (patch.notes !== undefined) checkText(patch.notes, "Notes", 20_000);
   const people = getDb().people;
@@ -161,10 +165,20 @@ export function checkContent(patch: Partial<SheetContent>, crewAfter?: string[])
   }
 }
 
-/** Keeps only the content fields of a change, and tidies them (crew roles and the lead follow the crew). */
+/**
+ * Keeps only the content fields of a change, and tidies them: crew roles and the lead follow the crew, and a sheet
+ * whose place is changed by hand no longer points at the saved location it was picked from.
+ */
 export function tidyContent(patch: Partial<SheetContent>, current: SheetContent): Partial<SheetContent> {
   const out: Partial<SheetContent> = {};
   for (const k of SHEET_CONTENT_KEYS) if (k in patch) (out as Record<string, unknown>)[k] = (patch as Record<string, unknown>)[k];
+  if (out.locationId === current.locationId) delete out.locationId;
+  if (out.locationId === undefined && current.locationId && (out.location !== undefined || out.locationAddress !== undefined)) {
+    const saved = (getDb().locations ?? []).find((l) => l.id === current.locationId);
+    const name = out.location ?? current.location;
+    const address = out.locationAddress ?? current.locationAddress;
+    if (!saved || saved.name !== name.trim() || saved.address !== address.trim()) out.locationId = null;
+  }
   if (out.crewPersonIds) {
     const crew = new Set(out.crewPersonIds);
     const roles = out.crewRoles ?? current.crewRoles;

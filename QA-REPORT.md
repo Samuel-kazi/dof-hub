@@ -118,5 +118,36 @@ In a real browser (prod1, demo, 20 checks; 336 checks across all 16 browser scri
 technical check not counting as an edit; printing; the board's fortnight; a multi-day event with its plan and a day
 added; a one-time event; a phone with no sideways scroll; dark mode.
 
-Not covered yet: DOF Music keeps its own pipeline (see the Phase 1 notes); confirmations, warnings, saved locations,
-the change log and gear suggestions come in Phase 2.
+Not covered yet: DOF Music keeps its own pipeline (see the Phase 1 notes).
+
+## One production system (Phase 2: call sheet improvements)
+
+| Area | Tests |
+|---|---|
+| Call sheets | `callsheet-improvements` (11): a sheet duplicated a week on with every section, ticks and confirmations cleared, and gear booked elsewhere skipped, never double-booked; a session duplicated with its run sheet and call sheet but not its episodes; warnings for a missing call time, location, crew and lead, and unconfirmed crew within three days, none once the day has passed, and a sheet with warnings still made final; who may confirm for whom, a final sheet taking confirmations, the version unchanged and the day still following its template; each kind of change clearing only the confirmations it affects (role, talent call, crew call, place, taken off), each logged with who; a template change clearing them too; the change log for date, times, location, crew, roles, talent and run of show, only once shared or confirmed, newest first; saved locations kept by crew and the Head of Production, unique names, picked, unlinked by a hand edit, archived and brought back; gear suggested one per person, a body before a lens or tripod, skipping what is on the sheet or booked elsewhere; data version 20 |
+| Screens | `production-screens` (6 with one new): the warnings summary and its lines, a confirm tick per person, names that open the contact card, the saved location picker, gear suggestions, "Will you be there?" for crew on the sheet, and the change log with a cleared confirmation |
+| Elsewhere | `actions`: the five new actions through the hosted server. `workflow-server`: a partner is sent no saved locations but those on their sheets. `workflow-model`, `workflow-server`, `storage`, `migrate`: data version 20 |
+
+In a real browser (prod2, demo, 22 checks; 358 checks across all 17 browser scripts, all passing): the warnings
+summary and section lines; crew put on with roles; a saved location picked; gear suggested and added in one click;
+a crew member's contact card; a confirmation recorded by the Head of Production and one by the crew member themself;
+the sheet shared, reopened and changed, its confirmations cleared and the change log showing who changed what; a
+sheet duplicated a week on; a saved location added and archived; a recording session duplicated two weeks on; a phone
+with no sideways scroll; dark mode.
+
+Not covered yet: alerts to crew when a shared sheet changes (in-app and email) come with Phase 4's alerts.
+
+## The rework, build prompt v2 (Phase 1: foundations, no screens)
+
+| Area | Tests |
+|---|---|
+| Foundations | `rework-foundations` (14): data version 21 adds the lists empty, marks boards as a project's own, changes nothing else, runs twice the same; the dry-run report lists each General Use record with its proposal, and what is stored of reminders; a part not built stays off whatever is stored, and only the Head of Production switches parts; sessions and show days read the same way, with their status; a lent item unavailable to bookings with the borrower and return date named, lending refused for booked gear and for volunteers, retiring refused while lent; partial returns, a late loan held until checked in, overdue, closed when all back, condition taken; keeping a loan longer only if free, calling it off; a role kit offered item by item with what is not free marked, nothing booked; a reminder on a session firing into each recipient's bell and following the session when it moves; email reminders a day or more ahead, queued by the morning run before they are due, never twice, repeating ones moving on; the email queue sending once, leasing, retrying five times, holding quiet hours; the urgency report's levels and reasons, late loans, most urgent first, thresholds from settings; storyboard and shot list templates copied into a project, never changed by the copy, kept by crew and the Head of Production |
+| Server | `workflow-server`: the morning run emails a reminder once, through the queue, which is never sent to a browser, and the bell gets it at its time, one's own only; templates go to the team, not to partners. `actions`: the fourteen new actions through the hosted server |
+| Elsewhere | `workflow-model`, `workflow-server`, `storage`, `migrate`: data version 21 |
+
+Checked by hand against section 4 of the brief, the editor: the toolbar (undo, redo, block style, text size, bold,
+italic, underline, strikethrough, colour, highlight, alignment, bullets, numbers, checklist, indent, outdent, link,
+clear formatting), its shortcuts, saving 800 ms after the last keystroke with "Saving…" and "Saved @", "Save again" on
+a failure with the words kept, the warning before leaving, and pastes cleaned, are all there. Not there yet, for
+Phase 2: Ctrl or Cmd+S to save at once; Enter in a single-line field moving to the next, Esc putting the field back;
+Ctrl+Enter saving a multi-line field; Enter at the end of a run sheet or shot list row adding a row below.

@@ -2,6 +2,37 @@
 
 What changed in each version, newest first. How to deploy is in GO-LIVE.md.
 
+## Unreleased: the rework (build prompt v2)
+
+Phase 1, the foundations (no change on screen yet; each later part ships behind its own switch in Settings):
+
+- Data version 21: lists for equipment loans, role kits, Calendar reminders, the bell's notifications, the email queue
+  and Google calendar links, all empty; storyboards and shot lists can be templates, or belong to no project (kept in
+  Documents); a switch for each part of the rework. General Use records are left as they are; the upgrade's dry run
+  lists each with a proposal (with gear checkouts: a loan; otherwise archived) for a decision.
+- One view of every production instance, a recording session or a show day: date, label, times, place, status (draft,
+  published, done, cancelled) and call sheet. The Calendar, the urgency report and search will read from it.
+- Lending: a loan (DOF-LOAN-0001) to a borrower, with phone, organisation, items, date out and expected return. A
+  lent item is unavailable to bookings and the conflict check until its expected return, and once late until it is
+  checked in; the clash names the borrower and the date. Items come back a few at a time; a serialized item takes the
+  condition it came back in. A loan can be kept longer if its items are free, or called off before anything comes back.
+- Role kits: a role's usual gear (for example a camera operator with an FX3), offered on a call sheet item by item to
+  the matching roles, with what is not free that day marked. Nothing is booked until someone accepts an item.
+- Reminders on anything with a date (a session or show day, a call sheet, an episode's or project's due date, a
+  loan's return) or standing alone, at the time, an hour, a day or a week before, or any number of minutes. They
+  follow their item when its date moves. A reminder standing alone can repeat daily, weekly or monthly.
+- The bell keeps notifications for each person; email goes through the workspace's Google Workspace account
+  (SMTP_USER and SMTP_PASS on the server), from a queue: each message once, five tries, held through a person's
+  quiet hours. On Vercel's free plan email reminders must be a day or more ahead (see GO-LIVE.md).
+- The urgency report's rules: each project gets Critical, High, Watch or On track and its reasons in plain words (an
+  episode overdue; a session or show day within 24 hours with no published call sheet or items not assigned; a gear
+  clash; due within 48 hours; no producer after the greenlight; theological review not done; items not assigned;
+  call sheet details missing; no recording date within 14 days of a due date), and each late loan. The numbers are
+  in settings.
+- Storyboards and shot lists: "Save as template", templates and practice boards kept in Documents, and "Use template"
+  copying one into a project; editing the copy never changes the template.
+- The daily cron runs at 06:45 Nairobi time instead of 00:05.
+
 ## Unreleased: one production system, with the call sheet at its centre
 
 Being built in phases. Phase 1, the production core:
@@ -45,6 +76,39 @@ Being built in phases. Phase 1, the production core:
   show becomes a production (one day: a one-time event; otherwise a multi-day event with an empty Event Plan); each
   day is linked to the call sheet made for its date; and each coming day without one gets a draft call sheet. Nothing
   is moved or deleted.
+
+Phase 2, call sheet improvements:
+
+- **Duplicate to another date**, for a call sheet or a recording session, with "+1 day", "+1 week" and "+2 weeks"
+  beside the date. A copy carries every section, with ticks and confirmations cleared, and the gear that is free on the
+  new date (anything booked elsewhere or lent out is skipped and listed). A session's copy also takes its name, hours,
+  venue, storyboard, shot list and run sheet, and a copy of its call sheet; its episodes or devotions stay on the
+  original. "Duplicate…" is on the session's page and on each session in a devotion's Recording Plan.
+- **Warnings, never blocks**: a sheet still to come lists what it is missing (no crew call time, no location, no crew,
+  no crew lead) in a summary at the top and in the section concerned, and, from three days before the date, the crew
+  who have not confirmed. The Call sheets list shows "N to check".
+- **Confirmed ticks** for each person on the crew and each talent row. Crew tick their own (a crew member on the sheet
+  sees "Will you be there?" with one button); anyone working on the project can record it for someone else. A
+  confirmation records the call time, place and role it was given for: if any of the three changes, it is cleared, the
+  change log says so, and the person is asked again. Confirming works on a final sheet and does not stop a day
+  following its show's template.
+- **Saved locations**: a list of places with their address and notes, on the Call sheets page. The Head of Production
+  and crew add, edit and archive them (archived ones can be brought back). Any call sheet or show template picks one in
+  its Location section, which fills in the place, address and notes; "Save as a saved location" adds a sheet's place to
+  the list. A sheet keeps its own copy, so editing a saved location never rewrites sheets already made.
+- **Click a name to reach them**: crew names on call sheets, sessions, the Recording Plan's call sheets, stage owners,
+  the dashboard, equipment and checkout lists open a contact card with their role, phone (call or text) and email, as
+  far as the viewer may see them. Volunteers' and partners' details stay private as before.
+- **Change log**: once a sheet has been shared (first made final) or anyone has confirmed, every change to its date,
+  call times, location, crew (added, removed, roles, lead), talent and run of show is logged with who made it and
+  when, shown newest first under "Changes since it was shared or confirmed". The header shows when it was shared and
+  how many changes are logged.
+- **Gear suggestions** from the crew's roles (a camera for each camera operator, audio for the audio role, lights,
+  the switcher, an editing machine), offered in the Equipment section with one click to add. Nothing is added on its
+  own; gear already on the sheet, booked elsewhere or lent out that day is left out.
+- Data version 20: on first start, after keeping a copy, every call sheet and show template gains a saved location
+  (none), and every sheet its confirmations and change log (empty). A sheet already final counts as shared from then
+  on. The list of saved locations starts empty. Nothing is moved or deleted.
 
 ## Unreleased: documents for each stage (the documents rework)
 

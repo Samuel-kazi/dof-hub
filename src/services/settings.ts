@@ -4,6 +4,7 @@ import { commit, getDb } from "../data/store";
 import { requireCan } from "./permissions";
 import { isHop } from "./access";
 import { ACCENTS, FONT_PAIRINGS } from "../config/appearance";
+import { FEATURES, FEATURE_KEYS, type FeatureKey } from "../config/features";
 import { logAudit } from "./audit";
 import { pickKeys } from "./utils";
 
@@ -77,5 +78,24 @@ export function changePassword(actor: Actor, current: string, next: string): voi
   if (next.length < 4) throw new RuleError("New password must be at least 4 characters.");
   u.password = next; // MOCK ONLY: bcrypt hash once a real backend exists
   logAudit(actor, "change-password", "person", actor.personId);
+  commit();
+}
+
+// ── The rework's parts, switched on or off (src/config/features.ts) ──
+
+/** Whether a part of the rework is on: one not built yet never is; a built one is, unless switched off. */
+export function featureOn(key: FeatureKey): boolean {
+  const f = FEATURES.find((x) => x.key === key);
+  if (!f?.built) return false;
+  return getDb().settings.features?.[key] ?? true;
+}
+
+/** Switches a part of the rework on or off for everyone. The Head of Production's alone; no data changes either way. */
+export function setFeature(actor: Actor, key: FeatureKey, on: boolean): void {
+  if (!isHop(actor)) throw new RuleError("Only the Head of Production switches parts of the app on and off.");
+  if (!FEATURE_KEYS.includes(key)) throw new RuleError("There is no such part of the app.");
+  const s = getDb().settings;
+  s.features = { ...(s.features ?? {}), [key]: on };
+  logAudit(actor, on ? "feature-on" : "feature-off", "system", key);
   commit();
 }

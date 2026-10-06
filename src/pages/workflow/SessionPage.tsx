@@ -6,7 +6,7 @@ import { getDb, useDb } from "../../data/store";
 import { canView, canWrite, getRecord } from "../../services/access";
 import { getBreadcrumb } from "../../services/wrapped/content";
 import { gearIssues, manifestForSheet } from "../../services/wrapped/equipment";
-import { getPerson, nameOf } from "../../services/wrapped/people";
+import { getPerson } from "../../services/wrapped/people";
 import {
   addLogRow,
   addRunSheetItem,
@@ -14,6 +14,7 @@ import {
   availableForLog,
   closeSession,
   createSessionCallSheet,
+  duplicateSession,
   evaluateGate,
   getSession,
   openSession,
@@ -28,13 +29,16 @@ import {
   updateSession,
   type Project,
 } from "../../services/wrapped/workflow";
-import { fmtDate, fmtDateTime } from "../../services/utils";
+import { addDaysIso, fmtDate, fmtDateTime } from "../../services/utils";
 import { cleanHtml } from "../../services/html";
 import { pagesOf } from "../../services/wrapped/documents";
 import { useApp } from "../../ui/AppContext";
 import { Empty, Field } from "../../ui/parts";
+import { Modal } from "../../ui/Modal";
+import { DateShift } from "../../ui/DateShift";
 import { CrewSelect, GatePanel } from "../../ui/workflow/shared";
 import { ConfigChecklist, useDraft, useReason } from "./common";
+import { PersonName } from "../../ui/PersonName";
 
 // One recording session: Pre-production while Planned (call sheet, gear, rehearsal), Production while Open (the
 // run sheet and the log, then wrap), and the close that makes the episodes.
@@ -290,7 +294,7 @@ function RecordingDay({ project, sessionId, editable }: { project: Project; sess
                 const person = c.id ? getPerson(c.id) : undefined;
                 return (
                   <li key={`${c.role}-${i}`}>
-                    {c.role}: <b>{c.id ? nameOf(c.id) : c.name}</b>
+                    {c.role}: <b>{c.id ? <PersonName id={c.id} role={c.role} /> : c.name}</b>
                     {person?.phone ? `, ${person.phone}` : ""}
                   </li>
                 );
@@ -395,10 +399,67 @@ export function WrapPanel({ sessionId, editable }: { sessionId: string; editable
   );
 }
 
+/**
+ * Copies a session to another date: its plan, run sheet and call sheet (every section), with gear where it is free
+ * that day. The devotions or episodes on it are not copied.
+ */
+export function DuplicateSessionModal({
+  session,
+  onClose,
+  onMade,
+}: {
+  session: { id: string; scheduledDate: string | null; name?: string };
+  onClose: () => void;
+  onMade?: (id: string) => void;
+}) {
+  const { actor, attempt, toast } = useApp();
+  const [date, setDate] = useState(() => (session.scheduledDate ? addDaysIso(session.scheduledDate, 7) : ""));
+  const save = () => {
+    const r = attempt(() => duplicateSession(actor, session.id, date));
+    if (!r) return;
+    const skipped = r.gear.skipped.length ? ` Gear not free that day: ${r.gear.skipped.join(" ")}` : "";
+    toast(
+      `${r.session.id} made for ${fmtDate(date)}${r.sheet ? `, with call sheet ${r.sheet.id}` : ""}.${skipped}`,
+      skipped ? "info" : "success",
+    );
+    onClose();
+    onMade?.(r.session.id);
+  };
+  return (
+    <Modal
+      title={`Duplicate ${session.name?.trim() || session.id}`}
+      onClose={onClose}
+      actions={
+        <>
+          <button className="btn" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="btn primary" disabled={!date} onClick={save}>
+            Duplicate
+          </button>
+        </>
+      }
+    >
+      <div className="stack">
+        <Field label="Date of the new session">
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} autoFocus />
+        </Field>
+        <DateShift from={session.scheduledDate} value={date} onChange={setDate} />
+        <p className="muted">
+          The new session gets this one's name, hours, venue, storyboard, shot list and run sheet, and a copy of its call sheet with every
+          section (ticks and confirmations cleared). Gear is booked where it is free that day. The episodes or devotions on this session
+          stay on it.
+        </p>
+      </div>
+    </Modal>
+  );
+}
+
 export function SessionPage({ id }: { id: string }) {
   const { actor, go, attempt, confirm, toast } = useApp();
   useDb();
   const [ask, reasonModal] = useReason();
+  const [duplicating, setDuplicating] = useState(false);
   const [pick, setPick] = useState("");
   const [label, setLabel] = useState("");
   const [dailyLog, setDailyLog] = useState<string | null>(null);
@@ -463,6 +524,11 @@ export function SessionPage({ id }: { id: string }) {
             {session.scheduledDate && <span className="muted">{fmtDate(session.scheduledDate)}</span>}
           </div>
         </div>
+        {canWrite(actor, p) && !p.archived && p.workflow.stage === "Pre-production" && (
+          <button className="btn" onClick={() => setDuplicating(true)}>
+            Duplicate…
+          </button>
+        )}
         {write && session.status === "Planned" && (
           <button
             className="btn danger"
@@ -695,6 +761,9 @@ export function SessionPage({ id }: { id: string }) {
         />
       )}
       {reasonModal}
+      {duplicating && (
+        <DuplicateSessionModal session={session} onClose={() => setDuplicating(false)} onMade={(sid) => go({ n: "session", id: sid })} />
+      )}
     </div>
   );
 }

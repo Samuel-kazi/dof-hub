@@ -11,11 +11,15 @@ const outFlagIdx = process.argv.indexOf("--out");
 const outDir =
   outFlagIdx !== -1 && process.argv[outFlagIdx + 1] ? resolve(process.argv[outFlagIdx + 1]) : resolve(root, "src/services/wrapped");
 const MODULES = [
+  "alerts",
   "callsheets",
   "content",
   "docs",
   "documents",
   "equipment",
+  "kits",
+  "lending",
+  "locations",
   "people",
   "permissions",
   "production",

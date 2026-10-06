@@ -11,7 +11,7 @@ import type {
   StageTask,
 } from "../types";
 import { categoryOf } from "../config/categories";
-import { blankSheetContent } from "../config/callSheet";
+import { blankSheetContent, blankSheetTracking } from "../config/callSheet";
 import { buildGearSeed } from "./seedGear";
 import { syncRecordCounters } from "./ids";
 import { fillTemplate, templateOf } from "../config/docTemplates";
@@ -598,12 +598,17 @@ export function buildSeed(): Database {
     callSheets: [
       {
         ...blankSheetContent(),
+        ...blankSheetTracking(),
         instanceId: null,
         id: "DOF-CS-001",
         contentId: "DOF-SER-001",
         title: "Whispers of Why: Season 1 recording day",
         date: isoDay(2),
         location: "DOF Studio A",
+        locationAddress: "DOF Centre, Ngong Road, Nairobi",
+        locationId: "DOF-LOC-001",
+        crewRoles: { "DOF-P-CRW-002": "Camera 1", "DOF-P-CRW-003": "Audio" },
+        crewLeadId: "DOF-P-CRW-002",
         callTime: "08:00",
         linkedEpisodeIds: ["DOF-SER-001-S1-E02", "DOF-SER-001-S1-E03"],
         crewPersonIds: ["DOF-P-CRW-002", "DOF-P-CRW-003"],
@@ -617,12 +622,15 @@ export function buildSeed(): Database {
       },
       {
         ...blankSheetContent(),
+        ...blankSheetTracking(),
         instanceId: "DOF-LIVE-001-D1",
         id: "DOF-CS-002",
         contentId: "DOF-LIVE-001",
         title: "Sunday Live Service: Day 1, full broadcast",
         date: isoDay(1),
         location: "Main auditorium",
+        locationAddress: "DOF Centre, Ngong Road, Nairobi",
+        locationId: "DOF-LOC-002",
         callTime: "07:00",
         linkedEpisodeIds: ["DOF-LIVE-001-D1"],
         crewPersonIds: ["DOF-P-CRW-003"],
@@ -687,6 +695,36 @@ export function buildSeed(): Database {
     shotLists: [],
     shotListRows: [],
     showTemplates: [],
+    // Places the team films often, picked on a call sheet's Location section.
+    locations: [
+      {
+        id: "DOF-LOC-001",
+        name: "DOF Studio A",
+        address: "DOF Centre, Ngong Road, Nairobi",
+        notes: "Park behind the building. The studio key is at reception.",
+        archived: false,
+        createdAt: isoDay(-30),
+        createdBy: "DOF-P-HOP-001",
+        updatedAt: isoDay(-30),
+      },
+      {
+        id: "DOF-LOC-002",
+        name: "Main auditorium",
+        address: "DOF Centre, Ngong Road, Nairobi",
+        notes: "Load in through the side door by the stage. Power at stage left.",
+        archived: false,
+        createdAt: isoDay(-30),
+        createdBy: "DOF-P-HOP-001",
+        updatedAt: isoDay(-30),
+      },
+    ],
+    // Data version 21: lending, role kits, the Calendar's reminders and alerts, emails, Google calendar links.
+    loans: [],
+    roleKits: [],
+    calendarReminders: [],
+    notifications: [],
+    emailQueue: [],
+    googleSyncLinks: [],
     ...gear,
     settings: {
       stageReminderHours: 24,
@@ -695,8 +733,21 @@ export function buildSeed(): Database {
       workDays: [1, 2, 3, 4, 5],
       effortOverrides: {},
       appearance: { accent: "terracotta", fontPairing: "modern" },
+      features: {},
     },
-    counters: { audit: 0, comment: 1, callsheet: 2, task: 6, link: 1, featured: 5, runitem: 5, doc: docN, docrev: revN, ...gear.counters },
+    counters: {
+      audit: 0,
+      comment: 1,
+      callsheet: 2,
+      location: 2,
+      task: 6,
+      link: 1,
+      featured: 5,
+      runitem: 5,
+      doc: docN,
+      docrev: revN,
+      ...gear.counters,
+    },
   };
   syncRecordCounters(db); // project numbers continue from the sample projects (src/data/ids.ts)
   return db;

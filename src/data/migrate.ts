@@ -2,7 +2,7 @@ import type { ContentRecord, Database, DocRecord, DocRevision, DriveAllocation, 
 import { MUSIC_STAGE_MAP, categoryOf } from "../config/categories";
 import { templateOf } from "../config/docTemplates";
 import { CHECKLISTS } from "../config/workflow";
-import { SHEET_CONTENT_KEYS, blankEventPlan, blankSheetContent } from "../config/callSheet";
+import { SHEET_CONTENT_KEYS, blankEventPlan, blankSheetContent, blankSheetTracking } from "../config/callSheet";
 import { DOCUMENT_PARTS, WORKFLOW_PARTS } from "./constraints";
 import { todayIso } from "../services/utils";
 import { migrateDocuments } from "./migrateDocuments";
@@ -574,6 +574,7 @@ export function upgradeToV19(db: Database): Database {
       const id = `DOF-CS-${String(csNext).padStart(3, "0")}`;
       db.callSheets.push({
         ...blankSheetContent(),
+        ...blankSheetTracking(),
         id,
         contentId: show.contentId,
         title: `${show.title}: ${day.scheduledDate}`,
@@ -602,5 +603,47 @@ export function upgradeToV19(db: Database): Database {
     });
   }
   db.schemaVersion = 19;
+  return db;
+}
+
+/**
+ * Version 20: call sheet improvements. Every sheet and show template gains a saved location (none), and every sheet
+ * the record of who confirmed and of what changed once it was shared, both empty. A sheet already final has been
+ * issued to the team, so its changes are logged from now on. The list of saved locations starts empty. Nothing is
+ * moved or deleted. Running it again changes nothing.
+ */
+export function upgradeToV20(db: Database): Database {
+  db.locations ??= [];
+  const at = new Date().toISOString();
+  for (const cs of db.callSheets) {
+    cs.locationId ??= null;
+    cs.confirmations ??= {};
+    cs.changeLog ??= [];
+    if (cs.sharedAt === undefined) cs.sharedAt = cs.status === "final" ? at : null;
+  }
+  for (const t of db.showTemplates ?? []) t.sheet.locationId ??= null;
+  db.schemaVersion = 20;
+  return db;
+}
+
+/**
+ * Version 21: the rework's foundations (build prompt v2). Adds the lists for equipment loans, role kits, the
+ * Calendar's reminders, in-app notifications, the email queue and Google calendar links, all empty; marks every
+ * storyboard and shot list as a project's own, not a template; and gives the settings their switches for each part of
+ * the rework (empty: each part's default). General Use records are left exactly as they are: what becomes of them is
+ * decided from the dry-run report (src/data/reworkReport.ts). Nothing is moved or deleted. Running it again changes
+ * nothing.
+ */
+export function upgradeToV21(db: Database): Database {
+  db.loans ??= [];
+  db.roleKits ??= [];
+  db.calendarReminders ??= [];
+  db.notifications ??= [];
+  db.emailQueue ??= [];
+  db.googleSyncLinks ??= [];
+  for (const b of db.storyboards ?? []) b.isTemplate ??= false;
+  for (const l of db.shotLists ?? []) l.isTemplate ??= false;
+  db.settings.features ??= {};
+  db.schemaVersion = 21;
   return db;
 }

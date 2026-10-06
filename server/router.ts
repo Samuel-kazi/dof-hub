@@ -19,9 +19,10 @@ import {
 import { HttpError } from "./errors";
 import * as google from "./google";
 import { assertSameSite, clearCookie, COOKIE, readRequest, redirect, send, sendFile, sendLarge, sessionCookie, type Req } from "./http";
-import { docHistory, headOf, snapshotFor } from "./state";
+import { docHistory, headOf, loadDb, snapshotFor } from "./state";
 import type { Store } from "./stores";
 import { createShareLink, dailyChecks, followShareLink } from "./workflow";
+import { alertChecks, emailAvailable, smtpSender } from "./email";
 import { migrateWorkflowRequest } from "./migrateWorkflow";
 
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
@@ -85,6 +86,7 @@ async function dispatch(store: Store, req: Req, res: ServerResponse): Promise<vo
     case "GET /state": {
       const who = await signedIn();
       await dailyChecks(store);
+      await alertChecks(store);
       // "Has anything changed?" is answered from one small document, without loading the data.
       const head = await headOf(store);
       if (!head) throw new HttpError(503, "The app has not been set up yet.");
@@ -108,6 +110,7 @@ async function dispatch(store: Store, req: Req, res: ServerResponse): Promise<vo
     case "POST /action": {
       const who = await signedIn();
       await dailyChecks(store);
+      await alertChecks(store);
       const result = await runAction(store, who, req.body.name, req.body.args, req.body.ids);
       return ok({ result: result ?? null });
     }
@@ -130,7 +133,42 @@ async function dispatch(store: Store, req: Req, res: ServerResponse): Promise<vo
       // Vercel's daily cron sends "Authorization: Bearer <CRON_SECRET>". Without the secret set, only app use runs the check.
       const secret = process.env.CRON_SECRET;
       if (!secret || req.headers.authorization !== `Bearer ${secret}`) throw new HttpError(401, "Not allowed.");
-      return ok({ movedToHold: await dailyChecks(store, true) });
+      const movedToHold = await dailyChecks(store, true);
+      await alertChecks(store, { morning: true });
+      return ok({ movedToHold });
+    }
+    case "GET /email/status": {
+      // Whether the workspace's email account is set up (SMTP_USER and SMTP_PASS on the server), and for the Head of
+      // Production, how the queue stands.
+      const who = await signedIn();
+      const loaded = await loadDb(store);
+      const queue = who.actor.role === "HOP" ? (loaded?.db.emailQueue ?? []) : [];
+      return ok({
+        email: {
+          available: emailAvailable(),
+          queued: queue.filter((m) => m.status === "queued").length,
+          failed: queue.filter((m) => m.status === "failed").map((m) => ({ to: m.to, subject: m.subject, error: m.lastError })),
+        },
+      });
+    }
+    case "POST /email/test": {
+      // The Head of Production sends a test email to themself, straight away, to check the account works.
+      const who = await signedIn();
+      if (who.actor.role !== "HOP") throw new HttpError(403, "Only the Head of Production can send a test email.");
+      if (!emailAvailable()) throw new HttpError(400, "Email is not set up: add SMTP_USER and SMTP_PASS to the server's environment.");
+      const loaded = await loadDb(store);
+      const me = loaded?.db.people.find((p) => p.personId === who.actor.personId);
+      if (!me?.email) throw new HttpError(400, "Add your own email address to your profile first.");
+      try {
+        await smtpSender({
+          to: me.email,
+          subject: "Production Hub: test email",
+          text: "This is a test from the Dawn of Faith Production Hub. Email reminders will come from this address.",
+        });
+      } catch (e) {
+        throw new HttpError(502, `The email could not be sent: ${e instanceof Error ? e.message : String(e)}`);
+      }
+      return ok({ to: me.email });
     }
     case "POST /account/password": {
       const who = await signedIn(true);

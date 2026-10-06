@@ -5,6 +5,9 @@ import { localId } from "../../data/ids";
 import { categoryOf } from "../../config/categories";
 import { SESSION_LABELS, formTypeOf } from "../../config/workflow";
 import { createCallSheet } from "../callsheets";
+import { copyGearBetweenSheets } from "../equipment";
+import { applyContent, cloneContent } from "../sheetContent";
+import { noteChanges, trackedOf } from "../sheetTracking";
 import { displayTitle } from "../content";
 import { getRecord, rootOf } from "../access";
 import { getPerson } from "../people";
@@ -18,6 +21,7 @@ import {
   nowStamp,
   plannedTitle,
   projectForWrite,
+  requireSession,
   rowsOf,
   sessionForWrite,
   sessionsOf,
@@ -133,8 +137,10 @@ function keepCallSheet(actor: Actor, session: RecordingSession): void {
   const sheet = session.callSheetId ? getDb().callSheets.find((c) => c.id === session.callSheetId) : undefined;
   if (!sheet) createSessionCallSheet(actor, session.id);
   else if (sheet.status === "draft" && sheet.date !== session.scheduledDate) {
+    const before = trackedOf(sheet);
     sheet.date = session.scheduledDate;
     sheet.version += 1;
+    noteChanges(actor, sheet, before);
     logAudit(actor, "update", "callsheet", sheet.id, `date ${session.scheduledDate}, with its session`);
   }
 }
@@ -380,6 +386,49 @@ export function createSessionCallSheet(actor: Actor, sessionId: string): CallShe
   logAudit(actor, "callsheet", "session", sessionId, sheet.id);
   commit();
   return sheet;
+}
+
+/**
+ * A new session like this one on another date: its name, part of the day, hours, venue, storyboard and shot list,
+ * and its run sheet. Its call sheet is copied too, every section, with its ticks and confirmations cleared, and its
+ * gear where it is free on the new date (anything booked elsewhere or lent out is skipped and reported). The
+ * episodes or devotions on the session are not copied: each is recorded on one session.
+ */
+export function duplicateSession(
+  actor: Actor,
+  sessionId: string,
+  newDate: string,
+): { session: RecordingSession; sheet: CallSheet | null; gear: { copied: number; skipped: string[] } } {
+  const src = requireSession(sessionId);
+  projectForWrite(actor, src.contentId);
+  if (!isIsoDate(newDate)) throw new RuleError("Pick the new session's date.");
+  const copy = createSession(actor, src.contentId, {
+    scheduledDate: newDate,
+    venue: src.venue,
+    name: src.name ?? "",
+    label: src.label ?? null,
+    startTime: src.startTime ?? null,
+    endTime: src.endTime ?? null,
+  });
+  copy.storyboardId = src.storyboardId ?? null;
+  copy.shotListId = src.shotListId ?? null;
+  copy.storageDriveId = src.storageDriveId ?? null;
+  // A devotion's run sheet follows the devotions on it, and the copy has none yet, so it keeps the fresh one.
+  if (!isDevotion(src.contentId)) copy.runSheet = src.runSheet.map((x) => ({ ...x, id: localId("RS") }));
+  const srcSheet = src.callSheetId ? getDb().callSheets.find((c) => c.id === src.callSheetId) : undefined;
+  let sheet: CallSheet | null = null;
+  let gear = { copied: 0, skipped: [] as string[] };
+  if (srcSheet) {
+    sheet = copy.callSheetId ? (getDb().callSheets.find((c) => c.id === copy.callSheetId) ?? null) : null;
+    sheet ??= createSessionCallSheet(actor, copy.id);
+    const content = cloneContent(srcSheet);
+    content.notes = sheet.notes; // the new session's own, not the old one's list of episodes
+    applyContent(sheet, content);
+    gear = copyGearBetweenSheets(actor, srcSheet.id, { id: sheet.id, contentId: sheet.contentId, date: sheet.date });
+  }
+  logAudit(actor, "duplicate", "session", copy.id, `from ${src.id}`);
+  commit();
+  return { session: copy, sheet, gear };
 }
 
 // ── The recording session log ────────────────────────────────

@@ -21,6 +21,7 @@ import { Empty, Field } from "../../ui/parts";
 import { CrewSelect } from "../../ui/workflow/shared";
 import { ConfigChecklist } from "./common";
 import { DecisionPanel } from "./Development";
+import { PersonName } from "../../ui/PersonName";
 
 // Pre-production for the whole project: the producer assigns the roles, works through the project's checklist,
 // and schedules the recording sessions. A DOF-made documentary also gets its second greenlight here.
@@ -45,8 +46,11 @@ export function RolesPanel({ project, write }: { project: Project; write: boolea
     <section className="glass panel" aria-label="Project roles">
       <h2>Project roles</h2>
       <p className="muted">
-        Show producer: <b>{project.workflow.showProducerId ? nameOf(project.workflow.showProducerId) : "not named yet"}</b>. The producer
-        assigns these at Pre-production.{" "}
+        Show producer:{" "}
+        <b>
+          <PersonName id={project.workflow.showProducerId} fallback="not named yet" role="Show producer" />
+        </b>
+        . The producer assigns these at Pre-production.{" "}
         {manage ? "" : "Only the producer, or someone who may assign other people's work, can change them."}
       </p>
       <div className="wf-fields">
@@ -76,7 +80,7 @@ export function RolesPanel({ project, write }: { project: Project; write: boolea
           {hosts.map((h) => (
             <div key={h.id} className="list-item">
               <div className="grow">
-                <div className="title">{h.crewId ? nameOf(h.crewId) : h.guestName}</div>
+                <div className="title">{h.crewId ? <PersonName id={h.crewId} /> : h.guestName}</div>
                 <span className="muted">{h.crewId ? "Crew" : "Outside the crew"}</span>
               </div>
               {manage && (

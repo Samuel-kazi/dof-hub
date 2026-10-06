@@ -11,6 +11,10 @@ import { moveTo, nowStamp, projectForView, projectForWrite, renumber } from "./c
 // Storyboards and shot lists, Pre-production's two tools. Either can start as a copy of one that already exists, in
 // this project or any other the person may see, so good boards are reused. Images are stored as files (on the server,
 // or in the desktop app's media folder); a frame or a row keeps only the image's address.
+//
+// Some belong to no project (data version 21): templates, and boards or lists for practice or an event, kept in
+// Documents. "Save as template" copies a project's board there; "Use template" copies a template into a project, and
+// editing that copy never changes the template. The Head of Production and crew keep them; everyone else may use them.
 
 const MAX_LINE = 500;
 /** A stored image's address, or a photo the browser has just shrunk (the server files it and keeps the address). */
@@ -26,16 +30,36 @@ function imageOf(value: string | null): string | null {
 
 const line = (s: string | undefined): string => (s ?? "").trim().slice(0, MAX_LINE);
 
-function episodeOf(contentId: string, episodeId: string | null | undefined): string | null {
+function episodeOf(contentId: string | null, episodeId: string | null | undefined): string | null {
   if (!episodeId) return null;
+  if (!contentId) throw new RuleError("A storyboard or shot list kept in Documents belongs to no episode.");
   const ep = getRecord(episodeId);
   if (!ep?.episode || ep.parentId !== contentId) throw new RuleError("Choose one of this project's episodes.");
   return episodeId;
 }
 
+// ── Who may see and change them ──────────────────────────────
+
+/** The Head of Production and crew keep the templates, and the boards and lists kept in Documents. */
+export const canKeepLibrary = (actor: Actor): boolean => actor.role === "HOP" || actor.role === "CRW";
+
+/** A board or list may be changed: its project's people, or for one kept in Documents, those who keep them. */
+function scopeForWrite(actor: Actor, contentId: string | null): void {
+  if (contentId) projectForWrite(actor, contentId);
+  else if (!canKeepLibrary(actor))
+    throw new RuleError("Only the Head of Production and crew change templates and the boards kept in Documents.");
+}
+
+/** A board or list may be read, or copied: anyone on its project, or for one kept in Documents, anyone but a partner. */
+function scopeForView(actor: Actor, contentId: string | null): void {
+  if (contentId) projectForView(actor, contentId);
+  else if (actor.role === "PTR") throw new RuleError("That is not shared with you.");
+}
+
 // ── Storyboards ──────────────────────────────────────────────
 
-export const storyboardsOf = (contentId: string): Storyboard[] =>
+/** A project's storyboards, or with null, those kept in Documents (templates and boards of no project). */
+export const storyboardsOf = (contentId: string | null): Storyboard[] =>
   getDb()
     .storyboards.filter((b) => b.contentId === contentId)
     .sort((a, b) => a.position - b.position);
@@ -47,7 +71,7 @@ export const framesOf = (storyboardId: string): StoryboardFrame[] =>
 function boardForWrite(actor: Actor, id: string): Storyboard {
   const b = getDb().storyboards.find((x) => x.id === id);
   if (!b) throw new RuleError("That storyboard no longer exists.");
-  projectForWrite(actor, b.contentId);
+  scopeForWrite(actor, b.contentId);
   return b;
 }
 
@@ -61,20 +85,23 @@ export interface NewBoard {
   name: string;
   episodeId?: string | null;
   copyFrom?: string | null; // a storyboard (or shot list) to start from: its frames (or rows) are copied
+  template?: boolean; // kept in Documents as a template (only for one of no project)
 }
 
-export function createStoryboard(actor: Actor, contentId: string, input: NewBoard): Storyboard {
-  projectForWrite(actor, contentId);
+/** A new storyboard in a project, or with no project, one kept in Documents: a template, or one for practice or an event. */
+export function createStoryboard(actor: Actor, contentId: string | null, input: NewBoard): Storyboard {
+  scopeForWrite(actor, contentId);
   const db = getDb();
   const source = input.copyFrom ? db.storyboards.find((b) => b.id === input.copyFrom) : undefined;
   if (input.copyFrom) {
     if (!source) throw new RuleError("The storyboard to start from no longer exists.");
-    projectForView(actor, source.contentId);
+    scopeForView(actor, source.contentId);
   }
   const at = nowStamp();
   const board: Storyboard = {
     id: localId("SB"),
     contentId,
+    isTemplate: !contentId && !!input.template,
     episodeId: episodeOf(contentId, input.episodeId),
     name: line(input.name) || (source ? `${source.name} (copy)` : "Storyboard"),
     position: storyboardsOf(contentId).length,
@@ -85,9 +112,16 @@ export function createStoryboard(actor: Actor, contentId: string, input: NewBoar
   };
   db.storyboards.push(board);
   if (source) for (const f of framesOf(source.id)) db.storyboardFrames.push({ ...f, id: localId("SF"), storyboardId: board.id });
-  logAudit(actor, "storyboard", "record", contentId, `${board.name}${source ? `, from ${source.name}` : ""}`);
+  logAudit(actor, "storyboard", "record", contentId ?? "documents", `${board.name}${source ? `, from ${source.name}` : ""}`);
   commit();
   return board;
+}
+
+/** Copies a project's storyboard into Documents as a template. The project's board is left as it is. */
+export function saveStoryboardAsTemplate(actor: Actor, id: string, name: string): Storyboard {
+  const b = getDb().storyboards.find((x) => x.id === id);
+  if (!b) throw new RuleError("That storyboard no longer exists.");
+  return createStoryboard(actor, null, { name: line(name) || b.name, copyFrom: b.id, template: true });
 }
 
 export function renameStoryboard(actor: Actor, id: string, name: string): Storyboard {
@@ -169,7 +203,13 @@ export function deleteFrames(actor: Actor, frameIds: string[]): number {
   for (const id of frameIds) boards.add(frameForWrite(actor, id).board.id);
   db.storyboardFrames = db.storyboardFrames.filter((f) => !frameIds.includes(f.id));
   for (const b of boards) renumber(framesOf(b));
-  logAudit(actor, "storyboard", "record", db.storyboards.find((b) => boards.has(b.id))!.contentId, `${frameIds.length} frame(s) deleted`);
+  logAudit(
+    actor,
+    "storyboard",
+    "record",
+    db.storyboards.find((b) => boards.has(b.id))!.contentId ?? "documents",
+    `${frameIds.length} frame(s) deleted`,
+  );
   commit();
   return frameIds.length;
 }
@@ -193,7 +233,8 @@ export function moveFramesTo(actor: Actor, frameIds: string[], storyboardId: str
 
 // ── Shot lists ───────────────────────────────────────────────
 
-export const shotListsOf = (contentId: string): ShotList[] =>
+/** A project's shot lists, or with null, those kept in Documents (templates and lists of no project). */
+export const shotListsOf = (contentId: string | null): ShotList[] =>
   getDb()
     .shotLists.filter((l) => l.contentId === contentId)
     .sort((a, b) => a.position - b.position);
@@ -215,7 +256,7 @@ export const estimatedMinutes = (shotListId: string): number =>
 function listForWrite(actor: Actor, id: string): ShotList {
   const l = getDb().shotLists.find((x) => x.id === id);
   if (!l) throw new RuleError("That shot list no longer exists.");
-  projectForWrite(actor, l.contentId);
+  scopeForWrite(actor, l.contentId);
   return l;
 }
 
@@ -225,18 +266,20 @@ function rowForWrite(actor: Actor, id: string): { row: ShotListRow; list: ShotLi
   return { row, list: listForWrite(actor, row.shotListId) };
 }
 
-export function createShotList(actor: Actor, contentId: string, input: NewBoard): ShotList {
-  projectForWrite(actor, contentId);
+/** A new shot list in a project, or with no project, one kept in Documents: a template, or one for practice or an event. */
+export function createShotList(actor: Actor, contentId: string | null, input: NewBoard): ShotList {
+  scopeForWrite(actor, contentId);
   const db = getDb();
   const source = input.copyFrom ? db.shotLists.find((l) => l.id === input.copyFrom) : undefined;
   if (input.copyFrom) {
     if (!source) throw new RuleError("The shot list to start from no longer exists.");
-    projectForView(actor, source.contentId);
+    scopeForView(actor, source.contentId);
   }
   const at = nowStamp();
   const list: ShotList = {
     id: localId("SL"),
     contentId,
+    isTemplate: !contentId && !!input.template,
     episodeId: episodeOf(contentId, input.episodeId),
     name: line(input.name) || (source ? `${source.name} (copy)` : "Shot list"),
     position: shotListsOf(contentId).length,
@@ -247,9 +290,16 @@ export function createShotList(actor: Actor, contentId: string, input: NewBoard)
   };
   db.shotLists.push(list);
   if (source) for (const r of rowsOfShotList(source.id)) db.shotListRows.push({ ...r, id: localId("SR"), shotListId: list.id });
-  logAudit(actor, "shot-list", "record", contentId, `${list.name}${source ? `, from ${source.name}` : ""}`);
+  logAudit(actor, "shot-list", "record", contentId ?? "documents", `${list.name}${source ? `, from ${source.name}` : ""}`);
   commit();
   return list;
+}
+
+/** Copies a project's shot list into Documents as a template. The project's list is left as it is. */
+export function saveShotListAsTemplate(actor: Actor, id: string, name: string): ShotList {
+  const l = getDb().shotLists.find((x) => x.id === id);
+  if (!l) throw new RuleError("That shot list no longer exists.");
+  return createShotList(actor, null, { name: line(name) || l.name, copyFrom: l.id, template: true });
 }
 
 export function renameShotList(actor: Actor, id: string, name: string): ShotList {
@@ -341,7 +391,13 @@ export function deleteShotRows(actor: Actor, rowIds: string[]): number {
     renumber(rowsOfShotList(l.id));
     l.updatedAt = at;
   }
-  logAudit(actor, "shot-list", "record", db.shotLists.find((l) => lists.has(l.id))!.contentId, `${rowIds.length} row(s) deleted`);
+  logAudit(
+    actor,
+    "shot-list",
+    "record",
+    db.shotLists.find((l) => lists.has(l.id))!.contentId ?? "documents",
+    `${rowIds.length} row(s) deleted`,
+  );
   commit();
   return rowIds.length;
 }

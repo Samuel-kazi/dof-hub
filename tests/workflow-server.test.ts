@@ -53,7 +53,7 @@ await t("a dry run reports, part by part, what the upgrade from version 14 would
   const s = await version14Store();
   const before = await s.state.head();
   const report = (await upgradeStore(s, false))!;
-  assert.deepEqual([report.from, report.to, report.applied, report.backup], [14, 19, false, null]);
+  assert.deepEqual([report.from, report.to, report.applied, report.backup], [14, 21, false, null]);
   assert.deepEqual(await s.state.head(), before, "nothing was written");
   assert.equal(backups(s).size, 0, "and no copy was needed");
   const records = report.parts.find((p) => p.part === "records")!;
@@ -73,19 +73,19 @@ await t("a dry run reports, part by part, what the upgrade from version 14 would
     [...KEYS],
     "every part is counted",
   );
-  assert.match(describeUpgrade(report), /Would upgrade the data from version 14 to 19/);
+  assert.match(describeUpgrade(report), /Would upgrade the data from version 14 to 21/);
 });
 
 await t("the upgrade keeps a copy of the data first, saves it all at once, and running it again does nothing", async () => {
   const s = await version14Store();
   const report = (await upgradeStore(s, true))!;
   assert.equal(report.applied, true);
-  assert.match(report.backup ?? "", /before_v19/);
-  const copy = backups(s).get("before_v19")!;
+  assert.match(report.backup ?? "", /before_v21/);
+  const copy = backups(s).get("before_v21")!;
   assert.equal(copy.head.schemaVersion, 14, "the copy is of the data as it was");
   assert.equal(copy.items.filter((it) => it.k === "records").length, buildSeed().records.length);
   const head = (await s.state.head())!;
-  assert.equal(head.schemaVersion, 19);
+  assert.equal(head.schemaVersion, 21);
   // Nothing is lost. Version 19 gives each coming day of a live show its call sheet, and says so in the activity log.
   const grew = report.parts.filter((p) => p.before !== p.after);
   assert.deepEqual(
@@ -95,7 +95,7 @@ await t("the upgrade keeps a copy of the data first, saves it all at once, and r
   );
   assert.ok(grew.every((p) => p.after > p.before));
   const again = (await upgradeStore(s, true))!;
-  assert.deepEqual([again.from, again.applied, again.backup], [19, false, null]);
+  assert.deepEqual([again.from, again.applied, again.backup], [21, false, null]);
   assert.deepEqual(await s.state.head(), head, "nothing was written the second time");
 });
 
@@ -105,9 +105,9 @@ await t("data saved at version 16 is upgraded on first read: a copy first, then 
   old.settings.newDocuments = ["series"];
   await s.state.init(toItems(old), 16);
   const snap = (await snapshotFor(s, { personId: "DOF-P-HOP-001", role: "HOP" }))!.db;
-  assert.equal(snap.schemaVersion, 19);
-  assert.ok(backups(s).has("before_v19"), "a copy was kept first");
-  assert.equal(backups(s).get("before_v19")!.head.schemaVersion, 16);
+  assert.equal(snap.schemaVersion, 21);
+  assert.ok(backups(s).has("before_v21"), "a copy was kept first");
+  assert.equal(backups(s).get("before_v21")!.head.schemaVersion, 16);
   for (const id of [
     "DOF-SER-001-S1|Development|show_brief",
     "DOF-DEV-001|Development|devotional_script",
@@ -169,6 +169,77 @@ await t("each person is sent the workflow data of the projects they may see, and
 
   const partner = await sent({ personId: "DOF-P-PTR-001", role: "PTR" });
   for (const part of WORKFLOW_PARTS) assert.equal(partner[part].length, 0, `a partner on no project gets no ${part}`);
+  // Saved locations are the team's: a partner gets only those on the call sheets they can see.
+  assert.equal(hop.locations.length, full.locations.length);
+  assert.equal(vol.locations.length, full.locations.length);
+  assert.deepEqual(partner.locations, []);
+});
+
+await t("the morning run emails each reminder once, through the queue, which never leaves the server", async () => {
+  const { alertChecks } = await import("../server/email");
+  const s = memoryStore();
+  const db = buildWorkflowFixture();
+  const at = "2026-09-20T00:00:00.000Z";
+  db.calendarReminders.push({
+    id: "RM-aaaaaaaa",
+    targetType: null,
+    targetId: null,
+    title: "Charge the batteries",
+    date: "2026-09-27",
+    time: "07:00",
+    offsetMinutes: 1440,
+    channels: ["app", "email"],
+    recipientIds: ["DOF-P-CRW-001"],
+    repeat: "none",
+    fireAt: "2026-09-26T04:00:00.000Z", // 26 September, 07:00 in Nairobi
+    firedAt: null,
+    emailedAt: null,
+    createdBy: "DOF-P-HOP-001",
+    createdAt: at,
+    updatedAt: at,
+  });
+  await initDatabase(s, db);
+  const sent: { to: string; subject: string }[] = [];
+  const send = async (m: { to: string; subject: string }) => {
+    sent.push(m);
+  };
+  // 06:45 in Nairobi, the morning run: queued and sent, though the bell waits for 07:00.
+  await alertChecks(s, { morning: true, send, now: "2026-09-26T03:45:00.000Z" });
+  assert.deepEqual(
+    sent.map((m) => m.subject),
+    ["Reminder: Charge the batteries"],
+  );
+  await alertChecks(s, { morning: true, send, now: "2026-09-26T03:50:00.000Z" });
+  assert.equal(sent.length, 1, "never twice");
+  const snap = async (a: Actor) => (await snapshotFor(s, a))!.db;
+  const crew1 = await snap({ personId: "DOF-P-CRW-001", role: "CRW" });
+  assert.deepEqual(crew1.notifications, [], "not in the bell before its time");
+  await alertChecks(s, { send, now: "2026-09-26T04:01:00.000Z" });
+  assert.equal((await snap({ personId: "DOF-P-CRW-001", role: "CRW" })).notifications.length, 1);
+  assert.equal((await snap({ personId: "DOF-P-CRW-002", role: "CRW" })).notifications.length, 0, "one's own bell only");
+  assert.deepEqual((await snap({ personId: "DOF-P-HOP-001", role: "HOP" })).emailQueue, [], "the queue is never sent to a browser");
+});
+
+await t("templates and boards kept in Documents go to the team, not to partners", async () => {
+  const s = memoryStore();
+  const db = buildWorkflowFixture();
+  const at = "2026-09-20T00:00:00.000Z";
+  db.storyboards.push({
+    id: "SB-tpl00001",
+    contentId: null,
+    isTemplate: true,
+    episodeId: null,
+    name: "Two-chair interview",
+    position: 0,
+    copiedFrom: null,
+    migrated: false,
+    createdAt: at,
+    updatedAt: at,
+  });
+  await initDatabase(s, db);
+  const sent = async (a: Actor) => (await snapshotFor(s, a))!.db;
+  assert.ok((await sent({ personId: "DOF-P-VOL-001", role: "VOL" })).storyboards.some((b) => b.id === "SB-tpl00001"));
+  assert.ok(!(await sent({ personId: "DOF-P-PTR-001", role: "PTR" })).storyboards.some((b) => b.id === "SB-tpl00001"));
 });
 
 console.log(`\n${passed} passed`);

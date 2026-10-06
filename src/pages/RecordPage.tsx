@@ -28,7 +28,6 @@ import {
   usesPipeline,
 } from "../services/wrapped/content";
 import { callSheetForRecord, openOrCreateForRecord } from "../services/wrapped/callsheets";
-import { nameOf } from "../services/wrapped/people";
 import { fmtShort, relativeDays } from "../services/utils";
 import { Empty, Field, RiskBadge, StageBadge } from "../ui/parts";
 import { IconPlus } from "../ui/Icons";
@@ -43,6 +42,7 @@ import { LinksPanel, DevotionalPanel, PostProductionPanel, StageChecklist, Stage
 import { WorkflowProjectPage } from "./workflow/ProjectPage";
 import { EpisodePage } from "./workflow/EpisodePage";
 import { projectSummary, type Episode, type Project } from "../services/wrapped/workflow";
+import { PersonName } from "../ui/PersonName";
 
 export function RecordPage({ id }: { id: string }) {
   const { actor, go, back, attempt, confirm, toast } = useApp();
@@ -357,7 +357,10 @@ export function RecordPage({ id }: { id: string }) {
         ) : (
           comments.map((c) => (
             <div key={c.id} className="comment">
-              <b>{nameOf(c.byPersonId)}</b> <small>{new Date(c.at).toLocaleString()}</small>
+              <b>
+                <PersonName id={c.byPersonId} />
+              </b>{" "}
+              <small>{new Date(c.at).toLocaleString()}</small>
               <p>{c.text}</p>
             </div>
           ))

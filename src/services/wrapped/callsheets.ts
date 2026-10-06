@@ -4,6 +4,7 @@ import { rpc, serverOnly } from "../../data/rpc";
 export const addRunItem = rpc("callsheets.addRunItem", core.addRunItem);
 export const attachCallSheet = rpc("callsheets.attachCallSheet", core.attachCallSheet);
 export const bookPlannedGear = rpc("callsheets.bookPlannedGear", core.bookPlannedGear);
+export const confirmOnSheet = rpc("callsheets.confirmOnSheet", core.confirmOnSheet);
 export const createCallSheet = rpc("callsheets.createCallSheet", core.createCallSheet);
 export const deleteCallSheet = rpc("callsheets.deleteCallSheet", core.deleteCallSheet);
 export const duplicateCallSheet = rpc("callsheets.duplicateCallSheet", core.duplicateCallSheet);

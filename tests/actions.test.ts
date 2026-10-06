@@ -571,6 +571,61 @@ await t("every action accepts the arguments its screen sends", async () => {
   await must("production.addEventDay", camp.contentId, "2026-12-03");
   await must("production.createProduction", { title: "Rally", mode: "one_time", date: "2026-11-14", productionLevel: "large" });
 
+  // Call sheet improvements: saved locations, confirmations, and a session copied to another date.
+  const hall = await must("locations.createLocation", { name: "Church hall", address: "Ngong Road", notes: "Gate B" });
+  await must("locations.updateLocation", hall.id, { notes: "Gate B, ask for the key" });
+  await must("callsheets.updateCallSheet", daySheet.id, {
+    locationId: hall.id,
+    location: "Church hall",
+    locationAddress: "Ngong Road",
+    crewPersonIds: ["DOF-P-CRW-001"],
+  });
+  await must("callsheets.confirmOnSheet", daySheet.id, "DOF-P-CRW-001", true);
+  await must("locations.archiveLocation", hall.id, true);
+  await must("workflow.duplicateSession", wow.session2, "2026-12-17");
+
+  // The rework's foundations (data version 21): templates kept in Documents, lending, role kits, reminders, the
+  // bell, and the switches for each part.
+  const tpl2 = (await must("documents.saveStoryboardAsTemplate", board, "Interview set")).id;
+  await must("documents.createStoryboard", null, { name: "Practice", copyFrom: tpl2 });
+  await must("documents.saveShotListAsTemplate", list, "Two-camera interview");
+  await must("documents.createShotList", null, { name: "Practice list", template: true });
+  const lent = await must("lending.createLoan", {
+    borrowerName: "Grace Church",
+    borrowerPhone: "+254 700 111 222",
+    organisation: "Grace Church",
+    dateOut: "2027-01-10",
+    expectedReturn: "2027-01-12",
+    lines: [{ equipmentId: "DOF-EQ-LGT-001", quantity: 1 }],
+  });
+  await must("lending.updateLoan", lent.id, { notes: "Collect from the gate" });
+  await must("lending.returnLoanItems", lent.id, [{ equipmentId: "DOF-EQ-LGT-001", quantity: 1, condition: "Good" }]);
+  const lent2 = await must("lending.createLoan", {
+    borrowerName: "Youth group",
+    dateOut: "2027-02-01",
+    expectedReturn: "2027-02-02",
+    lines: [{ equipmentId: "DOF-EQ-AUD-002", quantity: 1 }],
+  });
+  await must("lending.cancelLoan", lent2.id, "Not needed after all");
+  const kitMade = await must("kits.createKit", {
+    role: "Camera operator",
+    keywords: ["camera"],
+    items: [{ equipmentId: "DOF-EQ-CAM-001", quantity: 1 }],
+  });
+  await must("kits.updateKit", kitMade.id, { cameraModel: "FX3" });
+  await must("kits.deleteKit", kitMade.id);
+  const rem = await must("alerts.createReminder", {
+    title: "Order batteries",
+    date: "2026-12-01",
+    time: "09:00",
+    offsetMinutes: 0,
+    channels: ["app"],
+  });
+  await must("alerts.updateReminder", rem.id, { offsetMinutes: 60 });
+  await must("alerts.deleteReminder", rem.id);
+  await must("alerts.markNotificationsRead", []);
+  await must("settings.setFeature", "shell", true);
+
   const missed = Object.keys(ACTIONS).filter((n) => !covered.has(n));
   assert.deepEqual(missed, [], `Add a call for: ${missed.join(", ")}`);
 });

@@ -47,6 +47,15 @@ export const KEYS = [
   "shotListRows",
   // Productions: recurring shows' templates (data version 19)
   "showTemplates",
+  // Saved locations for call sheets (data version 20)
+  "locations",
+  // Lending, role kits, the Calendar's reminders and alerts, emails, Google calendar links (data version 21)
+  "loans",
+  "roleKits",
+  "calendarReminders",
+  "notifications",
+  "emailQueue",
+  "googleSyncLinks",
   "settings",
   "counters",
 ] as const;

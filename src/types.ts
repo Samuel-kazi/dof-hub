@@ -27,6 +27,7 @@ export interface Person {
   fontSize?: FontSize; // per-user: Small/Default/Large/XL
   density?: Density; // per-user: Comfortable/Compact
   contactHidden?: boolean; // only in what one person is shown: their email, phone and equipment are private to them, so those fields are left empty
+  quietHours?: { from: string; to: string } | null; // HH:MM, Nairobi time: no emails in between (data version 21)
 }
 
 export type FontSize = "small" | "default" | "large" | "xl";
@@ -248,6 +249,7 @@ export interface SheetContent {
   location: string;
   locationAddress: string;
   locationNotes: string;
+  locationId: string | null; // the saved location it was taken from, if any (data version 20)
   format: string;
   notes: string;
   crewPersonIds: string[];
@@ -581,7 +583,8 @@ export interface ReviewComment {
 /** A storyboard of a project, or of one of its episodes. */
 export interface Storyboard {
   id: string;
-  contentId: string;
+  contentId: string | null; // null: a template, or a board for practice or an event, kept in Documents (data version 21)
+  isTemplate: boolean; // a template: "Use template" in a project makes a copy, and editing the copy never changes it
   episodeId: string | null;
   name: string;
   position: number;
@@ -604,7 +607,8 @@ export interface StoryboardFrame {
 
 export interface ShotList {
   id: string;
-  contentId: string;
+  contentId: string | null; // null: a template, or a list for practice or an event, kept in Documents (data version 21)
+  isTemplate: boolean; // a template: "Use template" in a project makes a copy, and editing the copy never changes it
   episodeId: string | null;
   name: string;
   position: number;
@@ -651,6 +655,44 @@ export interface CallSheet extends SheetContent {
   status: "draft" | "final";
   version: number;
   createdAt: string;
+  // Data version 20
+  sharedAt: string | null; // first made final (issued to the team); from then on, changes are logged
+  confirmations: Record<string, Confirmation>; // by personId (crew) or "talent:<row id>"
+  changeLog: SheetChange[]; // changes made after it was shared or someone confirmed, newest last
+}
+
+/**
+ * Someone confirmed they will be there: at this call time, at this place, in this role. A change to any of the three
+ * clears it, so they confirm again.
+ */
+export interface Confirmation {
+  at: string;
+  by: string; // who ticked it: the person themself, or someone recording it for them
+  callTime: string;
+  location: string;
+  role: string;
+}
+
+/** A change made to a call sheet the team has already seen: what changed, from what to what, who and when. */
+export interface SheetChange {
+  id: string;
+  at: string;
+  by: string;
+  what: string; // "Crew call", "Location", "Crew", "Talent", "Date"…
+  from: string;
+  to: string;
+}
+
+/** A place the team records at again and again, picked on any call sheet or template. */
+export interface SavedLocation {
+  id: string; // LOC-xxxxxxxx
+  name: string;
+  address: string;
+  notes: string;
+  archived: boolean;
+  createdAt: string;
+  createdBy: string;
+  updatedAt: string;
 }
 
 export interface Comment {
@@ -780,7 +822,9 @@ export interface EquipmentHistory {
     | "retired"
     | "lost"
     | "edited"
-    | "photo";
+    | "photo"
+    | "lent" // data version 21: lent out (Equipment, Lending)
+    | "loan-returned";
   detail: string;
   byPersonId: string;
   contentId: string | null;
@@ -858,6 +902,130 @@ export interface Settings {
   // Workspace-wide look and feel, set by the Head of Production. Per-user preferences (font size,
   // density, photo) live on the Person record instead, since each person sets their own.
   appearance?: { accent: AccentKey; fontPairing: FontPairingKey };
+  // Data version 21. Which parts of the rework are switched on (src/config/features.ts), and the urgency report's
+  // thresholds where they differ from the defaults (src/config/urgency.ts).
+  features?: Record<string, boolean>;
+  urgency?: Partial<UrgencyThresholds>;
+}
+
+/** The urgency report's numbers, kept in settings so they change without code. */
+export interface UrgencyThresholds {
+  soonHours: number; // a session or show this close with no published call sheet, or items not assigned, is Critical
+  dueHours: number; // an episode due this close is High
+  noRecordingDays: number; // due within this many days with no recording date is Watch
+  loanOverdueHighDays: number; // a loan this many days late is High; any later is Critical
+}
+
+// ── Lending, role kits, the Calendar's reminders and alerts (data version 21) ──
+
+/** Equipment lent to someone outside a production: a church, a partner, a member. It replaces the General Use category. */
+export interface Loan {
+  id: string; // DOF-LOAN-0001: its own number, no Content ID
+  borrowerName: string;
+  borrowerPhone: string;
+  organisation: string;
+  lines: LoanLine[];
+  dateOut: string; // YYYY-MM-DD
+  expectedReturn: string; // YYYY-MM-DD
+  notes: string;
+  lentBy: string; // the person who lent it
+  status: "out" | "returned" | "cancelled";
+  createdAt: string;
+  updatedAt: string;
+  returnedAt: string | null; // when the last item came back
+  fromContentId: string | null; // the General Use record it was made from, if any, so the old ID still finds it
+}
+
+export interface LoanLine {
+  equipmentId: string;
+  quantity: number;
+  conditionOut: EquipCondition;
+  returns: LoanReturn[]; // items come back in one go or a few at a time
+}
+
+export interface LoanReturn {
+  at: string;
+  by: string;
+  quantity: number;
+  condition: EquipCondition;
+  note: string;
+}
+
+/** The gear a role usually takes, offered on a call sheet item by item. An editable default, never forced. */
+export interface RoleKit {
+  id: string; // DOF-KIT-001
+  role: string; // "Camera operator"
+  keywords: string[]; // words in a call sheet role that this kit is for: "camera", "dop"
+  cameraModel: string; // "FX6", or empty for any
+  items: GearRequest[];
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+/**
+ * A reminder on the Calendar: attached to something with a date (a recording session or show day, a call sheet, an
+ * episode's due date, a project's, a loan's return) or standing alone. It fires `offsetMinutes` before that date and
+ * time, in the app and, if chosen, by email.
+ */
+export interface CalendarReminder {
+  id: string;
+  targetType: ReminderTarget | null; // null: a reminder standing alone
+  targetId: string | null;
+  title: string; // what it is about; for one attached to something, an optional note
+  date: string; // YYYY-MM-DD; for one attached to something, worked out from it
+  time: string; // HH:MM, or empty for the whole day (fires from 08:00)
+  offsetMinutes: number; // 0 at the time, 60 an hour before, 1440 a day, 10080 a week, or any number
+  channels: ("app" | "email")[];
+  recipientIds: string[];
+  repeat: "none" | "daily" | "weekly" | "monthly"; // a reminder standing alone can repeat
+  fireAt: string | null; // when it is next due, as an ISO time; null once it has fired and does not repeat
+  firedAt: string | null; // when it last fired in the app (into the bell)
+  emailedAt: string | null; // when its email was last queued
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+export type ReminderTarget = "instance" | "callsheet" | "episode" | "project" | "loan";
+
+/** Something in the bell for one person: a reminder that fired, a sheet that changed. */
+export interface AppNotification {
+  id: string;
+  personId: string;
+  title: string;
+  body: string;
+  link: string | null; // where it opens, as the app's link (#/callsheet/DOF-CS-004)
+  key: string; // what it is about, so the same thing is not sent twice
+  at: string;
+  readAt: string | null;
+}
+
+/** An email waiting to go out, or sent, through the workspace's SMTP account. Kept on the server only. */
+export interface EmailMessage {
+  id: string;
+  personId: string | null;
+  to: string;
+  subject: string;
+  body: string;
+  key: string; // what it is about, so the same thing is not emailed twice
+  status: "queued" | "sent" | "failed";
+  attempts: number;
+  nextTryAt: string;
+  createdAt: string;
+  sentAt: string | null;
+  lastError: string;
+}
+
+/** A dated item pushed to someone's "DOF Production Hub" Google calendar, so a change updates the same event. */
+export interface GoogleSyncLink {
+  id: string;
+  personId: string;
+  itemType: string;
+  itemId: string;
+  googleEventId: string;
+  fingerprint: string; // what was last pushed, so an unchanged item is not pushed again
+  syncedAt: string;
 }
 
 /** A reminder that was sent, or opened in the mail or messages app, so it is not sent twice by accident. */
@@ -911,6 +1079,14 @@ export interface Database {
   shotLists: ShotList[];
   shotListRows: ShotListRow[];
   showTemplates: ShowTemplate[]; // data version 19
+  locations: SavedLocation[]; // data version 20
+  // Data version 21
+  loans: Loan[];
+  roleKits: RoleKit[];
+  calendarReminders: CalendarReminder[];
+  notifications: AppNotification[];
+  emailQueue: EmailMessage[];
+  googleSyncLinks: GoogleSyncLink[];
   settings: Settings;
   counters: Record<string, number>; // ID sequences, keyed by prefix
 }

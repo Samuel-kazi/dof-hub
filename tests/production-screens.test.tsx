@@ -134,6 +134,51 @@ await t("a multi-day event's panel: its Event Plan, a tab for each day, and a da
   assert.ok(!one.includes("+ Add day"));
 });
 
+await t("a call sheet shows what it is missing, who confirmed, saved locations, gear to suggest and what changed once shared", () => {
+  const rally = P.createProduction(hop(), { title: "Rally", mode: "one_time", date: "2026-09-28", location: "" });
+  const cs = sheetOfDay(daysOfShow(rally.contentId)[0])!;
+  CS.updateCallSheet(hop(), cs.id, {
+    crewPersonIds: ["DOF-P-CRW-002", "DOF-P-CRW-003"],
+    crewRoles: { "DOF-P-CRW-002": "Camera 1", "DOF-P-CRW-003": "Audio" },
+  });
+  const body = (who: string) =>
+    html(who, <CallSheetBody cs={getDb().callSheets.find((c) => c.id === cs.id)!} root={record(rally.contentId)} />);
+  let page = body("hop@dof.demo");
+  for (const text of [
+    "3 things to check before the day.",
+    "No location.",
+    "No crew lead.",
+    "2 days to go and 2 not confirmed: Brian Otieno, Faith Mwangi.",
+  ])
+    assert.ok(page.includes(text), text);
+  assert.ok(page.includes('aria-label="Brian Otieno confirmed"'), "a confirm tick for each person on the crew");
+  assert.ok(page.includes('class="person-link"'), "crew names open their contact card");
+  assert.ok(page.includes("Saved location") && page.includes("DOF Studio A"), "saved locations to pick from");
+  assert.ok(page.includes("Suggested for the crew's roles") && page.includes("Sony FX3 camera body"), "gear for the camera operator");
+  assert.ok(!page.includes("Changes since it was shared"), "not shared or confirmed yet: no change log");
+  assert.ok(!page.includes("Will you be there?"), "the Head of Production is not on the crew");
+  // Brian, on the crew, is asked to confirm.
+  page = body("crew2@dof.demo");
+  assert.ok(page.includes("Will you be there?") && page.includes("Confirm I will be there"));
+  // Shared, then changed: the change log shows what changed and who changed it.
+  CS.updateCallSheet(hop(), cs.id, { location: "Kasarani", crewLeadId: "DOF-P-CRW-002" });
+  CS.finalizeCallSheet(hop(), cs.id);
+  CS.confirmOnSheet(login("crew2@dof.demo", "demo"), cs.id, "DOF-P-CRW-002", true);
+  CS.reopenCallSheet(hop(), cs.id);
+  CS.updateCallSheet(hop(), cs.id, { callTime: "06:00" });
+  page = body("crew2@dof.demo");
+  for (const text of [
+    "Changes since it was shared or confirmed",
+    "Crew call",
+    "08:00",
+    "06:00",
+    "Confirmation cleared",
+    "Brian Otieno had confirmed",
+  ])
+    assert.ok(page.includes(text), text);
+  assert.ok(page.includes("Will you be there?"), "the call time changed, so Brian is asked again");
+});
+
 await t("any call sheet prints with its sections, and its run sheet alone", () => {
   const rally = P.createProduction(hop(), { title: "Rally", mode: "one_time", date: "2026-11-14", location: "Kasarani" });
   const cs = sheetOfDay(daysOfShow(rally.contentId)[0])!;

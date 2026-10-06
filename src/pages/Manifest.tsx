@@ -28,6 +28,7 @@ import {
 import { getDb } from "../data/store";
 import { nameOf } from "../services/wrapped/people";
 import { daysUntil, fmtDate, fmtDateTime } from "../services/utils";
+import { PersonName } from "../ui/PersonName";
 
 export function ManifestPage({ id }: { id: string }) {
   const { actor, go, attempt, confirm } = useApp();
@@ -133,7 +134,9 @@ export function ManifestPage({ id }: { id: string }) {
       <section className="glass panel">
         <dl className="kv">
           <dt>Person responsible</dt>
-          <dd>{nameOf(m.responsiblePersonId)}</dd>
+          <dd>
+            <PersonName id={m.responsiblePersonId} />
+          </dd>
           <dt>{m.destination === "outside" ? "Out from" : "Shoot date"}</dt>
           <dd>{fmtDate(m.date)}</dd>
           {m.expectedReturn && (

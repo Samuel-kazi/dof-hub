@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import type { CheckItem, ContactEntry, GearRequest, Person, RunItem, SheetContent, TalentEntry } from "../../types";
+import type { CheckItem, ContactEntry, GearRequest, Person, RunItem, SavedLocation, SheetContent, TalentEntry } from "../../types";
 import { LOGISTICS_FIELDS, SHEET_SECTIONS, type SheetSectionKey } from "../../config/callSheet";
 import { getDb } from "../../data/store";
 import { localId } from "../../data/ids";
@@ -10,6 +10,7 @@ import type { SheetTimes } from "../../services/wrapped/workflow";
 import { useApp } from "../../ui/AppContext";
 import { GearPicker } from "../../ui/GearPicker";
 import { Empty, Field } from "../../ui/parts";
+import { PersonName } from "../../ui/PersonName";
 import { SavedInput } from "../documents/toolkit";
 
 // The sections every call sheet has (Schedule, Crew, Talent, Location, Equipment, Logistics, Contacts, Run of Show,
@@ -23,16 +24,58 @@ export interface SectionProps {
   onChange: (patch: Partial<SheetContent>) => void;
 }
 
-/** A section's frame: a panel with an anchor, so the jump bar can go to it. */
-export function Section({ id, title, aside, children }: { id: SheetSectionKey; title: string; aside?: ReactNode; children: ReactNode }) {
+/** A section's frame: a panel with an anchor, so the jump bar can go to it, and what it is missing (`warn`). */
+export function Section({
+  id,
+  title,
+  aside,
+  warn,
+  children,
+}: {
+  id: SheetSectionKey;
+  title: string;
+  aside?: ReactNode;
+  warn?: string[];
+  children: ReactNode;
+}) {
   return (
     <section className="glass panel cs-section" id={`sec-${id}`} aria-label={title}>
       <div className="wf-head">
         <h2>{title}</h2>
         {aside}
       </div>
+      {!!warn?.length && (
+        <ul className="cs-warn" aria-label={`${title}: needs attention`}>
+          {warn.map((w) => (
+            <li key={w}>{w}</li>
+          ))}
+        </ul>
+      )}
       {children}
     </section>
+  );
+}
+
+/** Ticks that someone on the sheet will be there. `of` says whether they have and who recorded it; `canTick` who may change it. */
+export interface ConfirmProps {
+  of: (key: string) => { confirmed: boolean; note: string };
+  canTick: (key: string) => boolean;
+  onTick: (key: string, yes: boolean) => void;
+}
+
+function ConfirmTick({ k, name, confirm }: { k: string; name: string; confirm: ConfirmProps }) {
+  const c = confirm.of(k);
+  return (
+    <label className={`check cs-confirm ${c.confirmed ? "on" : ""}`} title={c.note}>
+      <input
+        type="checkbox"
+        aria-label={`${name} confirmed`}
+        checked={c.confirmed}
+        disabled={!confirm.canTick(k)}
+        onChange={(e) => confirm.onTick(k, e.target.checked)}
+      />
+      <span>{c.confirmed ? "Confirmed" : "Not confirmed"}</span>
+    </label>
   );
 }
 
@@ -132,9 +175,10 @@ export function ScheduleSection({
   onChange,
   date,
   derived,
-}: SectionProps & { date?: { value: string; onChange: (d: string) => void }; derived?: SheetTimes }) {
+  warn,
+}: SectionProps & { date?: { value: string; onChange: (d: string) => void }; derived?: SheetTimes; warn?: string[] }) {
   return (
-    <Section id="schedule" title="Schedule">
+    <Section id="schedule" title="Schedule" warn={warn}>
       <div className="cs-grid">
         {date && (
           <Field label="Date">
@@ -205,12 +249,30 @@ export function CrewSection({
   candidates,
   roleHint,
   clashes,
-}: SectionProps & { candidates: Person[]; roleHint?: (personId: string) => string | null; clashes?: Map<string, string> }) {
+  confirm,
+  warn,
+}: SectionProps & {
+  candidates: Person[];
+  roleHint?: (personId: string) => string | null;
+  clashes?: Map<string, string>;
+  confirm?: ConfirmProps;
+  warn?: string[];
+}) {
   const on = new Set(value.crewPersonIds);
   const toggle = (pid: string, yes: boolean) =>
     onChange({ crewPersonIds: yes ? [...value.crewPersonIds, pid] : value.crewPersonIds.filter((x) => x !== pid) });
+  const confirmed = confirm ? value.crewPersonIds.filter((pid) => confirm.of(pid).confirmed).length : 0;
   return (
-    <Section id="crew" title="Crew" aside={<span className="badge">{value.crewPersonIds.length} on the sheet</span>}>
+    <Section
+      id="crew"
+      title="Crew"
+      warn={warn}
+      aside={
+        <span className="badge">
+          {value.crewPersonIds.length} on the sheet{confirm && value.crewPersonIds.length > 0 ? `, ${confirmed} confirmed` : ""}
+        </span>
+      }
+    >
       {candidates.length === 0 ? (
         <Empty>No one is attached to this project yet. Attach crew from the People page.</Empty>
       ) : (
@@ -220,13 +282,19 @@ export function CrewSection({
             const hint = roleHint?.(p.personId);
             return (
               <li key={p.personId} className={isOn ? "on" : ""}>
-                <label className="check">
-                  <input type="checkbox" checked={isOn} disabled={!editable} onChange={(e) => toggle(p.personId, e.target.checked)} />
+                <span className="check">
+                  <input
+                    type="checkbox"
+                    aria-label={p.name}
+                    checked={isOn}
+                    disabled={!editable}
+                    onChange={(e) => toggle(p.personId, e.target.checked)}
+                  />
                   <span>
-                    {p.name}
+                    <PersonName id={p.personId} role={value.crewRoles[p.personId] || hint || undefined} />
                     {p.status !== "active" && <span className="muted"> (no longer active)</span>}
                   </span>
-                </label>
+                </span>
                 {isOn && (
                   <>
                     <SavedInput
@@ -247,6 +315,7 @@ export function CrewSection({
                       />
                       <span>Lead</span>
                     </label>
+                    {confirm && <ConfirmTick k={p.personId} name={p.name} confirm={confirm} />}
                   </>
                 )}
                 {clashes?.has(p.personId) && (
@@ -274,7 +343,7 @@ function useRows<T extends { id: string }>(rows: T[], key: keyof SheetContent, o
   };
 }
 
-export function TalentSection({ value, editable, onChange }: SectionProps) {
+export function TalentSection({ value, editable, onChange, confirm }: SectionProps & { confirm?: ConfirmProps }) {
   const { update, remove, add } = useRows<TalentEntry>(value.talent, "talent", onChange);
   const [name, setName] = useState("");
   return (
@@ -312,6 +381,7 @@ export function TalentSection({ value, editable, onChange }: SectionProps) {
                 disabled={!editable}
                 onChange={(e) => update(t.id, { callTime: e.target.value })}
               />
+              {confirm && <ConfirmTick k={`talent:${t.id}`} name={t.name} confirm={confirm} />}
               {editable && (
                 <button className="btn small ghost" aria-label={`Remove ${t.name}`} onClick={() => remove(t.id)}>
                   Remove
@@ -371,10 +441,35 @@ function AddRow({
 
 // ── Location and logistics ───────────────────────────────────
 
-export function LocationSection({ value, editable, onChange }: SectionProps) {
+/** The saved locations a sheet can pick from, and whether the viewer may add the sheet's place to them. */
+export interface SavedPlaces {
+  list: SavedLocation[];
+  onSave?: () => void;
+}
+
+export function LocationSection({ value, editable, onChange, saved, warn }: SectionProps & { saved?: SavedPlaces; warn?: string[] }) {
+  const picked = saved?.list.find((l) => l.id === value.locationId);
+  const pick = (id: string) => {
+    const l = saved?.list.find((x) => x.id === id);
+    if (!l) return onChange({ locationId: null });
+    onChange({ locationId: l.id, location: l.name, locationAddress: l.address, locationNotes: l.notes || value.locationNotes });
+  };
   return (
-    <Section id="location" title="Location">
+    <Section id="location" title="Location" warn={warn}>
       <div className="stack">
+        {saved && (saved.list.length > 0 || value.locationId) && (
+          <Field label="Saved location">
+            <select aria-label="Saved location" value={value.locationId ?? ""} disabled={!editable} onChange={(e) => pick(e.target.value)}>
+              <option value="">{value.location ? "Typed in below" : "Choose a saved location"}</option>
+              {value.locationId && !picked && <option value={value.locationId}>No longer on the list</option>}
+              {saved.list.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
         <Field label="Location">
           <SavedInput
             aria-label="Location"
@@ -404,6 +499,13 @@ export function LocationSection({ value, editable, onChange }: SectionProps) {
             onSave={(v) => onChange({ locationNotes: v.trim() })}
           />
         </Field>
+        {editable && saved?.onSave && !value.locationId && value.location.trim() && (
+          <div>
+            <button className="btn small" onClick={saved.onSave}>
+              Save as a saved location
+            </button>
+          </div>
+        )}
       </div>
     </Section>
   );
@@ -436,6 +538,7 @@ export interface ContactRow {
   role: string;
   name: string;
   phone: string;
+  personId?: string; // someone in the directory: their name opens their contact card
 }
 
 /** Whether this person may see contact details of people outside the crew (talent, the venue). */
@@ -455,7 +558,12 @@ export function crewContactRows(
     const shown = redactPerson(actor, p);
     const role = value.crewRoles[pid] || roleHint?.(pid) || "Crew";
     return [
-      { role: value.crewLeadId === pid ? `${role} (lead)` : role, name: p.name, phone: shown.contactHidden ? "Private" : shown.phone },
+      {
+        role: value.crewLeadId === pid ? `${role} (lead)` : role,
+        name: p.name,
+        phone: shown.contactHidden ? "Private" : shown.phone,
+        personId: pid,
+      },
     ];
   });
 }
@@ -472,7 +580,7 @@ export function ContactsSection({
   const [name, setName] = useState("");
   const open = seesOutsideContacts(actor);
   const talent = value.talent.map((t) => ({ role: t.role || "Talent", name: t.name, phone: open ? t.contact : "Private" }));
-  const fixed = [...crewRows, ...talent, ...more];
+  const fixed: ContactRow[] = [...crewRows, ...talent, ...more];
   return (
     <Section id="contacts" title="Contacts">
       {fixed.length > 0 && (
@@ -489,7 +597,7 @@ export function ContactsSection({
               {fixed.map((c, i) => (
                 <tr key={`${c.name}|${i}`}>
                   <td>{c.role}</td>
-                  <td>{c.name}</td>
+                  <td>{c.personId ? <PersonName id={c.personId} role={c.role} /> : c.name}</td>
                   <td>
                     {c.phone ? (
                       c.phone.startsWith("+") || /\d/.test(c.phone) ? (
