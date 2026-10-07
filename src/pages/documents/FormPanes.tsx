@@ -13,6 +13,7 @@ import { SessionStorage } from "../workflow/StorageFields";
 import { DevelopmentGate } from "./DevelopmentGate";
 import { ShotListTool } from "./ShotLists";
 import { StoryboardTool } from "./Storyboards";
+import { ProductionPanel } from "../production/ProductionPanel";
 
 // The forms among a project's tiles. Each keeps its screen and its behaviour as before (the calendar, reminders, call
 // sheets, gear conflicts, storage and overdue all read them); only the way to them is new.
@@ -37,23 +38,41 @@ const SHORTCUT: Record<Shortcut, { title: string; text: string; open: string }> 
   sessionLog: { title: "Session log", text: "Each session's log of what was recorded, as before.", open: "Open the log" },
 };
 
+/** A live event's days say so: each day has its call sheet, run of show, show log and strike. */
+const LIVE_SHORTCUT: Record<Shortcut, { title: string; text: string; open: string }> = {
+  callSheet: { title: "Call sheets", text: "Each day has its own call sheet and run of show.", open: "Open the day" },
+  recordingDay: { title: "Show days", text: "Each day: its run of show, its show log and its strike.", open: "Open the day" },
+  gear: {
+    title: "Gear",
+    text: "Gear is chosen on each day's call sheet, with its conflicts and availability.",
+    open: "Choose gear for the day",
+  },
+  sessionLog: { title: "Show log", text: "Each day's log of what was recorded for post production.", open: "Open the log" },
+};
+
 /** The project's sessions, each opening its own screen: run sheet, call sheet, gear, log and recording day. */
 function SessionShortcuts({ project, what }: { project: Project; what: Shortcut }) {
   const { go } = useApp();
   const sessions = sessionsOf(project.contentId).filter((s) => !s.archivedAt);
-  const s0 = SHORTCUT[what];
+  const live = project.category === "live";
+  const s0 = (live ? LIVE_SHORTCUT : SHORTCUT)[what];
   return (
     <section className="glass panel" aria-label={s0.title}>
       <h2>{s0.title}</h2>
       <p className="muted">{s0.text}</p>
       {sessions.length === 0 ? (
-        <Empty>No recording sessions yet. They are scheduled in Pre-production.</Empty>
+        <Empty>
+          {live ? "No days yet. They are set in Show Days." : "No recording sessions yet. They are scheduled in Pre-production."}
+        </Empty>
       ) : (
         <ul className="pd-session-list">
           {sessions.map((s) => (
             <li key={s.id}>
               <span className="cid">{s.id}</span>
-              <span className="grow">{s.scheduledDate ? fmtDate(s.scheduledDate) : "No date yet"}</span>
+              <span className="grow">
+                {live && s.name ? `${s.name}${s.scheduledDate && !s.name.includes(fmtDate(s.scheduledDate)) ? ", " : ""}` : ""}
+                {s.scheduledDate ? (live && s.name?.includes(fmtDate(s.scheduledDate)) ? "" : fmtDate(s.scheduledDate)) : "No date yet"}
+              </span>
               {what === "callSheet" && s.callSheetId && (
                 <button className="btn small" onClick={() => go({ n: "callsheet", id: s.callSheetId! })}>
                   Open call sheet
@@ -158,6 +177,16 @@ export function FormPane({ project, entry, write }: { project: Project; entry: C
       );
     case "storage":
       return <SessionStorage project={project} write={write} />;
+    case "showDays":
+      return (
+        <div className="stack">
+          <ProductionPanel show={project} />
+          <p className="muted">
+            Each day is run on its own page, as a recording session is: its call sheet and run of show, its show log, then its strike. What
+            a day records goes on to post production as recordings.
+          </p>
+        </div>
+      );
     default:
       return <Empty>{entry.title} has no screen here.</Empty>;
   }

@@ -10,7 +10,6 @@ import { createChildRecord, createRecord, childKindFor, updateRecord } from "../
 import { createWorkflowProject } from "../services/wrapped/workflow";
 import { FORM_TYPES, SERIES_TYPES, isWorkflowCategory } from "../config/workflow";
 import type { FormType, ProductionMode, RecurrenceRule, SeriesType } from "../types";
-import { createProduction } from "../services/wrapped/production";
 import { weeklyFrom } from "../services/recurrence";
 import { todayIso } from "../services/utils";
 import { RuleEditor } from "./production/RuleEditor";
@@ -51,56 +50,57 @@ export function NewRecordModal({
   const [callTime, setCallTime] = useState("08:00");
   const [location, setLocation] = useState("");
 
-  // Series, devotions and documentaries start in Development, in the five-stage workflow (src/config/workflow.ts).
-  const workflowSeason = !!parent?.seriesType;
+  // Every production starts in Development, in the five-stage workflow (src/config/workflow.ts). A series holds its
+  // seasons, a music project its releases (a single or an album) and a live show its events: each is the project.
+  const [under, setUnder] = useState(""); // an existing series, music project or live show to add to; "" for a new one
+  const container = !parent && (cat === "music" || cat === "live");
+  const parentOf = parent ?? (container && under ? getDb().records.find((r) => r.contentId === under) : undefined);
+  const workflowSeason =
+    !!parentOf && parentOf.hierarchyLevel === 0 && (!!parentOf.seriesType || parentOf.category === "music" || parentOf.category === "live");
   const workflow = workflowSeason || (!parent && isWorkflowCategory(cat));
   const cfg = categoryOf(cat);
   const kind = parent ? childKindFor(parent) : null;
   const willUsePipeline = parent ? parent.hierarchyLevel + 1 === cfg.leafLevel : cfg.leafLevel === 0;
-  const liveShow = !parent && cat === "live";
+  const live = cat === "live" && workflow;
+  const music = cat === "music" && workflow;
   const heading = parent ? `Add ${kind?.toLowerCase()} to ${parent.title}` : `New ${cfg.singular.toLowerCase()}`;
   const options = assigneeOptions();
+  const containers = container ? getDb().records.filter((r) => r.category === cat && r.hierarchyLevel === 0 && !r.archived) : [];
 
   const saveWorkflow = () => {
     const project = attempt(
       () =>
         createWorkflowProject(actor, {
-          category: cat as "series" | "devotional" | "documentary",
+          category: cat as "series" | "devotional" | "documentary" | "music" | "live",
           title,
           seriesType: seriesType || null,
-          seriesId: workflowSeason ? parent!.contentId : null,
-          formType: cat === "documentary" ? docKind || null : null,
+          seriesId: workflowSeason ? parentOf!.contentId : null,
+          formType: cat === "documentary" || cat === "music" ? docKind || null : null,
           deadline: deadline || null,
+          event: live
+            ? {
+                mode,
+                date: mode === "one_time" ? showStart || null : null,
+                startDate: mode === "multi_day" ? showStart || null : null,
+                endDate: mode === "multi_day" ? showEnd || null : null,
+                rule: mode === "recurring" ? rule : null,
+                productionLevel: level,
+                callTime,
+                location,
+              }
+            : null,
         }),
-      "Created. It starts in Development.",
+      live
+        ? mode === "recurring"
+          ? "Created, with its next 8 days. It starts in Development."
+          : "Created, with a call sheet for each day. It starts in Development."
+        : "Created. It starts in Development.",
     );
     if (project) onCreated(project);
   };
 
-  const saveProduction = () => {
-    const show = attempt(
-      () =>
-        createProduction(actor, {
-          title,
-          mode,
-          date: mode === "one_time" ? showStart || null : null,
-          startDate: mode === "multi_day" ? showStart || null : null,
-          endDate: mode === "multi_day" ? showEnd || null : null,
-          rule: mode === "recurring" ? rule : null,
-          productionLevel: level,
-          assigneePersonId: assignee || null,
-          callTime,
-          location,
-          notes,
-        }),
-      mode === "recurring" ? "Created, with its days for the next 12 weeks" : "Created, with a call sheet for each day",
-    );
-    if (show) onCreated(show);
-  };
-
   const save = () => {
     if (workflow) return saveWorkflow();
-    if (liveShow) return saveProduction();
     const input = {
       title,
       scheduledDate: scheduled || null,
@@ -145,17 +145,74 @@ export function NewRecordModal({
             </select>
           </Field>
         )}
-        <Field label={workflowSeason ? "Season title (optional)" : cat === "series" && workflow ? "Series title" : "Title"}>
+        {container && (
+          <Field label={cat === "music" ? "Music project" : "Live show"}>
+            <select aria-label={cat === "music" ? "Music project" : "Live show"} value={under} onChange={(e) => setUnder(e.target.value)}>
+              <option value="">
+                {cat === "music" ? "A new music project, named as the release" : "A new live show, named as the event"}
+              </option>
+              {containers.map((r) => (
+                <option key={r.contentId} value={r.contentId}>
+                  {r.title}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
+        <Field
+          label={
+            cat === "series" && workflowSeason
+              ? "Season title (optional)"
+              : cat === "series" && workflow
+                ? "Series title"
+                : music
+                  ? docKind === "music_single"
+                    ? "Song title"
+                    : "Release title"
+                  : live
+                    ? "Event title"
+                    : "Title"
+          }
+        >
           <input
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             autoFocus
-            placeholder={workflowSeason ? "Season 2" : parent ? `${kind} title` : "Project title"}
+            placeholder={
+              cat === "series" && workflowSeason
+                ? "Season 2"
+                : music
+                  ? "Morning Mercies"
+                  : live
+                    ? "Youth Conference 2026"
+                    : parent
+                      ? `${kind} title`
+                      : "Project title"
+            }
           />
         </Field>
         {workflow && (
           <>
+            {music && (
+              <fieldset className="mode-pick">
+                <legend>Single or album?</legend>
+                {(
+                  [
+                    ["music_single", "Single", "One song, its audio and its video"],
+                    ["music_album", "Album", "Several songs: each can have its own storyboard and shot list, or share one"],
+                  ] as const
+                ).map(([key, label, hint]) => (
+                  <label key={key} className={`mode-card${docKind === key ? " on" : ""}`}>
+                    <input type="radio" name="release" checked={docKind === key} onChange={() => setDocKind(key)} />
+                    <span>
+                      <b>{label}</b>
+                      <small>{hint}</small>
+                    </span>
+                  </label>
+                ))}
+              </fieldset>
+            )}
             {cat === "series" && !workflowSeason && (
               <Field label="Kind of series">
                 <select value={seriesType} onChange={(e) => setSeriesType(e.target.value as SeriesType | "")}>
@@ -188,17 +245,21 @@ export function NewRecordModal({
                 ? "Each season is its own project. It starts in Development with its form, planned episodes and greenlight; episodes are made when recording sessions close."
                 : cat === "devotional"
                   ? "One guest's five-day sharing: five episodes, Day 1 to Day 5, recorded in one session. It starts in Development."
-                  : "One film, unless it is planned in several parts. It starts in Development."}
+                  : music
+                    ? "Each release is its own project, as a season is. It starts in Development with its brief, songs and greenlight; songs go on to mixing, mastering and their video when their sessions close."
+                    : live
+                      ? "Each event is its own project, as a season is. It starts in Development; each day has its own call sheet and run of show, and what a day records goes on to post production."
+                      : "One film, unless it is planned in several parts. It starts in Development."}
             </p>
           </>
         )}
-        {!workflow && !parent && cfg.supportsChildren && !liveShow && (
+        {!workflow && !parent && cfg.supportsChildren && !live && (
           <p className="muted">
             {cfg.label} projects hold {cfg.childLevelLabel?.toLowerCase()}s and {cfg.grandchildLevelLabel?.toLowerCase()}s. The{" "}
             {cfg.grandchildLevelLabel?.toLowerCase()}s move through the pipeline.
           </p>
         )}
-        {liveShow && (
+        {live && (
           <>
             <fieldset className="mode-pick">
               <legend>How does it run?</legend>
@@ -248,25 +309,16 @@ export function NewRecordModal({
                 />
               </Field>
             </div>
-            <Field label="Responsible person">
-              <select aria-label="Responsible person" value={assignee} onChange={(e) => setAssignee(e.target.value)}>
-                <option value="">Unassigned</option>
-                {options.map((p) => (
-                  <option key={p.personId} value={p.personId}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
+            <LevelField value={level} onChange={setLevel} />
             <p className="muted">
               {mode === "recurring"
-                ? "Its days are made 12 weeks ahead and kept topped up. Set its standard crew, gear, run of show and call sheet in its template once it is made."
-                : "Each day is its own item, with its own pipeline and call sheet."}
+                ? "Its next 8 days are made, and kept topped up. Set its standard crew, gear, run of show and call sheet in its template once it is made."
+                : "Each day has its own call sheet and run of show."}
             </p>
           </>
         )}
 
-        {!workflow && !liveShow && (
+        {!workflow && (
           <div className="row">
             {willUsePipeline && (
               <Field label={shootDateLabel(cat)}>
@@ -290,7 +342,7 @@ export function NewRecordModal({
             </select>
           </Field>
         )}
-        {cat === "live" && (liveShow || willUsePipeline) && <LevelField value={level} onChange={setLevel} />}
+
         {!workflow && (
           <Field label="Notes">
             <textarea value={notes} onChange={(e) => setNotes(e.target.value)} />

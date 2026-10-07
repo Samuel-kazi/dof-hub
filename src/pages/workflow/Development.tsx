@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Actor, GreenlightOutcome } from "../../types";
 import { formTypeOf } from "../../config/workflow";
+import { planLabels } from "../../config/documentCatalog";
 import type { SectionDef } from "../../config/devForms";
 import { getDb } from "../../data/store";
 import { isHop } from "../../services/access";
@@ -188,6 +189,7 @@ export function PlannedEditor({ project, section, write }: { project: Project; s
   const planned = plannedOf(project.contentId);
   const def = section.planned!;
   const full = def.max !== undefined && planned.length >= def.max;
+  const words = planLabels(project.workflow.formType);
   return (
     <div className="stack" style={{ marginTop: 14 }}>
       <h3>
@@ -199,7 +201,7 @@ export function PlannedEditor({ project, section, write }: { project: Project; s
       </h3>
       {planned.length === 0 ? (
         <Empty>
-          No planned episodes yet.{def.min ? ` At least ${def.min} ${def.min === 1 ? "is" : "are"} needed before the greenlight.` : ""}
+          No planned {words.many} yet.{def.min ? ` At least ${def.min} ${def.min === 1 ? "is" : "are"} needed before the greenlight.` : ""}
         </Empty>
       ) : (
         <div className="wf-scroll">
@@ -227,7 +229,7 @@ export function PlannedEditor({ project, section, write }: { project: Project; s
       )}
       {write && !full && (
         <div className="row" style={{ alignItems: "end" }}>
-          <Field label="Add a planned episode">
+          <Field label={`Add a planned ${words.one}`}>
             <input
               type="text"
               value={title}

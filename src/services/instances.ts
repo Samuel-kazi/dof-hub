@@ -1,17 +1,15 @@
-import type { Actor, ContentRecord } from "../types";
-import { categoryOf } from "../config/categories";
+import type { Actor, RecordingSession } from "../types";
 import { getDb } from "../data/store";
 import { logAudit } from "./audit";
-import { addDaysIso } from "./utils";
 
-// The days of a production (instances) and their call sheets. Kept apart from the production service so the call
-// sheet and equipment services can use it without importing each other: a day made from a show template stops
-// following the template once someone changes its call sheet by hand.
+// The days of a live event (its sessions, data version 23) and their call sheets. Kept apart from the production
+// service so the call sheet and equipment services can use it without importing each other: a day made from a show
+// template stops following the template once someone changes its call sheet by hand.
 
-/** The day a call sheet is for, if it is the call sheet of a day of a show. */
-export const dayOfSheet = (sheetId: string): ContentRecord | undefined => {
+/** The day of a live event a call sheet is for, if it is one. */
+export const dayOfSheet = (sheetId: string): RecordingSession | undefined => {
   const cs = getDb().callSheets.find((c) => c.id === sheetId);
-  return cs?.instanceId ? getDb().records.find((r) => r.contentId === cs.instanceId) : undefined;
+  return cs?.instanceId ? getDb().recordingSessions.find((s) => s.id === cs.instanceId) : undefined;
 };
 
 /**
@@ -25,36 +23,14 @@ export function lockInstanceOfSheet(actor: Actor, sheetId: string): void {
   day.instance.locked = true;
   day.instance.lockedAt = new Date().toISOString();
   day.instance.lockedBy = actor.personId;
-  day.version += 1;
-  logAudit(actor, "instance-edited", "record", day.contentId, "changed by hand: later template changes pass it by");
+  day.updatedAt = day.instance.lockedAt;
+  logAudit(actor, "instance-edited", "session", day.id, "changed by hand: later template changes pass it by");
 }
 
-/** How many days before (minus) or after the day itself each stage of a live day is due. */
-const LIVE_STAGE_OFFSETS: Record<string, number> = {
-  Development: -7,
-  "Pre-production": -1,
-  Production: 0,
-  "Post production": 3,
-  "Marketing and distribution": 7,
-};
-
-/**
- * Sets a day's stage deadlines from its own date, so a day weeks ahead is not due this week: prepared in the days
- * before, shown on the day, reviewed after. Stage tasks follow their stage's new deadline.
- */
-export function anchorDeadlines(day: ContentRecord, date: string): void {
-  const stages = categoryOf(day.category).stages;
-  const show = stages.findIndex((s) => s.name === categoryOf(day.category).footageStage);
-  day.stageDeadlines = Object.fromEntries(stages.map((s, i) => [s.name, addDaysIso(date, LIVE_STAGE_OFFSETS[s.name] ?? (i - show) * 2)]));
-  for (const t of day.tasks) if (!t.done) t.dueDate = day.stageDeadlines[t.stage] ?? t.dueDate;
-}
-
-/** Moves a day to a new date with its call sheet: the day's date, publish date and deadlines follow. */
-export function moveDay(day: ContentRecord, date: string): void {
+/** Moves a day of an event to a new date, with its call sheet. */
+export function moveDay(day: RecordingSession, date: string): void {
   day.scheduledDate = date;
-  day.deadline = date;
-  anchorDeadlines(day, date);
-  day.version += 1;
+  day.updatedAt = new Date().toISOString();
 }
 
 /**

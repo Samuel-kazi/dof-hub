@@ -501,6 +501,8 @@ await t("every action accepts the arguments its screen sends", async () => {
   await call("workflow.renamePlanRole", `${wow.project}|director`, "Director");
   await call("workflow.setRolePerson", `${wow.project}|director`, "DOF-P-CRW-001");
   await call("workflow.assignDevotion", `${wow.project}-P10`, null);
+  // A music release's song on more than one session (its arguments are accepted).
+  await call("workflow.setSongOnSession", `${wow.project}-P10`, `${wow.project}-R01`, true);
   await must("workflow.setSessionBoards", wow.session2, { storyboardId: board, shotListId: list });
   const footageDrive = (await must("storage.createDrive", { name: "Footage", capacityGB: 4000, otherUsedGB: 0, notes: "" })).id;
   await must("workflow.setProjectDrive", wow.project, footageDrive);
@@ -542,7 +544,8 @@ await t("every action accepts the arguments its screen sends", async () => {
   });
   await must("production.setShowSchedule", tpl, { ...fridays, weekdays: [5, 6], skipDates: ["2026-10-09"] });
   await must("production.topUpShow", vespers.contentId);
-  const firstDay = ((await state()).records as Json[]).find((r) => r.parentId === vespers.contentId && r.instance)!.contentId;
+  // A live event's days are its sessions (data version 23).
+  const firstDay = ((await state()).recordingSessions as Json[]).find((s) => s.contentId === vespers.contentId && s.instance)!.id;
   const daySheet = ((await state()).callSheets as Json[]).find((c) => c.instanceId === firstDay)!;
   await must(
     "callsheets.updateCallSheet",
@@ -703,7 +706,7 @@ await t("wrong types are refused before any rule runs", async () => {
     ["workflow.assignRole", "DOF-SER-001-S1", "producer", { crewId: "DOF-P-CRW-001" }],
     ["workflow.updateLogRow", "X|Y", { status: "Done" }],
     ["workflow.saveFormSection", "DOF-SER-001-S1", "brief", { logline: { $ne: "" } }],
-    ["workflow.createWorkflowProject", { category: "live", title: "Not a workflow category" }],
+    ["workflow.createWorkflowProject", { category: "general", title: "Not a workflow category" }],
     ["workflow.setEpisodeLinks", "DOF-SER-001-S1-E01", { reviewLink: 42 }],
   ];
   for (const [name, ...args] of bad) {

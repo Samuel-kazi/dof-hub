@@ -6,7 +6,7 @@ import { blankRecord } from "../content";
 import { logAudit } from "../audit";
 import { addDaysIso, isIsoDate, todayIso } from "../utils";
 import { requireWebUrl } from "../urls";
-import { EPISODE_TOKEN } from "../../config/workflow";
+import { episodeTokenOf } from "../../config/categories";
 import { briefKeyOf } from "../../config/documentCatalog";
 import { documentIdOf } from "../../data/constraints";
 import { checkpoint, ensureChecklist, episodeForWrite, openRequired, requireCrew, type Episode, type Project } from "./common";
@@ -28,6 +28,7 @@ export interface NewEpisode {
   sourceSessionId: string | null;
   productionNotes: string;
   scheduledDate: string | null;
+  sourceRowId?: string | null; // a live recording: the row of its day's show log
 }
 
 /**
@@ -42,13 +43,13 @@ export function makeEpisode(actor: Actor, project: Project, input: NewEpisode, k
   if (typeof kept === "string") {
     // A Content ID given out ahead of recording (a devotion's, in Pre-production): the episode is made under it.
     id = kept;
-    n = codeNumber(id, project.contentId, EPISODE_TOKEN);
+    n = codeNumber(id, project.contentId, episodeTokenOf(project.category));
     if (Number.isNaN(n) || getDb().records.some((x) => x.contentId === id))
       throw new RuleError(`${id} cannot become an episode of ${project.contentId}.`);
     r = blankRecord(id, project.category, input.title, project.contentId, project.hierarchyLevel + 1);
   } else if (kept) {
     id = kept.contentId;
-    n = codeNumber(id, project.contentId, EPISODE_TOKEN);
+    n = codeNumber(id, project.contentId, episodeTokenOf(project.category));
     if (kept.parentId !== project.contentId || (kept.episode && !kept.archived) || Number.isNaN(n))
       throw new RuleError(`${id} cannot become an episode of ${project.contentId}.`);
     r = kept;
@@ -76,6 +77,7 @@ export function makeEpisode(actor: Actor, project: Project, input: NewEpisode, k
     mdStage: "Release plan",
     distribution: [],
     learningNotes: "",
+    ...(input.sourceRowId ? { sourceRowId: input.sourceRowId } : {}),
   };
   r.episode = info;
   r.scheduledDate = input.scheduledDate;

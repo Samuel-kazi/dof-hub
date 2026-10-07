@@ -3,7 +3,8 @@ import { RuleError } from "../../types";
 import { commit, getDb } from "../../data/store";
 import { localId } from "../../data/ids";
 import { categoryOf } from "../../config/categories";
-import { SESSION_LABELS, formTypeOf } from "../../config/workflow";
+import { SESSION_LABELS, formTypeOf, isMusicForm } from "../../config/workflow";
+import { planLabels } from "../../config/documentCatalog";
 import { createCallSheet } from "../callsheets";
 import { copyGearBetweenSheets } from "../equipment";
 import { applyContent, cloneContent } from "../sheetContent";
@@ -17,7 +18,9 @@ import {
   canManageTeam,
   ensureChecklist,
   episodesOf,
+  freeFormLog,
   isDocumentary,
+  isLiveProject,
   nowStamp,
   plannedTitle,
   projectForWrite,
@@ -30,6 +33,7 @@ import {
 import { makeEpisode } from "./episodes";
 import { evaluateGate, gateError } from "./gates";
 import { nextSession } from "./ids";
+import { sessionName } from "./plan";
 
 // Recording sessions. A session is planned and prepared at Pre-production (status Planned), recorded at
 // Production (Open), and closed. Closing splits it: every row of its log that was recorded becomes an episode.
@@ -148,6 +152,7 @@ function keepCallSheet(actor: Actor, session: RecordingSession): void {
 /** Schedules a recording session. Sessions are planned at Pre-production, once the project is greenlit and handed off. */
 export function createSession(actor: Actor, projectId: string, input: SessionInput = {}): RecordingSession {
   const p = projectForWrite(actor, projectId);
+  if (isLiveProject(p)) throw new RuleError("A live event's days are added from its Show Days, each with its call sheet.");
   if (p.workflow.stage !== "Pre-production")
     throw new RuleError("Sessions are scheduled at Pre-production, once the project is greenlit and handed off.");
   checkDate(input.scheduledDate);
@@ -449,6 +454,14 @@ export function availableForLog(sessionId: string): string[] {
   const db = getDb();
   const session = db.recordingSessions.find((s) => s.id === sessionId);
   if (!session) return [];
+  const here = new Set(rowsOf(sessionId).map((e) => e.plannedEpisodeId));
+  // A song is recorded in more than one session (its audio, then its video): any of the release's songs not on this
+  // session's log yet may be added.
+  if (isMusicForm(getRecord(session.contentId)?.workflow?.formType ?? "podcast"))
+    return db.plannedEpisodes
+      .filter((p) => p.contentId === session.contentId && !p.archivedAt && !here.has(p.id))
+      .sort((a, b) => a.episodeNumber - b.episodeNumber)
+      .map((p) => p.id);
   const live = new Set(db.recordingSessions.filter((s) => !s.archivedAt).map((s) => s.id));
   const recorded = new Set(
     db.sessionLogEntries
@@ -456,7 +469,6 @@ export function availableForLog(sessionId: string): string[] {
       .map((e) => e.plannedEpisodeId),
   );
   const made = new Set(db.records.filter((r) => r.episode && !r.archived).map((r) => r.episode!.plannedEpisodeId));
-  const here = new Set(rowsOf(sessionId).map((e) => e.plannedEpisodeId));
   return db.plannedEpisodes
     .filter((p) => p.contentId === session.contentId && !p.archivedAt && !recorded.has(p.id) && !made.has(p.id) && !here.has(p.id))
     .sort((a, b) => a.episodeNumber - b.episodeNumber)
@@ -475,9 +487,14 @@ export function addLogRow(actor: Actor, sessionId: string, input: LogRowInput): 
   const plannedId = input.plannedEpisodeId || null;
   const label = (input.itemLabel ?? "").trim();
   let guest = (input.guest ?? "").trim();
-  if (isDocumentary(project)) {
-    if (!label) throw new RuleError("Name what was recorded: an interview set, a scene or a location.");
-  } else if (!plannedId) throw new RuleError("Choose the planned episode this row is for.");
+  if (freeFormLog(project)) {
+    if (!label)
+      throw new RuleError(
+        isLiveProject(project)
+          ? "Name what was recorded: the full service, a worship set, a message, a testimony."
+          : "Name what was recorded: an interview set, a scene or a location.",
+      );
+  } else if (!plannedId) throw new RuleError(`Choose the planned ${planLabels(project.workflow.formType).one} this row is for.`);
   if (plannedId) {
     const planned = db.plannedEpisodes.find((p) => p.id === plannedId && p.contentId === project.contentId);
     if (!planned || planned.archivedAt) throw new RuleError("That is not one of this project's planned episodes.");
@@ -588,7 +605,33 @@ export function closeSession(actor: Actor, sessionId: string): CloseResult {
   const made: string[] = [];
   const kept: string[] = [];
   const archived: string[] = [];
-  if (!isDocumentary(project)) {
+  if (isLiveProject(project)) {
+    // What a day recorded goes on as recordings, one for each row Recorded or Pickup needed, named as the row.
+    const day = session.name?.trim() || `Day ${session.sessionNumber}`;
+    for (const row of rowsOf(sessionId)) {
+      const existing = db.records.find((r) => r.episode?.sourceRowId === row.id && !r.archived);
+      if (RECORDED.includes(row.status)) {
+        if (existing) {
+          kept.push(existing.contentId);
+          continue;
+        }
+        const ep = makeEpisode(actor, project, {
+          title: `${day}: ${row.itemLabel}`,
+          plannedEpisodeId: null,
+          sourceSessionId: sessionId,
+          sourceRowId: row.id,
+          productionNotes: row.notesForPost,
+          scheduledDate: row.logDate,
+        });
+        made.push(ep.contentId);
+      } else if (existing) {
+        existing.archived = true;
+        existing.closedReason = `Day ${sessionId} was reopened and this was marked Not recorded.`;
+        existing.version += 1;
+        archived.push(existing.contentId);
+      }
+    }
+  } else if (!isDocumentary(project)) {
     const planned = new Map(db.plannedEpisodes.map((p) => [p.id, p]));
     const rows = rowsOf(sessionId)
       .filter((r) => r.plannedEpisodeId && planned.has(r.plannedEpisodeId))
@@ -598,6 +641,17 @@ export function closeSession(actor: Actor, sessionId: string): CloseResult {
       const existing = db.records.find((r) => r.episode?.plannedEpisodeId === row.plannedEpisodeId && !r.archived);
       if (RECORDED.includes(row.status)) {
         if (existing) {
+          // A song recorded again in a later session (its video, after its audio): its notes are added to the song's.
+          if (
+            existing.episode?.sourceSessionId !== sessionId &&
+            row.notesForPost &&
+            !existing.episode!.productionNotes.includes(row.notesForPost)
+          ) {
+            existing.episode!.productionNotes = [existing.episode!.productionNotes, `${sessionName(session)}: ${row.notesForPost}`]
+              .filter(Boolean)
+              .join("\n");
+            existing.version += 1;
+          }
           kept.push(existing.contentId);
           continue;
         }

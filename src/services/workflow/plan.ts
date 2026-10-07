@@ -2,7 +2,7 @@ import type { Actor, DriveAllocation, PlannedEpisode, ProjectRole, RecordingSess
 import { RuleError } from "../../types";
 import { commit, getDb } from "../../data/store";
 import { localId } from "../../data/ids";
-import { PLAN_ROLE_SEEDS, PROJECT_ROLE_DEFS, roleName } from "../../config/workflow";
+import { PLAN_ROLE_SEEDS, PROJECT_ROLE_DEFS, isMusicForm, roleName } from "../../config/workflow";
 import { getRecord } from "../access";
 import { logAudit } from "../audit";
 import { addAllocation, getDrive, hasStorageAccess, updateAllocation } from "../storage";
@@ -162,6 +162,7 @@ export interface Placement {
   title: string; // from its script page, as it stands
   scripture: string;
   sessionId: string | null;
+  sessionIds: string[]; // every session it is on: a song can be on several (its audio, then its video)
   locked: boolean; // on a session that has started recording, or recorded: it stays where it is
 }
 
@@ -185,6 +186,7 @@ export function devotionPlacements(projectId: string): Placement[] {
         title: plannedTitle(p),
         scripture: plannedScripture(p),
         sessionId: session?.id ?? null,
+        sessionIds: [...new Set(rows.map((e) => e.sessionId))],
         locked: made || (!!session && (session.status !== "Planned" || !!row!.status)),
       };
     });
@@ -224,6 +226,33 @@ export function assignDevotion(actor: Actor, plannedId: string, sessionId: strin
     planned.contentId,
     `${now.title}: ${sessionId ? `on ${sessionId}` : "taken off its session"}`,
   );
+  commit();
+  return devotionPlacements(planned.contentId).find((x) => x.planned.id === plannedId)!;
+}
+
+/**
+ * Puts a song on a session, or takes it off, leaving it on any others: a song is recorded in more than one session
+ * (its audio, then its video), each with its own storyboard and shot list or the release's. Only while the session is
+ * being planned.
+ */
+export function setSongOnSession(actor: Actor, plannedId: string, sessionId: string, on: boolean): Placement {
+  const db = getDb();
+  const planned = db.plannedEpisodes.find((p) => p.id === plannedId);
+  if (!planned || planned.archivedAt) throw new RuleError("That song is no longer on the list.");
+  const project = projectForWrite(actor, planned.contentId);
+  if (!isMusicForm(project.workflow.formType)) throw new RuleError("Only a music release puts a song on several sessions.");
+  const { session } = sessionForWrite(actor, sessionId);
+  if (session.contentId !== planned.contentId) throw new RuleError("That session belongs to another release.");
+  if (session.status !== "Planned")
+    throw new RuleError(`${sessionName(session)} has started recording. Choose a session still being planned.`);
+  const has = db.sessionLogEntries.some((e) => e.sessionId === sessionId && e.plannedEpisodeId === plannedId);
+  if (on !== has) {
+    const before = recordTitles(sessionId);
+    if (on) addLogRow(actor, sessionId, { plannedEpisodeId: plannedId });
+    else db.sessionLogEntries = db.sessionLogEntries.filter((e) => !(e.sessionId === sessionId && e.plannedEpisodeId === plannedId));
+    followRunSheet(sessionId, before);
+    logAudit(actor, "devotion-session", "record", planned.contentId, `${plannedTitle(planned)}: ${on ? "on" : "off"} ${sessionId}`);
+  }
   commit();
   return devotionPlacements(planned.contentId).find((x) => x.planned.id === plannedId)!;
 }

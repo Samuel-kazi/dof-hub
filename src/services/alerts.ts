@@ -4,7 +4,7 @@ import { commit, getDb } from "../data/store";
 import { localId } from "../data/ids";
 import { logAudit } from "./audit";
 import { canView, getRecord, isHop, visibleCallSheets } from "./access";
-import { dayInstance, instanceLine, sessionInstance } from "./productionInstances";
+import { instanceLine, sessionInstance } from "./productionInstances";
 import { addDaysIso, isIsoDate, todayIso } from "./utils";
 
 // The Calendar's reminders and the bell (build prompt v2, section 12). A reminder is attached to something with a date,
@@ -45,15 +45,14 @@ export interface TargetWhen {
 /** The date and time a reminder's target stands at now, what it is called, and where it opens. Undefined if gone or undated. */
 export function targetWhen(db: Database, type: ReminderTarget, id: string): TargetWhen | undefined {
   if (type === "instance") {
-    const day = db.records.find((r) => r.contentId === id && r.category === "live" && r.hierarchyLevel === 1);
-    const s = day ? undefined : db.recordingSessions.find((x) => x.id === id);
-    const inst = day ? dayInstance(day) : s ? sessionInstance(s) : undefined;
+    const s = db.recordingSessions.find((x) => x.id === id);
+    const inst = s ? sessionInstance(s) : undefined;
     if (!inst?.date || inst.status === "cancelled") return undefined;
     return {
       date: inst.date,
       time: inst.start,
       title: instanceLine(inst),
-      link: inst.callSheetId ? `#/callsheet/${inst.callSheetId}` : day ? `#/record/${id}` : `#/session/${id}`,
+      link: inst.callSheetId ? `#/callsheet/${inst.callSheetId}` : `#/session/${id}`,
     };
   }
   if (type === "callsheet") {

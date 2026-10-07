@@ -344,6 +344,25 @@ series and documentaries are not switchable, since they change the data's shape.
 **Google Calendar**: nothing new to set up. It uses the calendar access already asked for (`calendar.events`), so
 people already linked do not link again. Events go to each person's main calendar.
 
+### Data version 23: Live Shows and DOF Music on the workflow
+
+The first time a version with data version 23 starts, it keeps a copy (`before_v23`; in the demo and desktop app,
+`dof-hub-db-before-v23`), then:
+
+- **Each live show's production becomes its first event** (`…-E1`), a workflow project at the stage the show had
+  reached. Its days become the event's days (`…-E1-D01` onwards), each keeping its date, label, call sheet, run of
+  show, crew and gear; its template and reminders follow. A day already in Post production or later is also made a
+  recording of that day (`…-E1-R01`), so its editing and publishing carry on where they were.
+- **Each album becomes a release** (a single when it has one track). Tracks not yet recorded become planned songs and
+  keep their Content IDs for when they are recorded; tracks being recorded go on a recording session for their date;
+  tracks in Post production or later become the release's songs.
+- The old day and track records are kept, archived, each saying where it went ("Moved to the workflow (data version
+  23): it is day 1 of E1"). Their Content IDs keep opening.
+
+`npm run db:upgrade` is the dry run: it lists, for each live show and album, what will move and to which Content ID,
+before anything does. Running the upgrade again changes nothing. **Going back is restoring the copy** (as for version 15 above, with `v23`). Nothing needs
+setting up, and nothing changes on Vercel's free plan.
+
 ## What this does not do yet
 
 - The **desktop app** is the local demo. The hosted site is the real one.

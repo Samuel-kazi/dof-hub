@@ -17,6 +17,7 @@ import {
   saveStoryboardAsTemplate,
 } from "../../services/wrapped/documents";
 import { useApp } from "../../ui/AppContext";
+import { boardEpisodeTitle } from "../../services/documents/boards";
 import { Modal } from "../../ui/Modal";
 import { Empty, Field } from "../../ui/parts";
 import { episodesOfProject, ImageSlot, SavedInput, startingPoints } from "./toolkit";
@@ -53,6 +54,15 @@ export function NewBoardModal({
   const db = getDb();
   const groups = startingPoints(actor, kind === "storyboard" ? db.storyboards : db.shotLists);
   const episodes = project.contentId ? episodesOfProject(project.contentId) : [];
+  // Before a song or episode is recorded it is planned: a board can be for it already (a song of an album can have its
+  // own storyboard and shot list, or share the release's).
+  const made = new Set(episodes.map((e) => e.episode?.plannedEpisodeId).filter(Boolean));
+  const planned = project.contentId
+    ? db.plannedEpisodes.filter((p) => p.contentId === project.contentId && !p.archivedAt && !made.has(p.id))
+    : [];
+  const one = project.contentId
+    ? ((db.records.find((r) => r.contentId === project.contentId)?.category === "music" ? "song" : "episode") as string)
+    : "episode";
   const [template, setTemplate] = useState(!project.contentId);
   const what = kind === "storyboard" ? "storyboard" : "shot list";
   const make = () => {
@@ -89,12 +99,17 @@ export function NewBoardModal({
           />
         </Field>
         {project.contentId ? (
-          <Field label="For one episode (optional)">
-            <select value={episodeId} onChange={(e) => setEpisodeId(e.target.value)}>
-              <option value="">The whole project</option>
+          <Field label={`For one ${one} (optional)`}>
+            <select aria-label={`For one ${one} (optional)`} value={episodeId} onChange={(e) => setEpisodeId(e.target.value)}>
+              <option value="">{one === "song" ? "Shared by the whole release" : "The whole project"}</option>
               {episodes.map((ep) => (
                 <option key={ep.contentId} value={ep.contentId}>
                   {ep.contentId}: {ep.title}
+                </option>
+              ))}
+              {planned.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.id}: {p.workingTitle || `Planned ${one} ${p.episodeNumber}`}
                 </option>
               ))}
             </select>
@@ -306,7 +321,7 @@ function BoardView({ project, board, write }: { project: BoardScope; board: Stor
   const [dragging, setDragging] = useState<string | null>(null);
   const [moving, setMoving] = useState(false);
   const live = selected.filter((id) => frames.some((f) => f.id === id));
-  const episode = board.episodeId ? getDb().records.find((r) => r.contentId === board.episodeId) : undefined;
+  const episode = board.episodeId ? { contentId: board.episodeId, title: boardEpisodeTitle(board.episodeId) } : undefined;
   return (
     <div className="pd-board">
       <div className="pd-board-head">
@@ -320,7 +335,11 @@ function BoardView({ project, board, write }: { project: BoardScope; board: Stor
         ) : (
           <h3>{board.name}</h3>
         )}
-        {episode && <span className="badge">{episode.contentId}</span>}
+        {episode && (
+          <span className="badge" title={episode.title ?? ""}>
+            {episode.contentId}
+          </span>
+        )}
         {board.isTemplate && <span className="badge accent">Template</span>}
         <span className="muted">
           {frames.length} frame{frames.length === 1 ? "" : "s"}

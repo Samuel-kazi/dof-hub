@@ -16,7 +16,7 @@ import * as P from "../src/services/wrapped/production";
 import * as W from "../src/services/wrapped/workflow";
 import { createLoan } from "../src/services/wrapped/lending";
 import { featureOn, pipelineCategories, setFeature } from "../src/services/wrapped/settings";
-import { daysOfShow, sheetOfDay } from "../src/services/production";
+import { daysOfEvent as daysOfShow, sheetOfDay } from "../src/services/production";
 import { searchAll, KIND_LABEL } from "../src/services/search";
 import { sheetLock } from "../src/services/sheetLock";
 import { AppProvider } from "../src/ui/AppContext";
@@ -209,17 +209,17 @@ await t("a published sheet stays open to edit and offers Back to draft; once loc
   assert.ok(!locked.includes("+ Segment"), "no rows to add");
 });
 
-await t("a show day's sheet locks at Post production, and a sheet linked to nothing never locks", () => {
+await t("a show day's sheet locks once the day is closed, and a sheet linked to nothing never locks", () => {
   const show = P.createProduction(hop(), { title: "Rally", mode: "one_time", date: "2026-10-20" });
   const day = daysOfShow(show.contentId)[0];
   const cs = sheetOfDay(day)!;
-  const rec = () => getDb().records.find((r) => r.contentId === day.contentId)!;
-  rec().pipelineStage = "Production";
+  const s = () => getDb().recordingSessions.find((x) => x.id === day.id)!;
+  s().status = "Open";
   commit();
   assert.equal(sheetLock(getDb().callSheets.find((c) => c.id === cs.id)!).locked, false, "open on the day itself");
-  rec().pipelineStage = "Post production";
+  s().status = "Closed";
   commit();
-  assert.match(sheetLock(getDb().callSheets.find((c) => c.id === cs.id)!).why, /has reached Post production/);
+  assert.match(sheetLock(getDb().callSheets.find((c) => c.id === cs.id)!).why, /is closed: what it recorded is in Post production/);
   const loose = CS.createCallSheet(hop(), { contentId: "DOF-SER-001", title: "Loose", date: "2026-10-01" });
   assert.deepEqual(loose.linkedEpisodeIds, []);
   assert.equal(sheetLock(loose).locked, false);

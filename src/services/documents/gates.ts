@@ -88,7 +88,10 @@ export function hardGates(projectId: string): HardGate[] {
     ];
   }
   const brief = form.sections.brief ?? {};
-  const missingIdea = [!text(brief.logline) && "the logline", !text(brief.coreQuestion) && "the core question"].filter(Boolean);
+  // The brief's second line in each kind's own words: a song's core message, an event's purpose.
+  const kind = catalogTypeOf(p.workflow.formType);
+  const second = kind === "music" ? "core message" : kind === "live" ? "purpose of the event" : "core question";
+  const missingIdea = [!text(brief.logline) && "the logline", !text(brief.coreQuestion) && `the ${second}`].filter(Boolean);
   const decision = latestFirstDecision(form);
   const greenlit = decision?.outcome === "Greenlight";
   const producer = !!p.workflow.showProducerId;
@@ -96,7 +99,7 @@ export function hardGates(projectId: string): HardGate[] {
   return [
     withOverride({
       key: "idea",
-      label: "The logline and the core question written in the brief",
+      label: `The logline and the ${second} written in the brief`,
       met: missingIdea.length === 0,
       detail: missingIdea.length ? `Write ${missingIdea.join(" and ")} at the top of The idea` : "Both written",
       overridable: true,

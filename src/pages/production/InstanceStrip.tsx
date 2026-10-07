@@ -1,4 +1,4 @@
-import type { ContentRecord } from "../../types";
+import type { RecordingSession } from "../../types";
 import { getDb } from "../../data/store";
 import { getRecord } from "../../services/access";
 import { fmtDate, todayIso } from "../../services/utils";
@@ -11,14 +11,14 @@ import { isSheetLocked } from "../../services/sheetLock";
 // Where a day of a recurring show stands with its template: following it (template changes reach it), or changed
 // by hand and keeping its own, with the way back. Shown on the day's call sheet and on the day itself.
 
-export function InstanceStrip({ day, write }: { day: ContentRecord; write: boolean }) {
+export function InstanceStrip({ day, write }: { day: RecordingSession; write: boolean }) {
   const { actor, attempt, confirm, go } = useApp();
   const [ask, reasonModal] = useReason();
   const info = day.instance;
   if (!info) return null;
-  const show = getRecord(day.parentId ?? "");
+  const show = getRecord(day.contentId);
   const t = getTemplate(info.templateId);
-  const sheet = getDb().callSheets.find((c) => c.instanceId === day.contentId);
+  const sheet = getDb().callSheets.find((c) => c.id === day.callSheetId || c.instanceId === day.id);
   const past = (day.scheduledDate ?? "") < todayIso();
   return (
     <section className={`cs-instance ${info.locked ? "locked" : ""}`} aria-label="Template">
@@ -53,7 +53,7 @@ export function InstanceStrip({ day, write }: { day: ContentRecord; write: boole
                 confirmLabel: "Put back",
               })
             )
-              attempt(() => resetToTemplate(actor, day.contentId), "Back on the template");
+              attempt(() => resetToTemplate(actor, day.id), "Back on the template");
           }}
         >
           Put back on the template
@@ -70,19 +70,19 @@ export function InstanceStrip({ day, write }: { day: ContentRecord; write: boole
                 confirmLabel: "This and future",
               })
             )
-              attempt(() => applyDayToFuture(actor, day.contentId), "The template and the days after this one have this call sheet");
+              attempt(() => applyDayToFuture(actor, day.id), "The template and the days after this one have this call sheet");
           }}
         >
           Apply to this and future days
         </button>
       )}
-      {write && t && !past && !day.archived && (
+      {write && t && !past && !day.archivedAt && day.status === "Planned" && (
         <>
           <select
             aria-label="Label of this day"
             className="btn small"
             value={info.label ?? ""}
-            onChange={(e) => attempt(() => setDayLabel(actor, day.contentId, e.target.value), "Label saved")}
+            onChange={(e) => attempt(() => setDayLabel(actor, day.id, e.target.value), "Label saved")}
           >
             <option value="">No label</option>
             {DAY_LABELS.map((l) => (
@@ -98,7 +98,7 @@ export function InstanceStrip({ day, write }: { day: ContentRecord; write: boole
                 "Why is this date cancelled? The day is kept, marked cancelled, and the schedule leaves the date out.",
                 "Cancel this date",
               );
-              if (why) attempt(() => cancelDay(actor, day.contentId, why), "Date cancelled");
+              if (why) attempt(() => cancelDay(actor, day.id, why), "Date cancelled");
             }}
           >
             Cancel this date

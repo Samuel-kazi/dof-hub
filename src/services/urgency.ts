@@ -92,8 +92,23 @@ function instanceRules(
   }
 }
 
+/**
+ * A live event's next day, if it is further off than the live window (a month): the event is not urgent or at risk
+ * yet, whatever is still to prepare, so it is left off (build prompt v2: a live show shows as urgent only within a
+ * month of it). Its recordings that are overdue still count.
+ */
+function liveBeyondWindow(p: Project, t: UrgencyThresholds, today: string): boolean {
+  if (p.category !== "live") return false;
+  const coming = instancesOf(p.contentId).filter((i) => i.date && i.date >= today && i.status !== "cancelled" && i.status !== "done");
+  const running = instancesOf(p.contentId).some((i) => i.status !== "cancelled" && i.status !== "done" && i.date && i.date < today);
+  if (running) return false;
+  const next = coming[0]?.date;
+  return !next || next > addDaysIso(today, t.liveWindowDays ?? DEFAULT_URGENCY.liveWindowDays!);
+}
+
 function workflowProjectRow(p: Project, now: string, t: UrgencyThresholds, today: string): UrgencyRow {
   const f = new Finding();
+  const quiet = liveBeyondWindow(p, t, today);
   const eps = episodesOf(p.contentId);
   const late = eps.filter((e) => episodeOverdue(e, today));
   if (late.length)
@@ -117,6 +132,7 @@ function workflowProjectRow(p: Project, now: string, t: UrgencyThresholds, today
       `${plural(dueSoon.length, "episode")} due within ${t.dueHours} hours.`,
       dueSoon[0].stageDeadlines[dueSoon[0].episode.stage],
     );
+  if (quiet) return row(f, "project", p.contentId, p.title, p.category, `#/record/${p.contentId}`);
   const greenlit = p.workflow.stage === "Pre-production";
   if (greenlit && !p.workflow.showProducerId) f.add("High", "No show producer named after the greenlight.");
   const unassigned = greenlit ? unscheduledPlanned(p.contentId) : 0;
@@ -172,7 +188,13 @@ export function urgencyReport(actor: Actor, now = new Date().toISOString()): Urg
     if (r.workflow) {
       if (r.workflow.status === "Completed" || r.workflow.status === "Closed" || r.workflow.status === "Advice only") continue;
       rows.push(workflowProjectRow(r as Project, now, t, today));
-    } else if (r.hierarchyLevel === 0 && !r.episode && (r.category === "live" || r.category === "music")) {
+    } else if (
+      r.hierarchyLevel === 0 &&
+      !r.episode &&
+      (r.category === "live" || r.category === "music") &&
+      // A live show or music project whose events or releases are on the workflow is reported through them.
+      !getDb().records.some((c) => c.parentId === r.contentId && c.workflow)
+    ) {
       if (canView(actor, r)) rows.push(legacyProjectRow(r, now, t, today));
     }
   }

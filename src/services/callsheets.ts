@@ -165,11 +165,11 @@ export function updateCallSheet(actor: Actor, id: string, input: SheetPatch, exp
     const day = dayOfSheet(cs.id);
     if (day) {
       if (
-        getDb().records.some(
-          (r) => r.parentId === day.parentId && r.contentId !== day.contentId && !r.archived && r.scheduledDate === patch.date,
+        getDb().recordingSessions.some(
+          (s) => s.contentId === day.contentId && s.id !== day.id && !s.archivedAt && s.scheduledDate === patch.date,
         )
       )
-        throw new RuleError("Another day of this show is already on that date.");
+        throw new RuleError("Another day of this event is already on that date.");
       moveDay(day, patch.date);
     }
   }
@@ -312,9 +312,13 @@ export function daysOf(cs: CallSheet): ContentRecord[] {
 /** The biggest level among the days on this sheet, or the show's own if no days are linked. */
 export function sheetLevel(cs: CallSheet): ProductionLevel | null {
   const order: ProductionLevel[] = ["small", "medium", "large"];
-  const levels = [...daysOf(cs).map((d) => d.productionLevel), getRecord(cs.contentId)?.productionLevel ?? null].filter(
-    (l): l is ProductionLevel => !!l,
-  );
+  // A day of a live event (a session, data version 23) carries its own level.
+  const day = cs.instanceId ? getDb().recordingSessions.find((s) => s.id === cs.instanceId) : undefined;
+  const levels = [
+    ...daysOf(cs).map((d) => d.productionLevel),
+    day?.productionLevel ?? null,
+    getRecord(cs.contentId)?.productionLevel ?? null,
+  ].filter((l): l is ProductionLevel => !!l);
   return levels.sort((a, b) => order.indexOf(b) - order.indexOf(a))[0] ?? null;
 }
 

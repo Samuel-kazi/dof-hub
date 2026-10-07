@@ -17,6 +17,7 @@ import { DOCUMENT_PARTS, WORKFLOW_PARTS } from "./constraints";
 import { todayIso } from "../services/utils";
 import { migrateDocuments } from "./migrateDocuments";
 import { logId, sessionCode, sessionCounter, syncRecordCounters } from "./ids";
+import { liveMusicToWorkflow } from "./migrateLiveMusic";
 
 // Upgrades saved data from version 2 to 3. It only touches plain data, so it can run while the
 // store is loading. It is safe to run twice: anything already present is left alone.
@@ -566,6 +567,8 @@ export function upgradeToV19(db: Database): Database {
   let csNext = Math.max(db.counters.callsheet ?? 0, ...csNumbers);
   for (const show of db.records.filter((r) => r.category === "live" && r.hierarchyLevel === 0)) {
     const days = db.records.filter((r) => r.parentId === show.contentId && r.hierarchyLevel === 1);
+    // A show moved onto the workflow (data version 23) has its production on its event, and its days are sessions.
+    if (days.some((d) => d.workflow)) continue;
     if (!show.production) {
       const oneDay = days.filter((d) => !d.archived).length === 1;
       show.production = { mode: oneDay ? "one_time" : "multi_day", templateId: null, eventPlan: oneDay ? null : blankEventPlan() };
@@ -816,5 +819,19 @@ export function upgradeToV22(db: Database): Database {
   toFiveStages(db);
   generalUseToLoans(db);
   db.schemaVersion = 22;
+  return db;
+}
+
+/**
+ * Version 23: Live Shows and DOF Music move onto the five-stage workflow (src/data/migrateLiveMusic.ts): a live show's
+ * first event becomes its project and its days the event's sessions; a music album becomes a release, its tracks songs
+ * or planned songs. A copy of the data is kept first (`before_v23`); going back is restoring it. Running it again
+ * changes nothing.
+ */
+export function upgradeToV23(db: Database): Database {
+  const moved = liveMusicToWorkflow(db);
+  // Their Development forms move into their documents, as every project's did at version 17.
+  if (moved.changed) migrateDocuments(db, { at: new Date().toISOString() });
+  db.schemaVersion = 23;
   return db;
 }

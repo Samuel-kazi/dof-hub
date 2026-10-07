@@ -8,7 +8,7 @@ import { URGENCY_LEVELS } from "../config/urgency";
 import { calendarEvents, eventsOnDay, type CalEvent, type CalSubtype } from "../services/calendarView";
 import { urgencyReport } from "../services/urgency";
 import { getRecord } from "../services/access";
-import { sheetOfDay } from "../services/wrapped/production";
+import { dayTitle, sheetOfDay } from "../services/wrapped/production";
 import { createReminder, deleteReminder } from "../services/wrapped/alerts";
 import { EMAIL_MIN_OFFSET, OFFSETS } from "../services/alerts";
 import { featureOn } from "../services/wrapped/settings";
@@ -76,10 +76,6 @@ type Target = { type: ReminderTarget; id: string };
 function targetOf(e: CalEvent): Target | null {
   const [kind, id, stage] = e.id.split(":");
   if (kind === "session") return { type: "instance", id };
-  if (kind === "shoot") {
-    const r = getRecord(id);
-    if (r?.category === "live" && r.hierarchyLevel === 1) return { type: "instance", id };
-  }
   if (kind === "callsheet") return { type: "callsheet", id };
   if (kind === "loan") return { type: "loan", id };
   if (kind === "deadline" && stage) {
@@ -318,12 +314,12 @@ export function CalendarPage({ initialView = "month" }: { initialView?: View }) 
 /** One day of a multi-day event: its crew call, place, crew and run of show, with its call sheet. */
 function DayDetails({ dayId }: { dayId: string }) {
   const { go } = useApp();
-  const day = getRecord(dayId);
+  const day = getDb().recordingSessions.find((s) => s.id === dayId);
   const cs = day ? sheetOfDay(day) : undefined;
   if (!day) return null;
   return (
-    <div className="cal-day-details" aria-label={`${day.title} details`}>
-      <b>{day.title}</b>
+    <div className="cal-day-details" aria-label={`${dayTitle(day)} details`}>
+      <b>{dayTitle(day)}</b>
       {cs ? (
         <>
           <div className="muted">
@@ -348,7 +344,7 @@ function DayDetails({ dayId }: { dayId: string }) {
             <button className="btn small primary" onClick={() => go({ n: "callsheet", id: cs.id })}>
               Open the call sheet
             </button>
-            <button className="btn small" onClick={() => go({ n: "record", id: day.contentId })}>
+            <button className="btn small" onClick={() => go({ n: "session", id: day.id })}>
               Open the day
             </button>
           </div>

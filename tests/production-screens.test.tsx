@@ -10,7 +10,7 @@ import { buildWorkflowFixture } from "../src/data/seedWorkflow";
 import { login } from "../src/services/auth";
 import * as CS from "../src/services/wrapped/callsheets";
 import * as P from "../src/services/wrapped/production";
-import { daysOfShow, sheetOfDay } from "../src/services/production";
+import { daysOfEvent as daysOfShow, sheetOfDay } from "../src/services/production";
 import { weeklyFrom } from "../src/services/recurrence";
 import { AppProvider } from "../src/ui/AppContext";
 import { ProductionPanel } from "../src/pages/production/ProductionPanel";
@@ -69,7 +69,7 @@ await t("a recurring show's panel: its schedule in words, its template, and its 
     "Open the template",
     "Change the schedule",
     "Coming days",
-    a.title,
+    a.name!,
     "Follows the template",
     "Changed by hand",
     "Call sheet",
@@ -77,9 +77,9 @@ await t("a recurring show's panel: its schedule in words, its template, and its 
     assert.ok(panel.includes(text), text);
   const readOnly = html("crew2@dof.demo", <ProductionPanel show={record(show.contentId)} />);
   assert.ok(!readOnly.includes("Change the schedule"), "only those who plan the show change its schedule");
-  // The board shows two weeks of it, not three months.
+  // The board shows the event as one card, never a card for each of its days.
   const board = html("hop@dof.demo", <Pipeline category="live" />);
-  assert.ok(board.includes(a.title) && !board.includes(daysOfShow(show.contentId)[5].title), "the board shows the coming fortnight");
+  assert.ok(board.includes("Friday Vespers") && !board.includes(daysOfShow(show.contentId)[5].name!), "one card for the event");
 });
 
 await t("the template page: workflow, then the call sheet's sections, with how many coming days follow it", () => {
@@ -130,8 +130,8 @@ await t("a multi-day event's panel: its Event Plan, a tab for each day, and a da
   const rally = P.createProduction(hop(), { title: "Rally", mode: "one_time", date: "2026-11-14" });
   const one = html("hop@dof.demo", <ProductionPanel show={record(rally.contentId)} />);
   assert.match(one, /One-time event/);
-  assert.match(one, /Day 1/);
-  assert.ok(!one.includes("+ Add day"));
+  assert.match(one, /Show day/);
+  assert.ok(one.includes("+ Add day"), "a day can be added, making it a multi-day event");
 });
 
 await t("a call sheet shows what it is missing, who confirmed, saved locations, gear to suggest and what changed once shared", () => {
@@ -190,7 +190,7 @@ await t("any call sheet prints with its sections, and its run sheet alone", () =
   const printed = html("hop@dof.demo", <PrintedCallSheet job={{ sheetId: cs.id, only: "all" }} />);
   for (const text of [
     "Rally",
-    "Day 1",
+    "Show day",
     "Nov 14, 2026",
     "Schedule",
     "<h2>Crew</h2>",

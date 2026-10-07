@@ -1,6 +1,7 @@
 import type { Database } from "../types";
 import { RuleError } from "../types";
 import { EPISODE_TOKEN } from "../config/workflow";
+import { episodeTokenOf } from "../config/categories";
 import { codeNumber } from "./ids";
 
 // The rules the data itself must keep, whoever changes it. There is no SQL database here to declare them in,
@@ -202,7 +203,8 @@ export function integrityProblems(db: Database): string[] {
       // Either an episode made before the workflow, waiting under this project, or one of this project's episode codes
       // given out ahead of recording (a devotion's episodes get theirs in Pre-production).
       const kept = byId.get(p.reservedId);
-      const ownCode = !Number.isNaN(codeNumber(p.reservedId, p.contentId, EPISODE_TOKEN));
+      const owner = byId.get(p.contentId);
+      const ownCode = !Number.isNaN(codeNumber(p.reservedId, p.contentId, owner ? episodeTokenOf(owner.category) : EPISODE_TOKEN));
       if (kept ? kept.parentId !== p.contentId : !ownCode)
         out.push(`Planned episode ${p.id} keeps ${p.reservedId}, which belongs to a different project.`);
     }
@@ -287,7 +289,9 @@ export function integrityProblems(db: Database): string[] {
     // One kept in Documents (a template, or one for practice or an event) belongs to no project; a template never does.
     if (b.contentId) project(b.contentId, b.id);
     if (b.isTemplate && b.contentId) out.push(`${b.id} is a template but belongs to project ${b.contentId}.`);
-    if (b.episodeId !== null && !records.has(b.episodeId)) missing("episode", b.episodeId, b.id);
+    // A board or list is for one of its project's episodes, or one planned (a song of an album, before it is recorded).
+    if (b.episodeId !== null && !records.has(b.episodeId) && !(db.plannedEpisodes ?? []).some((p) => p.id === b.episodeId))
+      missing("episode", b.episodeId, b.id);
   }
   for (const f of db.storyboardFrames ?? []) if (!boards.has(f.storyboardId)) missing("storyboard", f.storyboardId, `Frame ${f.id}`);
   // A session's chosen storyboard and shot list are its own project's; the drives a project or session plans to use
@@ -320,16 +324,33 @@ export function integrityProblems(db: Database): string[] {
   for (const r of db.records) {
     if (r.production?.templateId && !templates.has(r.production.templateId))
       missing("template", r.production.templateId, `Show ${r.contentId}`);
-    if (r.instance) {
+    // A day kept from before data version 23 is archived, pointing at the session it became: its template is its event's.
+    if (r.instance && !r.archived) {
       const t = templates.get(r.instance.templateId);
       if (!t) missing("template", r.instance.templateId, `Day ${r.contentId}`);
       else if (t.contentId !== r.parentId) out.push(`Day ${r.contentId} follows another show's template.`);
     }
   }
+  // Since data version 23 a day is a session of its event: its template is its event's.
+  for (const s of db.recordingSessions ?? [])
+    if (s.instance) {
+      const t = templates.get(s.instance.templateId);
+      if (!t) missing("template", s.instance.templateId, `Day ${s.id}`);
+      else if (t.contentId !== s.contentId) out.push(`Day ${s.id} follows another event's template.`);
+    }
+  const sessionById = new Map((db.recordingSessions ?? []).map((s) => [s.id, s]));
+  const rootOfId = (id: string): string => {
+    let r = recordById.get(id);
+    while (r?.parentId && recordById.get(r.parentId)) r = recordById.get(r.parentId);
+    return r?.contentId ?? id;
+  };
   for (const c of db.callSheets)
     if (c.instanceId) {
-      const day = recordById.get(c.instanceId);
-      if (!day) missing("day", c.instanceId, `Call sheet ${c.id}`);
+      const session = sessionById.get(c.instanceId);
+      const day = session ? undefined : recordById.get(c.instanceId);
+      if (session) {
+        if (rootOfId(session.contentId) !== c.contentId) out.push(`Call sheet ${c.id} is for a day of another show.`);
+      } else if (!day) missing("day", c.instanceId, `Call sheet ${c.id}`);
       else if (day.parentId !== c.contentId) out.push(`Call sheet ${c.id} is for a day of another show.`);
     }
   // A sheet picked from a saved location points at one that exists, and its confirmations are for people on it.

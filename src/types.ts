@@ -286,7 +286,16 @@ export interface ShowTemplate {
 // Post production and Marketing and distribution on each episode. See src/config/workflow.ts.
 
 export type SeriesType = "podcast" | "testimonial" | "sermon";
-export type FormType = "podcast" | "testimonial" | "sermon" | "documentary_dof" | "documentary_pitched" | "devotion";
+export type FormType =
+  | "podcast"
+  | "testimonial"
+  | "sermon"
+  | "documentary_dof"
+  | "documentary_pitched"
+  | "devotion"
+  | "music_single" // DOF Music: one song, its audio and its video
+  | "music_album" // DOF Music: an album of songs, each with its own or a shared storyboard and shot list
+  | "live_event"; // Live Shows: an event (one day, several days, or a recurring show), each day with its call sheet and run of show
 export type WorkflowStage = "Development" | "Pre-production" | "Production" | "Post production" | "Marketing and distribution";
 export type ProjectStatus = "Development" | "Active" | "Completed" | "Closed" | "Advice only"; // Hold is a greenlight outcome, on the development form
 export type GreenlightOutcome = "Greenlight" | "Revise and resubmit" | "Hold" | "Decline" | "Advice only";
@@ -347,6 +356,7 @@ export interface EpisodeInfo {
   mdStage: MdStage;
   distribution: DistributionEntry[];
   learningNotes: string; // against the brief's success measures
+  sourceRowId?: string | null; // a live recording: the row of the day's show log it was made from
 }
 
 /** Every greenlight decision, kept in order, including a project moved to Hold when its review window passed. */
@@ -474,6 +484,10 @@ export interface RecordingSession {
   shotListId?: string | null;
   storageDriveId?: string | null;
   fromCallSheet?: boolean; // made by the move to data version 18, for a devotion's call sheet that had no session
+  // A day of a live event (data version 23): made from its recurring show's template, or one day of a multi-day event.
+  instance?: InstanceInfo | null;
+  productionLevel?: ProductionLevel | null; // a live day's level of production: decides whether its call sheet needs a run of show
+  movedFrom?: string | null; // the live day record it replaced in the move to data version 23 (that record is kept, archived)
 }
 
 export type LogStatus = "Recorded" | "Pickup needed" | "Not recorded";
@@ -936,6 +950,7 @@ export interface UrgencyThresholds {
   dueHours: number; // an episode due this close is High
   noRecordingDays: number; // due within this many days with no recording date is Watch
   loanOverdueHighDays: number; // a loan this many days late is High; any later is Critical
+  liveWindowDays?: number; // a live event is urgent or at risk only once its next day is this close (30: a month)
 }
 
 // ── Lending, role kits, the Calendar's reminders and alerts (data version 21) ──

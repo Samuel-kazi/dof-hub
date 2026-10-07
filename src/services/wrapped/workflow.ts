@@ -51,6 +51,7 @@ export const setRolePerson = rpc("workflow.setRolePerson", core.setRolePerson);
 export const setSessionBoards = rpc("workflow.setSessionBoards", core.setSessionBoards);
 export const setSessionDrive = rpc("workflow.setSessionDrive", core.setSessionDrive);
 export const setSessionFootage = rpc("workflow.setSessionFootage", core.setSessionFootage);
+export const setSongOnSession = rpc("workflow.setSongOnSession", core.setSongOnSession);
 export const setWorkflowDeadline = rpc("workflow.setWorkflowDeadline", core.setWorkflowDeadline);
 export const startEditing = rpc("workflow.startEditing", core.startEditing);
 export const startPlanRoles = rpc("workflow.startPlanRoles", core.startPlanRoles);

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ReportButton } from "../ui/ReportDialog";
 
 import { useApp } from "../ui/AppContext";
-import { useDb } from "../data/store";
+import { getDb, useDb } from "../data/store";
 import { categoryOf, leafLabel } from "../config/categories";
 import { levelLabel as productionLabel } from "../config/production";
 import { canComment, canView, canWrite, getRecord } from "../services/access";
@@ -36,8 +36,6 @@ import { useRecordMenu } from "./Pipeline";
 import { RecordExtras } from "./RecordExtras";
 import { RecordDetails } from "./RecordDetails";
 import { CastPanel } from "./CastPanel";
-import { InstanceStrip } from "./production/InstanceStrip";
-import { ProductionPanel } from "./production/ProductionPanel";
 import { LinksPanel, DevotionalPanel, PostProductionPanel, StageChecklist, StagePlan, StrikePlanPanel } from "./StagePanel";
 import { WorkflowProjectPage } from "./workflow/ProjectPage";
 import { EpisodePage } from "./workflow/EpisodePage";
@@ -53,15 +51,34 @@ export function RecordPage({ id }: { id: string }) {
   const rm = useRecordMenu();
   const rec = getRecord(id);
 
-  if (!rec || !canView(actor, rec))
+  if (!rec || !canView(actor, rec)) {
+    // A live show's day from before data version 23 is now its event's session: an old link says where it went.
+    const day = !rec ? getDb().recordingSessions.find((s) => s.movedFrom === id) : undefined;
+    const event = day ? getRecord(day.contentId) : undefined;
+    if (day && event && canView(actor, event))
+      return (
+        <div className="page">
+          <div className="banner">
+            <span className="grow">
+              {id} moved to the workflow (data version 23): it is {day.name?.trim() || "a day"} ({day.id}) of {event.title} (
+              {event.contentId}). The old record is kept, archived.
+            </span>
+            <button className="btn small primary" onClick={() => go({ n: "session", id: day.id })}>
+              Open the day
+            </button>
+          </div>
+        </div>
+      );
     return (
       <div className="page">
         <Empty>This record does not exist or is not part of a project you are attached to.</Empty>
       </div>
     );
+  }
 
   // The five-stage workflow's projects and episodes have pages of their own.
   if (rec.workflow) return <WorkflowProjectPage project={rec as Project} />;
+  const movedTo = rec.archived ? getDb().recordingSessions.find((s) => s.movedFrom === rec.contentId) : undefined;
   if (rec.episode && rec.parentId) {
     const project = getRecord(rec.parentId);
     if (project?.workflow) return <EpisodePage ep={rec as Episode} project={project as Project} />;
@@ -177,6 +194,14 @@ export function RecordPage({ id }: { id: string }) {
                 </button>
               </>
             )}
+            {movedTo && (
+              <>
+                {" "}
+                <button className="link" onClick={() => go({ n: "session", id: movedTo.id })}>
+                  Open the day
+                </button>
+              </>
+            )}
           </span>
         </div>
       ) : (
@@ -186,9 +211,6 @@ export function RecordPage({ id }: { id: string }) {
           </div>
         )
       )}
-
-      {rec.category === "live" && rec.hierarchyLevel === 0 && <ProductionPanel show={rec} />}
-      {rec.instance && <InstanceStrip day={rec} write={write} />}
 
       {leaf && rec.category !== "general" && (stage || rec.pipelineStage === "Closed") && (
         <section className="glass panel" aria-label="Pipeline">

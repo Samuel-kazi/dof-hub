@@ -41,6 +41,7 @@ export {
   roleHolder,
   devotionPlacements,
   assignDevotion,
+  setSongOnSession,
   unassignedDevotions,
   onSession,
   sessionName,

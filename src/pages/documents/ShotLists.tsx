@@ -1,6 +1,5 @@
 import { useState } from "react";
 import type { ShotList, ShotListRow, ShotRowType } from "../../types";
-import { getDb } from "../../data/store";
 import { SHOT_MOVEMENTS, SHOT_SIZES, SHOT_TYPES } from "../../config/documentCatalog";
 import {
   addShotRow,
@@ -18,6 +17,7 @@ import {
 } from "../../services/wrapped/documents";
 import type { BoardScope } from "./Storyboards";
 import { useApp } from "../../ui/AppContext";
+import { boardEpisodeTitle } from "../../services/documents/boards";
 import { Empty } from "../../ui/parts";
 import { NewBoardModal } from "./Storyboards";
 import { ImageSlot, SavedInput } from "./toolkit";
@@ -242,7 +242,7 @@ function ListView({ list, write }: { list: ShotList; write: boolean }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [dragging, setDragging] = useState<string | null>(null);
   const live = selected.filter((id) => rows.some((r) => r.id === id));
-  const episode = list.episodeId ? getDb().records.find((r) => r.contentId === list.episodeId) : undefined;
+  const episode = list.episodeId ? { contentId: list.episodeId, title: boardEpisodeTitle(list.episodeId) } : undefined;
   const add = (type: ShotRowType) => attempt(() => addShotRow(actor, list.id, type, {}));
   const focusRow = useFocusRow('input[aria-label^="Description of"]');
   // A shot row added right below row `index`, with the cursor in its description.
@@ -265,7 +265,11 @@ function ListView({ list, write }: { list: ShotList; write: boolean }) {
         ) : (
           <h3>{list.name}</h3>
         )}
-        {episode && <span className="badge">{episode.contentId}</span>}
+        {episode && (
+          <span className="badge" title={episode.title ?? ""}>
+            {episode.contentId}
+          </span>
+        )}
         {list.isTemplate && <span className="badge accent">Template</span>}
         <span className="muted">
           {numbers.size} shot{numbers.size === 1 ? "" : "s"}

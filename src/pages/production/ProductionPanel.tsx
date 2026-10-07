@@ -1,12 +1,13 @@
 import { useState } from "react";
-import type { ContentRecord, RecurrenceRule } from "../../types";
+import type { ContentRecord, RecordingSession, RecurrenceRule } from "../../types";
 import { EVENT_PLAN_FIELDS, MODE_LABEL } from "../../config/callSheet";
 import { describeRule } from "../../services/recurrence";
 import { fmtDate, todayIso } from "../../services/utils";
 import {
   addEventDay,
-  canPlanShow,
-  daysOfShow,
+  canPlanEvent,
+  dayTitle,
+  daysOfEvent,
   getTemplate,
   offSchedule,
   productionOf,
@@ -20,30 +21,26 @@ import { Empty, Field } from "../../ui/parts";
 import { RuleEditor } from "./RuleEditor";
 import { SavedText } from "./SheetSections";
 
-// A live show's production: how its days are made, and its days. A recurring show shows its schedule, its template
-// and its days (coming, then past); a multi-day event its Event Plan and a tab for each day; a one-time event its day.
-// Every day opens its own call sheet.
+// A live event's Show Days: how its days are made, and its days (each a session of the event, data version 23). A
+// recurring show shows its schedule, its template and its days (coming, then past); a multi-day event its Event Plan
+// and a tab for each day; a one-time event its day, and a way to add another. Every day opens its own call sheet and
+// its own page, where it is run like any recording session.
 
 export function ProductionPanel({ show }: { show: ContentRecord }) {
   const { actor } = useApp();
   const p = productionOf(show);
   if (!p) return null;
-  const plan = canPlanShow(actor, show) && !show.archived;
+  const plan = canPlanEvent(actor, show) && !show.archived;
+  const count = daysOfEvent(show.contentId).length;
   return (
-    <section className="glass panel prod-panel" aria-label="Production">
+    <section className="glass panel prod-panel" aria-label="Show Days">
       <div className="wf-head">
         <h2>{MODE_LABEL[p.mode]}</h2>
         <span className="badge accent">
-          {daysOfShow(show.contentId).length} day{daysOfShow(show.contentId).length === 1 ? "" : "s"}
+          {count} day{count === 1 ? "" : "s"}
         </span>
       </div>
-      {p.mode === "recurring" ? (
-        <Recurring show={show} plan={plan} />
-      ) : p.mode === "multi_day" ? (
-        <MultiDay show={show} plan={plan} />
-      ) : (
-        <DayList show={show} days={daysOfShow(show.contentId)} />
-      )}
+      {p.mode === "recurring" ? <Recurring show={show} plan={plan} /> : <MultiDay show={show} plan={plan} />}
     </section>
   );
 }
@@ -55,7 +52,7 @@ function Recurring({ show, plan }: { show: ContentRecord; plan: boolean }) {
   const [past, setPast] = useState(false);
   if (!t) return <Empty>This show's template is missing.</Empty>;
   const today = todayIso();
-  const days = daysOfShow(show.contentId);
+  const days = daysOfEvent(show.contentId);
   const coming = days.filter((d) => (d.scheduledDate ?? "") >= today);
   const gone = days.filter((d) => (d.scheduledDate ?? "") < today).reverse();
   const save = () => {
@@ -118,8 +115,8 @@ function Recurring({ show, plan }: { show: ContentRecord; plan: boolean }) {
   );
 }
 
-/** Days of a show, each with its call sheet's state, whether it follows the template, and the way to its sheet. */
-function DayList({ show, days, empty = "No days yet." }: { show: ContentRecord; days: ContentRecord[]; empty?: string }) {
+/** Days of an event, each with its call sheet's state, whether it follows the template, and the way to its sheet. */
+function DayList({ show, days, empty = "No days yet." }: { show: ContentRecord; days: RecordingSession[]; empty?: string }) {
   const { go } = useApp();
   if (!days.length) return <Empty>{empty}</Empty>;
   return (
@@ -127,13 +124,14 @@ function DayList({ show, days, empty = "No days yet." }: { show: ContentRecord; 
       {days.map((d) => {
         const cs = sheetOfDay(d);
         return (
-          <li key={d.contentId}>
+          <li key={d.id}>
             <span className="grow">
-              <b>{d.title}</b>
-              {d.scheduledDate && d.title.indexOf(fmtDate(d.scheduledDate)) < 0 && (
+              <b>{dayTitle(d)}</b>
+              {d.scheduledDate && dayTitle(d).indexOf(fmtDate(d.scheduledDate)) < 0 && (
                 <span className="muted"> · {fmtDate(d.scheduledDate)}</span>
               )}{" "}
-              <span className="cid">{d.contentId}</span>
+              <span className="cid">{d.id}</span>
+              {d.status !== "Planned" && <span className="badge"> {d.status === "Open" ? "On air" : "Closed"}</span>}
             </span>
             <span className="prod-badges">
               {cs ? (
@@ -154,24 +152,24 @@ function DayList({ show, days, empty = "No days yet." }: { show: ContentRecord; 
                 Call sheet
               </button>
             )}
-            <button className="btn small ghost" onClick={() => go({ n: "record", id: d.contentId })}>
+            <button className="btn small ghost" onClick={() => go({ n: "session", id: d.id })}>
               Open the day
             </button>
           </li>
         );
       })}
-      {show.archived && <li className="muted">This show is closed.</li>}
+      {show.archived && <li className="muted">This event is closed.</li>}
     </ul>
   );
 }
 
 function MultiDay({ show, plan }: { show: ContentRecord; plan: boolean }) {
   const { actor, attempt, go } = useApp();
-  const days = daysOfShow(show.contentId);
-  const [tab, setTab] = useState<string | null>(days[0]?.contentId ?? null);
+  const days = daysOfEvent(show.contentId);
+  const [tab, setTab] = useState<string | null>(days[0]?.id ?? null);
   const [date, setDate] = useState("");
   const ep = show.production?.eventPlan;
-  const day = days.find((d) => d.contentId === tab) ?? days[0];
+  const day = days.find((d) => d.id === tab) ?? days[0];
   const cs = day ? sheetOfDay(day) : undefined;
   return (
     <div className="stack">
@@ -198,19 +196,19 @@ function MultiDay({ show, plan }: { show: ContentRecord; plan: boolean }) {
       <div className="rp-tabs" role="tablist" aria-label="Days">
         {days.map((d) => (
           <button
-            key={d.contentId}
+            key={d.id}
             role="tab"
-            aria-selected={d.contentId === day?.contentId}
-            className={d.contentId === day?.contentId ? "on" : ""}
-            onClick={() => setTab(d.contentId)}
+            aria-selected={d.id === day?.id}
+            className={d.id === day?.id ? "on" : ""}
+            onClick={() => setTab(d.id)}
           >
-            {d.title}
+            {dayTitle(d)}
             {d.scheduledDate && <span className="muted"> · {fmtDate(d.scheduledDate)}</span>}
           </button>
         ))}
       </div>
       {day ? (
-        <div className="prod-day" role="tabpanel" aria-label={day.title}>
+        <div className="prod-day" role="tabpanel" aria-label={dayTitle(day)}>
           <div className="cs-grid wide">
             <div>
               <small className="muted">Date</small>
@@ -235,7 +233,7 @@ function MultiDay({ show, plan }: { show: ContentRecord; plan: boolean }) {
                 Open the call sheet
               </button>
             )}
-            <button className="btn small" onClick={() => go({ n: "record", id: day.contentId })}>
+            <button className="btn small" onClick={() => go({ n: "session", id: day.id })}>
               Open the day
             </button>
           </div>
@@ -256,7 +254,7 @@ function MultiDay({ show, plan }: { show: ContentRecord; plan: boolean }) {
                 const d = attempt(() => addEventDay(actor, show.contentId, date), "Day added, its call sheet copied from the day before");
                 if (d) {
                   setDate("");
-                  setTab(d.contentId);
+                  setTab(d.id);
                 }
               }}
             >

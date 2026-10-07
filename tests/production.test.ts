@@ -1,7 +1,8 @@
 // Run with: npm test -- production
-// One production system with three ways of making its days: a recurring show from its Show Template and schedule,
-// a one-time event, and a multi-day event with its Event Plan. Every day has one call sheet; a day made from a
-// template follows later template changes until someone edits it, and can be put back on the template.
+// One production system with three ways of making a live event's days: a recurring show from its Show Template and
+// schedule, a one-time event, and a multi-day event with its Event Plan. Since data version 23 the event is a project of
+// the workflow and each day one of its sessions. Every day has one call sheet; a day made from a template follows later
+// template changes until someone edits it, and can be put back on the template.
 import assert from "node:assert/strict";
 import type { Actor, RecurrenceRule } from "../src/types";
 import { RuleError } from "../src/types";
@@ -15,7 +16,7 @@ import { visibleCallSheets } from "../src/services/access";
 import * as CS from "../src/services/wrapped/callsheets";
 import * as E from "../src/services/wrapped/equipment";
 import * as P from "../src/services/wrapped/production";
-import { daysOfShow, onBoard, productionOf, sheetOfDay, topUpRecurring, recurringDue } from "../src/services/production";
+import { daysOfEvent, onBoard, productionOf, sheetOfDay, topUpRecurring, recurringDue } from "../src/services/production";
 import { weeklyFrom } from "../src/services/recurrence";
 
 let passed = 0;
@@ -37,7 +38,9 @@ const throwsRule = (fn: () => unknown, match?: RegExp) =>
   assert.throws(fn, (e) => (e instanceof RuleError && (!match || match.test(e.message))) || assert.fail((e as Error).message));
 const ok = () => assert.deepEqual(integrityProblems(getDb()), [], "the data keeps its own rules");
 const record = (id: string) => getDb().records.find((r) => r.contentId === id)!;
-const sheet = (dayId: string) => sheetOfDay(record(dayId))!;
+const day = (id: string) => getDb().recordingSessions.find((s) => s.id === id)!;
+const sheet = (dayId: string) => sheetOfDay(day(dayId))!;
+const daysOfShow = daysOfEvent;
 const dates = (showId: string) => daysOfShow(showId).map((d) => d.scheduledDate);
 // Today, in the tests, is Saturday 26 September 2026.
 const FRIDAYS: RecurrenceRule = weeklyFrom("2026-10-02");
@@ -49,7 +52,6 @@ function vespers() {
     rule: FRIDAYS,
     callTime: "16:00",
     location: "DOF Studio A",
-    assigneePersonId: "DOF-P-CRW-004",
   });
 }
 const templateOf = (showId: string) => getDb().showTemplates.find((x) => x.contentId === showId)!;
@@ -68,13 +70,12 @@ await t("a one-time event has exactly one day and one call sheet, due around its
   const days = daysOfShow(show.contentId);
   assert.equal(days.length, 1);
   const cs = sheetOfDay(days[0])!;
-  assert.deepEqual([cs.date, cs.callTime, cs.location, cs.instanceId], ["2026-11-14", "07:30", "Kasarani", days[0].contentId]);
+  assert.deepEqual([cs.date, cs.callTime, cs.location, cs.instanceId], ["2026-11-14", "07:30", "Kasarani", days[0].id]);
   assert.ok(cs.technicalCheck.length >= 4, "it starts with the usual technical check");
-  assert.deepEqual(
-    [days[0].stageDeadlines["Pre-production"], days[0].stageDeadlines.Production, days[0].stageDeadlines["Post production"]],
-    ["2026-11-13", "2026-11-14", "2026-11-17"],
-  );
-  throwsRule(() => P.addEventDay(hop(), show.contentId, "2026-11-15"), /Only a multi-day event/);
+  assert.deepEqual([days[0].name, days[0].status, days[0].scheduledDate], ["Show day", "Planned", "2026-11-14"]);
+  // A second day makes it a multi-day event.
+  P.addEventDay(hop(), show.contentId, "2026-11-15");
+  assert.equal(productionOf(record(show.contentId))!.mode, "multi_day");
   throwsRule(() => P.createProduction(hop(), { title: "No date", mode: "one_time" }), /date of the event/);
   throwsRule(() => P.createProduction(crew2(), { title: "Not mine", mode: "one_time", date: "2026-11-14" }), /Head of Production/);
   ok();
@@ -104,14 +105,14 @@ await t("a multi-day event has an Event Plan and a day and call sheet for each d
   const added = P.addEventDay(hop(), show.contentId, "2026-11-30");
   assert.equal(added.scheduledDate, "2026-11-30");
   assert.deepEqual(
-    daysOfShow(show.contentId).map((d) => d.title),
+    daysOfShow(show.contentId).map((d) => d.name),
     ["Day 1", "Day 2", "Day 3", "Day 4"],
     "numbered again in date order",
   );
   assert.equal(sheetOfDay(added)!.location, "Kamagambo", "a day before the first copies the first day");
   const later = P.addEventDay(hop(), show.contentId, "2026-12-04");
   assert.equal(sheetOfDay(later)!.callTime, "08:00", "a day after the last copies the last day");
-  const mid = sheetOfDay(record(second.contentId))!;
+  const mid = sheetOfDay(day(second.id))!;
   assert.equal(mid.logistics.meals, "Breakfast at 6");
   throwsRule(() => P.addEventDay(hop(), show.contentId, "2026-12-01"), /already has a day/);
   assert.equal(record(show.contentId).showStart, "2026-11-30");
@@ -137,13 +138,13 @@ await t("a recurring show makes a day and call sheet for each of its next 8 date
     "2026-11-20",
   ]);
   const d1 = daysOfShow(show.contentId)[0];
-  assert.equal(d1.title, "Fri Oct 2, 2026");
+  assert.equal(d1.name, "Fri Oct 2, 2026");
   assert.deepEqual([d1.instance!.templateId, d1.instance!.occurrence, d1.instance!.locked], [t0.id, "2026-10-02", false]);
-  assert.deepEqual([sheet(d1.contentId).callTime, sheet(d1.contentId).location], ["16:00", "DOF Studio A"]);
+  assert.deepEqual([sheet(d1.id).callTime, sheet(d1.id).location], ["16:00", "DOF Studio A"]);
   assert.equal(recurringDue(), false, "nothing is missing");
-  const before = getDb().records.length;
+  const before = getDb().recordingSessions.length;
   assert.deepEqual(topUpRecurring(), { made: 0, booked: 0 });
-  assert.equal(getDb().records.length, before, "running it again makes nothing");
+  assert.equal(getDb().recordingSessions.length, before, "running it again makes nothing");
   // Weeks later, the daily check makes the days that are now among the next 8.
   assert.equal(recurringDue("2026-10-20"), true);
   assert.equal(topUpRecurring("2026-10-20").made, 3);
@@ -162,45 +163,42 @@ await t("a template change reaches every coming day still following it; a day ed
   const t0 = templateOf(show.contentId);
   const [a, b, c] = daysOfShow(show.contentId);
   // Ticking the technical check on the day is not a change of plan.
-  const tc = sheet(a.contentId).technicalCheck.map((x, i) => (i === 0 ? { ...x, done: true, note: "Synced" } : x));
-  CS.updateCallSheet(hop(), sheet(a.contentId).id, { technicalCheck: tc });
-  assert.equal(record(a.contentId).instance!.locked, false, "ticking does not lock");
+  const tc = sheet(a.id).technicalCheck.map((x, i) => (i === 0 ? { ...x, done: true, note: "Synced" } : x));
+  CS.updateCallSheet(hop(), sheet(a.id).id, { technicalCheck: tc });
+  assert.equal(day(a.id).instance!.locked, false, "ticking does not lock");
   // Changing the location of the second Friday by hand does.
-  CS.updateCallSheet(hop(), sheet(b.contentId).id, { location: "Central Church" });
-  assert.equal(record(b.contentId).instance!.locked, true);
+  CS.updateCallSheet(hop(), sheet(b.id).id, { location: "Central Church" });
+  assert.equal(day(b.id).instance!.locked, true);
   // The third Friday's call sheet is issued (final).
-  sheet(c.contentId).status = "final";
+  sheet(c.id).status = "final";
   commit();
   const r = P.updateShowTemplate(hop(), t0.id, {
     sheet: { location: "DOF Studio B", crewPersonIds: ["DOF-P-CRW-001", "DOF-P-CRW-003"], crewRoles: { "DOF-P-CRW-001": "Camera" } },
   });
-  assert.ok(r.kept.includes(b.contentId) && r.kept.includes(c.contentId));
+  assert.ok(r.kept.includes(b.id) && r.kept.includes(c.id));
   assert.equal(r.updated.length, 6);
-  assert.equal(sheet(a.contentId).location, "DOF Studio B");
-  assert.deepEqual(sheet(a.contentId).crewPersonIds, ["DOF-P-CRW-001", "DOF-P-CRW-003"]);
+  assert.equal(sheet(a.id).location, "DOF Studio B");
+  assert.deepEqual(sheet(a.id).crewPersonIds, ["DOF-P-CRW-001", "DOF-P-CRW-003"]);
   assert.ok(
-    ["DOF-P-CRW-001", "DOF-P-CRW-003"].every((p) => getDb().members.some((m) => m.personId === p && m.projectContentId === show.contentId)),
+    ["DOF-P-CRW-001", "DOF-P-CRW-003"].every((p) => getDb().members.some((m) => m.personId === p && m.projectContentId === show.parentId)),
     "people put on the crew are attached to the show, so they can open its call sheets",
   );
   throwsRule(() => P.updateShowTemplate(hop(), t0.id, { sheet: { crewPersonIds: ["DOF-P-PTR-001"] } }), /Partners review work/);
-  assert.equal(sheet(a.contentId).technicalCheck[0].done, true, "what was ticked on the day stays ticked");
-  assert.equal(sheet(b.contentId).location, "Central Church", "edited by hand: kept");
-  assert.equal(sheet(c.contentId).location, "DOF Studio A", "final: kept");
-  assert.equal(record(a.contentId).instance!.templateVersion, templateOf(show.contentId).version);
+  assert.equal(sheet(a.id).technicalCheck[0].done, true, "what was ticked on the day stays ticked");
+  assert.equal(sheet(b.id).location, "Central Church", "edited by hand: kept");
+  assert.equal(sheet(c.id).location, "DOF Studio A", "final: kept");
+  assert.equal(day(a.id).instance!.templateVersion, templateOf(show.contentId).version);
   // Put back on the template.
-  P.resetToTemplate(hop(), b.contentId);
-  assert.equal(record(b.contentId).instance!.locked, false);
-  assert.equal(sheet(b.contentId).location, "DOF Studio B");
+  P.resetToTemplate(hop(), b.id);
+  assert.equal(day(b.id).instance!.locked, false);
+  assert.equal(sheet(b.id).location, "DOF Studio B");
   // A published sheet is not changed by the template on its own, but can be put back on it by hand.
-  P.resetToTemplate(hop(), c.contentId);
-  assert.equal(sheet(c.contentId).location, "DOF Studio B");
+  P.resetToTemplate(hop(), c.id);
+  assert.equal(sheet(c.id).location, "DOF Studio B");
   // Moving a day's date by hand moves the day, and it keeps its own from then on.
-  CS.updateCallSheet(hop(), sheet(a.contentId).id, { date: "2026-10-03" });
-  assert.deepEqual(
-    [record(a.contentId).scheduledDate, record(a.contentId).stageDeadlines.Production, record(a.contentId).instance!.locked],
-    ["2026-10-03", "2026-10-03", true],
-  );
-  throwsRule(() => CS.updateCallSheet(hop(), sheet(a.contentId).id, { date: "2026-10-09" }), /already on that date/);
+  CS.updateCallSheet(hop(), sheet(a.id).id, { date: "2026-10-03" });
+  assert.deepEqual([day(a.id).scheduledDate, day(a.id).instance!.locked], ["2026-10-03", true]);
+  throwsRule(() => CS.updateCallSheet(hop(), sheet(a.id).id, { date: "2026-10-09" }), /already on that date/);
   // Only those who plan the show change its template.
   throwsRule(() => P.updateShowTemplate(crew2(), t0.id, { sheet: { location: "x" } }), /Head of Production|view-only/);
   ok();
@@ -210,16 +208,16 @@ await t("a new schedule takes off coming days it no longer gives, unless they we
   const show = vespers();
   const t0 = templateOf(show.contentId);
   const days = daysOfShow(show.contentId);
-  CS.updateCallSheet(hop(), sheet(days[2].contentId).id, { notes: "Guest choir" }); // edited by hand
+  CS.updateCallSheet(hop(), sheet(days[2].id).id, { notes: "Guest choir" }); // edited by hand
   const r = P.setShowSchedule(hop(), t0.id, { ...FRIDAYS, weekdays: [6], startDate: "2026-10-03" }); // Saturdays instead
   assert.equal(r.removed.length, 7, "seven untouched Fridays taken off (archived, not deleted)");
-  assert.deepEqual(r.kept, [days[2].contentId], "the one edited by hand is left for a person to decide");
+  assert.deepEqual(r.kept, [days[2].id], "the one edited by hand is left for a person to decide");
   assert.equal(r.made.length, 8, "the next 8 Saturdays made");
-  assert.ok(record(days[0].contentId).archived && getDb().records.some((x) => x.contentId === days[0].contentId));
-  assert.ok(!visibleCallSheets(hop()).some((cs) => cs.instanceId === days[0].contentId), "its sheet goes with it");
+  assert.ok(day(days[0].id).archivedAt, "archived, not deleted");
+  assert.ok(!visibleCallSheets(hop()).some((cs) => cs.instanceId === days[0].id), "its sheet goes with it");
   const back = P.setShowSchedule(hop(), t0.id, FRIDAYS);
   assert.equal(back.restored.length, 7, "back on Fridays: the same days come back");
-  assert.equal(record(days[0].contentId).archived, false);
+  assert.equal(day(days[0].id).archivedAt, null);
   ok();
 });
 
@@ -233,20 +231,20 @@ await t("template gear is booked on days within two weeks, never double-booked; 
   P.updateShowTemplate(hop(), t0.id, { sheet: { plannedGear: [{ equipmentId: cam.id, quantity: 1 }] } });
   const [oct2, oct9, oct16] = daysOfShow(show.contentId);
   assert.ok(
-    E.manifestForSheet(sheet(oct2.contentId).id)?.lines.some((l) => l.equipmentId === cam.id),
+    E.manifestForSheet(sheet(oct2.id).id)?.lines.some((l) => l.equipmentId === cam.id),
     "2 October: booked",
   );
-  assert.deepEqual(sheet(oct2.contentId).plannedGear, []);
-  assert.ok(!E.manifestForSheet(sheet(oct9.contentId).id), "9 October: already booked elsewhere, so not booked twice");
-  assert.equal(sheet(oct9.contentId).plannedGear.length, 1, "it stays on the list, to sort out by hand");
-  assert.equal(sheet(oct16.contentId).plannedGear.length, 1, "16 October: more than two weeks ahead, still a list");
-  assert.equal(record(oct2.contentId).instance!.locked, false, "booking the template's gear is not an edit");
+  assert.deepEqual(sheet(oct2.id).plannedGear, []);
+  assert.ok(!E.manifestForSheet(sheet(oct9.id).id), "9 October: already booked elsewhere, so not booked twice");
+  assert.equal(sheet(oct9.id).plannedGear.length, 1, "it stays on the list, to sort out by hand");
+  assert.equal(sheet(oct16.id).plannedGear.length, 1, "16 October: more than two weeks ahead, still a list");
+  assert.equal(day(oct2.id).instance!.locked, false, "booking the template's gear is not an edit");
   // A week later the daily check books it for 16 October.
   topUpRecurring("2026-10-03");
-  assert.ok(E.manifestForSheet(sheet(oct16.contentId).id)?.lines.some((l) => l.equipmentId === cam.id));
+  assert.ok(E.manifestForSheet(sheet(oct16.id).id)?.lines.some((l) => l.equipmentId === cam.id));
   // The template drops the camera: the days following it release it.
   P.updateShowTemplate(hop(), t0.id, { sheet: { plannedGear: [] } });
-  assert.ok(!E.manifestForSheet(sheet(oct2.contentId).id)?.lines.length);
+  assert.ok(!E.manifestForSheet(sheet(oct2.id).id)?.lines.length);
   ok();
 });
 

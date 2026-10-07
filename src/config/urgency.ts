@@ -8,6 +8,7 @@ export const DEFAULT_URGENCY: UrgencyThresholds = {
   dueHours: 48,
   noRecordingDays: 14,
   loanOverdueHighDays: 7,
+  liveWindowDays: 30,
 };
 
 export const URGENCY_LEVELS = ["Critical", "High", "Watch", "On track"] as const;

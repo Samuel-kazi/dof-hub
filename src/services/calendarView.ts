@@ -5,7 +5,8 @@ import { categoryOf, shootDateLabel } from "../config/categories";
 import { getRecord, visibleCallSheets, visibleRecords } from "./access";
 import { displayTitle, isComplete, usesPipeline } from "./content";
 import { endOf, hasGearAccess, listManifests } from "./equipment";
-import { workItems } from "./workItems";
+import { projectName, sessionTitle, workItems } from "./workItems";
+import type { Project } from "./workflow/common";
 import type { Route } from "../ui/AppContext";
 
 // The calendar has no table of its own. Every event is worked out here, on the fly, from records, recording
@@ -28,14 +29,13 @@ export interface CalEvent {
 }
 
 /**
- * Whether a live show is drawn as one bar across its days: a multi-day event (Monday to Friday, one bar). A recurring
+ * Whether a live event is drawn as one bar across its days: a multi-day event (Monday to Friday, one bar). A recurring
  * show never is (it shows on each of its dates, Fridays only, never as a bar across months), nor a one-time event.
- * A show from before productions, with a start and an end, still is.
  */
-export function isWindowShow(show: ContentRecord | null | undefined): boolean {
-  if (!show || show.category !== "live" || show.hierarchyLevel !== 0) return false;
-  if (show.production) return show.production.mode === "multi_day";
-  return !!show.showStart && !!show.showEnd && show.showEnd > show.showStart;
+export function isWindowShow(event: ContentRecord | null | undefined): boolean {
+  if (!event || event.category !== "live" || !event.workflow || event.archived) return false;
+  if (event.production) return event.production.mode === "multi_day";
+  return !!event.showStart && !!event.showEnd && event.showEnd > event.showStart;
 }
 
 const inRange = (date: string, from: string, to: string): boolean => date >= from && date <= to;
@@ -101,14 +101,16 @@ export function calendarEvents(actor: Actor, from: string, to: string): CalEvent
     }
   }
 
-  // Source 1b: a live show's production window, when it runs more than one day — the bar that
-  // replaces its days' individual shoot markers above.
+  // Source 1b: a live event's window, when it runs more than one day: one bar across its days, which stand in for
+  // their own markers (Source 5 leaves them out).
   const records = visibleRecords(actor);
+  const windows = new Set<string>();
   for (const r of records) {
     if (!isWindowShow(r)) continue;
-    const days = records
-      .filter((d) => d.parentId === r.contentId && !d.archived && d.scheduledDate)
-      .map((d) => ({ date: d.scheduledDate!, id: d.contentId }))
+    windows.add(r.contentId);
+    const days = getDb()
+      .recordingSessions.filter((d) => d.contentId === r.contentId && !d.archivedAt && d.scheduledDate)
+      .map((d) => ({ date: d.scheduledDate!, id: d.id }))
       .sort((a, b) => a.date.localeCompare(b.date));
     const start = days[0]?.date ?? r.showStart;
     const end = days[days.length - 1]?.date ?? r.showEnd;
@@ -174,7 +176,7 @@ export function calendarEvents(actor: Actor, from: string, to: string): CalEvent
   for (const item of workItems(actor, false)) {
     const color = categoryOf(item.category).color;
     if (item.level === "session") {
-      if (!item.due || !inRange(item.due, from, to)) continue;
+      if (!item.due || !inRange(item.due, from, to) || windows.has(item.project.contentId)) continue;
       out.push({
         id: `session:${item.id}`,
         date: item.due,
@@ -208,6 +210,27 @@ export function calendarEvents(actor: Actor, from: string, to: string): CalEvent
         category: item.category,
         color,
         open: item.open,
+      });
+    }
+  }
+
+  // Source 5b: a live event's days are dated when it is made, so they show while it is still in Development (where
+  // the work list has it as one card).
+  for (const r of records) {
+    if (r.category !== "live" || r.archived || r.workflow?.stage !== "Development" || windows.has(r.contentId)) continue;
+    const p = r as Project;
+    for (const s of getDb().recordingSessions) {
+      if (s.contentId !== r.contentId || s.archivedAt || !s.scheduledDate || !inRange(s.scheduledDate, from, to)) continue;
+      out.push({
+        id: `session:${s.id}`,
+        date: s.scheduledDate,
+        endDate: s.scheduledDate,
+        title: `${projectName(p)}: ${sessionTitle(p, s).toLowerCase()}`,
+        detail: `${s.id}. Planned.`,
+        subtype: "session",
+        category: "live",
+        color: categoryOf("live").color,
+        open: { n: "session", id: s.id },
       });
     }
   }

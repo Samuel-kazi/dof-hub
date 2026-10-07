@@ -1,6 +1,6 @@
 import type { Actor, CategoryKey, RecordingSession, WorkflowStage } from "../types";
 import { getDb } from "../data/store";
-import { categoryOf } from "../config/categories";
+import { categoryOf, sessionLabelOf } from "../config/categories";
 import { WORKFLOW_STAGES } from "../config/workflow";
 import { canView, getRecord } from "./access";
 import { episodeOverdue, evaluateGate, type GateResult } from "./workflow/gates";
@@ -144,18 +144,27 @@ function projectItem(p: Project, stage: WorkflowStage, step: string, ownerId: st
   };
 }
 
+/** A session as a card calls it: "Session 2", or a live event's "Day 2" or "Fri Oct 9, 2026". */
+export function sessionTitle(p: Project, s: RecordingSession): string {
+  if (p.category !== "live") return `Session ${s.sessionNumber}`;
+  const name = s.name?.trim() || `Day ${s.sessionNumber}`;
+  const label = s.instance?.label ?? s.label;
+  return label ? `${name}, ${label}` : name;
+}
+
 function sessionItem(p: Project, s: RecordingSession, gates: boolean): WorkItem {
   const ownerId = p.workflow.showProducerId;
+  const live = p.category === "live";
   return {
     key: `session:${s.id}`,
     level: "session",
     id: s.id,
-    title: `Session ${s.sessionNumber}`,
+    title: sessionTitle(p, s),
     context: projectName(p),
     project: p,
     category: p.category,
     stage: s.status === "Planned" ? "Pre-production" : "Production",
-    step: s.status === "Planned" ? "Planned" : s.status === "Open" ? "Recording" : "Closed",
+    step: s.status === "Planned" ? "Planned" : s.status === "Open" ? (live ? "Show day" : "Recording") : "Closed",
     ownerId,
     reviews: [],
     waitingOn: s.status === "Closed" ? [] : waiting(ownerId, []),
@@ -245,9 +254,9 @@ function itemsOf(p: Project, gates: boolean): WorkItem[] {
             p,
             "Pre-production",
             planned.length
-              ? nextSession(planned)
+              ? nextSession(planned, p)
               : sessions.length === 0
-                ? "No sessions scheduled yet"
+                ? `No ${sessionLabelOf(p.category).toLowerCase()}s scheduled yet`
                 : `${plural(left, `planned ${label}`)} still to schedule`,
             producer,
             projectGate(),
@@ -260,11 +269,12 @@ function itemsOf(p: Project, gates: boolean): WorkItem[] {
   return items;
 }
 
-const nextSession = (planned: RecordingSession[]): string => {
+const nextSession = (planned: RecordingSession[], p?: Project): string => {
   const s = planned[0];
   const more = planned.length > 1 ? `, and ${planned.length - 1} more` : "";
   const when = s.scheduledDate ? ` on ${fmtShort(s.scheduledDate)}` : ", no date yet";
-  return `Next: session ${s.sessionNumber}${when}${more}`;
+  const what = p?.category === "live" ? s.name?.trim() || `day ${s.sessionNumber}` : `session ${s.sessionNumber}`;
+  return `Next: ${what}${when}${more}`;
 };
 
 const byDue = (a: WorkItem, b: WorkItem): number => (a.due ?? "9999").localeCompare(b.due ?? "9999") || a.key.localeCompare(b.key);

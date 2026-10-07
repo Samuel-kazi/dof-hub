@@ -29,7 +29,7 @@ import * as W from "../src/services/wrapped/workflow";
 import * as A from "../src/services/wrapped/alerts";
 import { setFeature } from "../src/services/wrapped/settings";
 import { canAdvance } from "../src/services/content";
-import { daysOfShow, horizonEnd, sheetOfDay } from "../src/services/production";
+import { daysOfEvent as daysOfShow, horizonEnd, sheetOfDay } from "../src/services/production";
 import { describeRule, occurrences, weeklyFrom } from "../src/services/recurrence";
 import { calendarEvents } from "../src/services/calendarView";
 import { kitSuggestions } from "../src/services/kits";
@@ -188,31 +188,32 @@ await t("this and future: a day's call sheet becomes the template from that day 
   const show = P.createProduction(hop(), { title: "Vespers", mode: "recurring", rule: weeklyFrom("2026-10-02"), callTime: "16:00" });
   const days = daysOfShow(show.contentId);
   const third = days[2];
+  const dayOf = (id: string) => getDb().recordingSessions.find((s) => s.id === id)!;
   CS.updateCallSheet(hop(), sheetOfDay(third)!.id, { location: "Central Church" });
-  assert.equal(getDb().records.find((r) => r.contentId === third.contentId)!.instance!.locked, true);
-  P.applyDayToFuture(hop(), third.contentId);
+  assert.equal(dayOf(third.id).instance!.locked, true);
+  P.applyDayToFuture(hop(), third.id);
   const loc = (i: number) => sheetOfDay(daysOfShow(show.contentId)[i])!.location;
   assert.deepEqual([loc(0), loc(1), loc(2), loc(3), loc(7)], ["", "", "Central Church", "Central Church", "Central Church"]);
-  assert.equal(getDb().records.find((r) => r.contentId === third.contentId)!.instance!.locked, false, "it follows the template again");
+  assert.equal(dayOf(third.id).instance!.locked, false, "it follows the template again");
   assert.equal(getDb().showTemplates.find((x) => x.contentId === show.contentId)!.sheet.location, "Central Church");
 });
 
 await t("one date is cancelled (kept, archived, left out of the schedule) and a day has a label", () => {
   const show = P.createProduction(hop(), { title: "Vespers", mode: "recurring", rule: weeklyFrom("2026-10-02") });
   const second = daysOfShow(show.contentId)[1];
-  P.setDayLabel(hop(), second.contentId, "Evening");
-  assert.match(instancesOf(show.contentId).find((i) => i.id === second.contentId)!.label, /Evening/);
-  throwsRule(() => P.cancelDay(hop(), second.contentId, " "), /Say why/);
-  P.cancelDay(hop(), second.contentId, "Venue closed");
-  const rec = getDb().records.find((r) => r.contentId === second.contentId)!;
-  assert.deepEqual([rec.archived, rec.closedReason], [true, "Cancelled: Venue closed"]);
+  P.setDayLabel(hop(), second.id, "Evening");
+  assert.match(instancesOf(show.contentId).find((i) => i.id === second.id)!.label, /Evening/);
+  throwsRule(() => P.cancelDay(hop(), second.id, " "), /Say why/);
+  P.cancelDay(hop(), second.id, "Venue closed");
+  const rec = getDb().recordingSessions.find((s) => s.id === second.id)!;
+  assert.deepEqual([!!rec.archivedAt, rec.archivedReason], [true, "Cancelled: Venue closed"]);
   assert.ok(
     getDb()
       .showTemplates.find((x) => x.contentId === show.contentId)!
       .rule.skipDates.includes(rec.instance!.occurrence),
   );
-  assert.equal(instancesOf(show.contentId).find((i) => i.id === second.contentId)?.status, "cancelled");
-  throwsRule(() => P.cancelDay(crew(3), daysOfShow(show.contentId)[2].contentId, "No"), /./);
+  assert.equal(instancesOf(show.contentId).find((i) => i.id === second.id)?.status, "cancelled");
+  throwsRule(() => P.cancelDay(crew(3), daysOfShow(show.contentId)[2].id, "No"), /./);
 });
 
 await t("a live run of show has camera, audio, graphics, status and actual times; bad values are refused", () => {
@@ -357,8 +358,8 @@ await t("a recurring show sits on each of its dates, never a bar; a multi-day ev
   const camp = P.createProduction(hop(), { title: "Camp", mode: "multi_day", startDate: "2026-10-12", endDate: "2026-10-16" });
   const ev = calendarEvents(hop(), "2026-10-01", "2026-10-31");
   const mine = (id: string) => ev.filter((e) => e.id.includes(id));
-  const v = mine(vespers.contentId);
-  assert.ok(v.length >= 4 && v.every((e) => e.subtype === "shoot" && e.date === e.endDate), "a mark on each Friday, nothing stacked");
+  const v = mine(vespers.contentId).filter((e) => e.subtype === "session");
+  assert.ok(v.length >= 4 && v.every((e) => e.date === e.endDate), "a mark on each Friday, nothing stacked");
   assert.ok(
     v.every((e) => new Date(`${e.date}T12:00:00Z`).getUTCDay() === 5),
     "Fridays only",

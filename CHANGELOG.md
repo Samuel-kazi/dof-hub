@@ -123,6 +123,35 @@ The rest of the rework, built together (data version 22):
   sessions and show days you are on the call sheet of (60 days ahead), and syncing again updates each event where it
   is (a session moved to another day moves in Google), never adding one twice.
 
+**Live Shows and DOF Music on the same workflow as Series and Devotions** (data version 23):
+
+- **DOF Music**: each release is a project, as a season is: a **single** (one song, its audio and its video) or an
+  **album** (several songs). It starts in Development with its Music Brief, the theological review (a reminder, as for
+  a series), the song or planned songs and the greenlight; then the Production Pack and Recording Plan (roles,
+  sessions, call sheets), Storyboard, Shot List and Gear; recording sessions in Production; each song through Post
+  production (mix and edit notes, the song tracker, reviews of the cut) and Marketing and distribution. A song can be
+  ticked onto more than one session (its audio session, then its video shoot): it is made once, by the first session
+  closed, and the next session's notes are added to it. Each song can have its own storyboard and shot list, or share
+  the release's ("Shared by the whole release"). Songs are numbered with T (`DOF-MUS-001-A1-T01`) and sessions with R.
+- **Live Shows**: each event is a project, as a season is (`DOF-LIVE-002-E1`), made with its days: a one-time event
+  (one day), a multi-day event (a day for each date) or a recurring show (its next 8 dates, from its template). Each
+  day is the event's session (`-E1-D01`), with its own call sheet and run of show, and is run as a session: "Start
+  the show", the show log (what was recorded for post production: the full service, a worship set, the message),
+  the wrap, "Close the day". What a day records goes to Post production as recordings (`-E1-R01`); a day with nothing
+  logged makes none. The event's Project Home has its Show Days (add a day, cancel a date, a day's label, open the
+  day). A closed day's call sheet locks as the record of the day.
+- **An event never floods the dashboard**: it is one card on the board and in Development, and the dashboard shows
+  only its next day. A live event is urgent or at risk only within a month of its next day (the "live window", 30
+  days, in the urgency settings); further off it is on track, whatever is still to prepare.
+- **The Calendar** shows each day of an event from the day the event is made, a multi-day event as one bar.
+- **The upgrade moves existing live shows and music across** (data version 23, with a copy kept first): each live
+  show's production becomes its first event, E1; its days become the event's days, D01 onwards, their call sheets,
+  templates and reminders moved with them; a day already in Post production or later becomes a recording of that day,
+  so its post production carries on. Each album becomes a release (a single if it has one track): tracks not yet
+  recorded become its planned songs and keep their Content IDs; tracks being recorded go on a session for their date;
+  tracks in Post production or later become its songs. The old day and track records are kept, archived, saying
+  where they went; nothing is deleted.
+
 ## Unreleased: one production system, with the call sheet at its centre
 
 Being built in phases. Phase 1, the production core:

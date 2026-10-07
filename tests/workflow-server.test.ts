@@ -53,49 +53,55 @@ await t("a dry run reports, part by part, what the upgrade from version 14 would
   const s = await version14Store();
   const before = await s.state.head();
   const report = (await upgradeStore(s, false))!;
-  assert.deepEqual([report.from, report.to, report.applied, report.backup], [14, 22, false, null]);
+  assert.deepEqual([report.from, report.to, report.applied, report.backup], [14, 23, false, null]);
   assert.deepEqual(await s.state.head(), before, "nothing was written");
   assert.equal(backups(s).size, 0, "and no copy was needed");
   const records = report.parts.find((p) => p.part === "records")!;
   assert.equal(records.before, buildSeed().records.length);
+  // Every record gains its fields; version 23 adds each live show's event (two in the sample), and removes nothing.
   assert.deepEqual(
     [records.after, records.written, records.removed],
-    [records.before, records.before, 0],
-    "every record gains its fields; none is added or removed",
+    [records.before + 2, records.before + 2, 0],
+    "every record gains its fields; the two live shows each gain an event; none is removed",
   );
-  for (const part of [...WORKFLOW_PARTS, ...DOCUMENT_PARTS])
-    assert.deepEqual(
-      report.parts.find((p) => p.part === part),
-      { part, before: 0, after: 0, written: 0, removed: 0 },
-    );
+  // The workflow's and the documents' lists start empty, and gain only what version 23 makes for the live shows and music.
+  for (const part of [...WORKFLOW_PARTS, ...DOCUMENT_PARTS]) {
+    const p = report.parts.find((x) => x.part === part)!;
+    assert.deepEqual([p.before, p.removed], [0, 0], part);
+  }
+  assert.ok(report.parts.find((p) => p.part === "recordingSessions")!.after >= 6, "the live days, as sessions");
   assert.deepEqual(
     report.parts.map((p) => p.part),
     [...KEYS],
     "every part is counted",
   );
-  assert.match(describeUpgrade(report), /Would upgrade the data from version 14 to 22/);
+  assert.match(describeUpgrade(report), /Would upgrade the data from version 14 to 23/);
 });
 
 await t("the upgrade keeps a copy of the data first, saves it all at once, and running it again does nothing", async () => {
   const s = await version14Store();
   const report = (await upgradeStore(s, true))!;
   assert.equal(report.applied, true);
-  assert.match(report.backup ?? "", /before_v22/);
-  const copy = backups(s).get("before_v22")!;
+  assert.match(report.backup ?? "", /before_v23/);
+  const copy = backups(s).get("before_v23")!;
   assert.equal(copy.head.schemaVersion, 14, "the copy is of the data as it was");
   assert.equal(copy.items.filter((it) => it.k === "records").length, buildSeed().records.length);
   const head = (await s.state.head())!;
-  assert.equal(head.schemaVersion, 22);
-  // Nothing is lost. Version 19 gives each coming day of a live show its call sheet, and says so in the activity log.
+  assert.equal(head.schemaVersion, 23);
+  // Nothing is lost. Version 19 gives each coming day of a live show its call sheet, and says so in the activity log;
+  // version 23 moves the live shows and music onto the workflow (their events, sessions, forms and checklists).
   const grew = report.parts.filter((p) => p.before !== p.after);
-  assert.deepEqual(
-    grew.map((p) => p.part),
-    ["callSheets", "audit"],
-    "no part lost an element, and only the call sheets and activity log gained",
+  for (const part of ["callSheets", "audit", "records", "recordingSessions", "developmentForms"])
+    assert.ok(
+      grew.some((p) => p.part === part),
+      part,
+    );
+  assert.ok(
+    grew.every((p) => p.after > p.before),
+    "no part lost an element",
   );
-  assert.ok(grew.every((p) => p.after > p.before));
   const again = (await upgradeStore(s, true))!;
-  assert.deepEqual([again.from, again.applied, again.backup], [22, false, null]);
+  assert.deepEqual([again.from, again.applied, again.backup], [23, false, null]);
   assert.deepEqual(await s.state.head(), head, "nothing was written the second time");
 });
 
@@ -105,9 +111,9 @@ await t("data saved at version 16 is upgraded on first read: a copy first, then 
   old.settings.newDocuments = ["series"];
   await s.state.init(toItems(old), 16);
   const snap = (await snapshotFor(s, { personId: "DOF-P-HOP-001", role: "HOP" }))!.db;
-  assert.equal(snap.schemaVersion, 22);
-  assert.ok(backups(s).has("before_v22"), "a copy was kept first");
-  assert.equal(backups(s).get("before_v22")!.head.schemaVersion, 16);
+  assert.equal(snap.schemaVersion, 23);
+  assert.ok(backups(s).has("before_v23"), "a copy was kept first");
+  assert.equal(backups(s).get("before_v23")!.head.schemaVersion, 16);
   for (const id of [
     "DOF-SER-001-S1|Development|show_brief",
     "DOF-DEV-001|Development|devotional_script",
