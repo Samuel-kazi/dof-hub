@@ -5516,6 +5516,7 @@ __export(production_exports, {
   GEAR_WINDOW_DAYS: () => GEAR_WINDOW_DAYS,
   MAX_HORIZON_COUNT: () => MAX_HORIZON_COUNT,
   MAX_HORIZON_WEEKS: () => MAX_HORIZON_WEEKS,
+  TEMPLATE_FIELDS: () => TEMPLATE_FIELDS,
   addEventDay: () => addEventDay,
   applyDayToFuture: () => applyDayToFuture,
   canPlanEvent: () => canPlanEvent,
@@ -5539,6 +5540,7 @@ __export(production_exports, {
   setShowSchedule: () => setShowSchedule,
   setUpEventDays: () => setUpEventDays,
   sheetOfDay: () => sheetOfDay,
+  templateDiff: () => templateDiff,
   templateOfEvent: () => templateOfEvent,
   topUpRecurring: () => topUpRecurring,
   topUpShow: () => topUpShow,
@@ -6023,6 +6025,53 @@ function applyTemplateTo(actor, t2, day, cs, today) {
   day.instance.templateVersion = t2.version;
   day.updatedAt = nowStamp();
   bookIfDue(actor, cs, today);
+}
+var TEMPLATE_FIELDS = [
+  { key: "callTime", label: "Crew call", section: "schedule" },
+  { key: "talentCall", label: "Talent call", section: "schedule" },
+  { key: "startTime", label: "Start", section: "schedule" },
+  { key: "wrapTime", label: "Wrap", section: "schedule" },
+  { key: "crewPersonIds", label: "Crew", section: "crew" },
+  { key: "crewRoles", label: "Crew roles", section: "crew" },
+  { key: "crewLeadId", label: "Crew lead", section: "crew" },
+  { key: "talent", label: "Talent", section: "talent" },
+  { key: "location", label: "Location", section: "location" },
+  { key: "locationAddress", label: "Address", section: "location" },
+  { key: "locationNotes", label: "Location notes", section: "location" },
+  { key: "logistics", label: "Logistics", section: "logistics" },
+  { key: "contacts", label: "Contacts", section: "contacts" },
+  { key: "runOfShow", label: "Run of show", section: "runOfShow" },
+  { key: "technicalCheck", label: "Tech check lines", section: "technicalCheck" },
+  { key: "rehearsal", label: "Rehearsal", section: "rehearsal" },
+  { key: "format", label: "Format", section: "sheet" },
+  { key: "notes", label: "Notes", section: "sheet" }
+];
+function planOf(c, key2) {
+  switch (key2) {
+    case "talent":
+      return c.talent.map(({ name, role, contact, callTime, notes }) => ({ name, role, contact, callTime, notes }));
+    case "contacts":
+      return c.contacts.map(({ name, role, phone, email }) => ({ name, role, phone, email }));
+    case "runOfShow":
+      return [...c.runOfShow].sort((a, b) => a.time.localeCompare(b.time)).map((r) => [r.time, r.title, r.durationMin, r.ownerPersonId ?? null, r.notes, r.camera ?? "", r.audio ?? "", r.graphics ?? ""]);
+    case "technicalCheck":
+      return c.technicalCheck.map((x) => [x.label, x.assigneeId ?? null, x.equipmentId ?? null]);
+    case "rehearsal":
+      return [c.rehearsal.time, c.rehearsal.notes, (c.rehearsal.steps ?? []).map((x) => [x.step, x.personId ?? null])];
+    case "crewPersonIds":
+      return [...c.crewPersonIds].sort();
+    case "crewRoles":
+      return Object.entries(c.crewRoles).sort(([a], [b]) => a.localeCompare(b));
+    default:
+      return c[key2];
+  }
+}
+function templateDiff(dayId) {
+  const day = getDb().recordingSessions.find((s2) => s2.id === dayId);
+  const t2 = day?.instance ? getTemplate(day.instance.templateId) : void 0;
+  const cs = day ? sheetOfDay(day) : void 0;
+  if (!day || !t2 || !cs) return [];
+  return TEMPLATE_FIELDS.filter((f2) => JSON.stringify(planOf(cs, f2.key)) !== JSON.stringify(planOf(t2.sheet, f2.key)));
 }
 function updateShowTemplate(actor, templateId, patch) {
   const t2 = requireTemplate(templateId);
@@ -18703,7 +18752,7 @@ async function migrateWorkflowRequest(store2, who, body) {
 // server/router.ts
 var str = (v) => typeof v === "string" ? v : "";
 async function dispatch(store2, req2, res) {
-  const route = `${req2.method} ${req2.path.replace(/^\/api/, "").replace(/^\/(accounts|account|google)-/, "/$1/")}`;
+  const route = `${req2.method} ${req2.path.replace(/^\/api/, "").replace(/^\/(accounts|account|google|email)-/, "/$1/")}`;
   const cookieToken = req2.cookies[COOKIE];
   const ok = (body = {}, extra = {}) => send(res, 200, { ok: true, ...body }, extra);
   const signedIn = async (allowMustChange = false) => {

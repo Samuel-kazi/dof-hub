@@ -560,6 +560,67 @@ function applyTemplateTo(actor: Actor, t: ShowTemplate, day: RecordingSession, c
   bookIfDue(actor, cs, today);
 }
 
+// ── What a day changed from its template (build prompt v4, section 7) ──
+
+/** The fields of a call sheet a day can differ from its template in, with their names on screen and their section. */
+export const TEMPLATE_FIELDS: { key: keyof SheetContent; label: string; section: string }[] = [
+  { key: "callTime", label: "Crew call", section: "schedule" },
+  { key: "talentCall", label: "Talent call", section: "schedule" },
+  { key: "startTime", label: "Start", section: "schedule" },
+  { key: "wrapTime", label: "Wrap", section: "schedule" },
+  { key: "crewPersonIds", label: "Crew", section: "crew" },
+  { key: "crewRoles", label: "Crew roles", section: "crew" },
+  { key: "crewLeadId", label: "Crew lead", section: "crew" },
+  { key: "talent", label: "Talent", section: "talent" },
+  { key: "location", label: "Location", section: "location" },
+  { key: "locationAddress", label: "Address", section: "location" },
+  { key: "locationNotes", label: "Location notes", section: "location" },
+  { key: "logistics", label: "Logistics", section: "logistics" },
+  { key: "contacts", label: "Contacts", section: "contacts" },
+  { key: "runOfShow", label: "Run of show", section: "runOfShow" },
+  { key: "technicalCheck", label: "Tech check lines", section: "technicalCheck" },
+  { key: "rehearsal", label: "Rehearsal", section: "rehearsal" },
+  { key: "format", label: "Format", section: "sheet" },
+  { key: "notes", label: "Notes", section: "sheet" },
+];
+
+/** A field as the plan has it: without row IDs, ticks, states, results, actual times or notes made on the day. */
+function planOf(c: SheetContent, key: keyof SheetContent): unknown {
+  switch (key) {
+    case "talent":
+      return c.talent.map(({ name, role, contact, callTime, notes }) => ({ name, role, contact, callTime, notes }));
+    case "contacts":
+      return c.contacts.map(({ name, role, phone, email }) => ({ name, role, phone, email }));
+    case "runOfShow":
+      return [...c.runOfShow]
+        .sort((a, b) => a.time.localeCompare(b.time))
+        .map((r) => [r.time, r.title, r.durationMin, r.ownerPersonId ?? null, r.notes, r.camera ?? "", r.audio ?? "", r.graphics ?? ""]);
+    case "technicalCheck":
+      return c.technicalCheck.map((x) => [x.label, x.assigneeId ?? null, x.equipmentId ?? null]);
+    case "rehearsal":
+      return [c.rehearsal.time, c.rehearsal.notes, (c.rehearsal.steps ?? []).map((x) => [x.step, x.personId ?? null])];
+    case "crewPersonIds":
+      return [...c.crewPersonIds].sort();
+    case "crewRoles":
+      return Object.entries(c.crewRoles).sort(([a], [b]) => a.localeCompare(b));
+    default:
+      return c[key];
+  }
+}
+
+/**
+ * The fields where a recurring show's day differs from its template, field by field: what was changed by hand on the
+ * day (gear is booked from the template's list, so it is not compared). None for a day of a one-time or multi-day
+ * event, or one whose template is gone.
+ */
+export function templateDiff(dayId: string): { key: keyof SheetContent; label: string; section: string }[] {
+  const day = getDb().recordingSessions.find((s) => s.id === dayId);
+  const t = day?.instance ? getTemplate(day.instance.templateId) : undefined;
+  const cs = day ? sheetOfDay(day) : undefined;
+  if (!day || !t || !cs) return [];
+  return TEMPLATE_FIELDS.filter((f) => JSON.stringify(planOf(cs, f.key)) !== JSON.stringify(planOf(t.sheet, f.key)));
+}
+
 /**
  * Changes a recurring show's template: its standard call sheet (crew, talent, location, gear, run of show, checks and
  * the rest), the level of production of its days, or how far ahead days are made. Every coming day still following

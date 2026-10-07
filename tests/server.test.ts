@@ -633,6 +633,24 @@ await t("reminder emails go out from the person's own Gmail, only if they allowe
     globalThis.fetch = realFetch;
   }
 });
+await t("Settings shows whether email is set up; only the Head of Production sends a test, and only once it is", async () => {
+  const user = process.env.SMTP_USER;
+  delete process.env.SMTP_USER;
+  try {
+    const hop = await setupHop(true);
+    const crew = await loginFor(hop, "DOF-P-CRW-002", "brian");
+    const st = await hop.get("/api/email-status");
+    assert.equal(st.status, 200);
+    assert.deepEqual(st.json.email, { available: false, queued: 0, failed: [] });
+    assert.equal((await crew.get("/api/email/status")).json.email.available, false, "everyone may see whether it is set up");
+    const test = await hop.post("/api/email-test");
+    assert.equal(test.status, 400);
+    assert.match(test.json.error, /SMTP_USER and SMTP_PASS/);
+    assert.equal((await crew.post("/api/email-test")).status, 403);
+  } finally {
+    if (user !== undefined) process.env.SMTP_USER = user;
+  }
+});
 await t("Google linking says so when it is not set up", async () => {
   const id = process.env.GOOGLE_CLIENT_ID;
   delete process.env.GOOGLE_CLIENT_ID;

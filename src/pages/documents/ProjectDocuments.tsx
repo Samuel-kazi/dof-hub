@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { DocumentPage, WorkflowStage } from "../../types";
-import { catalogEntry, catalogFor, type CatalogEntry } from "../../config/documentCatalog";
+import { briefKeyOf, catalogEntry, catalogFor, type CatalogEntry } from "../../config/documentCatalog";
 import { WORKFLOW_STAGE_NAMES } from "../../config/workflow";
 import { getDb, useDb } from "../../data/store";
 import {
@@ -272,6 +272,8 @@ function DocumentView({
   const fieldsPage = entry?.pages?.find((p) => p.fields?.length);
   const fieldsTarget = fieldsPage ? (pages.find((p) => p.title === fieldsPage.title) ?? pages[0]) : undefined;
   const reviewed = entry?.kind === "review" && entry.reviews ? documentOf(project.contentId, "Development", entry.reviews) : undefined;
+  const plannedTile = catalogFor(formType, "Development").find((e) => e.form === "plannedEpisodes");
+  const plannedCount = getDb().plannedEpisodes.filter((p) => p.contentId === project.contentId && !p.archivedAt).length;
   const printJob = (only?: DocumentPage) => {
     if (!doc) return;
     leaveThen(() => {
@@ -431,6 +433,18 @@ function DocumentView({
                 {doc.docKey === "devotional_script" && <SharedTheme project={project} />}
                 {reviewEntry && <ReviewBanner doc={doc} write={write} />}
                 {opened.key === "greenlight" && <GreenlightPanel project={project} write={write} />}
+                {opened.key === briefKeyOf(formType) && plannedTile && (
+                  // The brief's episode list is kept as structured rows in Planned Episodes (build prompt v4, section 5).
+                  <div className="pd-planned-link" aria-label={plannedTile.title}>
+                    <span className="grow">
+                      The {plannedTile.title === "The Song" ? "song" : "list"} is kept in <b>{plannedTile.title}</b>:{" "}
+                      {plannedCount ? `${plannedCount} planned` : "none yet"}, each with its own Content ID.
+                    </span>
+                    <button className="btn small" onClick={() => onOpen("Development", plannedTile.key)}>
+                      Open {plannedTile.title}
+                    </button>
+                  </div>
+                )}
                 {opened.key === "event_brief" && project.category === "live" && (
                   <ShowPlanHeader project={project} onShowDays={() => onOpen("Development", "show_days")} />
                 )}
