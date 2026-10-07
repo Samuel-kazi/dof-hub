@@ -3272,7 +3272,6 @@ var MODULE_LABELS = {
   storage: "Storage & Media",
   crew: "Crew",
   documents: "Documents",
-  reminders: "Reminders",
   settings: "Settings"
 };
 
@@ -3354,23 +3353,11 @@ function customisations() {
 function effectiveGrants(role, personId) {
   return Object.fromEntries(ALL_CAPABILITIES.map((c) => [c, grantFor(role, personId, c)]));
 }
-var ORDER = [
-  "dashboard",
-  "pipeline",
-  "callsheets",
-  "calendar",
-  "equipment",
-  "storage",
-  "crew",
-  "documents",
-  "reminders",
-  "settings"
-];
+var ORDER = ["dashboard", "pipeline", "callsheets", "calendar", "equipment", "storage", "crew", "documents", "settings"];
 var MODULE_CAP = {
   equipment: "equipment.use",
   storage: "storage.use",
   crew: "people.directory",
-  reminders: "reminders.use",
   calendar: "reminders.use"
 };
 function modulesFor(actor) {
@@ -6597,8 +6584,7 @@ var FEATURES = [
   { key: "shell", label: "New menu, Settings in the profile menu, Ctrl+K search", built: true },
   { key: "reviewNotGate", label: "Theological review as a reminder, not a gate", built: true },
   { key: "templates", label: "Storyboard and shot list templates in Documents", built: true },
-  { key: "lending", label: "Equipment lending and role kits", built: true },
-  { key: "calendar2", label: "New Calendar with reminders, alerts and the urgency report", built: true }
+  { key: "lending", label: "Equipment lending and role kits", built: true }
 ];
 var FEATURE_KEYS = FEATURES.map((f2) => f2.key);
 
@@ -6665,7 +6651,7 @@ function changePassword(actor, current3, next2) {
   logAudit(actor, "change-password", "person", actor.personId);
   commit();
 }
-var pipelineCategories = () => featureOn("lending") ? CATEGORIES.filter((c) => c.key !== "general") : CATEGORIES;
+var pipelineCategories = () => CATEGORIES.filter((c) => c.key !== "general");
 function featureOn(key2) {
   const f2 = FEATURES.find((x) => x.key === key2);
   if (!f2?.built) return false;

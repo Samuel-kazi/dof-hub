@@ -11,7 +11,6 @@ import { getRecord } from "../services/access";
 import { dayTitle, sheetOfDay } from "../services/wrapped/production";
 import { createReminder, deleteReminder } from "../services/wrapped/alerts";
 import { EMAIL_MIN_OFFSET, OFFSETS } from "../services/alerts";
-import { featureOn } from "../services/wrapped/settings";
 import { nameOf } from "../services/wrapped/people";
 import { addDaysIso, fmtDate, todayIso } from "../services/utils";
 import { CalendarWeek } from "./CalendarWeek";
@@ -110,8 +109,7 @@ function targetOf(e: CalEvent): Target | null {
 export function CalendarPage({ initialView }: { initialView?: View }) {
   const { actor, go } = useApp();
   useDb();
-  const v2 = featureOn("calendar2");
-  const [view, setViewState] = useState<View>(() => initialView ?? (v2 ? rememberedView("month") : "month"));
+  const [view, setViewState] = useState<View>(() => initialView ?? rememberedView("month"));
   const setView = (v: View) => {
     setViewState(v);
     try {
@@ -157,10 +155,10 @@ export function CalendarPage({ initialView }: { initialView?: View }) {
           <h1>Calendar</h1>
           <p className="sub">
             Projects, shoot and show days, recording sessions, deadlines, published call sheets, gear and loans, worked out from the records
-            themselves{v2 ? ", and your reminders" : ""}. Change a date on its record and the calendar follows.
+            themselves, and your reminders. Change a date on its record and the calendar follows.
           </p>
         </div>
-        {v2 && (
+        {
           <div className="seg" role="tablist" aria-label="View">
             {VIEWS.map(([v, l]) => (
               <button key={v} role="tab" aria-selected={view === v} className={view === v ? "on" : ""} onClick={() => setView(v)}>
@@ -168,7 +166,7 @@ export function CalendarPage({ initialView }: { initialView?: View }) {
               </button>
             ))}
           </div>
-        )}
+        }
         {view === "month" && (
           <div className="seg" role="group" aria-label="Month">
             <button
@@ -298,7 +296,7 @@ export function CalendarPage({ initialView }: { initialView?: View }) {
           onOpen={(e) => go(e.open)}
           details={(e) => {
             const day = e.days?.find((d) => d.date === anchor) ?? (e.id.startsWith("session:") ? { id: e.id.slice(8) } : undefined);
-            const target = v2 ? targetOf(e) : null;
+            const target = targetOf(e);
             return (
               <>
                 {day && <DayDetails dayId={day.id} />}
@@ -312,7 +310,7 @@ export function CalendarPage({ initialView }: { initialView?: View }) {
           }}
         />
       )}
-      {view === "day" && v2 && (
+      {view === "day" && (
         <button className="btn small" onClick={() => setReminding({ target: null, title: "" })}>
           + Reminder on this day
         </button>
@@ -358,7 +356,7 @@ export function CalendarPage({ initialView }: { initialView?: View }) {
               <span>
                 <i className="cal-mark booking" /> Gear booked
               </span>
-              {v2 && (
+              {
                 <>
                   <span>
                     <i className="cal-mark loan" /> Loan due back
@@ -367,7 +365,7 @@ export function CalendarPage({ initialView }: { initialView?: View }) {
                     <i className="cal-mark reminder" /> Reminder
                   </span>
                 </>
-              )}
+              }
               <span>
                 <span className="bar-swatch" /> Multi-day event / stage in progress
               </span>
@@ -383,7 +381,7 @@ export function CalendarPage({ initialView }: { initialView?: View }) {
                 <div className="stack" style={{ marginTop: 10 }}>
                   {dayEvents.map((e) => {
                     const day = e.days?.find((d) => d.date === selected);
-                    const target = v2 ? targetOf(e) : null;
+                    const target = targetOf(e);
                     return (
                       <div key={e.id} className="stack" style={{ gap: 6 }}>
                         <div className="cal-row" style={{ ["--cat-color" as string]: e.color }} onClick={() => go(e.open)}>
@@ -412,11 +410,11 @@ export function CalendarPage({ initialView }: { initialView?: View }) {
                   })}
                 </div>
               )}
-              {v2 && (
+              {
                 <button className="btn small" style={{ marginTop: 10 }} onClick={() => setReminding({ target: null, title: "" })}>
                   + Reminder on this day
                 </button>
-              )}
+              }
             </section>
           )}
         </>

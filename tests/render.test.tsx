@@ -19,7 +19,7 @@ import { Storage, DrivePage } from "../src/pages/Storage";
 import { GearPicker } from "../src/ui/GearPicker";
 import { ReportDialog } from "../src/ui/ReportDialog";
 import { Access } from "../src/pages/Access";
-import { Reminders } from "../src/pages/Reminders";
+import { DeadlineReminders } from "../src/pages/Reminders";
 import { CalendarPage } from "../src/pages/Calendar";
 import { Documents, DocPage, NewDocModal } from "../src/pages/Documents";
 import { AllocationModal } from "../src/pages/Storage";
@@ -100,7 +100,7 @@ for (const [role, email] of Object.entries(roles)) {
   ] as const)
     render(`${role} report dialog ${scope}`, email, <ReportDialog scope={scope} params={params} onClose={() => {}} />);
   render(`${role} access`, email, <Access />);
-  render(`${role} reminders`, email, <Reminders />);
+  render(`${role} reminders`, email, <DeadlineReminders />);
   render(`${role} calendar`, email, <CalendarPage />);
   for (const id of ["DRV-001", "DRV-006", "DRV-008"]) render(`${role} drive ${id}`, email, <DrivePage id={id} />);
   if (role === "hop" || role === "crew") {

@@ -13,7 +13,6 @@ const MODULE_KEYS = new Set<ModuleKey>([
   "storage",
   "crew",
   "documents",
-  "reminders",
   "settings",
 ]);
 
@@ -67,8 +66,6 @@ export function encodeRoute(r: Route): string {
       return `/drive/${seg(r.id)}`;
     case "access":
       return "/access";
-    case "reminders":
-      return "/reminders";
     case "calendar":
       return "/calendar";
     case "settings":
@@ -126,7 +123,8 @@ export function decodeRoute(path: string): Route {
     case "access":
       return { n: "access" };
     case "reminders":
-      return { n: "reminders" };
+      // The Reminders module is part of the Calendar now (build prompt v4): an old link opens the Calendar.
+      return { n: "calendar" };
     case "calendar":
       return { n: "calendar" };
     case "settings":

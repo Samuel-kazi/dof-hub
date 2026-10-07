@@ -63,7 +63,50 @@ export function useRecordMenu() {
   return { onContext: (e: React.MouseEvent, r: ContentRecord) => menu(e, items(r)), modal };
 }
 
+/** General Use is not a pipeline (build prompt v4): an old link to it says where lent gear is, and lists its old records. */
+function GeneralUseMoved() {
+  const { actor, go } = useApp();
+  useDb();
+  const old = visibleRecords(actor, true).filter((r) => r.category === "general" && r.hierarchyLevel === 0);
+  return (
+    <div className="page">
+      <div className="page-head">
+        <div className="grow">
+          <h1>General Use</h1>
+          <p className="sub">
+            Equipment lent outside a production (to a church, a partner or a member) is in Equipment, under Lending. General Use is no
+            longer a pipeline.
+          </p>
+        </div>
+        <button className="btn primary" onClick={() => go({ n: "equipment", tab: "lending" })}>
+          Open Lending
+        </button>
+      </div>
+      <section className="glass panel" aria-label="Earlier General Use records">
+        <h2>Earlier records</h2>
+        {old.length === 0 ? (
+          <Empty>None.</Empty>
+        ) : (
+          <div className="list">
+            {old.map((r) => (
+              <div key={r.contentId} className="list-item" onClick={() => go({ n: "record", id: r.contentId })}>
+                <span className="cid">{r.contentId}</span> {r.title}
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="muted">They keep their IDs, and their links still open them.</p>
+      </section>
+    </div>
+  );
+}
+
 export function Pipeline({ category }: { category?: CategoryKey }) {
+  if (category === "general") return <GeneralUseMoved />;
+  return <PipelineBoard category={category} />;
+}
+
+function PipelineBoard({ category }: { category?: CategoryKey }) {
   const { actor, go, menu } = useApp();
   useDb();
   const [view, setView] = useState<"board" | "tree">("board");

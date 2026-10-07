@@ -100,8 +100,11 @@ export function changePassword(actor: Actor, current: string, next: string): voi
  * then it stays, so gear can still go out for non-production use. Its records stay either way, and still open by their
  * links and search.
  */
-export const pipelineCategories = (): CategoryConfig[] =>
-  featureOn("lending") ? CATEGORIES.filter((c) => c.key !== "general") : CATEGORIES;
+/**
+ * The categories with a pipeline. General Use is not one (build prompt v4): equipment lent outside a production is in
+ * Equipment, under Lending; its old records keep their IDs, and their links still open them.
+ */
+export const pipelineCategories = (): CategoryConfig[] => CATEGORIES.filter((c) => c.key !== "general");
 
 /** Whether a part of the rework is on: one not built yet never is; a built one is, unless switched off. */
 export function featureOn(key: FeatureKey): boolean {

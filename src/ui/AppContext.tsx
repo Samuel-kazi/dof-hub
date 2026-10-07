@@ -28,7 +28,6 @@ export type Route =
   | { n: "storage" }
   | { n: "drive"; id: string }
   | { n: "access" }
-  | { n: "reminders" }
   | { n: "calendar" }
   | { n: "settings" };
 

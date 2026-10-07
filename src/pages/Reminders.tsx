@@ -70,34 +70,6 @@ export function DeadlineReminders() {
   );
 }
 
-export function Reminders() {
-  const { actor } = useApp();
-  useDb();
-  const canSend = can(actor, "reminders.sendOthers");
-  const [tab, setTab] = useState<"mine" | "send">("mine");
-  return (
-    <div className="page">
-      <div className="page-head">
-        <div className="grow">
-          <h1>Reminders and calendar</h1>
-          <p className="sub">What is coming up, in your own calendar, by email or by text.</p>
-        </div>
-        {canSend && (
-          <div className="seg" role="tablist">
-            <button role="tab" aria-selected={tab === "mine"} className={tab === "mine" ? "on" : ""} onClick={() => setTab("mine")}>
-              My reminders
-            </button>
-            <button role="tab" aria-selected={tab === "send"} className={tab === "send" ? "on" : ""} onClick={() => setTab("send")}>
-              Send to the team
-            </button>
-          </div>
-        )}
-      </div>
-      {tab === "mine" || !canSend ? <Mine /> : <Send />}
-    </div>
-  );
-}
-
 function Mine() {
   const { actor, me, go, attempt, notify, toast } = useApp();
   const lead = getDb().settings.stageReminderHours;
@@ -191,20 +163,23 @@ function Mine() {
             event has an alert {lead} hours before it, so your phone reminds you too.
           </p>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {isRemote() && g?.calendar && (
+            {isRemote() && g?.calendar && !g.relink && (
               <button
                 className="btn primary"
                 disabled={rems.length === 0}
                 onClick={async () => {
                   try {
-                    const r = await api.post<{ added: number; already: number; failed: number }>("/api/google-calendar");
-                    toast(r.added ? `${r.added} added to your Google Calendar` : "Your Google Calendar already has everything", "success");
+                    const r = await api.post<{ added: number; already: number; failed: number; removed?: number }>("/api/google-calendar");
+                    toast(
+                      `DOF Production Hub calendar: ${r.added} added, ${r.already} updated${r.removed ? `, ${r.removed} taken off` : ""}.`,
+                      r.failed ? "error" : "success",
+                    );
                   } catch (e) {
                     toast(e instanceof Error ? e.message : "Could not add them.", "error");
                   }
                 }}
               >
-                Add to my Google Calendar
+                Sync to my Google Calendar
               </button>
             )}
             <button className={`btn ${isRemote() && g?.calendar ? "" : "primary"}`} onClick={download} disabled={rems.length === 0}>

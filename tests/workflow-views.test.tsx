@@ -12,7 +12,7 @@ import { AppProvider } from "../src/ui/AppContext";
 import { Pipeline } from "../src/pages/Pipeline";
 import { Dashboard } from "../src/pages/Dashboard";
 import { CalendarPage } from "../src/pages/Calendar";
-import { Reminders } from "../src/pages/Reminders";
+import { DeadlineReminders } from "../src/pages/Reminders";
 import { RecordPage } from "../src/pages/RecordPage";
 import { getDb, setDb } from "../src/data/store";
 import { buildWorkflowFixture } from "../src/data/seedWorkflow";
@@ -312,7 +312,7 @@ t("reminders: a waiting review goes to each reviewer named on it, and a call she
   session(3).callSheetId = sheet.id;
   const k = remindersFor(PRODUCER, TODAY).map((r) => r.key);
   assert.ok(k.includes("sheet:DOF-CS-002") && !k.includes(`session:${WOW}-R03`), "the shoot reminder from the call sheet, once");
-  assert.match(html(PRODUCER_LOGIN, <Reminders />), /Session/);
+  assert.match(html(PRODUCER_LOGIN, <DeadlineReminders />), /Session/);
 });
 
 // ── Dashboard ────────────────────────────────────────────────

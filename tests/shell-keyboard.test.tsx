@@ -67,13 +67,10 @@ await t("the new shell ships on; only the Head of Production switches it, and sw
   assert.equal(featureOn("shell"), true);
 });
 
-await t("General Use leaves the pipeline with lending on, and comes back with it off", () => {
+await t("General Use is not a pipeline, whatever is switched on: lent gear is in Equipment, under Lending", () => {
   assert.ok(!pipelineCategories().some((c) => c.key === "general"), "lending replaces General Use");
   setFeature(hop(), "lending", false);
-  assert.ok(
-    pipelineCategories().some((c) => c.key === "general"),
-    "with lending off, gear can go out on General Use again",
-  );
+  assert.ok(!pipelineCategories().some((c) => c.key === "general"), "and it does not come back (build prompt v4)");
 });
 
 await t("with the shell on: no Settings in the side menu, a profile menu and a search button; off, as before", () => {
