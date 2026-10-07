@@ -32,6 +32,7 @@ import {
   type Project,
 } from "../../services/wrapped/workflow";
 import { fmtDate, fmtDateTime, fmtSize } from "../../services/utils";
+import { ChecksPanel } from "../../ui/ChecksPanel";
 import { useApp } from "../../ui/AppContext";
 import { Empty, Field } from "../../ui/parts";
 import { PersonName } from "../../ui/PersonName";
@@ -456,7 +457,7 @@ function StorageSlot({
 function StorageAndBackup({ project, session, write }: { project: Project; session: RecordingSession; write: boolean }) {
   const warnings = storageWarnings(session.id);
   return (
-    <div className="stack" aria-label="Storage and backup">
+    <div className="stack" id="rl-storage" aria-label="Storage and backup">
       <h3>Storage and backup</h3>
       <StorageSlot project={project} session={session} role="primary" write={write} />
       <StorageSlot project={project} session={session} role="backup" write={write} />
@@ -500,7 +501,10 @@ export function RecordingLog({ project, sessionId, write }: { project: Project; 
   };
   return (
     <section className="glass panel" aria-label={title}>
-      <h2>{title}</h2>
+      <div className="wf-head">
+        <h2>{title}</h2>
+        {!session.archivedAt && <ChecksPanel kind="log" id={sessionId} write={write} chip label={`${title} checks`} />}
+      </div>
       <p className="muted">
         What actually happened at {sessionName(session)}, not the plan.{" "}
         {live
@@ -508,7 +512,9 @@ export function RecordingLog({ project, sessionId, write }: { project: Project; 
           : "Each item recorded gets a take mark: Good and Pickup needed go on to Post production; Re-record leaves it for another session."}
       </p>
       <SessionDetails session={session} editable={editable} />
-      <h3 style={{ marginTop: 14 }}>What was recorded</h3>
+      <h3 id="rl-recorded" tabIndex={-1} style={{ marginTop: 14 }}>
+        What was recorded
+      </h3>
       {rows.length === 0 ? (
         <Empty>
           {live

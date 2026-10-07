@@ -12,6 +12,7 @@ import { Field } from "../../ui/parts";
 import { StageRail, useReason } from "./common";
 import { ProjectDocuments } from "../documents/ProjectDocuments";
 import { PersonName } from "../../ui/PersonName";
+import { ChecksPanel } from "../../ui/ChecksPanel";
 
 // A project of the five-stage workflow: a season of a series, a devotion or a documentary. Its stage is worked
 // out from its sessions and episodes. Below its header and stage tracker are its documents: Project Home, with a row
@@ -149,6 +150,7 @@ export function WorkflowProjectPage({ project }: { project: Project }) {
       {!canWrite(actor, project) && <div className="banner">You have view-only access to this project.</div>}
       <section className="glass panel" aria-label="Where it stands">
         <StageRail current={summary.stage} />
+        {!project.archived && <ChecksPanel kind="project" id={project.contentId} write={write} />}
         <p style={{ marginTop: 10 }}>{summary.text}</p>
       </section>
       <ProjectDocuments project={project} write={write} />

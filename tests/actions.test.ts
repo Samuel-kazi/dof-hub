@@ -552,6 +552,11 @@ await t("every action accepts the arguments its screen sends", async () => {
   });
   await must("workflow.setReviewedBeforeSystem", imported.project.contentId, true);
 
+  // The Checks panel: a suggestion set aside with a note and brought back, and a manual check ticked with its note.
+  await must("checks.dismissCheck", imported.project.contentId, "warn:Something to check", "Not for this project");
+  await must("checks.restoreCheck", imported.project.contentId, "warn:Something to check");
+  await must("checks.setCheck", "preProject", imported.project.contentId, "visual_plan", { done: true, note: "Agreed" });
+
   // Productions: a recurring show from its template and schedule, a one-time and a multi-day event, and the sections
   // every call sheet now has.
   const fridays = {

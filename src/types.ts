@@ -319,6 +319,8 @@ export interface ProjectWorkflow {
   imported?: boolean;
   importedAt?: string | null;
   reviewedBeforeSystem?: boolean; // its theological review was done before the system: the banner is cleared
+  // The Checks panel's suggestions set aside (build prompt v4, section 14A), keyed "{ownerId}|{check key}", with a note.
+  dismissedChecks?: Record<string, { note: string; byPersonId: string; at: string }>;
 }
 
 /** Someone went ahead (scheduled a session, published a call sheet or an episode) before the theological review was done. */

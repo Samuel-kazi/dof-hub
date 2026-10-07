@@ -22,6 +22,11 @@ export const RPC_NAMES: Record<string, string[]> = {
     "updateCallSheet",
     "updateRunItem"
   ],
+  "checks": [
+    "dismissCheck",
+    "restoreCheck",
+    "setCheck"
+  ],
   "content": [
     "addComment",
     "addFeatured",

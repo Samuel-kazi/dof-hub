@@ -35,6 +35,7 @@ import { useApp } from "../../ui/AppContext";
 import { useReviewCheck } from "../../ui/ReviewCheck";
 import { Empty, Field } from "../../ui/parts";
 import { CrewSelect, GatePanel, OpenLinkButton, copyText, shareUrlOf } from "../../ui/workflow/shared";
+import { ChecksPanel } from "../../ui/ChecksPanel";
 import { CheckpointCard, ConfigChecklist, useDraft } from "./common";
 import { EpisodeAssets } from "./StorageFields";
 import { FootageWhere } from "./RecordingLog";
@@ -290,7 +291,7 @@ function Distribution({ ep, write }: { ep: Episode; write: boolean }) {
     }
   };
   return (
-    <section className="glass panel" aria-label="Distribution">
+    <section className="glass panel" id="episode-release" aria-label="Distribution">
       <h2>Distribution</h2>
       {ep.episode.distribution.length === 0 ? (
         <Empty>No platforms logged yet. At least one link is needed before it is published.</Empty>
@@ -392,6 +393,7 @@ export function EpisodePage({ ep, project }: { ep: Episode; project: Project }) 
         </div>
       </div>
       {ep.archived && <div className="banner bad">Archived: {ep.closedReason}</div>}
+      {!ep.archived && info.mdStage !== "Published" && <ChecksPanel kind="episode" id={ep.contentId} write={write} />}
 
       <section className="glass panel" aria-label="Production notes">
         <h2>Production notes</h2>
@@ -402,7 +404,7 @@ export function EpisodePage({ ep, project }: { ep: Episode; project: Project }) 
         )}
       </section>
 
-      <section className="glass panel" aria-label="Post production">
+      <section className="glass panel" id="episode-links" aria-label="Post production">
         <h2>Post production</h2>
         <div className="row" style={{ alignItems: "end" }}>
           <Field label="Editor">
@@ -462,13 +464,14 @@ export function EpisodePage({ ep, project }: { ep: Episode; project: Project }) 
         <GatePanel
           title="Send for review"
           gate={evaluateGate("Editing", "episode", ep.contentId)}
+          checksFor={ep.contentId}
           action="Send for review"
           disabled={!write}
           onDone={() => attempt(() => sendForReview(actor, ep.contentId), "Sent for review")}
         />
       )}
 
-      <section className="glass panel" aria-label="Reviews">
+      <section className="glass panel" id="episode-reviews" aria-label="Reviews">
         <h2>Theological review</h2>
         <div className="grid-2">
           <CheckpointCard
@@ -490,6 +493,7 @@ export function EpisodePage({ ep, project }: { ep: Episode; project: Project }) 
         <GatePanel
           title="Leave Post production"
           gate={evaluateGate("Post production", "episode", ep.contentId)}
+          checksFor={ep.contentId}
           action="Done: move to Marketing and distribution"
           disabled={!write}
           onDone={async () => {
@@ -521,6 +525,7 @@ export function EpisodePage({ ep, project }: { ep: Episode; project: Project }) 
             <GatePanel
               title="Publish"
               gate={evaluateGate("Marketing and distribution", "episode", ep.contentId)}
+              checksFor={ep.contentId}
               action="Done: published"
               disabled={!write}
               onDone={async () => {

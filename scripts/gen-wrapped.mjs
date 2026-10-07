@@ -13,6 +13,7 @@ const outDir =
 const MODULES = [
   "alerts",
   "callsheets",
+  "checks",
   "content",
   "docs",
   "documents",

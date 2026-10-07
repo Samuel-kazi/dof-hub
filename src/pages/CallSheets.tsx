@@ -25,6 +25,7 @@ import { roleOn } from "../services/wrapped/team";
 import { nameOf } from "../services/wrapped/people";
 import { addDaysIso, dateInNairobi, fmtDate, fmtDateTime, relativeDays, todayIso } from "../services/utils";
 import { sheetWarnings, gearSuggestions } from "../services/sheetAdvice";
+import { ChecksPanel } from "../ui/ChecksPanel";
 import { pipelineCategories } from "../services/wrapped/settings";
 import { changesOf, confirmationHolds } from "../services/sheetTracking";
 import { canKeepLocations, createLocation, listLocations } from "../services/wrapped/locations";
@@ -449,6 +450,9 @@ export function CallSheetPage({ id }: { id: string }) {
             <button className="badge accent" style={{ cursor: "pointer" }} onClick={() => go({ n: "record", id: root.contentId })}>
               {root.title}
             </button>
+            <span className="no-print">
+              <ChecksPanel kind="sheet" id={cs.id} write={write} chip label="Call sheet checks" />
+            </span>
           </div>
         </div>
         {write && (
@@ -654,28 +658,9 @@ export function CallSheetBody({
           )}
         </div>
       )}
-      {warnings.length > 0 && (
-        <div className="banner warn no-print" role="status" aria-label="Call sheet warnings">
-          <div className="grow">
-            <b>
-              {warnings.length} thing{warnings.length === 1 ? "" : "s"} to check before the day.
-            </b>
-            <ul className="cs-warn-list">
-              {warnings.map((w) => (
-                <li key={w.text}>
-                  <a
-                    href={`#sec-${w.section}`}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      document.getElementById(`sec-${w.section}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
-                    }}
-                  >
-                    {w.text}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </div>
+      {embedded && (
+        <div className="no-print">
+          <ChecksPanel kind="sheet" id={cs.id} write={write} chip label="Call sheet checks" />
         </div>
       )}
 

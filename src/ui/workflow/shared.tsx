@@ -3,6 +3,7 @@ import type { Person } from "../../types";
 import { getDb } from "../../data/store";
 import { asWebUrl } from "../../services/urls";
 import type { GateResult } from "../../services/wrapped/workflow";
+import { openChecks } from "../checksNav";
 import { useApp } from "../AppContext";
 import { Empty } from "../parts";
 
@@ -60,7 +61,17 @@ export interface ChecklistRow {
 }
 
 /** A note that saves when the person leaves the field, so typing does not send a change per key. */
-function NoteField({ value, disabled, label, onSave }: { value: string; disabled: boolean; label: string; onSave: (v: string) => void }) {
+export function NoteField({
+  value,
+  disabled,
+  label,
+  onSave,
+}: {
+  value: string;
+  disabled: boolean;
+  label: string;
+  onSave: (v: string) => void;
+}) {
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
   return (
@@ -146,11 +157,15 @@ export function Checklist({
 
 // ── The gate ─────────────────────────────────────────────────
 
-/** What a Done button needs, and the button. It only does anything once the gate has passed. */
+/**
+ * A Done button, and whether what it needs is in place. The list of what is missing is in the Checks panel at the top
+ * of the page (src/ui/ChecksPanel.tsx): pressing the button while something required is missing opens it there.
+ */
 export function GatePanel({
   title,
   gate,
   action,
+  checksFor,
   disabled,
   onDone,
   extra,
@@ -158,6 +173,7 @@ export function GatePanel({
   title: string;
   gate: GateResult;
   action: string;
+  checksFor: string; // the owner whose Checks panel lists what is missing
   disabled?: boolean;
   onDone: () => void;
   extra?: ReactNode;
@@ -165,30 +181,14 @@ export function GatePanel({
   return (
     <section className="glass panel" aria-label={title}>
       <h2>{title}</h2>
-      <div className={`gate ${gate.passed ? "ready" : ""}`} style={{ alignItems: "flex-start" }}>
-        <div className="grow" style={{ flex: 1, minWidth: 220 }}>
-          {gate.passed ? (
-            <p>Everything this step needs is in place.</p>
-          ) : (
-            <>
-              <p className="muted">Still needed:</p>
-              <ul className="wf-missing">
-                {gate.missing.map((m) => (
-                  <li key={m}>{m}</li>
-                ))}
-              </ul>
-            </>
-          )}
-          {gate.warnings.length > 0 && (
-            <ul className="wf-warnings" aria-label="Warnings">
-              {gate.warnings.map((w) => (
-                <li key={w}>{w}</li>
-              ))}
-            </ul>
-          )}
-        </div>
+      <div className={`gate ${gate.passed ? "ready" : ""}`}>
+        <p className="grow" style={{ flex: 1, minWidth: 220 }}>
+          {gate.passed
+            ? "Everything this step needs is in place."
+            : `${gate.missing.length} still needed: see Checks, at the top of the page.`}
+        </p>
         <div className="stack" style={{ gap: 8, flex: "none" }}>
-          <button className="btn primary" disabled={disabled || !gate.passed} onClick={onDone}>
+          <button className="btn primary" disabled={disabled} onClick={() => (gate.passed ? onDone() : openChecks(checksFor))}>
             {action}
           </button>
           {extra}

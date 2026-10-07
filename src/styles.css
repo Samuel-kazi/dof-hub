@@ -3368,6 +3368,219 @@ button.link:hover {
   font-size: 0.84rem;
   color: var(--ink-2);
 }
+/* The Checks panel (build prompt v4, 14A): one slim bar, or a chip in a header; opened, a popover on wide windows and
+   in place on narrow ones, with its own scroll, so the page under it never moves by more than the bar. */
+.ck {
+  position: relative;
+}
+/* Each glass panel is its own layer: the one holding an open panel is lifted above the panels after it. */
+.glass:has(.ck.open),
+.page-head:has(.ck.open) {
+  position: relative;
+  z-index: 45;
+}
+.ck.ck-bar {
+  margin: 8px 0 12px;
+}
+.ck.ck-chip {
+  display: inline-block;
+}
+.ck-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--glass-line);
+  background: var(--glass-2);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+}
+.ck.ck-chip .ck-toggle {
+  width: auto;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+}
+.ck-toggle:hover {
+  background: var(--hover);
+}
+.ck-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--warn);
+}
+.ck-toggle.need .ck-dot {
+  background: var(--bad);
+}
+.ck-toggle.clear {
+  border-color: var(--ok-line);
+  color: var(--ok);
+}
+.ck-toggle.clear .ck-dot {
+  background: var(--ok);
+}
+.ck-caret {
+  flex: none;
+  color: var(--ink-3);
+  transition: transform 0.15s;
+}
+.ck.open .ck-caret {
+  transform: rotate(180deg);
+}
+.ck-pop {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  max-height: min(60vh, 520px);
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--glass-line);
+  background: var(--menu-bg);
+  box-shadow: var(--shadow);
+}
+.ck.ck-chip .ck-pop {
+  left: auto;
+  right: 0;
+  width: min(460px, 92vw);
+}
+.ck-pop[hidden] {
+  display: none;
+}
+@media (max-width: 899px) {
+  .ck-pop,
+  .ck.ck-chip .ck-pop {
+    position: static;
+    width: auto;
+    max-height: 50vh;
+    margin-top: 6px;
+    box-shadow: none;
+  }
+  .ck.ck-chip {
+    display: block;
+  }
+}
+.ck-group + .ck-group,
+.ck-done {
+  margin-top: 10px;
+}
+.ck-group h3 {
+  margin: 0 0 6px;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+}
+.ck-count {
+  font-weight: 700;
+  color: var(--ink);
+}
+.ck ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ck-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+}
+.ck-item:focus {
+  outline: none;
+  border-color: var(--accent-hi);
+}
+.ck-item.required {
+  background: var(--bad-bg);
+}
+.ck-item.passed {
+  background: var(--warn-bg);
+}
+.ck-mark,
+.ck-tick {
+  flex: none;
+  width: 18px;
+  margin: 2px 0 0;
+  text-align: center;
+  font-weight: 700;
+  color: var(--ink-3);
+}
+.ck-item.required .ck-mark {
+  color: var(--bad);
+}
+.ck-item.done .ck-mark {
+  color: var(--ok);
+}
+.ck-item.passed .ck-mark {
+  color: var(--warn);
+}
+.ck-text {
+  flex: 1;
+  min-width: 160px;
+}
+.ck-label {
+  display: block;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.ck-reason {
+  display: block;
+  font-size: 0.82rem;
+  color: var(--ink-2);
+}
+.ck-item.done .ck-label,
+.ck-item.dismissed .ck-label {
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.ck-acts {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.ck-edit {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 26px;
+}
+.ck-edit textarea {
+  min-height: 0;
+}
+.ck-edit-acts {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.ck-done summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--ink-2);
+  margin-bottom: 6px;
+}
+.ck-empty {
+  margin: 0;
+}
+.ck-empty.ok {
+  color: var(--ok);
+}
 .pd-nudges {
   display: flex;
   flex-direction: column;

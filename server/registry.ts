@@ -1,5 +1,6 @@
 import * as alerts from "../src/services/alerts";
 import * as callsheets from "../src/services/callsheets";
+import * as checks from "../src/services/checks";
 import * as content from "../src/services/content";
 import * as docs from "../src/services/docs";
 import * as documents from "../src/services/documents";
@@ -21,6 +22,7 @@ import { ACTIONS, type ActionSpec } from "./schemas";
 const modules: Record<string, Record<string, unknown>> = {
   alerts,
   callsheets,
+  checks,
   content,
   docs,
   documents,

@@ -33,6 +33,7 @@ import { Empty, Field } from "../../ui/parts";
 import { Modal } from "../../ui/Modal";
 import { DateShift } from "../../ui/DateShift";
 import { CrewSelect, GatePanel } from "../../ui/workflow/shared";
+import { ChecksPanel } from "../../ui/ChecksPanel";
 import { ConfigChecklist, useDraft, useReason } from "./common";
 import { focusNext, useFocusRow } from "../../ui/keys";
 import { askIfScheduling, useReviewCheck } from "../../ui/ReviewCheck";
@@ -190,7 +191,7 @@ function RecordingDay({ project, sessionId, editable }: { project: Project; sess
     })),
   ];
   return (
-    <section className="glass panel" aria-label={project.category === "live" ? "Show day" : "Recording day"}>
+    <section className="glass panel" id="recording-day" aria-label={project.category === "live" ? "Show day" : "Recording day"}>
       <h2>{project.category === "live" ? "Show day" : "Recording day"}</h2>
       {reviewModal}
       <div className="row" style={{ alignItems: "end" }}>
@@ -540,12 +541,13 @@ export function SessionPage({ id }: { id: string }) {
         </div>
       )}
 
+      {!session.archivedAt && <ChecksPanel kind="session" id={id} write={write} />}
       {session.instance && <InstanceStrip day={session} write={write} />}
       <RecordingDay project={p} sessionId={id} editable={editable} />
 
       {session.status === "Planned" && (
         <>
-          <section className="glass panel" aria-label="Call sheet and gear">
+          <section className="glass panel" id="session-call-sheet" aria-label="Call sheet and gear">
             <h2>Call sheet and gear</h2>
             {sheet ? (
               <div className="stack">
@@ -604,6 +606,7 @@ export function SessionPage({ id }: { id: string }) {
           <GatePanel
             title={live ? "Ready for the show" : "Ready to record"}
             gate={evaluateGate("Pre-production", "session", id)}
+            checksFor={id}
             action={live ? "Start the show: move to Production" : "Start recording: move to Production"}
             disabled={!write}
             onDone={async () => {
@@ -676,6 +679,7 @@ export function SessionPage({ id }: { id: string }) {
         <GatePanel
           title={live ? "Close the day" : "Close the session"}
           gate={evaluateGate("Production", "session", id)}
+          checksFor={id}
           action={live ? "Close the day and send recordings to post production" : "Close session and send to post production"}
           disabled={!write}
           onDone={() => void close()}

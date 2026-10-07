@@ -793,6 +793,15 @@ export const ACTIONS: Record<string, ActionSpec> = {
       .required({ allocationId: true, category: true, title: true, start: true }),
   ]),
   "workflow.setReviewedBeforeSystem": args([id, z.boolean()]),
+  // The Checks panel (build prompt v4, section 14A): a suggestion set aside or brought back, a manual check ticked
+  "checks.dismissCheck": args([id, short(400)], [short(300)]),
+  "checks.restoreCheck": args([id, short(400)]),
+  "checks.setCheck": args([
+    z.enum(["handoff", "preProject", "preSession", "wrap", "post", "release"]),
+    id,
+    short(60),
+    z.object({ done: z.boolean(), note: text(2000) }).partial(),
+  ]),
   // Post production, and Marketing and distribution
   "workflow.setEpisodeEditor": args([id, ref.nullable()]),
   "workflow.setEpisodeLinks": args([id, z.object({ reviewLink: webLink, finalFileLink: webLink }).partial()]),

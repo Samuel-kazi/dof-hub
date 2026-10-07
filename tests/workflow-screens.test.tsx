@@ -86,7 +86,10 @@ t("Development is the project's documents: the header strip, the short gate, its
   ])
     assert.ok(page.includes(text), text);
   assert.ok(!page.includes("Still needed:") && !page.includes("Mission fit"), "not the earlier long form");
-  assert.match(page, /disabled=""[^>]*>Done: move to Pre-production/, "the Done button waits for the gate");
+  // The Done button stays pressable: while the gate is not met it opens the Checks panel, under the stage tracker.
+  assert.match(page, /<button class="btn primary">Done: move to Pre-production/);
+  assert.match(page, /Checks: \d+ required/);
+  assert.match(page, /still needed: see Checks, under the stage tracker/);
   const planned = html(
     ROLES.hop,
     <FormPane project={project()} entry={catalogEntry("podcast", "Development", "planned_episodes")!} write />,

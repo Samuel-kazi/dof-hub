@@ -1673,6 +1673,7 @@ var blankSheetTracking = () => ({
   confirmations: {},
   changeLog: []
 });
+var CONFIRM_WARN_DAYS = 3;
 
 // src/config/devForms.ts
 var f = (key2, label, type = "text", extra = {}) => ({
@@ -2566,10 +2567,10 @@ function ruleFor(formType2, section, field) {
   return null;
 }
 var blank = (v) => v === void 0 || v === null || v === "" || Array.isArray(v) && v.length === 0;
-function show(f2, v, nameOf3) {
+function show(f2, v, nameOf4) {
   switch (f2?.type) {
     case "crew":
-      return nameOf3(String(v));
+      return nameOf4(String(v));
     case "yesno":
       return v === "yes" ? "Yes" : v === "no" ? "No" : String(v);
     case "date":
@@ -2587,7 +2588,7 @@ function migrateDocuments(db2, options) {
   const { at } = options;
   const report = { lines: [], kept: [], extras: [], unaccounted: [], changed: false };
   const people = new Map(db2.people.map((p) => [p.personId, p.name]));
-  const nameOf3 = (id2) => people.get(id2) ?? id2;
+  const nameOf4 = (id2) => people.get(id2) ?? id2;
   const byId = new Map(db2.records.map((r) => [r.contentId, r]));
   const newDocument = (p, stage, key2) => {
     const entry = catalogEntry(p.workflow.formType, stage, key2);
@@ -2683,7 +2684,7 @@ function migrateDocuments(db2, options) {
         const heading = rule ? target.heading ?? "" : section.label;
         const parts = grouped.get(pageKey).parts;
         if (!parts.has(heading)) parts.set(heading, []);
-        parts.get(heading).push(labelled(def?.label ?? key2, show(def, v, nameOf3)));
+        parts.get(heading).push(labelled(def?.label ?? key2, show(def, v, nameOf4)));
         fields++;
       }
     }
@@ -2696,7 +2697,7 @@ function migrateDocuments(db2, options) {
           grouped.set(pageKey, { target: { doc: briefKey, stage: "Development", page: "Also from the old form" }, parts: /* @__PURE__ */ new Map() });
         const parts = grouped.get(pageKey).parts;
         if (!parts.has(sectionKey)) parts.set(sectionKey, []);
-        parts.get(sectionKey).push(labelled(key2, show(void 0, v, nameOf3)));
+        parts.get(sectionKey).push(labelled(key2, show(void 0, v, nameOf4)));
         report.extras.push({ contentId: p.contentId, field: `${sectionKey}: ${key2}` });
         fields++;
       }
@@ -2809,7 +2810,7 @@ function migrateDocuments(db2, options) {
         write(
           keeping(),
           "Theological review on the earlier form",
-          `<h3>${c.checkpoint === "pitch" ? "Pitch" : "Outline or script"}: ${escapeHtml(c.status)}</h3>` + (c.reviewerIds.length ? labelled("Reviewers", c.reviewerIds.map(nameOf3).join(", ")) : "") + (c.note ? labelled("Note", c.note) : "") + (c.decidedAt ? labelled("Decided", fmtDate(c.decidedAt.slice(0, 10))) : "")
+          `<h3>${c.checkpoint === "pitch" ? "Pitch" : "Outline or script"}: ${escapeHtml(c.status)}</h3>` + (c.reviewerIds.length ? labelled("Reviewers", c.reviewerIds.map(nameOf4).join(", ")) : "") + (c.note ? labelled("Note", c.note) : "") + (c.decidedAt ? labelled("Decided", fmtDate(c.decidedAt.slice(0, 10))) : "")
         );
       }
     }
@@ -14418,6 +14419,393 @@ function pruneNotifications(db2, today = todayIso()) {
   return before - db2.notifications.length;
 }
 
+// src/services/checks.ts
+var checks_exports = {};
+__export(checks_exports, {
+  acceptsAtDevelopment: () => acceptsAtDevelopment,
+  callSheetChecks: () => callSheetChecks,
+  checksSummary: () => checksSummary,
+  dismissCheck: () => dismissCheck,
+  episodeChecks: () => episodeChecks,
+  projectChecks: () => projectChecks,
+  recordingLogChecks: () => recordingLogChecks,
+  restoreCheck: () => restoreCheck,
+  sessionChecks: () => sessionChecks,
+  setCheck: () => setCheck
+});
+
+// src/config/checks.ts
+var GATE_GO = {
+  idea: { doc: { stage: "Development", key: "brief" } },
+  greenlight: { doc: { stage: "Development", key: "greenlight" } },
+  review: { doc: { stage: "Development", key: "theological_review" } },
+  guest: { doc: { stage: "Development", key: "accept_decline" } },
+  pages: { doc: { stage: "Development", key: "devotional_script" } },
+  consent: { doc: { stage: "Development", key: "consent" } },
+  date: { doc: { stage: "Development", key: "show_days" } },
+  producer: { doc: { stage: "Development", key: "greenlight" } }
+};
+var TEXT_GO = [
+  { match: /^Roles?\b|needs a person|^A show producer/, go: { doc: { stage: "Pre-production", key: "recording_plan" } } },
+  { match: /not assigned to a session|planned for this session/, go: { doc: { stage: "Pre-production", key: "recording_plan" } } },
+  { match: /Second greenlight/, go: { doc: { stage: "Development", key: "greenlight" } } },
+  { match: /call sheet|Call sheet|Gear/, go: { anchor: "session-call-sheet" } },
+  { match: /session's date|The session's date/, go: { anchor: "recording-day" } },
+  { match: /drive|backup|offloaded|offline|full$/, go: { anchor: "rl-storage" } },
+  { match: /take mark|item recorded|Recording Log/, go: { anchor: "rl-recorded" } },
+  { match: /review link|ready for review/, go: { anchor: "episode-links" } },
+  { match: /review checkpoint/, go: { anchor: "episode-reviews" } },
+  { match: /distribution link|Release plan/, go: { anchor: "episode-release" } },
+  { match: /Theological review/, go: { doc: { stage: "Development", key: "theological_review" } } }
+];
+function goForText(text4) {
+  return TEXT_GO.find((r) => r.match.test(text4))?.go ?? null;
+}
+
+// src/services/sheetAdvice.ts
+var nameOf3 = (personId) => getDb().people.find((p) => p.personId === personId)?.name ?? personId;
+var unconfirmedCrew = (cs) => cs.crewPersonIds.filter((pid) => !confirmationHolds(cs, pid));
+function sheetWarnings(cs, today) {
+  if (cs.date < today) return [];
+  const out = [];
+  if (!cs.callTime) out.push({ section: "schedule", text: "No crew call time." });
+  if (!cs.location.trim()) out.push({ section: "location", text: "No location." });
+  if (!cs.crewPersonIds.length) out.push({ section: "crew", text: "No crew on the sheet." });
+  else if (!cs.crewLeadId) out.push({ section: "crew", text: "No crew lead." });
+  const days = dayNumber(cs.date) - dayNumber(today);
+  const waiting2 = unconfirmedCrew(cs);
+  if (days <= CONFIRM_WARN_DAYS && waiting2.length) {
+    const when = days === 0 ? "It is today" : days === 1 ? "It is tomorrow" : `${days} days to go`;
+    out.push({ section: "crew", text: `${when} and ${waiting2.length} not confirmed: ${waiting2.map(nameOf3).join(", ")}.` });
+  }
+  return out;
+}
+
+// src/services/workflow/team.ts
+function assignRole(actor, projectId, roleKey2, who) {
+  const p = projectForWrite(actor, projectId);
+  if (!canManageTeam(actor, p))
+    throw new RuleError(
+      `Only the show producer, the Head of Production, or someone given "Assign other people's work", can assign roles.`
+    );
+  const def = PROJECT_ROLE_DEFS.find((r) => r.key === roleKey2);
+  if (!def) throw new RuleError("That is not a project role.");
+  if (p.workflow.stage !== "Pre-production")
+    throw new RuleError("Roles are assigned at Pre-production, once the project is greenlit and handed off.");
+  const crewId = who.crewId || null;
+  const guestName = (who.guestName ?? "").trim();
+  if (def.exclusive && !crewId) throw new RuleError(`Choose who is the ${def.label.toLowerCase()} from the crew list.`);
+  if (crewId && guestName) throw new RuleError("Choose someone on the crew list, or type the name of someone outside it, not both.");
+  if (!crewId && !guestName) throw new RuleError("Choose someone on the crew list, or type the name of someone outside it.");
+  if (crewId) requireCrew(crewId, def.label);
+  if (guestName.length > 120) throw new RuleError("That name is too long.");
+  const db2 = getDb();
+  const at = nowStamp();
+  if (def.exclusive) {
+    const id2 = `${projectId}|${roleKey2}`;
+    const existing = db2.projectRoles.find((r) => r.id === id2);
+    if (existing) {
+      Object.assign(existing, { crewId, assignedById: actor.personId, assignedAt: at, updatedAt: at });
+      joinProject(actor, crewId, p);
+      logAudit(actor, "role", "record", projectId, `${def.label}: ${getPerson(crewId)?.name ?? crewId}`);
+      commit();
+      return existing;
+    }
+  } else {
+    const same = db2.projectRoles.find(
+      (r) => r.contentId === projectId && r.roleKey === roleKey2 && (crewId && r.crewId === crewId || guestName && r.guestName.toLowerCase() === guestName.toLowerCase())
+    );
+    if (same) throw new RuleError(`${crewId ? getPerson(crewId)?.name : guestName} is already a host or guest on this project.`);
+  }
+  const role = {
+    id: def.exclusive ? `${projectId}|${roleKey2}` : `${projectId}|${roleKey2}|${localId("G", (x) => db2.projectRoles.some((r) => r.id.endsWith(`|${x}`)))}`,
+    contentId: projectId,
+    roleKey: roleKey2,
+    exclusive: def.exclusive,
+    crewId,
+    guestName: crewId ? "" : guestName,
+    assignedById: actor.personId,
+    assignedAt: at,
+    createdAt: at,
+    updatedAt: at
+  };
+  db2.projectRoles.push(role);
+  if (crewId) joinProject(actor, crewId, p);
+  logAudit(actor, "role", "record", projectId, `${def.label}: ${crewId ? getPerson(crewId)?.name ?? crewId : guestName}`);
+  commit();
+  return role;
+}
+function removeRole(actor, roleId) {
+  const db2 = getDb();
+  const role = db2.projectRoles.find((r) => r.id === roleId);
+  if (!role) throw new RuleError("That role is no longer assigned.");
+  const p = projectForWrite(actor, role.contentId);
+  if (!canManageTeam(actor, p))
+    throw new RuleError(
+      `Only the show producer, the Head of Production, or someone given "Assign other people's work", can change roles.`
+    );
+  db2.projectRoles = db2.projectRoles.filter((r) => r.id !== roleId);
+  logAudit(actor, "role-remove", "record", role.contentId, roleName(role));
+  commit();
+}
+function setChecklistItem(actor, itemId, change) {
+  const item2 = getDb().workflowChecklistItems.find((c) => c.id === itemId);
+  if (!item2) throw new RuleError("Checklist item not found.");
+  if (item2.ownerType === "project") projectForWrite(actor, item2.ownerId);
+  else if (item2.ownerType === "episode") episodeForWrite(actor, item2.ownerId);
+  else {
+    const { session } = sessionForWrite(actor, item2.ownerId);
+    if (session.status === "Closed") throw new RuleError("This session is closed. Reopen it to change its checklists.");
+  }
+  if (change.note !== void 0) {
+    if (change.note.length > 2e3) throw new RuleError("Keep the note under 2,000 characters.");
+    item2.note = change.note.trim();
+  }
+  if (change.done !== void 0 && change.done !== item2.done) {
+    item2.done = change.done;
+    item2.doneAt = change.done ? nowStamp() : null;
+    item2.doneById = change.done ? actor.personId : null;
+  }
+  item2.updatedAt = nowStamp();
+  logAudit(
+    actor,
+    "checklist",
+    item2.ownerType === "session" ? "session" : "record",
+    item2.ownerId,
+    `${item2.label}${change.done === void 0 ? "" : item2.done ? ": done" : ": not done"}`
+  );
+  commit();
+  return item2;
+}
+
+// src/services/checks.ts
+var projectOf3 = (id2) => {
+  const r = getRecord(id2);
+  return r?.workflow ? r : void 0;
+};
+function projectFor2(ownerId) {
+  const direct = projectOf3(ownerId);
+  if (direct) return direct;
+  const session = getSession(ownerId);
+  if (session) return projectOf3(session.contentId);
+  const ep = getRecord(ownerId);
+  if (ep?.episode && ep.parentId) return projectOf3(ep.parentId);
+  const sheet = getDb().callSheets.find((c) => c.id === ownerId);
+  if (sheet) {
+    const s2 = getDb().recordingSessions.find((x) => x.callSheetId === sheet.id);
+    return s2 ? projectOf3(s2.contentId) : projectOf3(sheet.contentId);
+  }
+  return void 0;
+}
+function finish(ownerId, projectId, items) {
+  const dismissed = projectOf3(projectId)?.workflow.dismissedChecks ?? {};
+  for (const i of items) if (i.group === "suggestion") i.dismissed = dismissed[`${ownerId}|${i.key}`] ?? null;
+  return {
+    ownerId,
+    projectId,
+    required: items.filter((i) => i.group === "required" && !i.done),
+    suggestions: items.filter((i) => i.group === "suggestion" && !i.done && !i.dismissed),
+    completed: items.filter((i) => i.done || !!i.dismissed)
+  };
+}
+var fromText = (text4, group, prefix) => {
+  const [head, ...rest] = text4.split(": ");
+  const split = rest.length > 0 && head.length <= 40;
+  return {
+    key: `${prefix}:${text4}`,
+    group,
+    label: split ? head : text4,
+    reason: split ? rest.join(": ") : "",
+    done: false,
+    go: goForText(text4)
+  };
+};
+function manualRows(list, ownerId, auto = {}) {
+  const def = CHECKLISTS[list];
+  const stored = checklistItems(list, ownerId);
+  return def.items.map((i) => {
+    const row = stored.find((c) => c.itemKey === i.key);
+    const a = auto[i.key];
+    return {
+      key: `${list}:${i.key}`,
+      group: i.required ? "required" : "suggestion",
+      label: i.label,
+      reason: i.auto ? a?.[1] ?? "Done by the app" : row?.note ?? "",
+      done: i.auto ? !!a?.[0] : !!row?.done,
+      go: null,
+      manual: { list, ownerId, itemKey: i.key, note: row?.note ?? "", auto: !!i.auto }
+    };
+  });
+}
+var MANUAL_PREFIX = {
+  "Pre-production": "preProject",
+  Session: "preSession",
+  Wrap: "wrap",
+  "Release plan": "release"
+};
+function asManual(text4, group, owners) {
+  const at = text4.indexOf(": ");
+  const list = at > 0 ? MANUAL_PREFIX[text4.slice(0, at)] : void 0;
+  if (!list) return null;
+  const def = CHECKLISTS[list];
+  const ownerId = def.owner === "project" ? owners.project : def.owner === "session" ? owners.session : owners.episode;
+  const key2 = def.items.find((i) => i.label === text4.slice(at + 2) && !i.auto)?.key;
+  if (!ownerId || !key2) return null;
+  const row = manualRows(list, ownerId).find((r) => r.manual?.itemKey === key2);
+  return row ? { ...row, group } : null;
+}
+function theologyItem(p) {
+  if (!hasTheologicalReview(p) || theologyStatus(p.contentId).done) return [];
+  return [
+    {
+      key: "theology",
+      group: "suggestion",
+      label: "Theological review not done",
+      reason: theologyStatus(p.contentId).detail,
+      done: false,
+      go: { doc: { stage: "Development", key: "theological_review" } }
+    }
+  ];
+}
+function projectChecks(projectId) {
+  const p = projectOf3(projectId);
+  if (!p) return finish(projectId, projectId, []);
+  const items = [];
+  if (p.workflow.stage === "Development") {
+    const brief = briefKeyOf(p.workflow.formType);
+    for (const g of hardGates(projectId)) {
+      const go = GATE_GO[g.key] ?? null;
+      items.push({
+        key: `gate:${g.key}`,
+        group: "required",
+        label: g.label,
+        reason: g.override ? `Passed by hand: ${g.override.note}` : g.detail,
+        done: g.met || !!g.override,
+        go: go?.doc?.key === "brief" ? { doc: { stage: "Development", key: brief } } : go,
+        gate: { key: g.key, overridable: g.overridable, override: g.override }
+      });
+    }
+    items.push(
+      ...manualRows("handoff", projectId, {
+        producer_named: [!!p.workflow.showProducerId, p.workflow.showProducerId ? "Named" : "Named with the greenlight"],
+        project_created: [true, p.contentId]
+      }).map((i) => ({ ...i, group: "suggestion" }))
+    );
+    for (const n of softNudges(projectId))
+      if (!n.startsWith("Handoff:")) items.push({ ...fromText(n, "suggestion", "nudge"), label: n, reason: "" });
+  } else if (p.workflow.stage === "Pre-production" && !p.archived) {
+    const gate = evaluateGate("Pre-production", "project", projectId);
+    for (const m of gate.missing) if (!m.startsWith("Pre-production: ")) items.push(fromText(m, "required", "need"));
+    for (const w of gate.warnings) items.push(fromText(w, "suggestion", "warn"));
+    const roles2 = getDb().projectRoles.filter((r) => r.contentId === projectId);
+    items.push(
+      ...manualRows("preProject", projectId, {
+        roles_assigned: [roles2.length > 0 && !gate.missing.some((m) => m.startsWith("Role")), "From the Recording Plan's roles"]
+      })
+    );
+  }
+  items.push(...theologyItem(p));
+  return finish(projectId, projectId, items);
+}
+function sessionChecks(sessionId) {
+  const s2 = getSession(sessionId);
+  const p = s2 ? projectOf3(s2.contentId) : void 0;
+  if (!s2 || !p) return finish(sessionId, s2?.contentId ?? sessionId, []);
+  const items = [];
+  if (s2.status !== "Closed" && !s2.archivedAt) {
+    const gate = evaluateGate(s2.status === "Planned" ? "Pre-production" : "Production", "session", sessionId);
+    const owners = { project: p.contentId, session: sessionId };
+    for (const m of gate.missing) items.push(asManual(m, "required", owners) ?? fromText(m, "required", "need"));
+    for (const w of gate.warnings) items.push(asManual(w, "suggestion", owners) ?? fromText(w, "suggestion", "warn"));
+  }
+  items.push(...theologyItem(p));
+  return finish(sessionId, p.contentId, items);
+}
+function recordingLogChecks(sessionId) {
+  const s2 = getSession(sessionId);
+  if (!s2) return finish(sessionId, sessionId, []);
+  const storage = storageWarnings(sessionId);
+  const mine = (t2) => /^No take mark for|^At least one item recorded/.test(t2) || storage.includes(t2);
+  const items = [];
+  if (s2.status === "Open" && !s2.archivedAt) {
+    const gate = evaluateGate("Production", "session", sessionId);
+    for (const m of gate.missing) if (mine(m)) items.push(fromText(m, "required", "need"));
+    for (const w of gate.warnings) if (mine(w)) items.push(fromText(w, "suggestion", "warn"));
+  } else for (const w of storage) items.push(fromText(w, "suggestion", "warn"));
+  return finish(sessionId, s2.contentId, items);
+}
+function episodeChecks(episodeId) {
+  const ep = getRecord(episodeId);
+  const p = ep?.parentId ? projectOf3(ep.parentId) : void 0;
+  if (!ep?.episode || !p) return finish(episodeId, p?.contentId ?? episodeId, []);
+  const items = [];
+  const info = ep.episode;
+  const stage = info.mdStage === "Published" ? null : info.stage === "Post production" ? info.postStage === "Editing" ? "Editing" : info.postStage === "Approved" || info.postStage === "Rough cut review" || info.postStage === "Final review" ? "Post production" : null : "Marketing and distribution";
+  if (stage) {
+    const gate = evaluateGate(stage, "episode", episodeId);
+    const owners = { project: p.contentId, episode: episodeId };
+    for (const m of gate.missing) items.push(asManual(m, "required", owners) ?? fromText(m, "required", "need"));
+    for (const w of gate.warnings) items.push(fromText(w, "suggestion", "warn"));
+  }
+  items.push(...theologyItem(p));
+  return finish(episodeId, p.contentId, items);
+}
+function callSheetChecks(sheetId) {
+  const cs = getDb().callSheets.find((c) => c.id === sheetId);
+  if (!cs) return finish(sheetId, sheetId, []);
+  const p = projectFor2(sheetId);
+  const items = sheetWarnings(cs, todayIso()).map((w) => ({
+    key: `sheet:${w.section}:${w.text}`,
+    group: "suggestion",
+    label: w.text.replace(/\.$/, ""),
+    reason: "",
+    done: false,
+    go: { anchor: `sec-${w.section}` }
+  }));
+  return finish(sheetId, p?.contentId ?? cs.contentId, items);
+}
+function checksSummary(c) {
+  if (!c.required.length && !c.suggestions.length) return "All clear";
+  const parts = [];
+  if (c.required.length) parts.push(`${c.required.length} required`);
+  if (c.suggestions.length) parts.push(`${c.suggestions.length} suggestion${c.suggestions.length === 1 ? "" : "s"}`);
+  return parts.join(", ");
+}
+function dismissCheck(actor, ownerId, key2, note = "") {
+  const p = projectFor2(ownerId);
+  if (!p) throw new RuleError("That check's project no longer exists.");
+  projectForWrite(actor, p.contentId);
+  const text4 = note.trim();
+  if (text4.length > 300) throw new RuleError("Keep the note under 300 characters.");
+  p.workflow.dismissedChecks = {
+    ...p.workflow.dismissedChecks ?? {},
+    [`${ownerId}|${key2}`]: { note: text4, byPersonId: actor.personId, at: (/* @__PURE__ */ new Date()).toISOString() }
+  };
+  p.version += 1;
+  logAudit(actor, "check-dismiss", "record", p.contentId, `${key2.replace(/^[a-z]+:/, "")}${text4 ? `: ${text4}` : ""}`);
+  commit();
+}
+function restoreCheck(actor, ownerId, key2) {
+  const p = projectFor2(ownerId);
+  if (!p) throw new RuleError("That check's project no longer exists.");
+  projectForWrite(actor, p.contentId);
+  const next2 = { ...p.workflow.dismissedChecks ?? {} };
+  delete next2[`${ownerId}|${key2}`];
+  p.workflow.dismissedChecks = next2;
+  p.version += 1;
+  logAudit(actor, "check-restore", "record", p.contentId, key2.replace(/^[a-z]+:/, ""));
+  commit();
+}
+function setCheck(actor, list, ownerId, itemKey, change) {
+  const def = CHECKLISTS[list];
+  const item2 = def.items.find((i) => i.key === itemKey);
+  if (!item2 || item2.auto) throw new RuleError("That check is worked out by the app.");
+  if (def.owner === "project") projectForWrite(actor, ownerId);
+  ensureChecklist(list, def.owner, ownerId);
+  return setChecklistItem(actor, `${ownerId}|${def.stage}|${itemKey}`, change);
+}
+var acceptsAtDevelopment = (p) => catalogTypeOf(p.workflow.formType) === "devotion";
+
 // src/services/documents.ts
 var documents_exports = {};
 __export(documents_exports, {
@@ -15832,103 +16220,6 @@ __export(workflow_exports, {
   updateSession: () => updateSession
 });
 
-// src/services/workflow/team.ts
-function assignRole(actor, projectId, roleKey2, who) {
-  const p = projectForWrite(actor, projectId);
-  if (!canManageTeam(actor, p))
-    throw new RuleError(
-      `Only the show producer, the Head of Production, or someone given "Assign other people's work", can assign roles.`
-    );
-  const def = PROJECT_ROLE_DEFS.find((r) => r.key === roleKey2);
-  if (!def) throw new RuleError("That is not a project role.");
-  if (p.workflow.stage !== "Pre-production")
-    throw new RuleError("Roles are assigned at Pre-production, once the project is greenlit and handed off.");
-  const crewId = who.crewId || null;
-  const guestName = (who.guestName ?? "").trim();
-  if (def.exclusive && !crewId) throw new RuleError(`Choose who is the ${def.label.toLowerCase()} from the crew list.`);
-  if (crewId && guestName) throw new RuleError("Choose someone on the crew list, or type the name of someone outside it, not both.");
-  if (!crewId && !guestName) throw new RuleError("Choose someone on the crew list, or type the name of someone outside it.");
-  if (crewId) requireCrew(crewId, def.label);
-  if (guestName.length > 120) throw new RuleError("That name is too long.");
-  const db2 = getDb();
-  const at = nowStamp();
-  if (def.exclusive) {
-    const id2 = `${projectId}|${roleKey2}`;
-    const existing = db2.projectRoles.find((r) => r.id === id2);
-    if (existing) {
-      Object.assign(existing, { crewId, assignedById: actor.personId, assignedAt: at, updatedAt: at });
-      joinProject(actor, crewId, p);
-      logAudit(actor, "role", "record", projectId, `${def.label}: ${getPerson(crewId)?.name ?? crewId}`);
-      commit();
-      return existing;
-    }
-  } else {
-    const same = db2.projectRoles.find(
-      (r) => r.contentId === projectId && r.roleKey === roleKey2 && (crewId && r.crewId === crewId || guestName && r.guestName.toLowerCase() === guestName.toLowerCase())
-    );
-    if (same) throw new RuleError(`${crewId ? getPerson(crewId)?.name : guestName} is already a host or guest on this project.`);
-  }
-  const role = {
-    id: def.exclusive ? `${projectId}|${roleKey2}` : `${projectId}|${roleKey2}|${localId("G", (x) => db2.projectRoles.some((r) => r.id.endsWith(`|${x}`)))}`,
-    contentId: projectId,
-    roleKey: roleKey2,
-    exclusive: def.exclusive,
-    crewId,
-    guestName: crewId ? "" : guestName,
-    assignedById: actor.personId,
-    assignedAt: at,
-    createdAt: at,
-    updatedAt: at
-  };
-  db2.projectRoles.push(role);
-  if (crewId) joinProject(actor, crewId, p);
-  logAudit(actor, "role", "record", projectId, `${def.label}: ${crewId ? getPerson(crewId)?.name ?? crewId : guestName}`);
-  commit();
-  return role;
-}
-function removeRole(actor, roleId) {
-  const db2 = getDb();
-  const role = db2.projectRoles.find((r) => r.id === roleId);
-  if (!role) throw new RuleError("That role is no longer assigned.");
-  const p = projectForWrite(actor, role.contentId);
-  if (!canManageTeam(actor, p))
-    throw new RuleError(
-      `Only the show producer, the Head of Production, or someone given "Assign other people's work", can change roles.`
-    );
-  db2.projectRoles = db2.projectRoles.filter((r) => r.id !== roleId);
-  logAudit(actor, "role-remove", "record", role.contentId, roleName(role));
-  commit();
-}
-function setChecklistItem(actor, itemId, change) {
-  const item2 = getDb().workflowChecklistItems.find((c) => c.id === itemId);
-  if (!item2) throw new RuleError("Checklist item not found.");
-  if (item2.ownerType === "project") projectForWrite(actor, item2.ownerId);
-  else if (item2.ownerType === "episode") episodeForWrite(actor, item2.ownerId);
-  else {
-    const { session } = sessionForWrite(actor, item2.ownerId);
-    if (session.status === "Closed") throw new RuleError("This session is closed. Reopen it to change its checklists.");
-  }
-  if (change.note !== void 0) {
-    if (change.note.length > 2e3) throw new RuleError("Keep the note under 2,000 characters.");
-    item2.note = change.note.trim();
-  }
-  if (change.done !== void 0 && change.done !== item2.done) {
-    item2.done = change.done;
-    item2.doneAt = change.done ? nowStamp() : null;
-    item2.doneById = change.done ? actor.personId : null;
-  }
-  item2.updatedAt = nowStamp();
-  logAudit(
-    actor,
-    "checklist",
-    item2.ownerType === "session" ? "session" : "record",
-    item2.ownerId,
-    `${item2.label}${change.done === void 0 ? "" : item2.done ? ": done" : ": not done"}`
-  );
-  commit();
-  return item2;
-}
-
 // src/services/workflow/checkpoints.ts
 var requireCheckpoint = (id2) => {
   const c = getDb().reviewCheckpoints.find((x) => x.id === id2);
@@ -16214,6 +16505,11 @@ var RPC_NAMES = {
     "resolveMismatches",
     "updateCallSheet",
     "updateRunItem"
+  ],
+  "checks": [
+    "dismissCheck",
+    "restoreCheck",
+    "setCheck"
   ],
   "content": [
     "addComment",
@@ -17171,6 +17467,15 @@ var ACTIONS = {
     }).partial().required({ allocationId: true, category: true, title: true, start: true })
   ]),
   "workflow.setReviewedBeforeSystem": args([id, z2.boolean()]),
+  // The Checks panel (build prompt v4, section 14A): a suggestion set aside or brought back, a manual check ticked
+  "checks.dismissCheck": args([id, short(400)], [short(300)]),
+  "checks.restoreCheck": args([id, short(400)]),
+  "checks.setCheck": args([
+    z2.enum(["handoff", "preProject", "preSession", "wrap", "post", "release"]),
+    id,
+    short(60),
+    z2.object({ done: z2.boolean(), note: text3(2e3) }).partial()
+  ]),
   // Post production, and Marketing and distribution
   "workflow.setEpisodeEditor": args([id, ref.nullable()]),
   "workflow.setEpisodeLinks": args([id, z2.object({ reviewLink: webLink, finalFileLink: webLink }).partial()]),
@@ -17238,6 +17543,7 @@ var ACTIONS = {
 var modules = {
   alerts: alerts_exports,
   callsheets: callsheets_exports,
+  checks: checks_exports,
   content: content_exports,
   docs: docs_exports,
   documents: documents_exports,

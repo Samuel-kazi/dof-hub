@@ -29,6 +29,7 @@ import { PlanSectionView, planCards, type PlanSection } from "./RecordingPlan";
 import { DaySheetForm, EpisodeStrip, SessionPicker, defaultSession, formCards } from "./StagePanes";
 import { usePrintDocument } from "./printDocument";
 import { ReviewNotDone } from "../../ui/ReviewCheck";
+import { onOpenDoc, takePendingDoc } from "../../ui/checksNav";
 
 // A project's documents (the documents rework), StudioBinder style. Project Home has one coloured row per stage, each
 // with tiles: a document, a tool (Storyboard, Shot List) or a form. A tile opens full width, in three panes: the
@@ -460,6 +461,14 @@ export function ProjectDocuments({ project, write }: { project: Project; write: 
       editor.current = null;
       setOpened({ stage, key });
     });
+  // The Checks panel's "Go to" opens a document here, also when it was pressed on another page before this one opened.
+  const latest = useRef(open);
+  latest.current = open;
+  useEffect(() => {
+    const asked = takePendingDoc(project.contentId);
+    if (asked) latest.current(asked.stage, asked.key);
+    return onOpenDoc(project.contentId, (stage, key) => latest.current(stage, key));
+  }, [project.contentId]);
   // While the theological review is not done, the project says so above its home and every document.
   const due = (
     <ReviewNotDone
