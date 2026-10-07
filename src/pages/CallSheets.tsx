@@ -26,6 +26,7 @@ import { nameOf } from "../services/wrapped/people";
 import { addDaysIso, dateInNairobi, fmtDate, fmtDateTime, relativeDays, todayIso } from "../services/utils";
 import { sheetWarnings, gearSuggestions } from "../services/sheetAdvice";
 import { ChecksPanel } from "../ui/ChecksPanel";
+import { NotReturnedBanner, RehearsalSteps, TechCheckTable } from "./production/LiveTools";
 import { pipelineCategories } from "../services/wrapped/settings";
 import { changesOf, confirmationHolds } from "../services/sheetTracking";
 import { canKeepLocations, createLocation, listLocations } from "../services/wrapped/locations";
@@ -638,6 +639,7 @@ export function CallSheetBody({
           </div>
         </div>
       )}
+      <NotReturnedBanner sheetId={cs.id} />
       {day?.instance && <InstanceStrip day={day} write={write} />}
       {mine && (
         <div className={`banner ${confirm.of(actor.personId).confirmed ? "ok" : "accent"} no-print`} role="status">
@@ -783,8 +785,28 @@ export function CallSheetBody({
       ) : (
         <RunOfShowSection {...props} required={runOfShowRequired(cs)} live={root?.category === "live"} />
       )}
-      <TechnicalCheckSection {...tickProps} editable={editable} onChange={save} canTick tickable={editable} />
-      <RehearsalSection {...tickProps} editable={editable} onChange={save} canTick tickable={editable} />
+      {root.category === "live" ? (
+        // A live day's Tech Check and Rehearsal Log (build prompt v4, section 9): the same as their tiles in Pre-production.
+        <>
+          <Section id="technicalCheck" title="Tech Check" warn={warnOf("technicalCheck")}>
+            <TechCheckTable cs={cs} />
+          </Section>
+          <Section id="rehearsal" title="Rehearsal Log">
+            <RehearsalSteps cs={cs} />
+            {(cs.rehearsal.time || cs.rehearsal.notes) && (
+              <p className="muted">
+                Rehearsal{cs.rehearsal.time ? ` at ${cs.rehearsal.time}` : ""}
+                {cs.rehearsal.notes ? `: ${cs.rehearsal.notes}` : ""}
+              </p>
+            )}
+          </Section>
+        </>
+      ) : (
+        <>
+          <TechnicalCheckSection {...tickProps} editable={editable} onChange={save} canTick tickable={editable} />
+          <RehearsalSection {...tickProps} editable={editable} onChange={save} canTick tickable={editable} />
+        </>
+      )}
       {(cs.sharedAt || cs.changeLog.length > 0) && <ChangeLog cs={cs} />}
 
       {!embedded && (

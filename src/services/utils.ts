@@ -16,6 +16,15 @@ export const dateInNairobi = (at: Date): string => {
   return `${part("year")}-${part("month")}-${part("day")}`;
 };
 
+const nairobiClock = new Intl.DateTimeFormat("en-GB", { timeZone: TIME_ZONE, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+
+/** The time in Nairobi at a given moment, as HH:MM (a live show's actual start and end). */
+export const timeInNairobi = (at: Date): string => {
+  const parts = nairobiClock.formatToParts(at);
+  const part = (type: string) => parts.find((p) => p.type === type)?.value ?? "00";
+  return `${part("hour")}:${part("minute")}`;
+};
+
 /** Today's date in Nairobi. */
 export const todayIso = (): string => dateInNairobi(new Date());
 

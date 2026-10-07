@@ -7,6 +7,7 @@ import * as documents from "../src/services/documents";
 import * as equipment from "../src/services/equipment";
 import * as kits from "../src/services/kits";
 import * as lending from "../src/services/lending";
+import * as live from "../src/services/live";
 import * as locations from "../src/services/locations";
 import * as people from "../src/services/people";
 import * as permissions from "../src/services/permissions";
@@ -29,6 +30,7 @@ const modules: Record<string, Record<string, unknown>> = {
   equipment,
   kits,
   lending,
+  live,
   locations,
   people,
   permissions,

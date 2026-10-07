@@ -15,6 +15,7 @@ import {
 } from "../../services/wrapped/documents";
 import { sessionsOf, type Project } from "../../services/wrapped/workflow";
 import { useApp } from "../../ui/AppContext";
+import { fmtDate } from "../../services/utils";
 import { Empty } from "../../ui/parts";
 import { IconBack, IconCalendar, IconCam, IconCheck, IconDoc, IconDrive, IconFilm, IconSheet, IconUsers } from "../../ui/Icons";
 import { DecisionHistory, DecisionPanel } from "../workflow/Development";
@@ -183,6 +184,39 @@ function GreenlightPanel({ project, write }: { project: Project; write: boolean 
       </section>
       <DevelopmentGate project={project} write={write} />
     </div>
+  );
+}
+
+// ── A live show's Show Plan: its show date and producer in its header ──
+
+/** The show date (from Show Days) and the show producer, at the top of a live show's Show Plan (build prompt v4, 9). */
+function ShowPlanHeader({ project, onShowDays }: { project: Project; onShowDays: () => void }) {
+  const dates = sessionsOf(project.contentId)
+    .filter((s) => !s.archivedAt && s.scheduledDate)
+    .map((s) => s.scheduledDate!)
+    .sort();
+  return (
+    <section className="pd-greenlight" aria-label="Show date and producer">
+      <div className="row" style={{ alignItems: "end" }}>
+        <div className="grow">
+          <span className="muted">Show date</span>
+          <div>
+            {dates.length ? (
+              <b>
+                {fmtDate(dates[0])}
+                {dates.length > 1 ? ` to ${fmtDate(dates[dates.length - 1])}, ${dates.length} days` : ""}
+              </b>
+            ) : (
+              <span>Not set yet</span>
+            )}{" "}
+            <button className="btn small ghost" onClick={onShowDays}>
+              Show Days
+            </button>
+          </div>
+        </div>
+      </div>
+      <ProducerField project={project} />
+    </section>
   );
 }
 
@@ -397,6 +431,9 @@ function DocumentView({
                 {doc.docKey === "devotional_script" && <SharedTheme project={project} />}
                 {reviewEntry && <ReviewBanner doc={doc} write={write} />}
                 {opened.key === "greenlight" && <GreenlightPanel project={project} write={write} />}
+                {opened.key === "event_brief" && project.category === "live" && (
+                  <ShowPlanHeader project={project} onShowDays={() => onOpen("Development", "show_days")} />
+                )}
                 {page && fieldsPage?.fields && page.id === fieldsTarget?.id && (
                   <FormFields
                     project={project}

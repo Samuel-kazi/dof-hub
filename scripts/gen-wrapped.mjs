@@ -20,6 +20,7 @@ const MODULES = [
   "equipment",
   "kits",
   "lending",
+  "live",
   "locations",
   "people",
   "permissions",

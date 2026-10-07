@@ -158,6 +158,13 @@ export const RPC_NAMES: Record<string, string[]> = {
     "returnLoanItems",
     "updateLoan"
   ],
+  "live": [
+    "advanceRundown",
+    "copyRundownToDays",
+    "copyTechCheckFromPrevious",
+    "setLiveLight",
+    "setRundown"
+  ],
   "locations": [
     "archiveLocation",
     "canKeepLocations",

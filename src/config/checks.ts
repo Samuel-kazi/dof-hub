@@ -27,6 +27,7 @@ export const TEXT_GO: { match: RegExp; go: CheckGo }[] = [
   { match: /^Roles?\b|needs a person|^A show producer/, go: { doc: { stage: "Pre-production", key: "recording_plan" } } },
   { match: /not assigned to a session|planned for this session/, go: { doc: { stage: "Pre-production", key: "recording_plan" } } },
   { match: /Second greenlight/, go: { doc: { stage: "Development", key: "greenlight" } } },
+  { match: /^Tech Check/, go: { doc: { stage: "Pre-production", key: "tech_check" } } },
   { match: /call sheet|Call sheet|Gear/, go: { anchor: "session-call-sheet" } },
   { match: /session's date|The session's date/, go: { anchor: "recording-day" } },
   { match: /drive|backup|offloaded|offline|full$/, go: { anchor: "rl-storage" } },

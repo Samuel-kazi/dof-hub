@@ -155,6 +155,9 @@ export interface ProductionInfo {
   mode: ProductionMode;
   templateId: string | null; // recurring: its Show Template
   eventPlan: EventPlan | null; // multi-day: the plan for the whole event
+  // The Broadcast Plan's Rundown (build prompt v4, section 9): the segments every day starts from, copied to the days.
+  // A recurring show's rundown is its template's run of show.
+  rundown?: RunItem[];
 }
 
 export interface EventPlan {
@@ -195,8 +198,26 @@ export interface RecurrenceRule {
 export interface CheckItem {
   id: string;
   label: string;
-  done: boolean;
+  done: boolean; // checked and fine: the same as state "OK"
   note: string;
+  // A live show's Tech Check (build prompt v4, section 9): who checks it, how it stands, the inventory item it is, and
+  // what the test showed. A line without a state reads its tick: done is OK, not done is Not checked.
+  state?: CheckState;
+  assigneeId?: string | null;
+  equipmentId?: string | null;
+  result?: string;
+}
+
+export type CheckState = "Not checked" | "OK" | "Issue";
+
+/** A step of a live show's Rehearsal Log: when it was checked, by whom, and notes. Never a gate. */
+export interface RehearsalStep {
+  id: string;
+  step: string; // Setup, Line check, Camera check…
+  time: string; // HH:MM it was checked, or empty
+  personId: string | null;
+  notes: string;
+  done: boolean;
 }
 
 /** Someone who appears: a host, guest, speaker or performer. Free text, so outside talent needs no account. */
@@ -230,6 +251,7 @@ export interface Rehearsal {
   time: string; // HH:MM, or empty
   notes: string;
   done: boolean;
+  steps?: RehearsalStep[]; // a live show's Rehearsal Log (data version 24)
 }
 
 /** A quantity of an item to book. */
@@ -499,7 +521,14 @@ export interface RecordingSession {
   attendees?: string[] | null; // crew Person IDs; null or absent: the call sheet's crew
   attendeesNote?: string; // others who attended, as text
   issues?: string; // carried into the project's Edit Notes when the session closes
+  // A live day's Live Control (build prompt v4, section 9b): status lights set by hand on the night.
+  liveLights?: Partial<Record<LiveLightKey, LiveLightState>>;
+  liveLightsAt?: string | null;
+  liveLightsBy?: string | null;
 }
+
+export type LiveLightKey = "cameras" | "audio" | "stream" | "graphics" | "recording" | "comms" | "internet";
+export type LiveLightState = "off" | "ok" | "watch" | "down";
 
 export type LogStatus = "Recorded" | "Pickup needed" | "Not recorded"; // shown as the take marks Good, Pickup needed, Re-record
 

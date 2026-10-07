@@ -34,6 +34,7 @@ import { Modal } from "../../ui/Modal";
 import { DateShift } from "../../ui/DateShift";
 import { CrewSelect, GatePanel } from "../../ui/workflow/shared";
 import { ChecksPanel } from "../../ui/ChecksPanel";
+import { NotReturnedBanner } from "../production/LiveTools";
 import { ConfigChecklist, useDraft, useReason } from "./common";
 import { focusNext, useFocusRow } from "../../ui/keys";
 import { askIfScheduling, useReviewCheck } from "../../ui/ReviewCheck";
@@ -493,6 +494,11 @@ export function SessionPage({ id }: { id: string }) {
             {session.scheduledDate && <span className="muted">{fmtDate(session.scheduledDate)}</span>}
           </div>
         </div>
+        {live && sheet && !session.archivedAt && session.status !== "Closed" && (
+          <button className="btn" onClick={() => go({ n: "livecontrol", id })}>
+            Live Control
+          </button>
+        )}
         {canWrite(actor, p) && !p.archived && p.workflow.stage === "Pre-production" && !live && (
           <button className="btn" onClick={() => setDuplicating(true)}>
             Duplicate…
@@ -542,6 +548,7 @@ export function SessionPage({ id }: { id: string }) {
       )}
 
       {!session.archivedAt && <ChecksPanel kind="session" id={id} write={write} />}
+      {sheet && <NotReturnedBanner sheetId={sheet.id} />}
       {session.instance && <InstanceStrip day={session} write={write} />}
       <RecordingDay project={p} sessionId={id} editable={editable} />
 

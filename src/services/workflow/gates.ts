@@ -28,6 +28,7 @@ import { hardGatesMissing } from "../documents/gates";
 import { planLabels } from "../../config/documentCatalog";
 import { softNudges } from "../documents/nudges";
 import { storageWarnings } from "./recordingLog";
+import { checkStateOf } from "../../config/callSheet";
 import { isHistory } from "./history";
 
 // One function decides whether anything may move on: evaluateGate. Every Done button calls it and moves only if
@@ -110,6 +111,10 @@ function preProductionSessionGate(s: RecordingSession, p: Project): GateResult {
     if (!gear || gear.lines.length === 0) missing.push("Gear selected from the Equipment picker");
     missing.push(...gearIssues(sheet.id).map((g) => `Gear: ${g}`));
     if (sheet.status !== "final") missing.push(`Call sheet ${sheet.id} issued (final)`);
+    // A live show's Tech Check: issues are warnings, never a block (build prompt v4, section 9).
+    for (const c of sheet.technicalCheck)
+      if (checkStateOf(c) === "Issue")
+        warnings.push(`Tech Check: ${c.label} has an issue${c.note || c.result ? ` (${c.note || c.result})` : ""}`);
     if (s.scheduledDate && sheet.date !== s.scheduledDate)
       missing.push(`Call sheet ${sheet.id} is for ${sheet.date}, not the session's date, ${s.scheduledDate}`);
   }

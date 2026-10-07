@@ -13,7 +13,9 @@ import type {
 } from "../types";
 import { RuleError } from "../types";
 import {
-  DEFAULT_TECH_CHECK,
+  LIVE_TECH_CHECK,
+  REHEARSAL_STEPS,
+  blankStep,
   EVENT_PLAN_FIELDS,
   MODE_LABEL,
   SHEET_CONTENT_KEYS,
@@ -232,12 +234,25 @@ function bookIfDue(actor: Actor, cs: CallSheet, today: string): number {
   return r.booked.length;
 }
 
-/** What a new event's call sheets start with: its call time and place, and the usual technical check. */
+/**
+ * What a new event's call sheets start with: its call time and place, the live Tech Check (each line Not checked) and
+ * the Rehearsal Log's steps (build prompt v4, section 9).
+ */
 function startingContent(callTime: string, location: string): SheetContent {
   const c = blankSheetContent();
   c.callTime = callTime || "08:00";
   c.location = location.trim();
-  c.technicalCheck = DEFAULT_TECH_CHECK.map((label) => ({ id: localId("TC"), label, done: false, note: "" }));
+  c.technicalCheck = LIVE_TECH_CHECK.map((label) => ({
+    id: localId("TC"),
+    label,
+    done: false,
+    note: "",
+    state: "Not checked" as const,
+    assigneeId: null,
+    equipmentId: null,
+    result: "",
+  }));
+  c.rehearsal = { ...c.rehearsal, steps: REHEARSAL_STEPS.map((step) => blankStep(localId("RH"), step)) };
   return c;
 }
 
@@ -513,9 +528,19 @@ function applyTemplateTo(actor: Actor, t: ShowTemplate, day: RecordingSession, c
   const next = cloneContent(t.sheet);
   next.technicalCheck = next.technicalCheck.map((x) => {
     const old = before.get(x.label);
-    return old ? { ...x, done: old.done, note: old.note } : x;
+    return old
+      ? { ...x, done: old.done, note: old.note, ...(old.state ? { state: old.state } : {}), ...(old.result ? { result: old.result } : {}) }
+      : x;
   });
   next.rehearsal.done = cs.rehearsal.done;
+  // What was checked at each rehearsal step on the day stays with the day.
+  if (next.rehearsal.steps) {
+    const was = new Map((cs.rehearsal.steps ?? []).map((x) => [x.step, x]));
+    next.rehearsal.steps = next.rehearsal.steps.map((x) => {
+      const old = was.get(x.step);
+      return old ? { ...x, time: old.time, notes: old.notes, done: old.done, personId: old.personId ?? x.personId } : x;
+    });
+  }
   const m = manifestForSheet(cs.id);
   if (m && m.status === "assigned" && hasGearAccess(actor)) {
     for (const l of [...m.lines])

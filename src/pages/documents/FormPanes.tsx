@@ -13,6 +13,7 @@ import { PreProductionTab, RolesPanel } from "../workflow/PreProduction";
 import { EpisodeTracker } from "../workflow/EpisodeTracker";
 import { SessionStorage } from "../workflow/StorageFields";
 import { DevelopmentGate } from "./DevelopmentGate";
+import { LiveControlPane, RehearsalLogPane, TechCheckPane } from "../production/LiveTools";
 import { ShotListTool } from "./ShotLists";
 import { StoryboardTool } from "./Storyboards";
 import { ProductionPanel } from "../production/ProductionPanel";
@@ -231,6 +232,12 @@ export function FormPane({ project, entry, write }: { project: Project; entry: C
       return <SessionStorage project={project} write={write} />;
     case "recordingLog":
       return <RecordingLogPane project={project} write={write} />;
+    case "techCheck":
+      return <TechCheckPane project={project} />;
+    case "rehearsalLog":
+      return <RehearsalLogPane project={project} />;
+    case "liveControl":
+      return <LiveControlPane project={project} />;
     case "showDays":
       return (
         <div className="stack">

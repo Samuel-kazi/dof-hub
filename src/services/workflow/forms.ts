@@ -181,8 +181,9 @@ export const latestDecision = (form: DevelopmentForm, stage: 1 | 2): GreenlightD
 
 /** What stops "Greenlight" being chosen now, as sentences. */
 export function greenlightBlockers(project: Project, stage: 1 | 2): string[] {
-  // The first greenlight needs only the hard gates before the decision (src/services/documents/gates.ts).
-  if (stage === 1) return hardGatesMissing(project.contentId, ["greenlight"]);
+  // The first greenlight needs only the hard gates before the decision (src/services/documents/gates.ts). A live show's
+  // Greenlight is a document, not a gate: it can be recorded at any time (build prompt v4, section 9).
+  if (stage === 1) return project.category === "live" ? [] : hardGatesMissing(project.contentId, ["greenlight"]);
   // A DOF-made documentary's second greenlight, at Pre-production: its shot list. The shoot budget and interview sets
   // are written in its documents (the Documentary Brief's Ask, the Treatment's Interview guide).
   return openRequired("preProject", project.contentId).filter((l) => l.startsWith("Shot list"));

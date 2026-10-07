@@ -1,5 +1,5 @@
 import type { CallSheet, EquipCategoryKey, EquipmentItem } from "../types";
-import { CONFIRM_WARN_DAYS, MAIN_GEAR, ROLE_GEAR, type SheetSectionKey } from "../config/callSheet";
+import { CONFIRM_WARN_DAYS, MAIN_GEAR, ROLE_GEAR, checkStateOf, type SheetSectionKey } from "../config/callSheet";
 import { equipCategory } from "../config/equipment";
 import { getDb } from "../data/store";
 import { availabilityOn, getItem } from "./equipment-items";
@@ -37,6 +37,13 @@ export function sheetWarnings(cs: CallSheet, today: string): SheetWarning[] {
     const when = days === 0 ? "It is today" : days === 1 ? "It is tomorrow" : `${days} days to go`;
     out.push({ section: "crew", text: `${when} and ${waiting.length} not confirmed: ${waiting.map(nameOf).join(", ")}.` });
   }
+  // A live show's Tech Check: an issue is a warning, never a block (build prompt v4, section 9).
+  const issues = cs.technicalCheck.filter((c) => checkStateOf(c) === "Issue");
+  if (issues.length)
+    out.push({
+      section: "technicalCheck",
+      text: `Tech Check: ${issues.length === 1 ? "an issue" : `${issues.length} issues`} (${issues.map((c) => c.label).join(", ")}).`,
+    });
   return out;
 }
 

@@ -627,6 +627,50 @@ await t("every action accepts the arguments its screen sends", async () => {
   });
   await must("production.updateEventPlan", camp.contentId, { overview: "Camp meeting", accommodation: "Dorms" });
   await must("production.addEventDay", camp.contentId, "2026-12-03");
+  // Live Shows (build prompt v4, section 9): the Broadcast Plan's Rundown copied to the days, the Tech Check with its
+  // states copied from the previous show, the Rehearsal Log's steps, and Live Control on the night.
+  const rundown = [
+    {
+      id: "RS-bbbbbbbb",
+      time: "18:00",
+      title: "Worship",
+      durationMin: 20,
+      ownerPersonId: null,
+      notes: "",
+      camera: "Cam 1",
+      audio: "Choir mics",
+      graphics: "Lower third",
+    },
+    { id: "RS-cccccccc", time: "18:20", title: "Message", durationMin: 30, ownerPersonId: null, notes: "" },
+  ];
+  await must("live.setRundown", camp.contentId, rundown);
+  await must("live.copyRundownToDays", camp.contentId, true);
+  const campDays = ((await state()).recordingSessions as Json[]).filter((s) => s.contentId === camp.contentId);
+  const campSheet = ((await state()).callSheets as Json[]).find((c) => c.id === campDays[1].callSheetId)!;
+  await must("callsheets.updateCallSheet", campSheet.id, {
+    technicalCheck: [
+      {
+        id: "TC-bbbbbbbb",
+        label: "Cameras",
+        done: false,
+        note: "",
+        state: "Issue",
+        assigneeId: "DOF-P-CRW-001",
+        equipmentId: null,
+        result: "Cam 2 flickers",
+      },
+    ],
+    rehearsal: {
+      time: "",
+      notes: "",
+      done: false,
+      steps: [{ id: "RH-bbbbbbbb", step: "Line check", time: "17:00", personId: "DOF-P-CRW-001", notes: "", done: true }],
+    },
+  });
+  await must("live.copyTechCheckFromPrevious", ((await state()).callSheets as Json[]).find((c) => c.id === campDays[2].callSheetId)!.id);
+  await must("live.advanceRundown", campSheet.id, "next");
+  await must("live.advanceRundown", campSheet.id, "back");
+  await must("live.setLiveLight", campDays[1].id, "stream", "ok");
   await must("production.createProduction", { title: "Rally", mode: "one_time", date: "2026-11-14", productionLevel: "large" });
 
   // Call sheet improvements: saved locations, confirmations, and a session copied to another date.

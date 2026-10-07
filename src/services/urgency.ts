@@ -14,6 +14,7 @@ import { episodeOverdue } from "./workflow/gates";
 import { isHistory } from "./workflow/history";
 import { hasTheologicalReview, theologyStatus } from "./documents/theology";
 import { addDaysIso, fmtDate, todayIso } from "./utils";
+import { projectGearNotReturned } from "./live";
 
 // The urgency report (build prompt v2, section 12): each project gets a level, Critical, High, Watch or On track, and
 // the reasons in plain words, from fixed, transparent rules (no AI). The numbers the rules use are in settings
@@ -134,6 +135,16 @@ function workflowProjectRow(p: Project, now: string, t: UrgencyThresholds, today
       `${plural(dueSoon.length, "episode")} due within ${t.dueHours} hours.`,
       dueSoon[0].stageDeadlines[dueSoon[0].episode.stage],
     );
+  // Gear checked out for a day whose show is over and not brought back (build prompt v4, section 9).
+  const notBack = projectGearNotReturned(p.contentId, today);
+  if (notBack.length) {
+    const items = notBack.reduce((n, x) => n + x.items, 0);
+    f.add(
+      "High",
+      `Gear not returned: ${plural(items, "item")} from ${plural(notBack.length, "day")}, due back ${fmtDate(notBack[0].due)}.`,
+      notBack[0].due,
+    );
+  }
   if (quiet) return row(f, "project", p.contentId, p.title, p.category, `#/record/${p.contentId}`);
   const greenlit = p.workflow.stage === "Pre-production";
   // A project imported from before the system skipped its plan and greenlight: their absence is never a finding.

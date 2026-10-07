@@ -213,13 +213,24 @@ await t("a multi-day event: a live show with its first event, a day and call she
   assert.equal(daysOfEvent(event.contentId)[0].id, added.id);
   assert.deepEqual(
     catalogFor("live_event", "Development").map((e) => e.title),
-    ["Event Brief", "Theological Review", "Greenlight", "Show Days"],
+    ["Show Plan", "Theological Review", "Greenlight", "Show Days"],
+  );
+  assert.deepEqual(
+    catalogFor("live_event", "Pre-production").map((e) => e.title),
+    ["Broadcast Plan", "Tech Check", "Rehearsal Log", "Storyboard", "Shot List", "Gear", "Production Pack"],
   );
   assert.deepEqual(
     catalogFor("live_event", "Production").map((e) => e.title),
-    ["Show Day Sheet", "Show Log"],
+    ["Live Day", "Show Log", "Live Control"],
   );
-  assert.equal(D.hardGates(event.contentId)[0].label, "The logline and the purpose of the event written in the brief");
+  // Its gate is a show date and a producer; the Greenlight is a document, not a gate (build prompt v4, section 9).
+  assert.deepEqual(
+    D.hardGates(event.contentId).map((g) => [g.key, g.met]),
+    [
+      ["date", true],
+      ["producer", false],
+    ],
+  );
   throwsRule(() => W.createSession(hop(), event.contentId, { scheduledDate: start }), /Show Days/);
   ok();
 });
@@ -351,7 +362,19 @@ await t("the day's page: its show day, its run of show from its call sheet, the 
     assert.ok(page.includes(words), words);
   assert.ok(!page.includes("Recording session log"));
   const home = html(hop(), <WorkflowProjectPage project={event as Project} />);
-  for (const words of ["Live Show: Event", "Event Brief", "Show Days", "Show Day Sheet", "Show Log", "Recording Tracker", "Show Report"])
+  for (const words of [
+    "Live Show: Event",
+    "Show Plan",
+    "Show Days",
+    "Broadcast Plan",
+    "Tech Check",
+    "Rehearsal Log",
+    "Live Day",
+    "Show Log",
+    "Live Control",
+    "Recording Tracker",
+    "Production Report",
+  ])
     assert.ok(home.includes(words), words);
   ok();
 });

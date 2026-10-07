@@ -44,6 +44,19 @@ const staffCategory = z.enum(["CRW", "VOL", "PTR"]);
 const photo = z.object({ url, caption: short(500).optional() });
 const line = z.object({ equipmentId: id, quantity: count(100_000) });
 
+// A line of a technical check; a live show's Tech Check adds who checks it, its state, the gear and the test result.
+const checkLine = z.object({
+  id,
+  label: short(200),
+  done: z.boolean(),
+  note: text(1000),
+  state: z.enum(["Not checked", "OK", "Issue"]).optional(),
+  assigneeId: ref.nullable().optional(),
+  equipmentId: ref.nullable().optional(),
+  result: text(1000).optional(),
+});
+// A step of a live show's Rehearsal Log.
+const rehearsalStep = z.object({ id, step: short(120), time, personId: ref.nullable(), notes: text(1000), done: z.boolean() });
 // A call sheet's sections, as a sheet or a show template holds them (src/config/callSheet.ts). Every field optional:
 // a change sends only what changed. The services check the rest (times, crew, lengths).
 const runItem = z.object({
@@ -79,8 +92,8 @@ const sheetContent = z
     logistics: z.object({ transport: text(4000), parking: text(4000), meals: text(4000), accommodation: text(4000), other: text(4000) }),
     contacts: z.array(z.object({ id, name: short(120), role: short(120), phone: short(60), email: short(200) })).max(100),
     runOfShow: z.array(runItem).max(200),
-    technicalCheck: z.array(z.object({ id, label: short(200), done: z.boolean(), note: text(1000) })).max(100),
-    rehearsal: z.object({ time, notes: text(4000), done: z.boolean() }),
+    technicalCheck: z.array(checkLine).max(100),
+    rehearsal: z.object({ time, notes: text(4000), done: z.boolean(), steps: z.array(rehearsalStep).max(40).optional() }),
     plannedGear: z.array(line).max(200),
   })
   .partial();
@@ -796,6 +809,16 @@ export const ACTIONS: Record<string, ActionSpec> = {
   // The Checks panel (build prompt v4, section 14A): a suggestion set aside or brought back, a manual check ticked
   "checks.dismissCheck": args([id, short(400)], [short(300)]),
   "checks.restoreCheck": args([id, short(400)]),
+  // Live Shows: the Broadcast Plan's Rundown, the Tech Check, and Live Control on the night
+  "live.setRundown": args([id, z.array(runItem).max(200)]),
+  "live.copyRundownToDays": args([id], [z.boolean()]),
+  "live.copyTechCheckFromPrevious": args([id]),
+  "live.advanceRundown": args([id, z.enum(["next", "back"])]),
+  "live.setLiveLight": args([
+    id,
+    z.enum(["cameras", "audio", "stream", "graphics", "recording", "comms", "internet"]),
+    z.enum(["off", "ok", "watch", "down"]),
+  ]),
   "checks.setCheck": args([
     z.enum(["handoff", "preProject", "preSession", "wrap", "post", "release"]),
     id,

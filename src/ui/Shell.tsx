@@ -36,6 +36,7 @@ import { Avatar } from "./parts";
 import { Dashboard } from "../pages/Dashboard";
 import { Pipeline } from "../pages/Pipeline";
 import { RecordPage } from "../pages/RecordPage";
+import { LiveControlPage } from "../pages/production/LiveTools";
 import { SessionPage } from "../pages/workflow/SessionPage";
 import { ShowTemplatePage } from "../pages/production/ShowTemplatePage";
 import { CallSheets, CallSheetPage } from "../pages/CallSheets";
@@ -84,6 +85,7 @@ function moduleOfRoute(r: Route): ModuleKey {
     case "pipeline":
     case "record":
     case "session":
+    case "livecontrol":
     case "template":
       return "pipeline";
     case "callsheets":
@@ -448,6 +450,7 @@ export function Shell() {
             {route.n === "pipeline" && <Pipeline category={route.category} />}
             {route.n === "record" && <RecordPage id={route.id} />}
             {route.n === "session" && <SessionPage id={route.id} />}
+            {route.n === "livecontrol" && <LiveControlPage id={route.id} />}
             {route.n === "template" && <ShowTemplatePage id={route.id} />}
             {route.n === "callsheets" && <CallSheets />}
             {route.n === "callsheet" && <CallSheetPage id={route.id} />}

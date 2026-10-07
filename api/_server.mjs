@@ -1045,14 +1045,14 @@ var MongoAttempts = class {
     return this.out(await this.col.findOne({ _id: key2 }));
   }
   async charge(key2, now, windowMs) {
-    const fresh = { $or: [{ $eq: [{ $ifNull: ["$first", null] }, null] }, { $gt: [{ $subtract: [now, "$first"] }, windowMs] }] };
+    const fresh2 = { $or: [{ $eq: [{ $ifNull: ["$first", null] }, null] }, { $gt: [{ $subtract: [now, "$first"] }, windowMs] }] };
     const d = await this.col.findOneAndUpdate(
       { _id: key2 },
       [
         {
           $set: {
-            count: { $cond: [fresh, 1, { $add: [{ $ifNull: ["$count", 0] }, 1] }] },
-            first: { $cond: [fresh, now, "$first"] },
+            count: { $cond: [fresh2, 1, { $add: [{ $ifNull: ["$count", 0] }, 1] }] },
+            first: { $cond: [fresh2, now, "$first"] },
             lockedUntil: { $ifNull: ["$lockedUntil", 0] },
             _exp: { $max: [{ $ifNull: ["$_exp", /* @__PURE__ */ new Date(0)] }, new Date(now + windowMs)] }
           }
@@ -1341,6 +1341,12 @@ var dateInNairobi = (at) => {
   const part = (type) => parts.find((p) => p.type === type)?.value ?? "";
   return `${part("year")}-${part("month")}-${part("day")}`;
 };
+var nairobiClock = new Intl.DateTimeFormat("en-GB", { timeZone: TIME_ZONE, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+var timeInNairobi = (at) => {
+  const parts = nairobiClock.formatToParts(at);
+  const part = (type) => parts.find((p) => p.type === type)?.value ?? "00";
+  return `${part("hour")}:${part("minute")}`;
+};
 var todayIso = () => dateInNairobi(/* @__PURE__ */ new Date());
 var addDaysIso = (iso2, days) => {
   const [y, m, d] = iso2.slice(0, 10).split("-").map(Number);
@@ -1615,13 +1621,40 @@ var SHEET_CONTENT_KEYS = [
   "rehearsal",
   "plannedGear"
 ];
-var DEFAULT_TECH_CHECK = [
-  "Cameras: white balance, focus and sync",
-  "Audio: mic levels and backup recording",
-  "Lighting: set and checked on camera",
-  "Recording media and batteries",
-  "Stream or recording test",
-  "Power and backup"
+var LIVE_TECH_CHECK = [
+  "Cameras",
+  "Lenses",
+  "Tripods",
+  "Switcher",
+  "Audio console",
+  "Wireless mics",
+  "Comms",
+  "Lighting",
+  "Graphics",
+  "Playback",
+  "Internet",
+  "Streaming encoder",
+  "Recording",
+  "Backup recording"
+];
+var CHECK_STATES = ["Not checked", "OK", "Issue"];
+var checkStateOf = (c) => c.state ?? (c.done ? "OK" : "Not checked");
+var REHEARSAL_STEPS = ["Setup", "Line check", "Camera check", "Audio", "Lighting", "Graphics", "Full rehearsal", "Final sign-off"];
+var blankStep = (id2, step) => ({ id: id2, step, time: "", personId: null, notes: "", done: false });
+var LIVE_LIGHTS = [
+  { key: "cameras", label: "Cameras" },
+  { key: "audio", label: "Audio" },
+  { key: "stream", label: "Stream" },
+  { key: "graphics", label: "Graphics" },
+  { key: "recording", label: "Recording" },
+  { key: "comms", label: "Comms" },
+  { key: "internet", label: "Internet" }
+];
+var LIGHT_STATES = [
+  { key: "off", label: "Not set" },
+  { key: "ok", label: "OK" },
+  { key: "watch", label: "Watch" },
+  { key: "down", label: "Down" }
 ];
 var blankLogistics = () => ({ transport: "", parking: "", meals: "", accommodation: "", other: "" });
 var blankRehearsal = () => ({ time: "", notes: "", done: false });
@@ -2181,6 +2214,7 @@ var form = (key2, title2, tile, extra = {}) => ({
 var tool = (key2, title2, which) => ({ key: key2, title: title2, kind: "tool", tool: which });
 var review = (reviews) => ({ key: "theological_review", title: "Theological Review", kind: "review", reviews });
 var recordingPlan = doc("recording_plan", "Recording Plan", ["Cards", "Notes"], { plan: true });
+var broadcastPlan = doc("recording_plan", "Broadcast Plan", ["Cards", "Notes"], { plan: true });
 var planOrForms = () => [
   recordingPlan,
   tool("storyboard", "Storyboard", "storyboard"),
@@ -2261,31 +2295,39 @@ function musicCatalog(formType2) {
 }
 var liveCatalog = {
   Development: [
-    doc("event_brief", "Event Brief", [
-      { title: "The idea", fields: ideaFields("Purpose of the event") },
-      "Theme and scripture",
-      "Format and programme",
-      "Speakers and performers",
-      "Ask"
+    // The show date and producer are shown in its header; creative notes and logistics are pages inside it.
+    doc("event_brief", "Show Plan", [
+      { title: "Objective", fields: ideaFields("Purpose of the show") },
+      "Venue",
+      "Audience and streaming",
+      "Production type and duration",
+      { title: "Creative notes", body: "<p>Script, graphics, lower thirds, videos and promos.</p>" },
+      { title: "Logistics", body: "<p>Transport, accommodation, catering, power and internet.</p>" }
     ]),
     review("event_brief"),
     greenlight,
     form("show_days", "Show Days", "showDays")
   ],
-  // The Recording Plan holds the roles, the days and each day's call sheet and run of show.
+  // The Broadcast Plan holds the roles, the Rundown, the days and each day's call sheet and run of show.
   "Pre-production": [
-    doc("production_pack", "Production Pack", ["Stage and set design", "Technical plan", "Rehearsal notes"]),
-    ...planOrForms(),
-    form("gear", "Gear", "gear")
+    broadcastPlan,
+    form("tech_check", "Tech Check", "techCheck"),
+    form("rehearsal_log", "Rehearsal Log", "rehearsalLog"),
+    tool("storyboard", "Storyboard", "storyboard"),
+    tool("shot_list", "Shot List", "shotList"),
+    form("gear", "Gear", "gear"),
+    // Before data version 24 a show's Production Pack held its set and technical plan: kept where one was written.
+    doc("production_pack", "Production Pack", ["Stage and set design", "Technical plan", "Rehearsal notes"], { onlyIfMade: true })
   ],
   Production: [
     doc(
       "show_day_sheet",
-      "Show Day Sheet",
+      "Live Day",
       [{ title: "Run of show", form: "runSheet" }, "Show notes", { title: "Strike and wrap checklist", form: "wrapChecklist" }],
       { per: "session" }
     ),
-    form("recording_log", "Show Log", "recordingLog")
+    form("recording_log", "Show Log", "recordingLog"),
+    form("live_control", "Live Control", "liveControl")
   ],
   "Post production": [
     doc("edit_notes", "Edit Notes", ["Recording notes", "Clips to cut", "Graphics and music"]),
@@ -2295,7 +2337,7 @@ var liveCatalog = {
   "Marketing and distribution": [
     doc("release_plan", "Release Plan", ["Clips and highlights", "Platform plan"]),
     form("platform_status", "Platform Status", "platformStatus"),
-    doc("show_report", "Show Report", ["Attendance and reach", "What worked", "What to change"]),
+    doc("show_report", "Production Report", ["Attendance and reach", "What worked", "What to change", "Lessons learned"]),
     form("archive", "Archive", "archive")
   ]
 };
@@ -5367,8 +5409,18 @@ function cloneContent(src) {
   c.talent = c.talent.map((x) => ({ ...x, id: localId("TL") }));
   c.contacts = c.contacts.map((x) => ({ ...x, id: localId("CT") }));
   c.runOfShow = c.runOfShow.map((x) => ({ ...x, id: localId("RS") }));
-  c.technicalCheck = c.technicalCheck.map((x) => ({ ...x, id: localId("TC"), done: false, note: "" }));
-  c.rehearsal = { ...c.rehearsal, done: false };
+  c.technicalCheck = c.technicalCheck.map((x) => ({
+    ...x,
+    id: localId("TC"),
+    done: false,
+    note: "",
+    ...x.state !== void 0 ? { state: "Not checked", result: "" } : {}
+  }));
+  c.rehearsal = {
+    ...c.rehearsal,
+    done: false,
+    ...c.rehearsal.steps ? { steps: c.rehearsal.steps.map((x) => ({ ...x, id: localId("RH"), time: "", notes: "", done: false })) } : {}
+  };
   return c;
 }
 function applyContent(target, content) {
@@ -5380,10 +5432,17 @@ function onlyTicks(before, patch) {
     if (k === "technicalCheck") {
       const now = patch.technicalCheck;
       if (now.length !== before.technicalCheck.length) return false;
-      if (now.some((x, i) => x.id !== before.technicalCheck[i].id || x.label !== before.technicalCheck[i].label)) return false;
+      const was = before.technicalCheck;
+      if (now.some(
+        (x, i) => x.id !== was[i].id || x.label !== was[i].label || (x.assigneeId ?? null) !== (was[i].assigneeId ?? null) || (x.equipmentId ?? null) !== (was[i].equipmentId ?? null)
+      ))
+        return false;
     } else if (k === "rehearsal") {
       const r = patch.rehearsal;
       if (r.time !== before.rehearsal.time || r.notes !== before.rehearsal.notes) return false;
+      const now = r.steps ?? [];
+      const was = before.rehearsal.steps ?? [];
+      if (now.length !== was.length || now.some((x, i) => x.id !== was[i].id || x.step !== was[i].step)) return false;
     } else return false;
   }
   return true;
@@ -5423,6 +5482,22 @@ function checkItem(c) {
   if (!c.label.trim()) throw new RuleError("Give each line of the technical check a name.");
   checkText(c.label, "A line of the check", 200);
   checkText(c.note, "A note", 1e3);
+  if (c.state !== void 0 && !CHECK_STATES.includes(c.state)) throw new RuleError("A line of the check is Not checked, OK or Issue.");
+  if (c.result !== void 0) checkText(c.result, "A test result", 1e3);
+  if (c.assigneeId) checkPerson(c.assigneeId, "each line of the check");
+  if (c.equipmentId && !getDb().equipment.some((e) => e.id === c.equipmentId))
+    throw new RuleError("That equipment item is no longer in the inventory.");
+}
+function checkPerson(personId, what) {
+  const p = getDb().people.find((x) => x.personId === personId);
+  if (!p || p.status !== "active") throw new RuleError(`Choose an active person for ${what}.`);
+}
+function checkStep(r) {
+  if (!r.step.trim()) throw new RuleError("Give each rehearsal step a name.");
+  checkText(r.step, "A rehearsal step", 120);
+  checkTime(r.time, "time the step was checked");
+  checkText(r.notes, "Notes", 1e3);
+  if (r.personId) checkPerson(r.personId, "each rehearsal step");
 }
 function checkRun(i) {
   if (!TIME.test(i.time)) throw new RuleError("Enter each segment's start as hours and minutes, for example 09:30.");
@@ -5504,6 +5579,10 @@ function checkContent(patch, crewAfter) {
   if (patch.rehearsal !== void 0) {
     checkTime(patch.rehearsal.time, "rehearsal time");
     checkText(patch.rehearsal.notes, "Rehearsal notes", 4e3);
+    if (patch.rehearsal.steps !== void 0) {
+      checkRows(patch.rehearsal.steps, "rehearsal steps", 40);
+      patch.rehearsal.steps.forEach(checkStep);
+    }
   }
   if (patch.plannedGear !== void 0) {
     if (patch.plannedGear.length > 200) throw new RuleError("A sheet can plan up to 200 items of gear.");
@@ -5519,6 +5598,15 @@ function tidyContent(patch, current3) {
     const name = out.location ?? current3.location;
     const address = out.locationAddress ?? current3.locationAddress;
     if (!saved || saved.name !== name.trim() || saved.address !== address.trim()) out.locationId = null;
+  }
+  if (out.technicalCheck) {
+    const was = new Map(current3.technicalCheck.map((x) => [x.id, x]));
+    out.technicalCheck = out.technicalCheck.map((x) => {
+      if (!x.state) return x;
+      const before = was.get(x.id);
+      const ticked = !!before && x.done !== before.done && x.state === (before.state ?? (before.done ? "OK" : "Not checked"));
+      return ticked ? { ...x, state: x.done ? "OK" : "Not checked" } : { ...x, done: x.state === "OK" };
+    });
   }
   if (out.crewPersonIds) {
     const crew = new Set(out.crewPersonIds);
@@ -6181,7 +6269,17 @@ function startingContent(callTime, location) {
   const c = blankSheetContent();
   c.callTime = callTime || "08:00";
   c.location = location.trim();
-  c.technicalCheck = DEFAULT_TECH_CHECK.map((label) => ({ id: localId("TC"), label, done: false, note: "" }));
+  c.technicalCheck = LIVE_TECH_CHECK.map((label) => ({
+    id: localId("TC"),
+    label,
+    done: false,
+    note: "",
+    state: "Not checked",
+    assigneeId: null,
+    equipmentId: null,
+    result: ""
+  }));
+  c.rehearsal = { ...c.rehearsal, steps: REHEARSAL_STEPS.map((step) => blankStep(localId("RH"), step)) };
   return c;
 }
 function makeInstance(actor, event, t2, date2, today) {
@@ -6371,9 +6469,16 @@ function applyTemplateTo(actor, t2, day, cs, today) {
   const next2 = cloneContent(t2.sheet);
   next2.technicalCheck = next2.technicalCheck.map((x) => {
     const old = before.get(x.label);
-    return old ? { ...x, done: old.done, note: old.note } : x;
+    return old ? { ...x, done: old.done, note: old.note, ...old.state ? { state: old.state } : {}, ...old.result ? { result: old.result } : {} } : x;
   });
   next2.rehearsal.done = cs.rehearsal.done;
+  if (next2.rehearsal.steps) {
+    const was2 = new Map((cs.rehearsal.steps ?? []).map((x) => [x.step, x]));
+    next2.rehearsal.steps = next2.rehearsal.steps.map((x) => {
+      const old = was2.get(x.step);
+      return old ? { ...x, time: old.time, notes: old.notes, done: old.done, personId: old.personId ?? x.personId } : x;
+    });
+  }
   const m = manifestForSheet(cs.id);
   if (m && m.status === "assigned" && hasGearAccess(actor)) {
     for (const l of [...m.lines])
@@ -7231,9 +7336,29 @@ function hardGates(projectId) {
       ...reviewIsGate() ? [withOverride(reviewGate(projectId, "script"))] : []
     ];
   }
-  const brief = form2.sections.brief ?? {};
   const kind = catalogTypeOf(p.workflow.formType);
-  const second = kind === "music" ? "core message" : kind === "live" ? "purpose of the event" : "core question";
+  if (kind === "live") {
+    const dates = getDb().recordingSessions.filter((x) => x.contentId === projectId && !x.archivedAt && x.scheduledDate).map((x) => x.scheduledDate).sort();
+    const producer2 = getDb().people.find((x) => x.personId === p.workflow.showProducerId);
+    return [
+      withOverride({
+        key: "date",
+        label: "Show date set",
+        met: dates.length > 0,
+        detail: dates.length ? `First show ${fmtDate(dates[0])}${dates.length > 1 ? `, ${dates.length} days` : ""}` : "No show date yet: set it in Show Days",
+        overridable: false
+      }),
+      withOverride({
+        key: "producer",
+        label: "Show producer named",
+        met: !!producer2,
+        detail: producer2 ? producer2.name : "No show producer named yet",
+        overridable: false
+      })
+    ];
+  }
+  const brief = form2.sections.brief ?? {};
+  const second = kind === "music" ? "core message" : "core question";
   const missingIdea = [!text(brief.logline) && "the logline", !text(brief.coreQuestion) && `the ${second}`].filter(Boolean);
   const decision = latestFirstDecision(form2);
   const greenlit = decision?.outcome === "Greenlight";
@@ -7420,7 +7545,7 @@ function setReviewWindow(actor, projectId, date2) {
 var greenlightStageOf = (form2) => form2.greenlightStage ?? 1;
 var latestDecision = (form2, stage) => [...form2.decisions].reverse().find((d) => d.stage === stage);
 function greenlightBlockers(project, stage) {
-  if (stage === 1) return hardGatesMissing(project.contentId, ["greenlight"]);
+  if (stage === 1) return project.category === "live" ? [] : hardGatesMissing(project.contentId, ["greenlight"]);
   return openRequired("preProject", project.contentId).filter((l) => l.startsWith("Shot list"));
 }
 function decideGreenlight(actor, projectId, input) {
@@ -9070,6 +9195,9 @@ function preProductionSessionGate(s2, p) {
     if (!gear || gear.lines.length === 0) missing.push("Gear selected from the Equipment picker");
     missing.push(...gearIssues(sheet.id).map((g) => `Gear: ${g}`));
     if (sheet.status !== "final") missing.push(`Call sheet ${sheet.id} issued (final)`);
+    for (const c of sheet.technicalCheck)
+      if (checkStateOf(c) === "Issue")
+        warnings.push(`Tech Check: ${c.label} has an issue${c.note || c.result ? ` (${c.note || c.result})` : ""}`);
     if (s2.scheduledDate && sheet.date !== s2.scheduledDate)
       missing.push(`Call sheet ${sheet.id} is for ${sheet.date}, not the session's date, ${s2.scheduledDate}`);
   }
@@ -10923,7 +11051,55 @@ function toV24(db2) {
     lines.push(
       `${pages.length} Recording Plan ${pages.length === 1 ? "page" : "pages"} "Cards and storage" renamed "Cards" (storage is now chosen in Production)`
     );
+  liveShows(db2, lines);
   return { lines, changed: lines.length > 0 };
+}
+var LIVE_TITLES = {
+  event_brief: ["Event Brief", "Show Plan"],
+  recording_plan: ["Recording Plan", "Broadcast Plan"],
+  show_day_sheet: ["Show Day Sheet", "Live Day"],
+  show_report: ["Show Report", "Production Report"]
+};
+function liveShows(db2, lines) {
+  const live = new Set(db2.records.filter((r) => r.category === "live" && r.workflow).map((r) => r.contentId));
+  if (!live.size) return;
+  let renamed = 0;
+  for (const d of db2.projectDocuments) {
+    const t2 = LIVE_TITLES[d.docKey];
+    if (!t2 || !live.has(d.contentId) || !d.title.startsWith(t2[0])) continue;
+    d.title = t2[1] + d.title.slice(t2[0].length);
+    renamed++;
+  }
+  if (renamed)
+    lines.push(
+      `${renamed} live show ${renamed === 1 ? "document takes its" : "documents take their"} new name (Show Plan, Broadcast Plan, Live Day, Production Report)`
+    );
+  const days = db2.recordingSessions.filter((s2) => live.has(s2.contentId));
+  const sheets = [
+    ...db2.callSheets.map((c) => ({ c, day: days.find((d) => d.callSheetId === c.id || c.instanceId === d.id) })).filter((x) => !!x.day).map((x) => ({ content: x.c, upcoming: x.day.status !== "Closed" && !x.day.archivedAt })),
+    ...(db2.showTemplates ?? []).filter((t2) => live.has(t2.contentId)).map((t2) => ({ content: t2.sheet, upcoming: true }))
+  ];
+  let states = 0;
+  let stepped = 0;
+  for (const { content, upcoming } of sheets) {
+    for (const c of content.technicalCheck)
+      if (c.state === void 0) {
+        c.state = c.done ? "OK" : "Not checked";
+        c.assigneeId ??= null;
+        c.equipmentId ??= null;
+        c.result ??= "";
+        states++;
+      }
+    if (upcoming && !content.rehearsal.steps) {
+      content.rehearsal.steps = REHEARSAL_STEPS.map((step) => blankStep(localId("RH"), step));
+      stepped++;
+    }
+  }
+  if (states)
+    lines.push(
+      `${states} live Tech Check ${states === 1 ? "line gets its state" : "lines get their state"} from ${states === 1 ? "its" : "their"} tick`
+    );
+  if (stepped) lines.push(`${stepped} live ${stepped === 1 ? "day or template gets" : "days and templates get"} the Rehearsal Log's steps`);
 }
 
 // src/data/migrate.ts
@@ -14449,6 +14625,7 @@ var TEXT_GO = [
   { match: /^Roles?\b|needs a person|^A show producer/, go: { doc: { stage: "Pre-production", key: "recording_plan" } } },
   { match: /not assigned to a session|planned for this session/, go: { doc: { stage: "Pre-production", key: "recording_plan" } } },
   { match: /Second greenlight/, go: { doc: { stage: "Development", key: "greenlight" } } },
+  { match: /^Tech Check/, go: { doc: { stage: "Pre-production", key: "tech_check" } } },
   { match: /call sheet|Call sheet|Gear/, go: { anchor: "session-call-sheet" } },
   { match: /session's date|The session's date/, go: { anchor: "recording-day" } },
   { match: /drive|backup|offloaded|offline|full$/, go: { anchor: "rl-storage" } },
@@ -14478,6 +14655,12 @@ function sheetWarnings(cs, today) {
     const when = days === 0 ? "It is today" : days === 1 ? "It is tomorrow" : `${days} days to go`;
     out.push({ section: "crew", text: `${when} and ${waiting2.length} not confirmed: ${waiting2.map(nameOf3).join(", ")}.` });
   }
+  const issues = cs.technicalCheck.filter((c) => checkStateOf(c) === "Issue");
+  if (issues.length)
+    out.push({
+      section: "technicalCheck",
+      text: `Tech Check: ${issues.length === 1 ? "an issue" : `${issues.length} issues`} (${issues.map((c) => c.label).join(", ")}).`
+    });
   return out;
 }
 
@@ -15542,6 +15725,190 @@ function cancelLoan(actor, id2, reason) {
   logAudit(actor, "loan-cancel", "loan", id2, reason.trim());
   commit();
   return loan;
+}
+
+// src/services/live.ts
+var live_exports = {};
+__export(live_exports, {
+  advanceRundown: () => advanceRundown,
+  copyRundownToDays: () => copyRundownToDays,
+  copyTechCheckFromPrevious: () => copyTechCheckFromPrevious,
+  gearNotReturned: () => gearNotReturned,
+  liveNow: () => liveNow,
+  previousTechSheet: () => previousTechSheet,
+  projectGearNotReturned: () => projectGearNotReturned,
+  rundownOf: () => rundownOf,
+  setLiveLight: () => setLiveLight,
+  setRundown: () => setRundown,
+  techCounts: () => techCounts,
+  techIssues: () => techIssues
+});
+function rundownOf(eventId) {
+  const event = getRecord(eventId);
+  if (!isLiveEvent(event)) return [];
+  const production = productionOf(event);
+  if (production?.mode === "recurring") return templateOfEvent(eventId)?.sheet.runOfShow ?? [];
+  return production?.rundown ?? [];
+}
+var techIssues = (cs) => cs.technicalCheck.filter((c) => checkStateOf(c) === "Issue");
+function techCounts(cs) {
+  const states = cs.technicalCheck.map(checkStateOf);
+  return {
+    ok: states.filter((s2) => s2 === "OK").length,
+    issue: states.filter((s2) => s2 === "Issue").length,
+    notChecked: states.filter((s2) => s2 === "Not checked").length
+  };
+}
+var liveSheets = () => getDb().callSheets.filter((c) => {
+  const day = getDb().recordingSessions.find((s2) => s2.callSheetId === c.id || c.instanceId === s2.id);
+  return !!day && getRecord(day.contentId)?.category === "live";
+});
+function previousTechSheet(sheetId) {
+  const cs = getCallSheet(sheetId);
+  if (!cs) return void 0;
+  const earlier = liveSheets().filter((c) => c.id !== cs.id && c.date <= cs.date && c.technicalCheck.length > 0).sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+  return earlier.find((c) => c.contentId === cs.contentId) ?? earlier[0];
+}
+function liveNow(cs) {
+  const rows2 = [...cs.runOfShow].sort((a, b) => a.time.localeCompare(b.time)).filter((r) => r.status !== "Cut");
+  const at = rows2.findIndex((r) => r.status === "Live");
+  const ahead = rows2.filter((r, i) => i > at && (r.status ?? "Planned") === "Planned");
+  return {
+    current: at >= 0 ? rows2[at] : null,
+    next: ahead[0] ?? null,
+    upNext: ahead[1] ?? null,
+    done: rows2.filter((r) => r.status === "Done").length,
+    total: rows2.length
+  };
+}
+function gearNotReturned(sheetId, today = todayIso()) {
+  const m = getDb().manifests.filter((x) => x.callSheetId === sheetId && x.status === "checked-out").find((x) => (x.expectedReturn ?? x.date) < today);
+  if (!m) return null;
+  const items = m.lines.reduce((n, l) => n + Math.max(0, l.quantity - l.returnedGood - l.damaged - l.lost), 0);
+  return { manifestId: m.id, sheetId, due: m.expectedReturn ?? m.date, items, responsiblePersonId: m.responsiblePersonId };
+}
+function projectGearNotReturned(projectId, today = todayIso()) {
+  return getDb().recordingSessions.filter((s2) => s2.contentId === projectId && s2.callSheetId).map((s2) => gearNotReturned(s2.callSheetId, today)).filter((x) => !!x);
+}
+function eventForPlan2(actor, eventId) {
+  const event = getRecord(eventId);
+  if (!isLiveEvent(event)) throw new RuleError("That show no longer exists.");
+  if (event.archived) throw new RuleError("This show is closed.");
+  if (!canPlanEvent(actor, event))
+    throw new RuleError("Only the Head of Production, someone who manages the pipeline, or the show producer can change the Rundown.");
+  return event;
+}
+function sheetForWrite(actor, sheetId) {
+  const cs = getCallSheet(sheetId);
+  if (!cs) throw new RuleError("Call sheet not found.");
+  const root = getRecord(cs.contentId);
+  if (!root || !canWrite(actor, root)) throw new RuleError("You have view-only access to this project.");
+  assertSheetOpen(cs);
+  return cs;
+}
+var fresh = (rows2) => rows2.map((r) => ({ ...r, id: localId("RS"), status: "Planned", actualStart: "", actualEnd: "" }));
+function setRundown(actor, eventId, rows2) {
+  const event = eventForPlan2(actor, eventId);
+  checkContent({ runOfShow: rows2 });
+  const production = productionOf(event);
+  if (production.mode === "recurring") {
+    const t2 = templateOfEvent(eventId);
+    if (!t2) throw new RuleError("This show has no template yet.");
+    updateShowTemplate(actor, t2.id, { sheet: { runOfShow: rows2 } });
+    return t2.sheet.runOfShow;
+  }
+  event.production = { ...production, rundown: structuredClone(rows2) };
+  event.version += 1;
+  logAudit(actor, "rundown", "record", eventId, `${rows2.length} segment${rows2.length === 1 ? "" : "s"}`);
+  commit();
+  return event.production.rundown;
+}
+function copyRundownToDays(actor, eventId, replace = false) {
+  const event = eventForPlan2(actor, eventId);
+  const rows2 = rundownOf(eventId);
+  if (!rows2.length) throw new RuleError("The Rundown has no segments yet.");
+  const out = { copied: [], kept: [] };
+  for (const day of daysOfEvent(event.contentId)) {
+    const cs = sheetOfDay(day);
+    const open = !!cs && day.status === "Planned" && cs.status !== "final";
+    if (!cs || !open || cs.runOfShow.length > 0 && !replace) {
+      out.kept.push(day.id);
+      continue;
+    }
+    cs.runOfShow = fresh(rows2);
+    cs.version += 1;
+    out.copied.push(day.id);
+  }
+  logAudit(actor, "rundown-copy", "record", eventId, `${out.copied.length} days took the Rundown, ${out.kept.length} kept their own`);
+  commit();
+  return out;
+}
+function copyTechCheckFromPrevious(actor, sheetId) {
+  const cs = sheetForWrite(actor, sheetId);
+  const prev = previousTechSheet(sheetId);
+  if (!prev) throw new RuleError("No earlier show has a Tech Check to copy.");
+  cs.technicalCheck = prev.technicalCheck.map((c) => ({
+    id: localId("TC"),
+    label: c.label,
+    done: false,
+    note: "",
+    state: "Not checked",
+    assigneeId: c.assigneeId ?? null,
+    equipmentId: c.equipmentId ?? null,
+    result: ""
+  }));
+  cs.version += 1;
+  logAudit(actor, "techcheck-copy", "callsheet", cs.id, `From ${prev.id} (${prev.date}): ${cs.technicalCheck.length} lines`);
+  commit();
+  return { from: prev.id, lines: cs.technicalCheck.length };
+}
+function advanceRundown(actor, sheetId, step) {
+  const cs = sheetForWrite(actor, sheetId);
+  const now = timeInNairobi(/* @__PURE__ */ new Date());
+  const rows2 = [...cs.runOfShow].sort((a, b) => a.time.localeCompare(b.time)).filter((r) => r.status !== "Cut");
+  const at = rows2.findIndex((r) => r.status === "Live");
+  let onAir = null;
+  if (step === "next") {
+    if (at >= 0) Object.assign(rows2[at], { status: "Done", actualEnd: now });
+    const next2 = rows2.find((r, i) => i > at && (r.status ?? "Planned") === "Planned");
+    if (next2) {
+      Object.assign(next2, { status: "Live", actualStart: now, actualEnd: "" });
+      onAir = next2;
+    } else if (at < 0) throw new RuleError("Every segment is done.");
+  } else {
+    if (at >= 0) Object.assign(rows2[at], { status: "Planned", actualStart: "", actualEnd: "" });
+    const before = [...rows2.slice(0, at < 0 ? rows2.length : at)].reverse().find((r) => r.status === "Done");
+    if (before) {
+      Object.assign(before, { status: "Live", actualEnd: "" });
+      onAir = before;
+    } else if (at < 0) throw new RuleError("Nothing has gone on air yet.");
+  }
+  cs.version += 1;
+  logAudit(actor, "live-control", "callsheet", cs.id, onAir ? `On air: ${onAir.title} (${now})` : `Off air (${now})`);
+  commit();
+  return onAir;
+}
+function setLiveLight(actor, sessionId, key2, state) {
+  const day = getDb().recordingSessions.find((s2) => s2.id === sessionId);
+  if (!day) throw new RuleError("That day no longer exists.");
+  const event = getRecord(day.contentId);
+  if (!isLiveEvent(event)) throw new RuleError("Live Control is for a live show's day.");
+  if (!canWrite(actor, event) || event.archived) throw new RuleError("You have view-only access to this show.");
+  if (day.archivedAt) throw new RuleError("This day is off the schedule.");
+  if (!LIVE_LIGHTS.some((l) => l.key === key2)) throw new RuleError("That is not one of Live Control's lights.");
+  if (!LIGHT_STATES.some((l) => l.key === state)) throw new RuleError("A light is Not set, OK, Watch or Down.");
+  day.liveLights = { ...day.liveLights ?? {}, [key2]: state };
+  day.liveLightsAt = (/* @__PURE__ */ new Date()).toISOString();
+  day.liveLightsBy = actor.personId;
+  logAudit(
+    actor,
+    "live-light",
+    "session",
+    day.id,
+    `${LIVE_LIGHTS.find((l) => l.key === key2).label}: ${LIGHT_STATES.find((l) => l.key === state).label}`
+  );
+  commit();
+  return day;
 }
 
 // src/services/locations.ts
@@ -16642,6 +17009,13 @@ var RPC_NAMES = {
     "returnLoanItems",
     "updateLoan"
   ],
+  "live": [
+    "advanceRundown",
+    "copyRundownToDays",
+    "copyTechCheckFromPrevious",
+    "setLiveLight",
+    "setRundown"
+  ],
   "locations": [
     "archiveLocation",
     "canKeepLocations",
@@ -16798,6 +17172,17 @@ var capability = enumOf(ALL_CAPABILITIES);
 var staffCategory = z2.enum(["CRW", "VOL", "PTR"]);
 var photo = z2.object({ url, caption: short(500).optional() });
 var line2 = z2.object({ equipmentId: id, quantity: count(1e5) });
+var checkLine2 = z2.object({
+  id,
+  label: short(200),
+  done: z2.boolean(),
+  note: text3(1e3),
+  state: z2.enum(["Not checked", "OK", "Issue"]).optional(),
+  assigneeId: ref.nullable().optional(),
+  equipmentId: ref.nullable().optional(),
+  result: text3(1e3).optional()
+});
+var rehearsalStep = z2.object({ id, step: short(120), time, personId: ref.nullable(), notes: text3(1e3), done: z2.boolean() });
 var runItem = z2.object({
   id,
   time,
@@ -16830,8 +17215,8 @@ var sheetContent = z2.object({
   logistics: z2.object({ transport: text3(4e3), parking: text3(4e3), meals: text3(4e3), accommodation: text3(4e3), other: text3(4e3) }),
   contacts: z2.array(z2.object({ id, name: short(120), role: short(120), phone: short(60), email: short(200) })).max(100),
   runOfShow: z2.array(runItem).max(200),
-  technicalCheck: z2.array(z2.object({ id, label: short(200), done: z2.boolean(), note: text3(1e3) })).max(100),
-  rehearsal: z2.object({ time, notes: text3(4e3), done: z2.boolean() }),
+  technicalCheck: z2.array(checkLine2).max(100),
+  rehearsal: z2.object({ time, notes: text3(4e3), done: z2.boolean(), steps: z2.array(rehearsalStep).max(40).optional() }),
   plannedGear: z2.array(line2).max(200)
 }).partial();
 var recurrence = z2.object({
@@ -17470,6 +17855,16 @@ var ACTIONS = {
   // The Checks panel (build prompt v4, section 14A): a suggestion set aside or brought back, a manual check ticked
   "checks.dismissCheck": args([id, short(400)], [short(300)]),
   "checks.restoreCheck": args([id, short(400)]),
+  // Live Shows: the Broadcast Plan's Rundown, the Tech Check, and Live Control on the night
+  "live.setRundown": args([id, z2.array(runItem).max(200)]),
+  "live.copyRundownToDays": args([id], [z2.boolean()]),
+  "live.copyTechCheckFromPrevious": args([id]),
+  "live.advanceRundown": args([id, z2.enum(["next", "back"])]),
+  "live.setLiveLight": args([
+    id,
+    z2.enum(["cameras", "audio", "stream", "graphics", "recording", "comms", "internet"]),
+    z2.enum(["off", "ok", "watch", "down"])
+  ]),
   "checks.setCheck": args([
     z2.enum(["handoff", "preProject", "preSession", "wrap", "post", "release"]),
     id,
@@ -17550,6 +17945,7 @@ var modules = {
   equipment: equipment_exports,
   kits: kits_exports,
   lending: lending_exports,
+  live: live_exports,
   locations: locations_exports,
   people: people_exports,
   permissions: permissions_exports,
@@ -18498,8 +18894,8 @@ var MemAttempts = class {
   }
   async charge(key2, now, windowMs) {
     const a = this.m.get(key2);
-    const fresh = !a || now - a.first > windowMs;
-    const next2 = { _id: key2, count: fresh ? 1 : a.count + 1, first: fresh ? now : a.first, lockedUntil: a?.lockedUntil ?? 0 };
+    const fresh2 = !a || now - a.first > windowMs;
+    const next2 = { _id: key2, count: fresh2 ? 1 : a.count + 1, first: fresh2 ? now : a.first, lockedUntil: a?.lockedUntil ?? 0 };
     this.m.set(key2, next2);
     return { ...next2 };
   }

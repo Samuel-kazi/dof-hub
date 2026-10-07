@@ -1,6 +1,7 @@
 import type { Actor, DevelopmentForm, GateOverride } from "../../types";
 import { RuleError } from "../../types";
-import { commit } from "../../data/store";
+import { commit, getDb } from "../../data/store";
+import { fmtDate } from "../utils";
 import { catalogTypeOf } from "../../config/documentCatalog";
 import { logAudit } from "../audit";
 import { textOf } from "../html";
@@ -16,6 +17,9 @@ import { formProblems } from "../workflow/forms";
 //   Series and documentary   1. the logline and the core question written in the brief
 //                            2. the theological review of the brief approved (only while the review is a gate)
 //                            3. the greenlight decision recorded as Greenlight, and a show producer named
+//   Live show                1. a show date set (a day on its Show Days)
+//                            2. a show producer named
+//                            (its Greenlight stays a document, and its theological review is a reminder: v4, section 9)
 //   Devotion                 1. the guest's name and contact filled in
 //                            2. at least five devotion pages, each with its topic (the title), scripture and script
 //                            3. the theological review of the script approved (only while the review is a gate)
@@ -26,7 +30,7 @@ import { formProblems } from "../workflow/forms";
 // The Head of Production, or someone given "Create projects", can pass a gate by hand with a short note: kept with the
 // project and in the activity log. The greenlight decision itself is never passed by hand: recording it is the way.
 
-export type HardGateKey = "idea" | "review" | "greenlight" | "guest" | "pages" | "consent";
+export type HardGateKey = "idea" | "review" | "greenlight" | "guest" | "pages" | "consent" | "date" | "producer";
 
 export interface HardGate {
   key: HardGateKey;
@@ -87,10 +91,35 @@ export function hardGates(projectId: string): HardGate[] {
       ...(reviewIsGate() ? [withOverride(reviewGate(projectId, "script"))] : []),
     ];
   }
-  const brief = form.sections.brief ?? {};
-  // The brief's second line in each kind's own words: a song's core message, an event's purpose.
   const kind = catalogTypeOf(p.workflow.formType);
-  const second = kind === "music" ? "core message" : kind === "live" ? "purpose of the event" : "core question";
+  if (kind === "live") {
+    const dates = getDb()
+      .recordingSessions.filter((x) => x.contentId === projectId && !x.archivedAt && x.scheduledDate)
+      .map((x) => x.scheduledDate!)
+      .sort();
+    const producer = getDb().people.find((x) => x.personId === p.workflow.showProducerId);
+    return [
+      withOverride({
+        key: "date",
+        label: "Show date set",
+        met: dates.length > 0,
+        detail: dates.length
+          ? `First show ${fmtDate(dates[0])}${dates.length > 1 ? `, ${dates.length} days` : ""}`
+          : "No show date yet: set it in Show Days",
+        overridable: false,
+      }),
+      withOverride({
+        key: "producer",
+        label: "Show producer named",
+        met: !!producer,
+        detail: producer ? producer.name : "No show producer named yet",
+        overridable: false,
+      }),
+    ];
+  }
+  const brief = form.sections.brief ?? {};
+  // The brief's second line in each kind's own words: a song's core message.
+  const second = kind === "music" ? "core message" : "core question";
   const missingIdea = [!text(brief.logline) && "the logline", !text(brief.coreQuestion) && `the ${second}`].filter(Boolean);
   const decision = latestFirstDecision(form);
   const greenlit = decision?.outcome === "Greenlight";

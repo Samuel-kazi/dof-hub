@@ -1,6 +1,6 @@
-import type { CheckItem, ContactEntry, GearRequest, RunItem, SheetContent, TalentEntry } from "../types";
+import type { CheckItem, ContactEntry, GearRequest, RehearsalStep, RunItem, SheetContent, TalentEntry } from "../types";
 import { RuleError } from "../types";
-import { SHEET_CONTENT_KEYS, blankSheetContent } from "../config/callSheet";
+import { CHECK_STATES, SHEET_CONTENT_KEYS, blankSheetContent } from "../config/callSheet";
 import { getDb } from "../data/store";
 import { localId } from "../data/ids";
 
@@ -21,8 +21,19 @@ export function cloneContent(src: SheetContent): SheetContent {
   c.talent = c.talent.map((x) => ({ ...x, id: localId("TL") }));
   c.contacts = c.contacts.map((x) => ({ ...x, id: localId("CT") }));
   c.runOfShow = c.runOfShow.map((x) => ({ ...x, id: localId("RS") }));
-  c.technicalCheck = c.technicalCheck.map((x) => ({ ...x, id: localId("TC"), done: false, note: "" }));
-  c.rehearsal = { ...c.rehearsal, done: false };
+  c.technicalCheck = c.technicalCheck.map((x) => ({
+    ...x,
+    id: localId("TC"),
+    done: false,
+    note: "",
+    ...(x.state !== undefined ? { state: "Not checked" as const, result: "" } : {}),
+  }));
+  // The rehearsal's steps and who does them are kept; when each was checked, and its notes, are the day's own.
+  c.rehearsal = {
+    ...c.rehearsal,
+    done: false,
+    ...(c.rehearsal.steps ? { steps: c.rehearsal.steps.map((x) => ({ ...x, id: localId("RH"), time: "", notes: "", done: false })) } : {}),
+  };
   return c;
 }
 
@@ -36,12 +47,27 @@ export function applyContent(target: SheetContent, content: SheetContent): void 
 export function onlyTicks(before: SheetContent, patch: Partial<SheetContent>): boolean {
   for (const k of Object.keys(patch) as (keyof SheetContent)[]) {
     if (k === "technicalCheck") {
+      // The day's own: the tick, the state, the test result and the note. The lines, who checks them and the gear are the plan.
       const now = patch.technicalCheck!;
       if (now.length !== before.technicalCheck.length) return false;
-      if (now.some((x, i) => x.id !== before.technicalCheck[i].id || x.label !== before.technicalCheck[i].label)) return false;
+      const was = before.technicalCheck;
+      if (
+        now.some(
+          (x, i) =>
+            x.id !== was[i].id ||
+            x.label !== was[i].label ||
+            (x.assigneeId ?? null) !== (was[i].assigneeId ?? null) ||
+            (x.equipmentId ?? null) !== (was[i].equipmentId ?? null),
+        )
+      )
+        return false;
     } else if (k === "rehearsal") {
+      // The day's own: when each step was checked, who checked it, its notes and tick. The steps themselves are the plan.
       const r = patch.rehearsal!;
       if (r.time !== before.rehearsal.time || r.notes !== before.rehearsal.notes) return false;
+      const now = r.steps ?? [];
+      const was = before.rehearsal.steps ?? [];
+      if (now.length !== was.length || now.some((x, i) => x.id !== was[i].id || x.step !== was[i].step)) return false;
     } else return false;
   }
   return true;
@@ -85,6 +111,22 @@ function checkItem(c: CheckItem): void {
   if (!c.label.trim()) throw new RuleError("Give each line of the technical check a name.");
   checkText(c.label, "A line of the check", 200);
   checkText(c.note, "A note", 1000);
+  if (c.state !== undefined && !CHECK_STATES.includes(c.state)) throw new RuleError("A line of the check is Not checked, OK or Issue.");
+  if (c.result !== undefined) checkText(c.result, "A test result", 1000);
+  if (c.assigneeId) checkPerson(c.assigneeId, "each line of the check");
+  if (c.equipmentId && !getDb().equipment.some((e) => e.id === c.equipmentId))
+    throw new RuleError("That equipment item is no longer in the inventory.");
+}
+function checkPerson(personId: string, what: string): void {
+  const p = getDb().people.find((x) => x.personId === personId);
+  if (!p || p.status !== "active") throw new RuleError(`Choose an active person for ${what}.`);
+}
+function checkStep(r: RehearsalStep): void {
+  if (!r.step.trim()) throw new RuleError("Give each rehearsal step a name.");
+  checkText(r.step, "A rehearsal step", 120);
+  checkTime(r.time, "time the step was checked");
+  checkText(r.notes, "Notes", 1000);
+  if (r.personId) checkPerson(r.personId, "each rehearsal step");
 }
 function checkRun(i: RunItem): void {
   if (!TIME.test(i.time)) throw new RuleError("Enter each segment's start as hours and minutes, for example 09:30.");
@@ -169,6 +211,10 @@ export function checkContent(patch: Partial<SheetContent>, crewAfter?: string[])
   if (patch.rehearsal !== undefined) {
     checkTime(patch.rehearsal.time, "rehearsal time");
     checkText(patch.rehearsal.notes, "Rehearsal notes", 4000);
+    if (patch.rehearsal.steps !== undefined) {
+      checkRows(patch.rehearsal.steps, "rehearsal steps", 40);
+      patch.rehearsal.steps.forEach(checkStep);
+    }
   }
   if (patch.plannedGear !== undefined) {
     if (patch.plannedGear.length > 200) throw new RuleError("A sheet can plan up to 200 items of gear.");
@@ -189,6 +235,17 @@ export function tidyContent(patch: Partial<SheetContent>, current: SheetContent)
     const name = out.location ?? current.location;
     const address = out.locationAddress ?? current.locationAddress;
     if (!saved || saved.name !== name.trim() || saved.address !== address.trim()) out.locationId = null;
+  }
+  // A line with a state is done exactly when it is OK, so a tick and a state never disagree: a tick sets the state
+  // (a screen that only ticks), and a state sets the tick.
+  if (out.technicalCheck) {
+    const was = new Map(current.technicalCheck.map((x) => [x.id, x]));
+    out.technicalCheck = out.technicalCheck.map((x) => {
+      if (!x.state) return x;
+      const before = was.get(x.id);
+      const ticked = !!before && x.done !== before.done && x.state === (before.state ?? (before.done ? "OK" : "Not checked"));
+      return ticked ? { ...x, state: x.done ? "OK" : "Not checked" } : { ...x, done: x.state === "OK" };
+    });
   }
   if (out.crewPersonIds) {
     const crew = new Set(out.crewPersonIds);
