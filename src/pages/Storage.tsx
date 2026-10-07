@@ -26,6 +26,7 @@ import {
   updateDrive,
 } from "../services/wrapped/storage";
 import { fmtDate, fmtSize, todayIso } from "../services/utils";
+import { ImportProjectModal } from "./workflow/ImportProject";
 
 const KIND_LABEL: Record<DriveAllocation["kind"], string> = {
   raw: "Raw footage",
@@ -216,6 +217,7 @@ export function DrivePage({ id }: { id: string }) {
   const [editingDrive, setEditingDrive] = useState(false);
   const [editRow, setEditRow] = useState<DriveAllocation | null>(null);
   const [attachRow, setAttachRow] = useState<DriveAllocation | null>(null);
+  const [importRow, setImportRow] = useState<DriveAllocation | null>(null);
   const drive = getDrive(id);
   if (!hasStorageAccess(actor))
     return (
@@ -243,7 +245,9 @@ export function DrivePage({ id }: { id: string }) {
       </nav>
       <div className="page-head">
         <div className="grow">
-          <h1>{drive.name}</h1>
+          <h1>
+            {drive.name} {drive.offline && <span className="badge warn">Offline</span>}
+          </h1>
           <p className="sub">
             {fmtSize(u.usedGB)} used of {fmtSize(drive.capacityGB)}, {fmtSize(u.freeGB)} free, as of {fmtDate(todayIso())}
           </p>
@@ -252,6 +256,15 @@ export function DrivePage({ id }: { id: string }) {
           <ReportButton scope="drive" params={{ driveId: id }} />
           <button className="btn" onClick={() => setEditingDrive(true)}>
             Edit drive
+          </button>
+          <button
+            className="btn"
+            title="The app cannot see the drives: mark one offline when it is not plugged in or not reachable"
+            onClick={() =>
+              attempt(() => updateDrive(actor, id, { offline: !drive.offline }), drive.offline ? "Marked online" : "Marked offline")
+            }
+          >
+            {drive.offline ? "Mark online" : "Mark offline"}
           </button>
           <button className="btn primary" onClick={() => setAdding(true)}>
             <IconPlus /> Add project
@@ -283,6 +296,7 @@ export function DrivePage({ id }: { id: string }) {
             <thead>
               <tr>
                 <th>Project</th>
+                <th>Folder</th>
                 <th>Type</th>
                 <th>Size</th>
                 <th>Note</th>
@@ -302,7 +316,10 @@ export function DrivePage({ id }: { id: string }) {
                       menu(e, [
                         { label: "Edit…", disabled: !write, onClick: () => setEditRow(a) },
                         ...(a.contentId === null
-                          ? [{ label: "Attach to a project…", disabled: !write, onClick: () => setAttachRow(a) }]
+                          ? [
+                              { label: "Attach to a project…", disabled: !write, onClick: () => setAttachRow(a) },
+                              { label: "Import as project…", disabled: !write || !!a.sessionId, onClick: () => setImportRow(a) },
+                            ]
                           : []),
                         {
                           label: "Remove from this drive",
@@ -326,6 +343,23 @@ export function DrivePage({ id }: { id: string }) {
                     <td>
                       <div>{rec?.title ?? a.label}</div>
                       <span className="cid">{a.contentId ?? "No project yet"}</span>
+                      {a.contentId === null && !a.sessionId && write && (
+                        <div className="no-print">
+                          <button
+                            className="btn small"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setImportRow(a);
+                            }}
+                          >
+                            Import as project
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                    <td className="muted">
+                      <code>{a.folderPath || ""}</code>
+                      {a.role === "backup" ? " (backup)" : ""}
                     </td>
                     <td>{KIND_LABEL[a.kind]}</td>
                     <td>{fmtSize(a.sizeGB)}</td>
@@ -337,6 +371,7 @@ export function DrivePage({ id }: { id: string }) {
               {u.otherGB > 0 && (
                 <tr>
                   <td>Other files</td>
+                  <td />
                   <td>Not tied to a project</td>
                   <td>{fmtSize(u.otherGB)}</td>
                   <td />
@@ -353,6 +388,7 @@ export function DrivePage({ id }: { id: string }) {
       {adding && <AllocationModal driveId={id} onClose={() => setAdding(false)} />}
       {editRow && <AllocationModal driveId={id} row={editRow} onClose={() => setEditRow(null)} />}
       {attachRow && <AttachToProjectModal row={attachRow} onClose={() => setAttachRow(null)} />}
+      {importRow && <ImportProjectModal allocationId={importRow.id} onClose={() => setImportRow(null)} />}
       {editingDrive && <DriveFormModal drive={drive} onClose={() => setEditingDrive(false)} onSaved={() => setEditingDrive(false)} />}
     </div>
   );

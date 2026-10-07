@@ -7,7 +7,6 @@ export const FEATURES = [
   { key: "reviewNotGate", label: "Theological review as a reminder, not a gate", built: true },
   { key: "templates", label: "Storyboard and shot list templates in Documents", built: true },
   { key: "lending", label: "Equipment lending and role kits", built: true },
-  { key: "calendar2", label: "New Calendar with reminders, alerts and the urgency report", built: true },
 ] as const;
 
 export type FeatureKey = (typeof FEATURES)[number]["key"];

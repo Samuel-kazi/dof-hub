@@ -13,7 +13,9 @@ import type {
 } from "../types";
 import { RuleError } from "../types";
 import {
-  DEFAULT_TECH_CHECK,
+  LIVE_TECH_CHECK,
+  REHEARSAL_STEPS,
+  blankStep,
   EVENT_PLAN_FIELDS,
   MODE_LABEL,
   SHEET_CONTENT_KEYS,
@@ -21,6 +23,7 @@ import {
   blankSheetContent,
 } from "../config/callSheet";
 import { commit, getDb, nextCounter } from "../data/store";
+import { TIME_ZONE } from "./utils";
 import { claimId, localId } from "../data/ids";
 import { canWrite, getRecord, isHop, rootOf } from "./access";
 import { logAudit } from "./audit";
@@ -232,12 +235,25 @@ function bookIfDue(actor: Actor, cs: CallSheet, today: string): number {
   return r.booked.length;
 }
 
-/** What a new event's call sheets start with: its call time and place, and the usual technical check. */
+/**
+ * What a new event's call sheets start with: its call time and place, the live Tech Check (each line Not checked) and
+ * the Rehearsal Log's steps (build prompt v4, section 9).
+ */
 function startingContent(callTime: string, location: string): SheetContent {
   const c = blankSheetContent();
   c.callTime = callTime || "08:00";
   c.location = location.trim();
-  c.technicalCheck = DEFAULT_TECH_CHECK.map((label) => ({ id: localId("TC"), label, done: false, note: "" }));
+  c.technicalCheck = LIVE_TECH_CHECK.map((label) => ({
+    id: localId("TC"),
+    label,
+    done: false,
+    note: "",
+    state: "Not checked" as const,
+    assigneeId: null,
+    equipmentId: null,
+    result: "",
+  }));
+  c.rehearsal = { ...c.rehearsal, steps: REHEARSAL_STEPS.map((step) => blankStep(localId("RH"), step)) };
   return c;
 }
 
@@ -401,6 +417,7 @@ export function setUpEventDays(actor: Actor, event: ContentRecord, input: EventS
       id: claimId(`DOF-TPL-${pad(nextCounter("showTemplate"))}`),
       contentId: event.contentId,
       rule: structuredClone(input.rule!),
+      timeZone: getDb().settings.timeZone || TIME_ZONE,
       sheet: content,
       productionLevel: input.productionLevel ?? null,
       ownerPersonId: null,
@@ -513,9 +530,19 @@ function applyTemplateTo(actor: Actor, t: ShowTemplate, day: RecordingSession, c
   const next = cloneContent(t.sheet);
   next.technicalCheck = next.technicalCheck.map((x) => {
     const old = before.get(x.label);
-    return old ? { ...x, done: old.done, note: old.note } : x;
+    return old
+      ? { ...x, done: old.done, note: old.note, ...(old.state ? { state: old.state } : {}), ...(old.result ? { result: old.result } : {}) }
+      : x;
   });
   next.rehearsal.done = cs.rehearsal.done;
+  // What was checked at each rehearsal step on the day stays with the day.
+  if (next.rehearsal.steps) {
+    const was = new Map((cs.rehearsal.steps ?? []).map((x) => [x.step, x]));
+    next.rehearsal.steps = next.rehearsal.steps.map((x) => {
+      const old = was.get(x.step);
+      return old ? { ...x, time: old.time, notes: old.notes, done: old.done, personId: old.personId ?? x.personId } : x;
+    });
+  }
   const m = manifestForSheet(cs.id);
   if (m && m.status === "assigned" && hasGearAccess(actor)) {
     for (const l of [...m.lines])
@@ -531,6 +558,67 @@ function applyTemplateTo(actor: Actor, t: ShowTemplate, day: RecordingSession, c
   day.instance!.templateVersion = t.version;
   day.updatedAt = nowStamp();
   bookIfDue(actor, cs, today);
+}
+
+// ── What a day changed from its template (build prompt v4, section 7) ──
+
+/** The fields of a call sheet a day can differ from its template in, with their names on screen and their section. */
+export const TEMPLATE_FIELDS: { key: keyof SheetContent; label: string; section: string }[] = [
+  { key: "callTime", label: "Crew call", section: "schedule" },
+  { key: "talentCall", label: "Talent call", section: "schedule" },
+  { key: "startTime", label: "Start", section: "schedule" },
+  { key: "wrapTime", label: "Wrap", section: "schedule" },
+  { key: "crewPersonIds", label: "Crew", section: "crew" },
+  { key: "crewRoles", label: "Crew roles", section: "crew" },
+  { key: "crewLeadId", label: "Crew lead", section: "crew" },
+  { key: "talent", label: "Talent", section: "talent" },
+  { key: "location", label: "Location", section: "location" },
+  { key: "locationAddress", label: "Address", section: "location" },
+  { key: "locationNotes", label: "Location notes", section: "location" },
+  { key: "logistics", label: "Logistics", section: "logistics" },
+  { key: "contacts", label: "Contacts", section: "contacts" },
+  { key: "runOfShow", label: "Run of show", section: "runOfShow" },
+  { key: "technicalCheck", label: "Tech check lines", section: "technicalCheck" },
+  { key: "rehearsal", label: "Rehearsal", section: "rehearsal" },
+  { key: "format", label: "Format", section: "sheet" },
+  { key: "notes", label: "Notes", section: "sheet" },
+];
+
+/** A field as the plan has it: without row IDs, ticks, states, results, actual times or notes made on the day. */
+function planOf(c: SheetContent, key: keyof SheetContent): unknown {
+  switch (key) {
+    case "talent":
+      return c.talent.map(({ name, role, contact, callTime, notes }) => ({ name, role, contact, callTime, notes }));
+    case "contacts":
+      return c.contacts.map(({ name, role, phone, email }) => ({ name, role, phone, email }));
+    case "runOfShow":
+      return [...c.runOfShow]
+        .sort((a, b) => a.time.localeCompare(b.time))
+        .map((r) => [r.time, r.title, r.durationMin, r.ownerPersonId ?? null, r.notes, r.camera ?? "", r.audio ?? "", r.graphics ?? ""]);
+    case "technicalCheck":
+      return c.technicalCheck.map((x) => [x.label, x.assigneeId ?? null, x.equipmentId ?? null]);
+    case "rehearsal":
+      return [c.rehearsal.time, c.rehearsal.notes, (c.rehearsal.steps ?? []).map((x) => [x.step, x.personId ?? null])];
+    case "crewPersonIds":
+      return [...c.crewPersonIds].sort();
+    case "crewRoles":
+      return Object.entries(c.crewRoles).sort(([a], [b]) => a.localeCompare(b));
+    default:
+      return c[key];
+  }
+}
+
+/**
+ * The fields where a recurring show's day differs from its template, field by field: what was changed by hand on the
+ * day (gear is booked from the template's list, so it is not compared). None for a day of a one-time or multi-day
+ * event, or one whose template is gone.
+ */
+export function templateDiff(dayId: string): { key: keyof SheetContent; label: string; section: string }[] {
+  const day = getDb().recordingSessions.find((s) => s.id === dayId);
+  const t = day?.instance ? getTemplate(day.instance.templateId) : undefined;
+  const cs = day ? sheetOfDay(day) : undefined;
+  if (!day || !t || !cs) return [];
+  return TEMPLATE_FIELDS.filter((f) => JSON.stringify(planOf(cs, f.key)) !== JSON.stringify(planOf(t.sheet, f.key)));
 }
 
 /**

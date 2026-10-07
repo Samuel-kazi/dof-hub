@@ -13,7 +13,6 @@ const MODULE_KEYS = new Set<ModuleKey>([
   "storage",
   "crew",
   "documents",
-  "reminders",
   "settings",
 ]);
 
@@ -37,6 +36,8 @@ export function encodeRoute(r: Route): string {
       return `/record/${seg(r.id)}`;
     case "session":
       return `/session/${seg(r.id)}`;
+    case "livecontrol":
+      return `/livecontrol/${seg(r.id)}`;
     case "template":
       return `/template/${seg(r.id)}`;
     case "callsheets":
@@ -65,8 +66,6 @@ export function encodeRoute(r: Route): string {
       return `/drive/${seg(r.id)}`;
     case "access":
       return "/access";
-    case "reminders":
-      return "/reminders";
     case "calendar":
       return "/calendar";
     case "settings":
@@ -90,6 +89,8 @@ export function decodeRoute(path: string): Route {
       return arg ? { n: "record", id: arg } : { n: "dashboard" };
     case "session":
       return arg ? { n: "session", id: arg } : { n: "pipeline" };
+    case "livecontrol":
+      return arg ? { n: "livecontrol", id: arg } : { n: "pipeline" };
     case "template":
       return arg ? { n: "template", id: arg } : { n: "pipeline" };
     case "callsheets":
@@ -122,7 +123,8 @@ export function decodeRoute(path: string): Route {
     case "access":
       return { n: "access" };
     case "reminders":
-      return { n: "reminders" };
+      // The Reminders module is part of the Calendar now (build prompt v4): an old link opens the Calendar.
+      return { n: "calendar" };
     case "calendar":
       return { n: "calendar" };
     case "settings":

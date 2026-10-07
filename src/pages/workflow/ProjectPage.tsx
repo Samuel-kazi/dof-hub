@@ -4,7 +4,7 @@ import { formTypeOf } from "../../config/workflow";
 import { canWrite, isHop } from "../../services/access";
 import { can } from "../../services/wrapped/permissions";
 import { getBreadcrumb, updateRecord } from "../../services/wrapped/content";
-import { closeProject, projectSummary, setWorkflowDeadline, type Project } from "../../services/wrapped/workflow";
+import { closeProject, projectSummary, setPlannedStart, setWorkflowDeadline, type Project } from "../../services/wrapped/workflow";
 import { fmtDate } from "../../services/utils";
 import { useApp } from "../../ui/AppContext";
 import { Modal } from "../../ui/Modal";
@@ -12,6 +12,7 @@ import { Field } from "../../ui/parts";
 import { StageRail, useReason } from "./common";
 import { ProjectDocuments } from "../documents/ProjectDocuments";
 import { PersonName } from "../../ui/PersonName";
+import { ChecksPanel } from "../../ui/ChecksPanel";
 
 // A project of the five-stage workflow: a season of a series, a devotion or a documentary. Its stage is worked
 // out from its sessions and episodes. Below its header and stage tracker are its documents: Project Home, with a row
@@ -24,13 +25,15 @@ function EditProjectModal({ project, onClose }: { project: Project; onClose: () 
   const [notes, setNotes] = useState(project.notes);
   const [dev, setDev] = useState(project.stageDeadlines.Development ?? "");
   const [pre, setPre] = useState(project.stageDeadlines["Pre-production"] ?? "");
+  const [start, setStart] = useState(project.workflow.plannedStart ?? "");
   const save = () => {
     const ok =
       attempt(() => updateRecord(actor, project.contentId, { title, deadline: publish || null, notes })) &&
       (dev === (project.stageDeadlines.Development ?? "") ||
         attempt(() => setWorkflowDeadline(actor, project.contentId, "Development", dev || null))) &&
       (pre === (project.stageDeadlines["Pre-production"] ?? "") ||
-        attempt(() => setWorkflowDeadline(actor, project.contentId, "Pre-production", pre || null)));
+        attempt(() => setWorkflowDeadline(actor, project.contentId, "Pre-production", pre || null))) &&
+      (start === (project.workflow.plannedStart ?? "") || attempt(() => setPlannedStart(actor, project.contentId, start || null)));
     if (ok) onClose();
   };
   return (
@@ -54,6 +57,9 @@ function EditProjectModal({ project, onClose }: { project: Project; onClose: () 
         </Field>
         <p className="muted">The Content ID, {project.contentId}, never changes.</p>
         <div className="row">
+          <Field label="Planned start">
+            <input type="date" value={start} onChange={(e) => setStart(e.target.value)} />
+          </Field>
           <Field label="Publish date">
             <input type="date" value={publish} onChange={(e) => setPublish(e.target.value)} />
           </Field>
@@ -122,6 +128,7 @@ export function WorkflowProjectPage({ project }: { project: Project }) {
             <span className={`badge ${project.archived ? "bad" : project.workflow.status === "Completed" ? "ok" : "accent"}`}>
               {summary.stage}
             </span>
+            {project.workflow.plannedStart && <span className="muted">Starts {fmtDate(project.workflow.plannedStart)}</span>}
             {project.deadline && <span className="muted">Publish {fmtDate(project.deadline)}</span>}
             <span className="muted">
               Producer: <PersonName id={project.workflow.showProducerId} fallback="not named" role="Show producer" />
@@ -149,6 +156,7 @@ export function WorkflowProjectPage({ project }: { project: Project }) {
       {!canWrite(actor, project) && <div className="banner">You have view-only access to this project.</div>}
       <section className="glass panel" aria-label="Where it stands">
         <StageRail current={summary.stage} />
+        {!project.archived && <ChecksPanel kind="project" id={project.contentId} write={write} />}
         <p style={{ marginTop: 10 }}>{summary.text}</p>
       </section>
       <ProjectDocuments project={project} write={write} />

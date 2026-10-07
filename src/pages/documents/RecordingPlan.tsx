@@ -3,10 +3,8 @@ import type { RecordingSession, SessionLabel } from "../../types";
 import { roleName, SESSION_LABELS } from "../../config/workflow";
 import { planLabels } from "../../config/documentCatalog";
 import { getDb } from "../../data/store";
-import { driveUsage } from "../../services/driveUsage";
-import { hasStorageAccess } from "../../services/storage";
 import { canManageTeam } from "../../services/workflow/common";
-import { fmtDate, fmtSize } from "../../services/utils";
+import { fmtDate } from "../../services/utils";
 import { framesOf, makeDevotionEpisodes, rowsOfShotList, shotListsOf, shotNumbers, storyboardsOf } from "../../services/wrapped/documents";
 import { nameOf } from "../../services/wrapped/people";
 import {
@@ -23,7 +21,6 @@ import {
   roleHolder,
   sessionName,
   sessionsOf,
-  setProjectDrive,
   setRolePerson,
   setSessionBoards,
   sheetTimes,
@@ -44,6 +41,8 @@ import { ProductionPanel } from "../production/ProductionPanel";
 import type { FixedCard } from "./PageList";
 import { sheetContacts, usePrintCallSheet } from "./printCallSheet";
 import { SavedInput } from "./toolkit";
+import { RundownSection } from "../production/LiveTools";
+import { rundownOf } from "../../services/wrapped/live";
 
 // A devotion's Recording Plan (section 7A of the documents brief): four section cards before its pages. The project's
 // roles, each held by someone from the crew; the devotions, read from the script, each on one recording session; the
@@ -51,7 +50,7 @@ import { SavedInput } from "./toolkit";
 // storyboard and shot list it uses. Built on the project's own roles, sessions and call sheets, so the same plan can
 // serve a series or documentary later.
 
-export type PlanSection = "roles" | "devotions" | "sessions" | "callSheets";
+export type PlanSection = "roles" | "devotions" | "rundown" | "sessions" | "callSheets";
 
 const liveSessions = (projectId: string): RecordingSession[] =>
   sessionsOf(projectId)
@@ -76,12 +75,16 @@ export function planCards(projectId: string): FixedCard[] {
   const sessions = liveSessions(projectId);
   const sheets = sessions.filter((s) => s.callSheetId).length;
   const card = (id: PlanSection, title: string, note: string): FixedCard => ({ id: `plan:${id}`, title, note, at: "start", tag: "plan" });
-  if (event)
+  if (event) {
+    // A live show's Broadcast Plan: its items are the Rundown's segments (build prompt v4, section 8).
+    const segments = rundownOf(projectId).length;
     return [
       card("roles", "Project roles", roles.length ? `${roles.filter(roleHolder).length} of ${roles.length} have a person` : "No roles yet"),
+      card("rundown", "Rundown", segments ? plural(segments, "segment") : "No segments yet"),
       card("sessions", "Show days", sessions.length ? plural(sessions.length, "day") : "None yet"),
       card("callSheets", "Call sheets", sessions.length ? `${sheets} of ${sessions.length} made` : "One per day"),
     ];
+  }
   return [
     card("roles", "Project roles", roles.length ? `${roles.filter(roleHolder).length} of ${roles.length} have a person` : "No roles yet"),
     card(
@@ -122,6 +125,8 @@ export function PlanSectionView({
       return <RolesSection project={project} write={write} />;
     case "devotions":
       return <DevotionsSection project={project} write={write} />;
+    case "rundown":
+      return <RundownSection project={project} />;
     case "sessions":
       return project.category === "live" ? <ShowDaysSection project={project} /> : <SessionsSection project={project} write={write} />;
     case "callSheets":
@@ -944,42 +949,6 @@ function BoardsOnSheet({
           )}
         </>
       )}
-    </section>
-  );
-}
-
-// ── Cards and storage: the drive the footage is planned to go on ──
-
-export function PlannedDrive({ project, write }: { project: Project; write: boolean }) {
-  const { actor, attempt } = useApp();
-  const chosen = project.workflow.storageDriveId ?? null;
-  if (!hasStorageAccess(actor))
-    return (
-      <section className="pd-episode rp-drive" aria-label="Footage drive">
-        <b>Footage drive:</b> {chosen ? "chosen" : "not chosen yet"}. It is chosen by someone who may use storage.
-      </section>
-    );
-  const drives = getDb().drives;
-  return (
-    <section className="pd-episode rp-drive" aria-label="Footage drive">
-      <Field label="Drive the footage goes on">
-        <select
-          value={chosen ?? ""}
-          disabled={!write || project.archived}
-          onChange={(e) => attempt(() => setProjectDrive(actor, project.contentId, e.target.value || null), "Footage drive saved")}
-        >
-          <option value="">Not chosen yet</option>
-          {drives.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name} · {fmtSize(driveUsage(d).freeGB)} free
-            </option>
-          ))}
-        </select>
-      </Field>
-      <p className="muted">
-        Each session's footage goes on this drive unless the session chooses another, in Production under Storage, where the size of the
-        recorded footage is entered once recording starts.
-      </p>
     </section>
   );
 }

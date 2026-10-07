@@ -13,6 +13,7 @@ import * as P from "../src/services/wrapped/production";
 import { daysOfEvent as daysOfShow, sheetOfDay } from "../src/services/production";
 import { weeklyFrom } from "../src/services/recurrence";
 import { AppProvider } from "../src/ui/AppContext";
+import { ChecksPanel } from "../src/ui/ChecksPanel";
 import { ProductionPanel } from "../src/pages/production/ProductionPanel";
 import { ShowTemplatePage } from "../src/pages/production/ShowTemplatePage";
 import { CallSheetBody } from "../src/pages/CallSheets";
@@ -144,12 +145,11 @@ await t("a call sheet shows what it is missing, who confirmed, saved locations, 
   const body = (who: string) =>
     html(who, <CallSheetBody cs={getDb().callSheets.find((c) => c.id === cs.id)!} root={record(rally.contentId)} />);
   let page = body("hop@dof.demo");
-  for (const text of [
-    "3 things to check before the day.",
-    "No location.",
-    "No crew lead.",
-    "2 days to go and 2 not confirmed: Brian Otieno, Faith Mwangi.",
-  ])
+  // What it is missing: a chip in its header opens the Checks panel (build prompt v4, section 14A).
+  const chip = html("hop@dof.demo", <ChecksPanel kind="sheet" id={cs.id} write chip label="Call sheet checks" />);
+  assert.ok(chip.includes("3 suggestions") && chip.includes("No location") && chip.includes("Go to"), "the chip and its checks");
+  assert.ok(!page.includes("things to check before the day"), "no banner of warnings above the sheet");
+  for (const text of ["No location.", "No crew lead.", "2 days to go and 2 not confirmed: Brian Otieno, Faith Mwangi."])
     assert.ok(page.includes(text), text);
   assert.ok(page.includes('aria-label="Brian Otieno confirmed"'), "a confirm tick for each person on the crew");
   assert.ok(page.includes('class="person-link"'), "crew names open their contact card");

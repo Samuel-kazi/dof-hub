@@ -24,6 +24,7 @@ export interface DriveInput {
   capacityGB: number;
   otherUsedGB?: number;
   notes?: string;
+  offline?: boolean; // marked by hand: not plugged in or not reachable
 }
 
 function validateDrive(input: DriveInput, selfId?: string): void {
@@ -72,6 +73,7 @@ export function updateDrive(actor: Actor, id: string, patch: Partial<DriveInput>
   if (allocated + next.otherUsedGB > next.capacityGB)
     throw new RuleError(`That would put ${fmtSize(allocated + next.otherUsedGB)} on a ${fmtSize(next.capacityGB)} drive.`);
   Object.assign(d, { name: next.name.trim(), capacityGB: next.capacityGB, otherUsedGB: next.otherUsedGB, notes: next.notes });
+  if (patch.offline !== undefined) d.offline = !!patch.offline;
   logAudit(actor, "update", "drive", id, Object.keys(patch).join(", "));
   recordSnapshot();
   commit();

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { DocumentPage, WorkflowStage } from "../../types";
-import { catalogEntry, catalogFor, type CatalogEntry } from "../../config/documentCatalog";
+import { briefKeyOf, catalogEntry, catalogFor, type CatalogEntry } from "../../config/documentCatalog";
 import { WORKFLOW_STAGE_NAMES } from "../../config/workflow";
 import { getDb, useDb } from "../../data/store";
 import {
@@ -15,6 +15,7 @@ import {
 } from "../../services/wrapped/documents";
 import { sessionsOf, type Project } from "../../services/wrapped/workflow";
 import { useApp } from "../../ui/AppContext";
+import { fmtDate } from "../../services/utils";
 import { Empty } from "../../ui/parts";
 import { IconBack, IconCalendar, IconCam, IconCheck, IconDoc, IconDrive, IconFilm, IconSheet, IconUsers } from "../../ui/Icons";
 import { DecisionHistory, DecisionPanel } from "../workflow/Development";
@@ -25,10 +26,11 @@ import { FormFields, pageFields, ProjectDetails } from "./ProjectDetails";
 import { PageComments, ReviewBanner, ReviewPanes } from "./ReviewView";
 import { PageEditor, type PageEditorHandle } from "./PageEditor";
 import { PageList } from "./PageList";
-import { PlanSectionView, PlannedDrive, planCards, type PlanSection } from "./RecordingPlan";
+import { PlanSectionView, planCards, type PlanSection } from "./RecordingPlan";
 import { DaySheetForm, EpisodeStrip, SessionPicker, defaultSession, formCards } from "./StagePanes";
 import { usePrintDocument } from "./printDocument";
 import { ReviewNotDone } from "../../ui/ReviewCheck";
+import { onOpenDoc, takePendingDoc } from "../../ui/checksNav";
 
 // A project's documents (the documents rework), StudioBinder style. Project Home has one coloured row per stage, each
 // with tiles: a document, a tool (Storyboard, Shot List) or a form. A tile opens full width, in three panes: the
@@ -138,6 +140,12 @@ export function ProjectHome({
           <div className="pd-label">
             <span>{stage}</span>
             {stage === current && <span className="pd-now">Now</span>}
+            {project.workflow.imported && (stage === "Development" || (stage === "Pre-production" && !hasPlannedSessions(project))) && (
+              // Imported from before the system: the stages it skipped are history, never errors (build prompt v4, 7A).
+              <span className="pd-now muted" title="This project was recorded before the system and imported">
+                Recorded before the system
+              </span>
+            )}
           </div>
           <div className="pd-tiles">
             {shownAt(project, stage).map((entry) => {
@@ -176,6 +184,39 @@ function GreenlightPanel({ project, write }: { project: Project; write: boolean 
       </section>
       <DevelopmentGate project={project} write={write} />
     </div>
+  );
+}
+
+// ── A live show's Show Plan: its show date and producer in its header ──
+
+/** The show date (from Show Days) and the show producer, at the top of a live show's Show Plan (build prompt v4, 9). */
+function ShowPlanHeader({ project, onShowDays }: { project: Project; onShowDays: () => void }) {
+  const dates = sessionsOf(project.contentId)
+    .filter((s) => !s.archivedAt && s.scheduledDate)
+    .map((s) => s.scheduledDate!)
+    .sort();
+  return (
+    <section className="pd-greenlight" aria-label="Show date and producer">
+      <div className="row" style={{ alignItems: "end" }}>
+        <div className="grow">
+          <span className="muted">Show date</span>
+          <div>
+            {dates.length ? (
+              <b>
+                {fmtDate(dates[0])}
+                {dates.length > 1 ? ` to ${fmtDate(dates[dates.length - 1])}, ${dates.length} days` : ""}
+              </b>
+            ) : (
+              <span>Not set yet</span>
+            )}{" "}
+            <button className="btn small ghost" onClick={onShowDays}>
+              Show Days
+            </button>
+          </div>
+        </div>
+      </div>
+      <ProducerField project={project} />
+    </section>
   );
 }
 
@@ -230,10 +271,9 @@ function DocumentView({
   // title, or the first page if it has been renamed.
   const fieldsPage = entry?.pages?.find((p) => p.fields?.length);
   const fieldsTarget = fieldsPage ? (pages.find((p) => p.title === fieldsPage.title) ?? pages[0]) : undefined;
-  // The page the footage drive is chosen above (a Recording Plan's Cards and storage), found the same way.
-  const storagePage = entry?.pages?.find((p) => p.storage);
-  const storageTarget = storagePage ? (pages.find((p) => p.title === storagePage.title) ?? pages[0]) : undefined;
   const reviewed = entry?.kind === "review" && entry.reviews ? documentOf(project.contentId, "Development", entry.reviews) : undefined;
+  const plannedTile = catalogFor(formType, "Development").find((e) => e.form === "plannedEpisodes");
+  const plannedCount = getDb().plannedEpisodes.filter((p) => p.contentId === project.contentId && !p.archivedAt).length;
   const printJob = (only?: DocumentPage) => {
     if (!doc) return;
     leaveThen(() => {
@@ -393,6 +433,21 @@ function DocumentView({
                 {doc.docKey === "devotional_script" && <SharedTheme project={project} />}
                 {reviewEntry && <ReviewBanner doc={doc} write={write} />}
                 {opened.key === "greenlight" && <GreenlightPanel project={project} write={write} />}
+                {opened.key === briefKeyOf(formType) && plannedTile && (
+                  // The brief's episode list is kept as structured rows in Planned Episodes (build prompt v4, section 5).
+                  <div className="pd-planned-link" aria-label={plannedTile.title}>
+                    <span className="grow">
+                      The {plannedTile.title === "The Song" ? "song" : "list"} is kept in <b>{plannedTile.title}</b>:{" "}
+                      {plannedCount ? `${plannedCount} planned` : "none yet"}, each with its own Content ID.
+                    </span>
+                    <button className="btn small" onClick={() => onOpen("Development", plannedTile.key)}>
+                      Open {plannedTile.title}
+                    </button>
+                  </div>
+                )}
+                {opened.key === "event_brief" && project.category === "live" && (
+                  <ShowPlanHeader project={project} onShowDays={() => onOpen("Development", "show_days")} />
+                )}
                 {page && fieldsPage?.fields && page.id === fieldsTarget?.id && (
                   <FormFields
                     project={project}
@@ -403,7 +458,6 @@ function DocumentView({
                   />
                 )}
                 {page?.episodeId && <EpisodeStrip episodeId={page.episodeId} />}
-                {page && page.id === storageTarget?.id && <PlannedDrive project={project} write={write} />}
                 {page ? (
                   <div className={showComments ? "pd-with-comments" : undefined}>
                     <PageEditor
@@ -433,6 +487,10 @@ function DocumentView({
 
 // ── The whole: Project Home, or one thing open ───────────────
 
+/** Whether an imported project has sessions planned since it came in: then its Pre-production is its own work. */
+const hasPlannedSessions = (project: Project): boolean =>
+  getDb().recordingSessions.some((x) => x.contentId === project.contentId && x.status === "Planned" && !x.archivedAt);
+
 export function ProjectDocuments({ project, write }: { project: Project; write: boolean }) {
   useDb();
   const { actor, attempt, confirm } = useApp();
@@ -454,6 +512,14 @@ export function ProjectDocuments({ project, write }: { project: Project; write: 
       editor.current = null;
       setOpened({ stage, key });
     });
+  // The Checks panel's "Go to" opens a document here, also when it was pressed on another page before this one opened.
+  const latest = useRef(open);
+  latest.current = open;
+  useEffect(() => {
+    const asked = takePendingDoc(project.contentId);
+    if (asked) latest.current(asked.stage, asked.key);
+    return onOpenDoc(project.contentId, (stage, key) => latest.current(stage, key));
+  }, [project.contentId]);
   // While the theological review is not done, the project says so above its home and every document.
   const due = (
     <ReviewNotDone

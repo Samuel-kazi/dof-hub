@@ -25,6 +25,8 @@ const KEPT_SECTIONS = ["Entry", "Guest"];
 /** Short notes on what is not written or done yet. */
 export function softNudges(projectId: string): string[] {
   const p = projectOf(projectId);
+  // Imported from before the system: Development was done before, so nothing is missing from it (build prompt v4, 7A).
+  if (p.workflow.imported) return [];
   const formType = p.workflow.formType;
   const out: string[] = [];
   for (const problem of formProblems(projectId, 1)) {

@@ -13,6 +13,7 @@ export type Route =
   | { n: "pipeline"; category?: CategoryKey }
   | { n: "record"; id: string }
   | { n: "session"; id: string }
+  | { n: "livecontrol"; id: string } // a live day's Live Control (build prompt v4, section 9b)
   | { n: "template"; id: string }
   | { n: "callsheets" }
   | { n: "callsheet"; id: string }
@@ -27,7 +28,6 @@ export type Route =
   | { n: "storage" }
   | { n: "drive"; id: string }
   | { n: "access" }
-  | { n: "reminders" }
   | { n: "calendar" }
   | { n: "settings" };
 

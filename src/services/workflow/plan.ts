@@ -345,7 +345,8 @@ export function sessionDriveId(session: RecordingSession): string | null {
 }
 
 /** The storage entry for a session's recorded footage, once its size is entered. */
-export const footageOf = (sessionId: string): DriveAllocation | undefined => getDb().allocations.find((a) => a.sessionId === sessionId);
+export const footageOf = (sessionId: string): DriveAllocation | undefined =>
+  getDb().allocations.find((a) => a.sessionId === sessionId && a.role !== "backup");
 
 /** The storage entry for the assets post production makes for an episode. */
 export const assetsOf = (episodeId: string): DriveAllocation | undefined =>
@@ -395,6 +396,7 @@ export function setSessionFootage(actor: Actor, sessionId: string, sizeGB: numbe
     note: `Recording session ${session.id}`,
   });
   a.sessionId = sessionId;
+  a.role = "primary";
   logAudit(actor, "storage-footage", "session", sessionId, fmtSize(sizeGB));
   commit();
   return a;

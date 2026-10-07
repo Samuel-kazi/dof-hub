@@ -36,6 +36,7 @@ import { Avatar } from "./parts";
 import { Dashboard } from "../pages/Dashboard";
 import { Pipeline } from "../pages/Pipeline";
 import { RecordPage } from "../pages/RecordPage";
+import { LiveControlPage } from "../pages/production/LiveTools";
 import { SessionPage } from "../pages/workflow/SessionPage";
 import { ShowTemplatePage } from "../pages/production/ShowTemplatePage";
 import { CallSheets, CallSheetPage } from "../pages/CallSheets";
@@ -47,7 +48,6 @@ import { ManifestPage } from "../pages/Manifest";
 import { Storage, DrivePage } from "../pages/Storage";
 import { Documents, DocPage } from "../pages/Documents";
 import { Access } from "../pages/Access";
-import { Reminders } from "../pages/Reminders";
 import { CalendarPage } from "../pages/Calendar";
 import { Soon } from "../pages/Soon";
 import { markNotificationsRead, notificationsFor } from "../services/wrapped/alerts";
@@ -61,21 +61,9 @@ const ICONS: Record<ModuleKey, () => JSX.Element> = {
   storage: IconDrive,
   crew: IconUsers,
   documents: IconDoc,
-  reminders: IconBell,
   settings: IconGear,
 };
-const BUILT: ModuleKey[] = [
-  "dashboard",
-  "pipeline",
-  "callsheets",
-  "calendar",
-  "equipment",
-  "storage",
-  "crew",
-  "documents",
-  "reminders",
-  "settings",
-];
+const BUILT: ModuleKey[] = ["dashboard", "pipeline", "callsheets", "calendar", "equipment", "storage", "crew", "documents", "settings"];
 
 function moduleOfRoute(r: Route): ModuleKey {
   switch (r.n) {
@@ -84,6 +72,7 @@ function moduleOfRoute(r: Route): ModuleKey {
     case "pipeline":
     case "record":
     case "session":
+    case "livecontrol":
     case "template":
       return "pipeline";
     case "callsheets":
@@ -104,8 +93,6 @@ function moduleOfRoute(r: Route): ModuleKey {
     case "documents":
     case "doc":
       return "documents";
-    case "reminders":
-      return "reminders";
     case "access":
       return "settings";
     case "settings":
@@ -133,8 +120,6 @@ function routeFor(m: ModuleKey): Route {
       return { n: "documents" };
     case "crew":
       return { n: "crew" };
-    case "reminders":
-      return { n: "reminders" };
     case "settings":
       return { n: "settings" };
     default:
@@ -192,9 +177,8 @@ export function Shell() {
   const [palette, setPalette] = useState(false);
   // The new shell (build prompt v2): Settings opens from the profile menu, not the side menu; Ctrl+K searches.
   const shell = featureOn("shell");
-  // The Calendar absorbs Reminders (build prompt v2, section 12): the menu item goes, and old links open the Calendar.
-  const calendar2 = featureOn("calendar2");
-  const bell = calendar2 ? notificationsFor(actor.personId) : [];
+  // The Calendar holds the reminders (build prompt v4, section 12): the bell shows what is due.
+  const bell = notificationsFor(actor.personId);
   const unread = bell.filter((n) => !n.readAt);
   const role = ROLES[actor.role];
   const active = moduleOfRoute(route);
@@ -311,7 +295,7 @@ export function Shell() {
           </div>
         </div>
         {modulesFor(actor)
-          .filter((m) => !(shell && m === "settings") && !(calendar2 && m === "reminders"))
+          .filter((m) => !(shell && m === "settings"))
           .map((m) => {
             const Icon = ICONS[m];
             const built = BUILT.includes(m);
@@ -448,6 +432,7 @@ export function Shell() {
             {route.n === "pipeline" && <Pipeline category={route.category} />}
             {route.n === "record" && <RecordPage id={route.id} />}
             {route.n === "session" && <SessionPage id={route.id} />}
+            {route.n === "livecontrol" && <LiveControlPage id={route.id} />}
             {route.n === "template" && <ShowTemplatePage id={route.id} />}
             {route.n === "callsheets" && <CallSheets />}
             {route.n === "callsheet" && <CallSheetPage id={route.id} />}
@@ -460,7 +445,6 @@ export function Shell() {
             {route.n === "storage" && <Storage />}
             {route.n === "drive" && <DrivePage id={route.id} />}
             {route.n === "access" && <Access />}
-            {route.n === "reminders" && (calendar2 ? <CalendarPage key="reminders" initialView="reminders" /> : <Reminders />)}
             {route.n === "calendar" && <CalendarPage />}
             {route.n === "documents" && <Documents />}
             {route.n === "doc" && <DocPage id={route.id} />}

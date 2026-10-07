@@ -1,7 +1,6 @@
 import type { RoleCode } from "../types";
 
-export type ModuleKey =
-  "dashboard" | "pipeline" | "callsheets" | "calendar" | "equipment" | "storage" | "crew" | "documents" | "reminders" | "settings";
+export type ModuleKey = "dashboard" | "pipeline" | "callsheets" | "calendar" | "equipment" | "storage" | "crew" | "documents" | "settings";
 
 export interface RoleInfo {
   code: RoleCode;
@@ -61,6 +60,5 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
   storage: "Storage & Media",
   crew: "Crew",
   documents: "Documents",
-  reminders: "Reminders",
   settings: "Settings",
 };

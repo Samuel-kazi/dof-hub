@@ -22,6 +22,11 @@ export const RPC_NAMES: Record<string, string[]> = {
     "updateCallSheet",
     "updateRunItem"
   ],
+  "checks": [
+    "dismissCheck",
+    "restoreCheck",
+    "setCheck"
+  ],
   "content": [
     "addComment",
     "addFeatured",
@@ -153,6 +158,13 @@ export const RPC_NAMES: Record<string, string[]> = {
     "returnLoanItems",
     "updateLoan"
   ],
+  "live": [
+    "advanceRundown",
+    "copyRundownToDays",
+    "copyTechCheckFromPrevious",
+    "setLiveLight",
+    "setRundown"
+  ],
   "locations": [
     "archiveLocation",
     "canKeepLocations",
@@ -230,7 +242,9 @@ export const RPC_NAMES: Record<string, string[]> = {
     "assignDevotion",
     "assignProducer",
     "assignRole",
+    "assignSessionStorage",
     "canShare",
+    "clearSessionStorage",
     "closeProject",
     "closeSession",
     "copyShareLink",
@@ -240,6 +254,9 @@ export const RPC_NAMES: Record<string, string[]> = {
     "decideCheckpoint",
     "decideGreenlight",
     "duplicateSession",
+    "importProject",
+    "importableFolders",
+    "markStorage",
     "moveToMarketing",
     "openSession",
     "publishEpisode",
@@ -261,9 +278,11 @@ export const RPC_NAMES: Record<string, string[]> = {
     "setEpisodeEditor",
     "setEpisodeLinks",
     "setLearningNotes",
+    "setPlannedStart",
     "setProjectDrive",
     "setReadyForReview",
     "setReviewWindow",
+    "setReviewedBeforeSystem",
     "setRolePerson",
     "setSessionBoards",
     "setSessionDrive",

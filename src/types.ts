@@ -28,6 +28,7 @@ export interface Person {
   density?: Density; // per-user: Comfortable/Compact
   contactHidden?: boolean; // only in what one person is shown: their email, phone and equipment are private to them, so those fields are left empty
   quietHours?: { from: string; to: string } | null; // HH:MM, Nairobi time: no emails in between (data version 21)
+  reminderLead?: number; // minutes before: the "when" a new reminder starts with (build prompt v4, section 12)
 }
 
 export type FontSize = "small" | "default" | "large" | "xl";
@@ -155,6 +156,9 @@ export interface ProductionInfo {
   mode: ProductionMode;
   templateId: string | null; // recurring: its Show Template
   eventPlan: EventPlan | null; // multi-day: the plan for the whole event
+  // The Broadcast Plan's Rundown (build prompt v4, section 9): the segments every day starts from, copied to the days.
+  // A recurring show's rundown is its template's run of show.
+  rundown?: RunItem[];
 }
 
 export interface EventPlan {
@@ -195,8 +199,26 @@ export interface RecurrenceRule {
 export interface CheckItem {
   id: string;
   label: string;
-  done: boolean;
+  done: boolean; // checked and fine: the same as state "OK"
   note: string;
+  // A live show's Tech Check (build prompt v4, section 9): who checks it, how it stands, the inventory item it is, and
+  // what the test showed. A line without a state reads its tick: done is OK, not done is Not checked.
+  state?: CheckState;
+  assigneeId?: string | null;
+  equipmentId?: string | null;
+  result?: string;
+}
+
+export type CheckState = "Not checked" | "OK" | "Issue";
+
+/** A step of a live show's Rehearsal Log: when it was checked, by whom, and notes. Never a gate. */
+export interface RehearsalStep {
+  id: string;
+  step: string; // Setup, Line check, Camera check…
+  time: string; // HH:MM it was checked, or empty
+  personId: string | null;
+  notes: string;
+  done: boolean;
 }
 
 /** Someone who appears: a host, guest, speaker or performer. Free text, so outside talent needs no account. */
@@ -230,6 +252,7 @@ export interface Rehearsal {
   time: string; // HH:MM, or empty
   notes: string;
   done: boolean;
+  steps?: RehearsalStep[]; // a live show's Rehearsal Log (data version 24)
 }
 
 /** A quantity of an item to book. */
@@ -270,6 +293,7 @@ export interface ShowTemplate {
   id: string; // DOF-TPL-001
   contentId: string; // the show
   rule: RecurrenceRule;
+  timeZone?: string; // the zone its dates and times are in, stored explicitly (data version 24): Africa/Nairobi
   sheet: SheetContent;
   productionLevel: ProductionLevel | null; // each day's level of production
   ownerPersonId: string | null; // responsible for each day
@@ -313,7 +337,15 @@ export interface ProjectWorkflow {
   sermonFormat: SermonFormat | null; // sermon series only
   migrated: boolean; // moved across from the earlier pipeline: gates it passed there count as met
   storageDriveId?: string | null; // the drive its footage is planned to go on (the Recording Plan's Cards and storage)
+  plannedStart?: string | null; // when work is planned to start: the Calendar's Timeline bar runs from it to the due date
   aheadOfReview?: ReviewNote[]; // each time someone went ahead before the theological review was done (build prompt v2, section 14)
+  // Recorded before the system and brought in from a drive (build prompt v4, section 7A): its earlier stages show
+  // "Recorded before the system", and its dates before importedAt are history (no reminders, overdue, urgency or Google).
+  imported?: boolean;
+  importedAt?: string | null;
+  reviewedBeforeSystem?: boolean; // its theological review was done before the system: the banner is cleared
+  // The Checks panel's suggestions set aside (build prompt v4, section 14A), keyed "{ownerId}|{check key}", with a note.
+  dismissedChecks?: Record<string, { note: string; byPersonId: string; at: string }>;
 }
 
 /** Someone went ahead (scheduled a session, published a call sheet or an episode) before the theological review was done. */
@@ -488,9 +520,20 @@ export interface RecordingSession {
   instance?: InstanceInfo | null;
   productionLevel?: ProductionLevel | null; // a live day's level of production: decides whether its call sheet needs a run of show
   movedFrom?: string | null; // the live day record it replaced in the move to data version 23 (that record is kept, archived)
+  // The Recording Log (build prompt v4, section 7A): who attended, and the session's issues and pickups.
+  attendees?: string[] | null; // crew Person IDs; null or absent: the call sheet's crew
+  attendeesNote?: string; // others who attended, as text
+  issues?: string; // carried into the project's Edit Notes when the session closes
+  // A live day's Live Control (build prompt v4, section 9b): status lights set by hand on the night.
+  liveLights?: Partial<Record<LiveLightKey, LiveLightState>>;
+  liveLightsAt?: string | null;
+  liveLightsBy?: string | null;
 }
 
-export type LogStatus = "Recorded" | "Pickup needed" | "Not recorded";
+export type LiveLightKey = "cameras" | "audio" | "stream" | "graphics" | "recording" | "comms" | "internet";
+export type LiveLightState = "off" | "ok" | "watch" | "down";
+
+export type LogStatus = "Recorded" | "Pickup needed" | "Not recorded"; // shown as the take marks Good, Pickup needed, Re-record
 
 /** One row of a session's recording log. Pickups, timestamps and problems go in the notes. */
 export interface SessionLogEntry {
@@ -502,6 +545,7 @@ export interface SessionLogEntry {
   guest: string;
   status: LogStatus | null; // every row needs one before the session can close
   notesForPost: string;
+  duration?: string; // the take's length, as typed: "12:30" or "58 min"
   createdAt: string;
   updatedAt: string;
 }
@@ -875,6 +919,7 @@ export interface Drive {
   capacityGB: number;
   otherUsedGB: number; // space used by things not tied to a project
   notes: string;
+  offline?: boolean; // marked by hand: not plugged in or not reachable (the app cannot see the drives themselves)
 }
 
 export interface DriveAllocation {
@@ -887,6 +932,14 @@ export interface DriveAllocation {
   note: string;
   updatedAt: string;
   sessionId?: string | null; // a recording session's footage, entered after it was recorded
+  // Storage assigned in Production (build prompt v4, section 7A). The app cannot reach the drives, so the folder is
+  // recorded here and the crew copy the files.
+  role?: "primary" | "backup" | null; // a session's footage: its main drive, or the backup copy
+  folderPath?: string; // where on the drive: "DOF-SER-001-S1/2026-10-09_Morning"
+  offloadedAt?: string | null; // the main drive: the cards were offloaded onto it
+  offloadedBy?: string | null;
+  backedUpAt?: string | null; // the backup drive: the copy was made
+  backedUpBy?: string | null;
 }
 
 export interface StorageSnapshot {
@@ -928,6 +981,7 @@ export interface DocRevision {
 export interface Settings {
   stageReminderHours: number;
   storageWarningThreshold: number;
+  storageFolderPattern?: string; // a session's folder on a drive (build prompt v4, 7A): {contentId}, {date}, {label}, {session}
   checkoutReturnDays: number;
   workDays: number[]; // days of the week people are normally at work, 0 is Sunday
   effortOverrides: Record<string, number>; // person-days per stage, keyed "category:Stage", replacing the built-in estimates
@@ -942,6 +996,8 @@ export interface Settings {
   // thresholds where they differ from the defaults (src/config/urgency.ts).
   features?: Record<string, boolean>;
   urgency?: Partial<UrgencyThresholds>;
+  // The workspace's time zone, stored explicitly (build prompt v4, section 7): dates, shows and Google events are in it.
+  timeZone?: string;
 }
 
 /** The urgency report's numbers, kept in settings so they change without code. */

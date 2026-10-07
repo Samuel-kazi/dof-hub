@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { ReviewNote } from "../types";
 import { catalogTypeOf } from "../config/documentCatalog";
 import { noteUnreviewed, REVIEW_ACTIONS, reviewNotesOf, reviewOutstanding, reviewsOf, theologyStatus } from "../services/wrapped/documents";
-import type { Project } from "../services/wrapped/workflow";
+import { setReviewedBeforeSystem, type Project } from "../services/wrapped/workflow";
 import { fmtDateTime } from "../services/utils";
 import { useApp } from "./AppContext";
 import { MOD_KEY } from "./keys";
@@ -40,12 +40,35 @@ export function ReviewNotDone({ project, onOpen }: { project: Project; onOpen?: 
           </details>
         )}
       </div>
+      {project.workflow.imported && <ReviewedBeforeButton project={project} />}
       {onOpen && (
         <button className="btn small" onClick={onOpen}>
           Open the review
         </button>
       )}
     </div>
+  );
+}
+
+/** An imported project's review may have been done before the system: marking it clears the banner (build prompt v4, 7A). */
+function ReviewedBeforeButton({ project }: { project: Project }) {
+  const { actor, attempt, confirm } = useApp();
+  return (
+    <button
+      className="btn small"
+      onClick={async () => {
+        if (
+          await confirm({
+            title: "Reviewed before the system?",
+            body: `${project.title}'s theological review was done before it came into the system. The banner goes; this is noted in the activity log.`,
+            confirmLabel: "Reviewed before",
+          })
+        )
+          attempt(() => setReviewedBeforeSystem(actor, project.contentId, true), "Marked reviewed before the system");
+      }}
+    >
+      Reviewed before the system
+    </button>
   );
 }
 

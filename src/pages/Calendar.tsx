@@ -11,17 +11,18 @@ import { getRecord } from "../services/access";
 import { dayTitle, sheetOfDay } from "../services/wrapped/production";
 import { createReminder, deleteReminder } from "../services/wrapped/alerts";
 import { EMAIL_MIN_OFFSET, OFFSETS } from "../services/alerts";
-import { featureOn } from "../services/wrapped/settings";
 import { nameOf } from "../services/wrapped/people";
 import { addDaysIso, fmtDate, todayIso } from "../services/utils";
 import { CalendarWeek } from "./CalendarWeek";
+import { DayView, Timeline, WeekView, weekStart } from "./CalendarViews";
 import { DeadlineReminders } from "./Reminders";
 import { IconBack } from "../ui/Icons";
 import { Modal } from "../ui/Modal";
 import { Empty, Field } from "../ui/parts";
 
-// The Calendar (build prompt v2, section 12): it absorbs Reminders. Month and Agenda views of everything with a date,
-// worked out from the records themselves; a recurring show sits on each of its dates (never a bar across months), a
+// The Calendar (build prompt v2 and v4, section 12): it absorbs Reminders. Timeline, Month, Week, Day and Agenda views
+// of everything with a date (the Timeline, Week and Day views are in ./CalendarViews.tsx), with filters in a strip
+// that folds away, worked out from the records themselves; a recurring show sits on each of its dates (never a bar across months), a
 // multi-day event is one bar from its first day to its last, and clicking a day of it shows that day's details. Then
 // one's reminders (on anything with a date, or standing alone, in the bell and by email), the deadlines coming up,
 // and the urgency report.
@@ -69,8 +70,27 @@ const shiftMonth = (monthIso: string, delta: number): string => {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
 };
 
-type View = "month" | "agenda" | "reminders" | "urgency";
+type View = "timeline" | "month" | "week" | "day" | "agenda" | "reminders" | "urgency";
 type Target = { type: ReminderTarget; id: string };
+const VIEWS: [View, string][] = [
+  ["timeline", "Timeline"],
+  ["month", "Month"],
+  ["week", "Week"],
+  ["day", "Day"],
+  ["agenda", "Agenda"],
+  ["reminders", "Reminders"],
+  ["urgency", "Urgency"],
+];
+const VIEW_KEY = "dof-hub-calendar-view";
+function rememberedView(fallback: View): View {
+  try {
+    const v = localStorage.getItem(VIEW_KEY) as View | null;
+    return v && VIEWS.some(([k]) => k === v) ? v : fallback;
+  } catch {
+    return fallback;
+  }
+}
+const FILTER_TYPES: CalSubtype[] = ["session", "shoot", "window", "callsheet", "deadline", "stage", "booking", "loan", "reminder"];
 
 /** What a reminder on a calendar event is attached to, if it can have one. */
 function targetOf(e: CalEvent): Target | null {
@@ -86,21 +106,47 @@ function targetOf(e: CalEvent): Target | null {
   return null;
 }
 
-export function CalendarPage({ initialView = "month" }: { initialView?: View }) {
+export function CalendarPage({ initialView }: { initialView?: View }) {
   const { actor, go } = useApp();
   useDb();
-  const v2 = featureOn("calendar2");
-  const [view, setView] = useState<View>(initialView);
+  const [view, setViewState] = useState<View>(() => initialView ?? rememberedView("month"));
+  const setView = (v: View) => {
+    setViewState(v);
+    try {
+      localStorage.setItem(VIEW_KEY, v);
+    } catch {
+      /* remembered until the page is reloaded */
+    }
+  };
   const [month, setMonth] = useState(() => todayIso().slice(0, 7));
+  const [anchor, setAnchor] = useState(() => todayIso()); // the Week, Day and Timeline views' date
   const [cat, setCat] = useState<CategoryKey | null>(null);
+  const [hidden, setHidden] = useState<CalSubtype[]>([]);
+  const [colorBy, setColorBy] = useState<"stage" | "urgency">("stage");
   const [selected, setSelected] = useState<string | null>(null);
   const [reminding, setReminding] = useState<{ target: Target | null; title: string } | null>(null);
 
   const { cells, from, to, label } = monthGrid(month);
-  const all = calendarEvents(actor, from, to);
-  const events = cat ? all.filter((e) => e.category === cat) : all;
   const today = todayIso();
+  const wStart = weekStart(anchor);
+  const range =
+    view === "week" ? { from: wStart, to: addDaysIso(wStart, 6) } : view === "day" ? { from: anchor, to: anchor } : { from, to };
+  const all = calendarEvents(actor, range.from, range.to);
+  const events = all.filter((e) => (!cat || e.category === cat) && !hidden.includes(e.subtype));
   const dayEvents = selected ? eventsOnDay(events, selected) : [];
+  const step = view === "week" ? 7 : view === "day" ? 1 : 28;
+  const openEvent = (e: CalEvent, date: string) => (e.days ? (setAnchor(date), setView("day")) : go(e.open));
+  const filtersOn = (cat ? 1 : 0) + hidden.length;
+  const shownLabel =
+    view === "month"
+      ? label
+      : view === "week"
+        ? `${fmtDate(wStart)} to ${fmtDate(addDaysIso(wStart, 6))}`
+        : view === "day"
+          ? fmtDate(anchor)
+          : view === "timeline"
+            ? "Thirteen weeks"
+            : "";
 
   return (
     <div className="page">
@@ -108,26 +154,19 @@ export function CalendarPage({ initialView = "month" }: { initialView?: View }) 
         <div className="grow">
           <h1>Calendar</h1>
           <p className="sub">
-            Shoot and show days, recording sessions, deadlines, published call sheets, gear and loans, worked out from the records
-            themselves{v2 ? ", and your reminders" : ""}. Change a date on its record and the calendar follows.
+            Projects, shoot and show days, recording sessions, deadlines, published call sheets, gear and loans, worked out from the records
+            themselves, and your reminders. Change a date on its record and the calendar follows.
           </p>
         </div>
-        {v2 && (
+        {
           <div className="seg" role="tablist" aria-label="View">
-            {(
-              [
-                ["month", "Month"],
-                ["agenda", "Agenda"],
-                ["reminders", "Reminders"],
-                ["urgency", "Urgency"],
-              ] as const
-            ).map(([v, l]) => (
+            {VIEWS.map(([v, l]) => (
               <button key={v} role="tab" aria-selected={view === v} className={view === v ? "on" : ""} onClick={() => setView(v)}>
                 {l}
               </button>
             ))}
           </div>
-        )}
+        }
         {view === "month" && (
           <div className="seg" role="group" aria-label="Month">
             <button
@@ -164,30 +203,117 @@ export function CalendarPage({ initialView = "month" }: { initialView?: View }) 
             </button>
           </div>
         )}
+        {(view === "week" || view === "day" || view === "timeline") && (
+          <div className="seg" role="group" aria-label="Move">
+            <button
+              aria-label={`Back ${step === 1 ? "a day" : step === 7 ? "a week" : "four weeks"}`}
+              onClick={() => setAnchor((a) => addDaysIso(a, -step))}
+            >
+              <span style={{ display: "inline-flex" }}>
+                <IconBack />
+              </span>
+            </button>
+            <button onClick={() => setAnchor(today)}>Today</button>
+            <button
+              aria-label={`On ${step === 1 ? "a day" : step === 7 ? "a week" : "four weeks"}`}
+              onClick={() => setAnchor((a) => addDaysIso(a, step))}
+            >
+              <span style={{ display: "inline-flex", transform: "scaleX(-1)" }}>
+                <IconBack />
+              </span>
+            </button>
+          </div>
+        )}
       </div>
 
-      {(view === "month" || view === "agenda") && (
-        <div className="chips" role="group" aria-label="Category">
-          {view === "month" && (
-            <span className="sub" style={{ marginRight: 4 }}>
-              {label}
-            </span>
-          )}
-          <button className={`chip ${cat ? "" : "on"}`} onClick={() => setCat(null)}>
-            All
-          </button>
-          {CATEGORIES.filter((c) => c.key !== "general").map((c) => (
-            <button
-              key={c.key}
-              className={`chip ${cat === c.key ? "on" : ""}`}
-              style={{ ["--cat-color" as string]: c.color }}
-              onClick={() => setCat(cat === c.key ? null : c.key)}
-            >
-              <span className="cat-dot" />
-              {c.label}
+      {view !== "reminders" && view !== "urgency" && (
+        <details className="cal-filters">
+          <summary>
+            <span className="sub">{shownLabel}</span>
+            <span className="cal-filters-label">Filters{filtersOn ? ` · ${filtersOn} on` : ""}</span>
+          </summary>
+          <div className="chips" role="group" aria-label="Category">
+            <button className={`chip ${cat ? "" : "on"}`} onClick={() => setCat(null)}>
+              All
             </button>
-          ))}
-        </div>
+            {CATEGORIES.filter((c) => c.key !== "general").map((c) => (
+              <button
+                key={c.key}
+                className={`chip ${cat === c.key ? "on" : ""}`}
+                style={{ ["--cat-color" as string]: c.color }}
+                onClick={() => setCat(cat === c.key ? null : c.key)}
+              >
+                <span className="cat-dot" />
+                {c.label}
+              </button>
+            ))}
+          </div>
+          {view === "timeline" ? (
+            <div className="chips" role="group" aria-label="Colour by">
+              <span className="sub">Colour by</span>
+              <button className={`chip ${colorBy === "stage" ? "on" : ""}`} onClick={() => setColorBy("stage")}>
+                Stage
+              </button>
+              <button className={`chip ${colorBy === "urgency" ? "on" : ""}`} onClick={() => setColorBy("urgency")}>
+                Urgency
+              </button>
+            </div>
+          ) : (
+            <div className="chips" role="group" aria-label="What to show">
+              {FILTER_TYPES.map((t) => (
+                <button
+                  key={t}
+                  className={`chip ${hidden.includes(t) ? "" : "on"}`}
+                  aria-pressed={!hidden.includes(t)}
+                  onClick={() => setHidden(hidden.includes(t) ? hidden.filter((x) => x !== t) : [...hidden, t])}
+                >
+                  <i className={`cal-mark ${t}`} /> {SUBTYPE_LABEL[t]}
+                </button>
+              ))}
+            </div>
+          )}
+        </details>
+      )}
+
+      {view === "timeline" && <Timeline anchor={anchor} cat={cat} colorBy={colorBy} />}
+      {view === "week" && (
+        <WeekView
+          start={wStart}
+          events={events}
+          labelOf={(t) => SUBTYPE_LABEL[t]}
+          onOpen={openEvent}
+          onDay={(d) => {
+            setAnchor(d);
+            setView("day");
+          }}
+        />
+      )}
+      {view === "day" && (
+        <DayView
+          date={anchor}
+          events={events}
+          labelOf={(t) => SUBTYPE_LABEL[t]}
+          onOpen={(e) => go(e.open)}
+          details={(e) => {
+            const day = e.days?.find((d) => d.date === anchor) ?? (e.id.startsWith("session:") ? { id: e.id.slice(8) } : undefined);
+            const target = targetOf(e);
+            return (
+              <>
+                {day && <DayDetails dayId={day.id} />}
+                {target && (
+                  <button className="btn small" onClick={() => setReminding({ target, title: e.title })}>
+                    Remind me…
+                  </button>
+                )}
+              </>
+            );
+          }}
+        />
+      )}
+      {view === "day" && (
+        <button className="btn small" onClick={() => setReminding({ target: null, title: "" })}>
+          + Reminder on this day
+        </button>
       )}
 
       {view === "month" && (
@@ -230,7 +356,7 @@ export function CalendarPage({ initialView = "month" }: { initialView?: View }) 
               <span>
                 <i className="cal-mark booking" /> Gear booked
               </span>
-              {v2 && (
+              {
                 <>
                   <span>
                     <i className="cal-mark loan" /> Loan due back
@@ -239,7 +365,7 @@ export function CalendarPage({ initialView = "month" }: { initialView?: View }) 
                     <i className="cal-mark reminder" /> Reminder
                   </span>
                 </>
-              )}
+              }
               <span>
                 <span className="bar-swatch" /> Multi-day event / stage in progress
               </span>
@@ -255,7 +381,7 @@ export function CalendarPage({ initialView = "month" }: { initialView?: View }) 
                 <div className="stack" style={{ marginTop: 10 }}>
                   {dayEvents.map((e) => {
                     const day = e.days?.find((d) => d.date === selected);
-                    const target = v2 ? targetOf(e) : null;
+                    const target = targetOf(e);
                     return (
                       <div key={e.id} className="stack" style={{ gap: 6 }}>
                         <div className="cal-row" style={{ ["--cat-color" as string]: e.color }} onClick={() => go(e.open)}>
@@ -284,17 +410,17 @@ export function CalendarPage({ initialView = "month" }: { initialView?: View }) 
                   })}
                 </div>
               )}
-              {v2 && (
+              {
                 <button className="btn small" style={{ marginTop: 10 }} onClick={() => setReminding({ target: null, title: "" })}>
                   + Reminder on this day
                 </button>
-              )}
+              }
             </section>
           )}
         </>
       )}
 
-      {view === "agenda" && <Agenda cat={cat} onRemind={(target, title) => setReminding({ target, title })} />}
+      {view === "agenda" && <Agenda cat={cat} hidden={hidden} onRemind={(target, title) => setReminding({ target, title })} />}
       {view === "reminders" && (
         <>
           <MyReminders onNew={() => setReminding({ target: null, title: "" })} />
@@ -357,11 +483,19 @@ function DayDetails({ dayId }: { dayId: string }) {
 }
 
 /** The next 30 days as a list, day by day. */
-function Agenda({ cat, onRemind }: { cat: CategoryKey | null; onRemind: (t: Target, title: string) => void }) {
+function Agenda({
+  cat,
+  hidden,
+  onRemind,
+}: {
+  cat: CategoryKey | null;
+  hidden: CalSubtype[];
+  onRemind: (t: Target, title: string) => void;
+}) {
   const { actor, go } = useApp();
   const today = todayIso();
   const to = addDaysIso(today, 30);
-  const events = calendarEvents(actor, today, to).filter((e) => !cat || e.category === cat);
+  const events = calendarEvents(actor, today, to).filter((e) => (!cat || e.category === cat) && !hidden.includes(e.subtype));
   const days: string[] = [];
   for (let d = today; d <= to; d = addDaysIso(d, 1)) days.push(d);
   // A bar (a stage in progress) is listed on its last day; a multi-day event on each of its days.
@@ -473,11 +607,11 @@ function ReminderModal({
   date: string;
   onClose: () => void;
 }) {
-  const { actor, attempt } = useApp();
+  const { actor, me, attempt } = useApp();
   const [title, setTitle] = useState(target ? "" : about);
   const [date, setDate] = useState(initialDate);
   const [time, setTime] = useState("");
-  const [offset, setOffset] = useState<number>(target ? 1440 : 0);
+  const [offset, setOffset] = useState<number>(me.reminderLead ?? (target ? 1440 : 0));
   const [bell, setBell] = useState(true);
   const [email, setEmail] = useState(false);
   const [repeat, setRepeat] = useState<CalendarReminder["repeat"]>("none");

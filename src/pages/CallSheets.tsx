@@ -2,12 +2,10 @@ import { useEffect, useState } from "react";
 import type { CallSheet, ContentRecord } from "../types";
 import { useApp } from "../ui/AppContext";
 import { getDb, useDb } from "../data/store";
-import { canComment, canWrite, getRecord, visibleCallSheets, visibleRecords } from "../services/access";
+import { canComment, canWrite, getRecord, visibleCallSheets } from "../services/access";
 import {
-  attachCallSheet,
   bookPlannedGear,
   confirmOnSheet,
-  createCallSheet,
   crewConflicts,
   deleteCallSheet,
   duplicateCallSheet,
@@ -25,6 +23,8 @@ import { roleOn } from "../services/wrapped/team";
 import { nameOf } from "../services/wrapped/people";
 import { addDaysIso, dateInNairobi, fmtDate, fmtDateTime, relativeDays, todayIso } from "../services/utils";
 import { sheetWarnings, gearSuggestions } from "../services/sheetAdvice";
+import { ChecksPanel } from "../ui/ChecksPanel";
+import { NotReturnedBanner, RehearsalSteps, TechCheckTable } from "./production/LiveTools";
 import { pipelineCategories } from "../services/wrapped/settings";
 import { changesOf, confirmationHolds } from "../services/sheetTracking";
 import { canKeepLocations, createLocation, listLocations } from "../services/wrapped/locations";
@@ -56,6 +56,7 @@ import {
   SectionNav,
   TalentSection,
   TechnicalCheckSection,
+  TemplateDiffContext,
   crewCandidates,
   crewContactRows,
   type ConfirmProps,
@@ -64,6 +65,7 @@ import {
 import { RunSheetPanel } from "./workflow/SessionPage";
 import { takePrintRequest, usePrintCallSheet } from "./documents/printCallSheet";
 import { sheetTimes } from "../services/wrapped/workflow";
+import { templateDiff } from "../services/wrapped/production";
 import { ReportButton, ReportDialog } from "../ui/ReportDialog";
 import {
   addGearToSheet,
@@ -72,17 +74,15 @@ import {
   hasGearAccess,
   manifestForSheet,
   manifestStatusView,
-  projectLabel,
   removeGearFromSheet,
 } from "../services/wrapped/equipment";
+import { FootageWhere } from "./workflow/RecordingLog";
+import { sessionStorage } from "../services/wrapped/workflow";
 
 export function CallSheets() {
-  const { actor, go, menu, confirm, attempt } = useApp();
+  const { actor, go, menu } = useApp();
   useDb();
-  const [creating, setCreating] = useState(false);
-  const [duplicating, setDuplicating] = useState<CallSheet | null>(null);
   const [downloading, setDownloading] = useState<CallSheet | null>(null);
-  const [attaching, setAttaching] = useState<CallSheet | null>(null);
   // Filters: the kind of production, upcoming or past, and the project.
   const [type, setType] = useState<string>("");
   const [when, setWhen] = useState<"all" | "upcoming" | "past">("all");
@@ -100,20 +100,25 @@ export function CallSheets() {
     .map((id) => getRecord(id))
     .filter((r): r is ContentRecord => !!r)
     .sort((a, b) => a.title.localeCompare(b.title));
-  const writableProjects = visibleRecords(actor).filter((r) => r.hierarchyLevel === 0 && canWrite(actor, r));
+  // Where each sheet was made: a recording session, a show's day, or on its own before the rework (still viewable).
+  const madeFrom = (cs: CallSheet): string => {
+    const s = getDb().recordingSessions.find((x) => x.callSheetId === cs.id || x.id === cs.instanceId);
+    if (!s) return "On its own";
+    return getRecord(s.contentId)?.category === "live"
+      ? `Show day ${s.id.slice(s.contentId.length + 1)}`
+      : `Session ${s.id.slice(s.contentId.length + 1)}`;
+  };
 
   return (
     <div className="page">
       <div className="page-head">
         <div className="grow">
           <h1>Call sheets</h1>
-          <p className="sub">Each sheet is linked to its project's episodes on the shoot date.</p>
+          <p className="sub">
+            Every call sheet, to find and open. A call sheet is made from its recording session or show day (&quot;Make the call sheet&quot;
+            on the day&apos;s page), so each belongs to its day; sheets made on their own before stay here, to open and print.
+          </p>
         </div>
-        {writableProjects.length > 0 && (
-          <button className="btn primary" onClick={() => setCreating(true)}>
-            <IconPlus /> New call sheet
-          </button>
-        )}
       </div>
       {all.length > 0 && (
         <div className="row cs-filters" role="group" aria-label="Filter call sheets">
@@ -151,7 +156,7 @@ export function CallSheets() {
           <Empty>
             {all.length
               ? "No call sheets match these filters."
-              : "No call sheets yet. Use the call sheet button on a pipeline record, or create one here."}
+              : "No call sheets yet. A call sheet is made from its recording session or show day, on the day's page."}
           </Empty>
         ) : (
           <table className="table">
@@ -160,7 +165,7 @@ export function CallSheets() {
                 <th>Call sheet</th>
                 <th>Project</th>
                 <th>Date</th>
-                <th>Linked</th>
+                <th>Made from</th>
                 <th>Status</th>
               </tr>
             </thead>
@@ -170,7 +175,6 @@ export function CallSheets() {
                 const drift = mm.moved.length + mm.unlinked.length > 0;
                 const clash = crewConflicts(cs).length > 0;
                 const toCheck = sheetWarnings(cs, today).length;
-                const write = canWrite(actor, getRecord(cs.contentId)!);
                 return (
                   <tr
                     key={cs.id}
@@ -180,25 +184,6 @@ export function CallSheets() {
                       menu(e, [
                         { label: "Open", onClick: () => go({ n: "callsheet", id: cs.id }) },
                         { label: "Download…", onClick: () => setDownloading(cs) },
-                        { label: "Attach to a different project…", disabled: !write, onClick: () => setAttaching(cs) },
-                        { label: "Duplicate for another date…", disabled: !write, onClick: () => setDuplicating(cs) },
-                        { divider: true, label: "", onClick: () => {} },
-                        {
-                          label: "Delete",
-                          danger: true,
-                          disabled: !write,
-                          onClick: async () => {
-                            if (
-                              await confirm({
-                                title: `Delete ${cs.title}?`,
-                                body: "This removes the call sheet. The episodes are not affected.",
-                                confirmLabel: "Delete",
-                                danger: true,
-                              })
-                            )
-                              attempt(() => deleteCallSheet(actor, cs.id), "Deleted");
-                          },
-                        },
                       ])
                     }
                   >
@@ -213,7 +198,7 @@ export function CallSheets() {
                         {relativeDays(cs.date)}
                       </div>
                     </td>
-                    <td>{cs.linkedEpisodeIds.length}</td>
+                    <td>{madeFrom(cs)}</td>
                     <td style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                       <span className={`badge ${cs.status === "final" ? "ok" : ""}`}>{cs.status === "final" ? "Final" : "Draft"}</span>
                       {drift && <span className="badge warn">Dates changed</span>}
@@ -229,86 +214,13 @@ export function CallSheets() {
         )}
         {sheets.length > 0 && (
           <p className="muted" style={{ marginTop: 10, fontSize: ".84rem" }}>
-            Right-click a call sheet to duplicate or delete it.
+            Open a call sheet to change, duplicate or print it; right-click to download it.
           </p>
         )}
       </section>
       <LocationsPanel />
-      {creating && (
-        <NewSheetModal
-          projects={writableProjects.map((p) => ({ id: p.contentId, title: p.title }))}
-          onClose={() => setCreating(false)}
-          onCreated={(cs) => {
-            setCreating(false);
-            go({ n: "callsheet", id: cs.id });
-          }}
-        />
-      )}
-      {duplicating && (
-        <DuplicateModal
-          sheet={duplicating}
-          onClose={() => setDuplicating(null)}
-          onCreated={(cs) => {
-            setDuplicating(null);
-            go({ n: "callsheet", id: cs.id });
-          }}
-        />
-      )}
       {downloading && <ReportDialog scope="callsheet" params={{ callSheetId: downloading.id }} onClose={() => setDownloading(null)} />}
-      {attaching && <AttachSheetModal sheet={attaching} onClose={() => setAttaching(null)} />}
     </div>
-  );
-}
-
-function NewSheetModal({
-  projects,
-  onClose,
-  onCreated,
-}: {
-  projects: { id: string; title: string }[];
-  onClose: () => void;
-  onCreated: (c: CallSheet) => void;
-}) {
-  const { actor, attempt } = useApp();
-  const [project, setProject] = useState(projects[0]?.id ?? "");
-  const [date, setDate] = useState("");
-  const save = () => {
-    const cs = attempt(() => createCallSheet(actor, { contentId: project, date }), "Call sheet created");
-    if (cs) onCreated(cs);
-  };
-  return (
-    <Modal
-      title="New call sheet"
-      onClose={onClose}
-      actions={
-        <>
-          <button className="btn" onClick={onClose}>
-            Cancel
-          </button>
-          <button className="btn primary" onClick={save}>
-            Create
-          </button>
-        </>
-      }
-    >
-      <div className="stack">
-        <Field label="Project">
-          <select value={project} onChange={(e) => setProject(e.target.value)}>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.title}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Shoot date">
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} autoFocus />
-        </Field>
-        <p className="muted">
-          Episodes and days in this project with a shoot date on that day are attached automatically. Other projects are never pulled in.
-        </p>
-      </div>
-    </Modal>
   );
 }
 
@@ -347,52 +259,6 @@ function DuplicateModal({ sheet, onClose, onCreated }: { sheet: CallSheet; onClo
           with ticks and confirmations cleared. Episodes are matched again for the new date, and gear already booked or lent out that day is
           skipped.
         </p>
-      </div>
-    </Modal>
-  );
-}
-
-/** Moves a call sheet, and any gear checked out under it, to a different project. */
-function AttachSheetModal({ sheet, onClose }: { sheet: CallSheet; onClose: () => void }) {
-  const { actor, attempt } = useApp();
-  const options = visibleRecords(actor).filter((r) => r.hierarchyLevel === 0 && r.contentId !== sheet.contentId && canWrite(actor, r));
-  const [id, setId] = useState(options[0]?.contentId ?? "");
-  return (
-    <Modal
-      title="Attach to a different project"
-      onClose={onClose}
-      actions={
-        <>
-          <button className="btn" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            className="btn primary"
-            disabled={!id}
-            onClick={() => {
-              if (attempt(() => attachCallSheet(actor, sheet.id, id, sheet.version), "Attached")) onClose();
-            }}
-          >
-            Attach
-          </button>
-        </>
-      }
-    >
-      <div className="stack">
-        <p className="muted">Currently under {projectLabel(actor, sheet.contentId)}. Any gear checked out on this sheet moves with it.</p>
-        {options.length === 0 ? (
-          <Empty>There is no other project you can write to.</Empty>
-        ) : (
-          <Field label="Project">
-            <select value={id} onChange={(e) => setId(e.target.value)}>
-              {options.map((r) => (
-                <option key={r.contentId} value={r.contentId}>
-                  {r.title}
-                </option>
-              ))}
-            </select>
-          </Field>
-        )}
       </div>
     </Modal>
   );
@@ -447,6 +313,9 @@ export function CallSheetPage({ id }: { id: string }) {
             <button className="badge accent" style={{ cursor: "pointer" }} onClick={() => go({ n: "record", id: root.contentId })}>
               {root.title}
             </button>
+            <span className="no-print">
+              <ChecksPanel kind="sheet" id={cs.id} write={write} chip label="Call sheet checks" />
+            </span>
           </div>
         </div>
         {write && (
@@ -603,9 +472,12 @@ export function CallSheetBody({
     );
     if (loc && attempt(() => updateCallSheet(actor, cs.id, { locationId: loc.id }, cs.version))) toast(`${loc.name} saved`, "success");
   };
+  // A recurring show's day: what it changed from its template, marked on each section (build prompt v4, section 7).
+  const changed: Record<string, string[]> = {};
+  for (const f of day?.instance ? templateDiff(day.id) : []) (changed[f.section] ??= []).push(f.label);
 
   return (
-    <>
+    <TemplateDiffContext.Provider value={changed}>
       {drift && (
         <div className="banner warn" role="alert">
           <div className="grow">
@@ -632,6 +504,7 @@ export function CallSheetBody({
           </div>
         </div>
       )}
+      <NotReturnedBanner sheetId={cs.id} />
       {day?.instance && <InstanceStrip day={day} write={write} />}
       {mine && (
         <div className={`banner ${confirm.of(actor.personId).confirmed ? "ok" : "accent"} no-print`} role="status">
@@ -652,28 +525,9 @@ export function CallSheetBody({
           )}
         </div>
       )}
-      {warnings.length > 0 && (
-        <div className="banner warn no-print" role="status" aria-label="Call sheet warnings">
-          <div className="grow">
-            <b>
-              {warnings.length} thing{warnings.length === 1 ? "" : "s"} to check before the day.
-            </b>
-            <ul className="cs-warn-list">
-              {warnings.map((w) => (
-                <li key={w.text}>
-                  <a
-                    href={`#sec-${w.section}`}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      document.getElementById(`sec-${w.section}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
-                    }}
-                  >
-                    {w.text}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </div>
+      {embedded && (
+        <div className="no-print">
+          <ChecksPanel kind="sheet" id={cs.id} write={write} chip label="Call sheet checks" />
         </div>
       )}
 
@@ -733,6 +587,12 @@ export function CallSheetBody({
         <Field label="Notes">
           <SavedText label="Notes" value={cs.notes} disabled={!editable} onSave={(v) => save({ notes: v.trim() })} />
         </Field>
+        {session && (sessionStorage(session.id).primary || sessionStorage(session.id).backup) && (
+          // Read-only here: the drive is chosen in the session's Recording Log, in Production (build prompt v4, 7A).
+          <div className="muted" aria-label="Footage drive">
+            <b>Footage:</b> <FootageWhere projectId={session.contentId} sessionId={session.id} />
+          </div>
+        )}
         {lock.locked ? (
           <p className="muted">Locked: {lock.why} It is kept as the record of the day.</p>
         ) : (
@@ -790,8 +650,28 @@ export function CallSheetBody({
       ) : (
         <RunOfShowSection {...props} required={runOfShowRequired(cs)} live={root?.category === "live"} />
       )}
-      <TechnicalCheckSection {...tickProps} editable={editable} onChange={save} canTick tickable={editable} />
-      <RehearsalSection {...tickProps} editable={editable} onChange={save} canTick tickable={editable} />
+      {root.category === "live" ? (
+        // A live day's Tech Check and Rehearsal Log (build prompt v4, section 9): the same as their tiles in Pre-production.
+        <>
+          <Section id="technicalCheck" title="Tech Check" warn={warnOf("technicalCheck")}>
+            <TechCheckTable cs={cs} />
+          </Section>
+          <Section id="rehearsal" title="Rehearsal Log">
+            <RehearsalSteps cs={cs} />
+            {(cs.rehearsal.time || cs.rehearsal.notes) && (
+              <p className="muted">
+                Rehearsal{cs.rehearsal.time ? ` at ${cs.rehearsal.time}` : ""}
+                {cs.rehearsal.notes ? `: ${cs.rehearsal.notes}` : ""}
+              </p>
+            )}
+          </Section>
+        </>
+      ) : (
+        <>
+          <TechnicalCheckSection {...tickProps} editable={editable} onChange={save} canTick tickable={editable} />
+          <RehearsalSection {...tickProps} editable={editable} onChange={save} canTick tickable={editable} />
+        </>
+      )}
       {(cs.sharedAt || cs.changeLog.length > 0) && <ChangeLog cs={cs} />}
 
       {!embedded && (
@@ -871,7 +751,7 @@ export function CallSheetBody({
           </p>
         )}
       </section>
-    </>
+    </TemplateDiffContext.Provider>
   );
 }
 

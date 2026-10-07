@@ -450,6 +450,9 @@ function pretendGoogle(opts: { calendar409?: boolean } = {}) {
       const id = `x.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.y`;
       return new Response(JSON.stringify({ id_token: id, refresh_token: "REFRESH-SECRET", access_token: "ACCESS" }), { status: 200 });
     }
+    if (url.endsWith("/calendar/v3/calendars") && init?.method === "POST")
+      return new Response(JSON.stringify({ id: "hub-cal@group.calendar.google.com" }), { status: 200 });
+    if (url.includes("/calendar/v3/") && init?.method === "DELETE") return new Response(null, { status: 204 });
     if (url.includes("/calendar/v3/")) {
       // Like Google: an event is updated where it is (404 if there is none), and added once (409 the second time).
       const id = url.match(/\/events\/([0-9a-f]+)$/)?.[1];
@@ -476,7 +479,8 @@ await t("linking Google is a choice: nothing changes until the person says yes, 
     const { url, cb } = await linkGoogle(hop, { calendar: true });
     assert.equal(url.host, "accounts.google.com");
     assert.equal(url.searchParams.get("client_id"), process.env.GOOGLE_CLIENT_ID);
-    assert.match(url.searchParams.get("scope")!, /calendar\.events/);
+    assert.match(url.searchParams.get("scope")!, /calendar\.app\.created/, "only the calendar the app makes");
+    assert.doesNotMatch(url.searchParams.get("scope")!, /calendar\.events/);
     assert.doesNotMatch(url.searchParams.get("scope")!, /gmail/);
     assert.equal(url.searchParams.get("code_challenge_method"), "S256");
     assert.equal(url.searchParams.get("redirect_uri"), `${base}/api/google-callback`);
@@ -538,7 +542,7 @@ await t("a link request only works once, for the person who started it, and Goog
     globalThis.fetch = realFetch;
   }
 });
-await t("reminders can go into the person's Google Calendar, once each", async () => {
+await t("dates go into a dedicated DOF Production Hub calendar, once each; what is gone is taken off", async () => {
   pretendGoogle();
   try {
     const hop = await setupHop(true);
@@ -548,9 +552,17 @@ await t("reminders can go into the person's Google Calendar, once each", async (
     const r = await crew.post("/api/google/calendar");
     assert.equal(r.status, 200);
     assert.ok(r.json.added > 0 && r.json.failed === 0, JSON.stringify(r.json));
-    // Each item is tried as an update first (Google has none yet), then added.
-    const events = googleCalls.filter((c) => c.url.endsWith("/calendar/v3/calendars/primary/events"));
+    assert.equal(r.json.calendar, "DOF Production Hub");
+    // The calendar is made once, in the workspace's time zone, and kept.
+    const made = googleCalls.filter((c) => c.url.endsWith("/calendar/v3/calendars"));
+    assert.equal(made.length, 1);
+    assert.deepEqual(JSON.parse(made[0].body).summary, "DOF Production Hub");
+    assert.equal(JSON.parse(made[0].body).timeZone, "Africa/Nairobi");
+    assert.equal((await store.google.get("brian"))!.calendarId, "hub-cal@group.calendar.google.com");
+    // Each item is tried as an update first (Google has none yet), then added, in that calendar and never the main one.
+    const events = googleCalls.filter((c) => c.url.endsWith("/calendars/hub-cal%40group.calendar.google.com/events"));
     assert.equal(events.length, r.json.added);
+    assert.ok(!googleCalls.some((c) => c.url.includes("/calendars/primary/")), "the main calendar is never touched");
     assert.ok(events.every((e) => e.auth === "Bearer ACCESS"));
     const ids = events.map((e) => JSON.parse(e.body).id);
     assert.equal(new Set(ids).size, ids.length);
@@ -558,6 +570,38 @@ await t("reminders can go into the person's Google Calendar, once each", async (
     pretendGoogle();
     const again = await crew.post("/api/google/calendar");
     assert.deepEqual([again.json.added, again.json.already > 0], [0, true], "synced again: updated where they are, none added twice");
+    assert.equal(googleCalls.filter((c) => c.url.endsWith("/calendar/v3/calendars")).length, 0, "the calendar is not made twice");
+    // Something that was synced and is gone (cancelled, or no longer theirs) comes off.
+    const doc = (await store.google.get("brian"))!;
+    await store.google.put({ ...doc, synced: [...(doc.synced ?? []), "0".repeat(40)] });
+    pretendGoogle();
+    const third = await crew.post("/api/google/calendar");
+    assert.equal(third.json.removed, 1);
+    assert.ok(googleCalls.some((c) => c.url.endsWith(`/events/${"0".repeat(40)}`)));
+    assert.ok(!(await store.google.get("brian"))!.synced!.includes("0".repeat(40)));
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+await t("a Google link from before the dedicated calendar is asked to link again once, and nothing is pushed", async () => {
+  pretendGoogle();
+  try {
+    const hop = await setupHop(true);
+    await linkGoogle(hop, { calendar: true });
+    const doc = (await store.google.get("kev"))!;
+    // As saved before data version 24: the calendar.events scope, on the main calendar.
+    const { calendarVersion: _v, calendarId: _c, synced: _s, ...old } = doc;
+    await store.google.put(old);
+    const g = (await hop.get("/api/google/status")).json.google;
+    assert.equal(g.relink, true);
+    pretendGoogle();
+    const r = await hop.post("/api/google/calendar");
+    assert.equal(r.status, 409);
+    assert.match(r.json.error, /link again once/);
+    assert.equal(googleCalls.filter((c) => c.url.includes("/calendar/v3/")).length, 0);
+    await hop.post("/api/google/unlink");
+    await linkGoogle(hop, { calendar: true });
+    assert.equal((await hop.get("/api/google/status")).json.google.relink, undefined);
   } finally {
     globalThis.fetch = realFetch;
   }
@@ -587,6 +631,24 @@ await t("reminder emails go out from the person's own Gmail, only if they allowe
     assert.equal((await crew.post("/api/google/email", { personId: "DOF-P-CRW-001" })).status, 403, "crew cannot email others");
   } finally {
     globalThis.fetch = realFetch;
+  }
+});
+await t("Settings shows whether email is set up; only the Head of Production sends a test, and only once it is", async () => {
+  const user = process.env.SMTP_USER;
+  delete process.env.SMTP_USER;
+  try {
+    const hop = await setupHop(true);
+    const crew = await loginFor(hop, "DOF-P-CRW-002", "brian");
+    const st = await hop.get("/api/email-status");
+    assert.equal(st.status, 200);
+    assert.deepEqual(st.json.email, { available: false, queued: 0, failed: [] });
+    assert.equal((await crew.get("/api/email/status")).json.email.available, false, "everyone may see whether it is set up");
+    const test = await hop.post("/api/email-test");
+    assert.equal(test.status, 400);
+    assert.match(test.json.error, /SMTP_USER and SMTP_PASS/);
+    assert.equal((await crew.post("/api/email-test")).status, 403);
+  } finally {
+    if (user !== undefined) process.env.SMTP_USER = user;
   }
 });
 await t("Google linking says so when it is not set up", async () => {

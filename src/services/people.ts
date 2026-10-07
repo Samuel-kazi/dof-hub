@@ -1,3 +1,4 @@
+import { OFFSETS } from "./alerts";
 import type { Actor, Person, ProjectMember, RoleCode, User, ContentRecord } from "../types";
 import { RuleError } from "../types";
 import { commit, getDb } from "../data/store";
@@ -126,7 +127,12 @@ export function updatePerson(actor: Actor, personId: string, input: Partial<Pick
 /** Anyone can correct their own name and contact details. Access level and ID stay with the Head of Production. */
 export function updateOwnProfile(
   actor: Actor,
-  patch: Partial<Pick<Person, "name" | "email" | "phone" | "notifyEmail" | "notifySms" | "photoUrl" | "fontSize" | "density">>,
+  patch: Partial<
+    Pick<
+      Person,
+      "name" | "email" | "phone" | "notifyEmail" | "notifySms" | "photoUrl" | "fontSize" | "density" | "quietHours" | "reminderLead"
+    >
+  >,
 ): Person {
   const p = getPerson(actor.personId);
   if (!p) throw new RuleError("Person not found.");
@@ -135,6 +141,15 @@ export function updateOwnProfile(
   if (patch.photoUrl && patch.photoUrl.length > 400_000) throw new RuleError("That photo is too large. Choose a smaller image.");
   if (patch.photoUrl && !patch.photoUrl.startsWith("data:image/") && !STORED_FILE.test(patch.photoUrl))
     throw new RuleError("Choose a photo from your device.");
+  // Quiet hours: no email from the hub between these times (Nairobi time); the bell still shows everything.
+  if (patch.quietHours) {
+    const hm = /^([01]\d|2[0-3]):[0-5]\d$/;
+    if (!hm.test(patch.quietHours.from) || !hm.test(patch.quietHours.to))
+      throw new RuleError("Enter quiet hours as hours and minutes, for example 21:00 to 07:00.");
+    if (patch.quietHours.from === patch.quietHours.to) throw new RuleError("Quiet hours need a different start and end.");
+  }
+  if (patch.reminderLead !== undefined && !OFFSETS.some((o) => o.minutes === patch.reminderLead))
+    throw new RuleError("Choose when reminders start from the list.");
   Object.assign(p, {
     ...(patch.name !== undefined ? { name: patch.name.trim() } : {}),
     ...(patch.email !== undefined ? { email: patch.email.trim() } : {}),
@@ -144,6 +159,8 @@ export function updateOwnProfile(
     ...(patch.photoUrl !== undefined ? { photoUrl: patch.photoUrl } : {}),
     ...(patch.fontSize !== undefined ? { fontSize: patch.fontSize } : {}),
     ...(patch.density !== undefined ? { density: patch.density } : {}),
+    ...(patch.quietHours !== undefined ? { quietHours: patch.quietHours } : {}),
+    ...(patch.reminderLead !== undefined ? { reminderLead: patch.reminderLead } : {}),
   });
   logAudit(actor, "update-profile", "person", actor.personId, Object.keys(patch).join(", "));
   commit();

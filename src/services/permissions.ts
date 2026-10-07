@@ -119,23 +119,11 @@ export function effectiveGrants(role: RoleCode, personId: string): Record<Capabi
 
 // ── Modules in the side menu ─────────────────────────────────
 
-const ORDER: ModuleKey[] = [
-  "dashboard",
-  "pipeline",
-  "callsheets",
-  "calendar",
-  "equipment",
-  "storage",
-  "crew",
-  "documents",
-  "reminders",
-  "settings",
-];
+const ORDER: ModuleKey[] = ["dashboard", "pipeline", "callsheets", "calendar", "equipment", "storage", "crew", "documents", "settings"];
 const MODULE_CAP: Partial<Record<ModuleKey, Capability>> = {
   equipment: "equipment.use",
   storage: "storage.use",
   crew: "people.directory",
-  reminders: "reminders.use",
   calendar: "reminders.use",
 };
 

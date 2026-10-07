@@ -15,9 +15,13 @@ export type FormTile =
   | "sessions"
   | "callSheet"
   | "gear"
-  | "sessionLog"
-  | "storage"
+  | "sessionLog" // before data version 24: replaced by the Recording Log
+  | "storage" // before data version 24: replaced by the Recording Log
+  | "recordingLog"
   | "recordingDayView"
+  | "techCheck" // a live show's Tech Check, for each day
+  | "rehearsalLog" // a live show's Rehearsal Log, for each day
+  | "liveControl" // a live show's Live Control, on the night
   | "episodeTracker"
   | "review"
   | "platformStatus"
@@ -69,7 +73,10 @@ const form = (key: string, title: string, tile: FormTile, extra: Partial<Catalog
 const tool = (key: string, title: string, which: "storyboard" | "shotList"): CatalogEntry => ({ key, title, kind: "tool", tool: which });
 const review = (reviews: string): CatalogEntry => ({ key: "theological_review", title: "Theological Review", kind: "review", reviews });
 // One page with four section cards (roles, the items to record, sessions, call sheets), then its own pages.
-const recordingPlan = doc("recording_plan", "Recording Plan", [{ title: "Cards and storage", storage: true }, "Notes"], { plan: true });
+// Storage is assigned in Production, in each session's Recording Log (build prompt v4, section 7A): the plan has none.
+const recordingPlan = doc("recording_plan", "Recording Plan", ["Cards", "Notes"], { plan: true });
+/** A live show's Recording Plan: the Broadcast Plan, whose items are the Rundown's segments (build prompt v4, section 8). */
+const broadcastPlan = doc("recording_plan", "Broadcast Plan", ["Cards", "Notes"], { plan: true });
 /** A series' or documentary's planning tiles: the Recording Plan (roles, sessions and call sheets are in it). */
 const planOrForms = (): CatalogEntry[] => [
   recordingPlan,
@@ -155,8 +162,7 @@ function musicCatalog(formType: FormType): Record<WorkflowStage, CatalogEntry[]>
         [{ title: "Run sheet", form: "runSheet" }, "Session notes", { title: "Wrap checklist", form: "wrapChecklist" }],
         { per: "session" },
       ),
-      form("session_log", "Session Log", "sessionLog"),
-      form("storage", "Storage", "storage"),
+      form("recording_log", "Recording Log", "recordingLog"),
     ],
     "Post production": [
       doc("edit_notes", "Mix and Edit Notes", ["Mix notes", "Mastering notes", "Video edit notes"]),
@@ -167,36 +173,46 @@ function musicCatalog(formType: FormType): Record<WorkflowStage, CatalogEntry[]>
   };
 }
 
-/** A live event: one day, several days, or a recurring show. Each day is a session with its own call sheet and run of
- * show; what was recorded on a day goes on as recordings. */
+/**
+ * A live show: one day, several days, or a recurring show (build prompt v4, section 9). Each day is a session with its
+ * own call sheet, which holds the day's run of show, Tech Check and Rehearsal Log; what a day records goes on as
+ * recordings. The keys stay as they were (event_brief, show_day_sheet, show_report): only the titles changed.
+ */
 const liveCatalog: Record<WorkflowStage, CatalogEntry[]> = {
   Development: [
-    doc("event_brief", "Event Brief", [
-      { title: "The idea", fields: ideaFields("Purpose of the event") },
-      "Theme and scripture",
-      "Format and programme",
-      "Speakers and performers",
-      "Ask",
+    // The show date and producer are shown in its header; creative notes and logistics are pages inside it.
+    doc("event_brief", "Show Plan", [
+      { title: "Objective", fields: ideaFields("Purpose of the show") },
+      "Venue",
+      "Audience and streaming",
+      "Production type and duration",
+      { title: "Creative notes", body: "<p>Script, graphics, lower thirds, videos and promos.</p>" },
+      { title: "Logistics", body: "<p>Transport, accommodation, catering, power and internet.</p>" },
     ]),
     review("event_brief"),
     greenlight,
     form("show_days", "Show Days", "showDays"),
   ],
-  // The Recording Plan holds the roles, the days and each day's call sheet and run of show.
+  // The Broadcast Plan holds the roles, the Rundown, the days and each day's call sheet and run of show.
   "Pre-production": [
-    doc("production_pack", "Production Pack", ["Stage and set design", "Technical plan", "Rehearsal notes"]),
-    ...planOrForms(),
+    broadcastPlan,
+    form("tech_check", "Tech Check", "techCheck"),
+    form("rehearsal_log", "Rehearsal Log", "rehearsalLog"),
+    tool("storyboard", "Storyboard", "storyboard"),
+    tool("shot_list", "Shot List", "shotList"),
     form("gear", "Gear", "gear"),
+    // Before data version 24 a show's Production Pack held its set and technical plan: kept where one was written.
+    doc("production_pack", "Production Pack", ["Stage and set design", "Technical plan", "Rehearsal notes"], { onlyIfMade: true }),
   ],
   Production: [
     doc(
       "show_day_sheet",
-      "Show Day Sheet",
+      "Live Day",
       [{ title: "Run of show", form: "runSheet" }, "Show notes", { title: "Strike and wrap checklist", form: "wrapChecklist" }],
       { per: "session" },
     ),
-    form("session_log", "Show Log", "sessionLog"),
-    form("storage", "Storage", "storage"),
+    form("recording_log", "Show Log", "recordingLog"),
+    form("live_control", "Live Control", "liveControl"),
   ],
   "Post production": [
     doc("edit_notes", "Edit Notes", ["Recording notes", "Clips to cut", "Graphics and music"]),
@@ -206,7 +222,7 @@ const liveCatalog: Record<WorkflowStage, CatalogEntry[]> = {
   "Marketing and distribution": [
     doc("release_plan", "Release Plan", ["Clips and highlights", "Platform plan"]),
     form("platform_status", "Platform Status", "platformStatus"),
-    doc("show_report", "Show Report", ["Attendance and reach", "What worked", "What to change"]),
+    doc("show_report", "Production Report", ["Attendance and reach", "What worked", "What to change", "Lessons learned"]),
     form("archive", "Archive", "archive"),
   ],
 };
@@ -236,8 +252,7 @@ function seriesCatalog(formType: FormType): Record<WorkflowStage, CatalogEntry[]
           per: "session",
         },
       ),
-      form("session_log", "Session Log", "sessionLog"),
-      form("storage", "Storage", "storage"),
+      form("recording_log", "Recording Log", "recordingLog"),
     ],
     "Post production": [
       doc("edit_notes", "Edit Notes", ["Notes to the editor", "Story and theology lock", "Graphics and music"]),
@@ -271,8 +286,7 @@ function documentaryCatalog(formType: FormType): Record<WorkflowStage, CatalogEn
           per: "session",
         },
       ),
-      form("session_log", "Session Log", "sessionLog"),
-      form("storage", "Storage", "storage"),
+      form("recording_log", "Recording Log", "recordingLog"),
     ],
     "Post production": [
       doc("edit_notes", "Edit Notes", ["Assembly notes", "Narration", "Fact-check lock", "Graphics and music"]),
@@ -296,7 +310,10 @@ const devotionCatalog: Record<WorkflowStage, CatalogEntry[]> = {
   // The Recording Plan holds the roles, the devotions, the sessions they are recorded in and each session's call sheet;
   // a session's call sheet shows one storyboard and one shot list of the project's, chosen from these.
   "Pre-production": [recordingPlan, tool("storyboard", "Storyboard", "storyboard"), tool("shot_list", "Shot List", "shotList")],
-  Production: [form("recording_day_view", "Recording Day View", "recordingDayView"), form("storage", "Storage", "storage")],
+  Production: [
+    form("recording_log", "Recording Log", "recordingLog"),
+    form("recording_day_view", "Recording Day View", "recordingDayView"),
+  ],
   "Post production": [doc("edit_notes", "Edit Notes", ["Notes to the editor"]), form("review", "Review", "review")],
   "Marketing and distribution": [
     doc("release_plan", "Release Plan", ["Release message", "Platform plan"]),

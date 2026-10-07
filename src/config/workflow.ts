@@ -5,6 +5,7 @@ import type {
   CriterionKey,
   FormType,
   GreenlightOutcome,
+  LogStatus,
   RoleKey,
   SeriesType,
   WorkflowStage,
@@ -169,6 +170,18 @@ export const PLAN_ROLE_SEEDS: { key: RoleKey; label: string }[] = [
 
 /** The parts of the day a recording session can be. */
 export const SESSION_LABELS = ["Morning", "Afternoon", "Evening", "Late night", "Full day"] as const;
+
+/**
+ * The Recording Log's take marks (build prompt v4, section 7A), kept under the log's stored values so nothing moves:
+ * Good and Pickup needed go on to Post production; Re-record (not usable) leaves the item planned for another session.
+ */
+export const TAKE_MARKS: { value: LogStatus; label: string }[] = [
+  { value: "Recorded", label: "Good" },
+  { value: "Pickup needed", label: "Pickup needed" },
+  { value: "Not recorded", label: "Re-record" },
+];
+export const takeMarkLabel = (status: LogStatus | null | undefined): string =>
+  TAKE_MARKS.find((t) => t.value === status)?.label ?? "No take mark yet";
 
 // ── Checklists ───────────────────────────────────────────────
 // Items marked `auto` are worked out from the data (a call sheet that is final, a producer who is named) and

@@ -18,6 +18,7 @@ import * as D from "../src/services/wrapped/documents";
 import * as W from "../src/services/wrapped/workflow";
 import { AppProvider } from "../src/ui/AppContext";
 import { ProjectHome } from "../src/pages/documents/ProjectDocuments";
+import { ChecksPanel } from "../src/ui/ChecksPanel";
 import { PageComments, ReviewBanner, ReviewPanes } from "../src/pages/documents/ReviewView";
 import { PageEditor } from "../src/pages/documents/PageEditor";
 import { PlanSectionView } from "../src/pages/documents/RecordingPlan";
@@ -229,19 +230,19 @@ await t("Waiting on you follows the review: the reviewers still to decide, then 
   assert.ok(owner && item.waitingOn.includes(owner) && !item.waitingOn.includes("DOF-P-CRW-002"), "back with its owner");
 });
 
-await t("Project Home shows the header strip and the short gate while in Development", () => {
+await t("Project Home shows the header strip and the Done button; the short gate is in the Checks panel", () => {
   const home = html("hop@dof.demo", <ProjectHome project={project(WOW)} write onOpen={() => {}} />);
   assert.match(home, /Project details/);
   assert.match(home, /aria-label="Leave Development"/);
   assert.match(home, /1 of 3 ready/);
-  assert.match(home, /The logline and the core question written in the brief/);
-  assert.match(home, /Pass by hand/, "the Head of Production may pass a gate by hand");
-  assert.ok(
-    !html("crew4@dof.demo", <ProjectHome project={project(WOW)} write onOpen={() => {}} />).includes("Pass by hand"),
-    "the producer may not",
-  );
-  assert.match(home, /Done: move to Pre-production/);
-  assert.match(home, /Dismiss/);
+  assert.match(home, /2 still needed: see Checks, under the stage tracker/);
+  assert.match(home, /<button class="btn primary">Done: move to Pre-production<\/button>/, "pressable: it opens the checks");
+  // The gates and the nudges, in the panel (build prompt v4, section 14A).
+  const checks = html("hop@dof.demo", <ChecksPanel kind="project" id={WOW} write />);
+  assert.match(checks, /The logline and the core question written in the brief/);
+  assert.match(checks, /Pass by hand/, "the Head of Production may pass a gate by hand");
+  assert.ok(!html("crew4@dof.demo", <ChecksPanel kind="project" id={WOW} write />).includes("Pass by hand"), "the producer may not");
+  assert.match(checks, /Dismiss…/);
 });
 
 await t("a testimonial is not greenlit without the person's consent and release, which is never passed by hand", () => {
@@ -353,7 +354,12 @@ await t("Decline needs a reason, and closes and archives the devotion, never del
 await t("a devotion's Project Home offers Accept and Decline, enabled for the Head of Production once its gates are met", () => {
   const home = () => html("hop@dof.demo", <ProjectHome project={project(DEV)} write onOpen={() => {}} />);
   assert.match(home(), /aria-label="Accept or decline"/);
-  assert.match(home(), /<button class="btn primary" disabled="">Accept<\/button>/);
+  assert.match(home(), /3 still needed: see Checks/, "Accept opens the checks until they are met");
+  assert.match(
+    html("crew4@dof.demo", <ProjectHome project={project(DEV)} write onOpen={() => {}} />),
+    /<button class="btn primary" disabled=""[^>]*>Accept<\/button>/,
+    "only the Head of Production, or someone given Create projects, accepts",
+  );
   W.saveFormSection(hop(), DEV, "guest", { contact: "mary@example.org" });
   writeFive();
   approveBrief(DEV, "devotional_script");

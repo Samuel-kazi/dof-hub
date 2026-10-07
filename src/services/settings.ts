@@ -19,7 +19,11 @@ export const SETTINGS_EDITABLE = [
   "checkoutReturnDays",
   "workDays",
   "effortOverrides",
+  "storageFolderPattern",
 ] as const;
+
+/** A session's folder on a drive, unless Settings says otherwise: the project's Content ID, then the date and label. */
+export const DEFAULT_FOLDER_PATTERN = "{contentId}/{date}_{label}";
 
 export function updateSettings(actor: Actor, input: Partial<Pick<Settings, (typeof SETTINGS_EDITABLE)[number]>>): void {
   requireCan(actor, "backend.settings", "change system settings");
@@ -49,6 +53,12 @@ export function updateSettings(actor: Actor, input: Partial<Pick<Settings, (type
       if (!Number.isFinite(v) || v < 0 || v > 30 || Math.round(v * 4) !== v * 4)
         throw new RuleError(`${key.split(":")[1] ?? key}: use a number of days from 0 to 30, in steps of a quarter day.`);
     }
+  }
+  if (patch.storageFolderPattern !== undefined) {
+    const pattern = patch.storageFolderPattern.trim();
+    if (pattern.length > 120 || /[<>:"|?*\\]/.test(pattern))
+      throw new RuleError('Keep the folder pattern short, with no < > : " | ? * or backslash.');
+    patch.storageFolderPattern = pattern || DEFAULT_FOLDER_PATTERN;
   }
   Object.assign(getDb().settings, patch);
   logAudit(actor, "settings", "settings", "system", Object.keys(patch).join(", "));
@@ -90,8 +100,11 @@ export function changePassword(actor: Actor, current: string, next: string): voi
  * then it stays, so gear can still go out for non-production use. Its records stay either way, and still open by their
  * links and search.
  */
-export const pipelineCategories = (): CategoryConfig[] =>
-  featureOn("lending") ? CATEGORIES.filter((c) => c.key !== "general") : CATEGORIES;
+/**
+ * The categories with a pipeline. General Use is not one (build prompt v4): equipment lent outside a production is in
+ * Equipment, under Lending; its old records keep their IDs, and their links still open them.
+ */
+export const pipelineCategories = (): CategoryConfig[] => CATEGORIES.filter((c) => c.key !== "general");
 
 /** Whether a part of the rework is on: one not built yet never is; a built one is, unless switched off. */
 export function featureOn(key: FeatureKey): boolean {

@@ -11,8 +11,10 @@ import { instancesOf, type ProductionInstance } from "./productionInstances";
 import { sheetWarnings } from "./sheetAdvice";
 import { episodesOf, unscheduledPlanned, type Project } from "./workflow/common";
 import { episodeOverdue } from "./workflow/gates";
+import { isHistory } from "./workflow/history";
 import { hasTheologicalReview, theologyStatus } from "./documents/theology";
 import { addDaysIso, fmtDate, todayIso } from "./utils";
+import { projectGearNotReturned } from "./live";
 
 // The urgency report (build prompt v2, section 12): each project gets a level, Critical, High, Watch or On track, and
 // the reasons in plain words, from fixed, transparent rules (no AI). The numbers the rules use are in settings
@@ -123,6 +125,7 @@ function workflowProjectRow(p: Project, now: string, t: UrgencyThresholds, today
       !episodeOverdue(e, today) &&
       e.episode.mdStage !== "Published" &&
       !!due &&
+      !isHistory(e, due) &&
       Date.parse(nairobiInstant(due, "23:59")) - Date.parse(now) <= t.dueHours * 3_600_000
     );
   });
@@ -132,17 +135,29 @@ function workflowProjectRow(p: Project, now: string, t: UrgencyThresholds, today
       `${plural(dueSoon.length, "episode")} due within ${t.dueHours} hours.`,
       dueSoon[0].stageDeadlines[dueSoon[0].episode.stage],
     );
+  // Gear checked out for a day whose show is over and not brought back (build prompt v4, section 9).
+  const notBack = projectGearNotReturned(p.contentId, today);
+  if (notBack.length) {
+    const items = notBack.reduce((n, x) => n + x.items, 0);
+    f.add(
+      "High",
+      `Gear not returned: ${plural(items, "item")} from ${plural(notBack.length, "day")}, due back ${fmtDate(notBack[0].due)}.`,
+      notBack[0].due,
+    );
+  }
   if (quiet) return row(f, "project", p.contentId, p.title, p.category, `#/record/${p.contentId}`);
   const greenlit = p.workflow.stage === "Pre-production";
-  if (greenlit && !p.workflow.showProducerId) f.add("High", "No show producer named after the greenlight.");
-  const unassigned = greenlit ? unscheduledPlanned(p.contentId) : 0;
+  // A project imported from before the system skipped its plan and greenlight: their absence is never a finding.
+  const imported = !!p.workflow.imported;
+  if (greenlit && !imported && !p.workflow.showProducerId) f.add("High", "No show producer named after the greenlight.");
+  const unassigned = greenlit && !imported ? unscheduledPlanned(p.contentId) : 0;
   instanceRules(f, instancesOf(p.contentId), now, t, today, unassigned);
   // The theological review is a reminder, never a gate: while it is not done the project is watched.
   if (hasTheologicalReview(p) && !theologyStatus(p.contentId).done) f.add("Watch", "Theological review not done.");
   if (unassigned > 0) f.add("Watch", `${plural(unassigned, "item")} not assigned to a session.`);
   const due = p.stageDeadlines[p.workflow.stage] ?? p.deadline;
   const dated = instancesOf(p.contentId).some((i) => i.date && i.status !== "cancelled");
-  if (greenlit && due && due >= today && due <= addDaysIso(today, t.noRecordingDays) && !dated)
+  if (greenlit && !imported && due && due >= today && due <= addDaysIso(today, t.noRecordingDays) && !dated)
     f.add("Watch", `Due ${fmtDate(due)} and no recording date yet.`, due);
   return row(f, "project", p.contentId, p.title, p.category, `#/record/${p.contentId}`);
 }

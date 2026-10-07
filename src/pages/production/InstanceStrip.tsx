@@ -3,7 +3,15 @@ import { getDb } from "../../data/store";
 import { getRecord } from "../../services/access";
 import { fmtDate, todayIso } from "../../services/utils";
 import { nameOf } from "../../services/wrapped/people";
-import { applyDayToFuture, cancelDay, DAY_LABELS, getTemplate, resetToTemplate, setDayLabel } from "../../services/wrapped/production";
+import {
+  applyDayToFuture,
+  cancelDay,
+  DAY_LABELS,
+  getTemplate,
+  resetToTemplate,
+  setDayLabel,
+  templateDiff,
+} from "../../services/wrapped/production";
 import { useReason } from "../workflow/common";
 import { useApp } from "../../ui/AppContext";
 import { isSheetLocked } from "../../services/sheetLock";
@@ -20,6 +28,7 @@ export function InstanceStrip({ day, write }: { day: RecordingSession; write: bo
   const t = getTemplate(info.templateId);
   const sheet = getDb().callSheets.find((c) => c.id === day.callSheetId || c.instanceId === day.id);
   const past = (day.scheduledDate ?? "") < todayIso();
+  const diff = templateDiff(day.id);
   return (
     <section className={`cs-instance ${info.locked ? "locked" : ""}`} aria-label="Template">
       <span className="grow">
@@ -29,6 +38,12 @@ export function InstanceStrip({ day, write }: { day: RecordingSession; write: bo
             {info.lockedBy ? ` by ${info.lockedBy === "system" ? "the app" : nameOf(info.lockedBy)}` : ""}
             {info.lockedAt ? ` on ${fmtDate(info.lockedAt.slice(0, 10))}` : ""}. It keeps its own: changes to the template of{" "}
             {show?.title ?? "the show"} pass it by.
+            {diff.length > 0 && (
+              <span className="cs-diff" aria-label="Differs from the template">
+                {" "}
+                Differs from the template in: {diff.map((f) => f.label).join(", ")}.
+              </span>
+            )}
           </>
         ) : (
           <>

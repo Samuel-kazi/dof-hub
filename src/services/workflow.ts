@@ -7,6 +7,7 @@ export {
   assignProducer,
   closeProject,
   setWorkflowDeadline,
+  setPlannedStart,
   advanceProject,
   projectLabelOf,
 } from "./workflow/projects";
@@ -99,6 +100,27 @@ export {
   setLearningNotes,
 } from "./workflow/episodes";
 export type { DistributionInput } from "./workflow/episodes";
+
+export {
+  attendeesOf,
+  pickupsOf,
+  folderOf,
+  driveFolders,
+  projectLinks,
+  bestFolder,
+  sessionStorage,
+  folderFor,
+  suggestedStorage,
+  assignSessionStorage,
+  clearSessionStorage,
+  markStorage,
+  storageWarnings,
+  footageWhere,
+} from "./workflow/recordingLog";
+export type { DriveFolder, StorageAssignInput } from "./workflow/recordingLog";
+export { importableFolders, importProject, setReviewedBeforeSystem } from "./workflow/importProject";
+export type { ImportInput, ImportResult, ImportCategory } from "./workflow/importProject";
+export { isHistory, isImported } from "./workflow/history";
 
 export { evaluateGate, episodeOverdue, projectSummary } from "./workflow/gates";
 export type { GateLevel, GateStage, GateResult, ProjectSummary } from "./workflow/gates";

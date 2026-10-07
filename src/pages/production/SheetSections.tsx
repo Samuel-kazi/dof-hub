@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useContext, createContext, useEffect, useRef, useState, type ReactNode } from "react";
 import type {
   CheckItem,
   ContactEntry,
@@ -38,6 +38,12 @@ export interface SectionProps {
   onChange: (patch: Partial<SheetContent>) => void;
 }
 
+/**
+ * What a recurring show's day changed from its template, by section (build prompt v4, section 7): each section shows a
+ * mark naming its fields that differ. Empty for a template itself, and for days of other events.
+ */
+export const TemplateDiffContext = createContext<Record<string, string[]>>({});
+
 /** A section's frame: a panel with an anchor, so the jump bar can go to it, and what it is missing (`warn`). */
 export function Section({
   id,
@@ -52,10 +58,16 @@ export function Section({
   warn?: string[];
   children: ReactNode;
 }) {
+  const changed = useContext(TemplateDiffContext)[id] ?? [];
   return (
     <section className="glass panel cs-section" id={`sec-${id}`} aria-label={title}>
       <div className="wf-head">
         <h2>{title}</h2>
+        {changed.length > 0 && (
+          <span className="badge warn cs-changed" title="Changed on this day by hand: the show's template has something else">
+            Changed from the template: {changed.join(", ")}
+          </span>
+        )}
         {aside}
       </div>
       {!!warn?.length && (

@@ -284,7 +284,7 @@ await t("H2: data saved by the earlier layout is upgraded on first use, and work
   const state = await hop.get("/api/state");
   assert.equal(state.status, 200, JSON.stringify(state.json).slice(0, 300));
   assert.ok(!JSON.stringify(state.json).includes("data:image"));
-  assert.equal(state.json.db.schemaVersion, 23, "brought up to the current version");
+  assert.equal(state.json.db.schemaVersion, 24, "brought up to the current version");
   assert.ok(state.json.db.counters["record:SER"] >= 1, "project counters were set from the data");
   const photo = state.json.db.people.find((p: Json) => p.personId === "DOF-P-HOP-001").photoUrl;
   assert.equal((await hop.raw("GET", photo)).status, 200);

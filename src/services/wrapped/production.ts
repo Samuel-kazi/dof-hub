@@ -13,5 +13,5 @@ export const setUpEventDays = rpc("production.setUpEventDays", core.setUpEventDa
 export const topUpShow = rpc("production.topUpShow", core.topUpShow);
 export const updateEventPlan = rpc("production.updateEventPlan", core.updateEventPlan);
 export const updateShowTemplate = rpc("production.updateShowTemplate", core.updateShowTemplate);
-export { BOARD_AHEAD_DAYS, BOARD_PAST_DAYS, DAY_LABELS, DEFAULT_HORIZON_COUNT, DEFAULT_HORIZON_WEEKS, GEAR_WINDOW_DAYS, MAX_HORIZON_COUNT, MAX_HORIZON_WEEKS, checkEventSetup, dayTitle, daysOfEvent, followsTemplate, getTemplate, horizonEnd, instanceTitle, isLiveEvent, modeLabel, offSchedule, onBoard, productionOf, recurringDue, sheetOfDay, templateOfEvent, topUpRecurring } from "../production";
+export { BOARD_AHEAD_DAYS, BOARD_PAST_DAYS, DAY_LABELS, DEFAULT_HORIZON_COUNT, DEFAULT_HORIZON_WEEKS, GEAR_WINDOW_DAYS, MAX_HORIZON_COUNT, MAX_HORIZON_WEEKS, TEMPLATE_FIELDS, checkEventSetup, dayTitle, daysOfEvent, followsTemplate, getTemplate, horizonEnd, instanceTitle, isLiveEvent, modeLabel, offSchedule, onBoard, productionOf, recurringDue, sheetOfDay, templateDiff, templateOfEvent, topUpRecurring } from "../production";
 export type { EventSetup, ProductionInput, ScheduleResult, TemplatePatch, TemplateResult } from "../production";

@@ -5,4 +5,4 @@ export const setFeature = rpc("settings.setFeature", core.setFeature);
 export const updateSettings = rpc("settings.updateSettings", core.updateSettings);
 export const updateWorkspaceAppearance = rpc("settings.updateWorkspaceAppearance", core.updateWorkspaceAppearance);
 export const changePassword = serverOnly("settings.changePassword", core.changePassword);
-export { SETTINGS_EDITABLE, featureOn, pipelineCategories } from "../settings";
+export { DEFAULT_FOLDER_PATTERN, SETTINGS_EDITABLE, featureOn, pipelineCategories } from "../settings";

@@ -26,6 +26,7 @@ export interface CalEvent {
   color: string; // always categoryOf(category).color — never chosen here
   open: Route; // where "open" on this event should take the person
   days?: { date: string; id: string }[]; // a multi-day event's bar: each of its days, so a click on one opens that day
+  time?: string; // HH:MM, when the day has one (a session's crew call, a reminder's time): the Week and Day views sort by it
 }
 
 /**
@@ -144,6 +145,7 @@ export function calendarEvents(actor: Actor, from: string, to: string): CalEvent
       category,
       color: categoryOf(category).color,
       open: { n: "callsheet", id: cs.id },
+      ...(cs.callTime ? { time: cs.callTime } : {}),
     });
   }
 
@@ -177,6 +179,8 @@ export function calendarEvents(actor: Actor, from: string, to: string): CalEvent
     const color = categoryOf(item.category).color;
     if (item.level === "session") {
       if (!item.due || !inRange(item.due, from, to) || windows.has(item.project.contentId)) continue;
+      const sheetId = getDb().recordingSessions.find((x) => x.id === item.id)?.callSheetId;
+      const callTime = sheetId ? getDb().callSheets.find((c) => c.id === sheetId)?.callTime : "";
       out.push({
         id: `session:${item.id}`,
         date: item.due,
@@ -187,6 +191,7 @@ export function calendarEvents(actor: Actor, from: string, to: string): CalEvent
         category: item.category,
         color,
         open: item.open,
+        ...(callTime ? { time: callTime } : {}),
       });
       continue;
     }
@@ -270,6 +275,7 @@ export function calendarEvents(actor: Actor, from: string, to: string): CalEvent
       category: "general",
       color: "#8a8a92",
       open: { n: "calendar" },
+      ...(rm.time ? { time: rm.time } : {}),
     });
   }
 
@@ -279,4 +285,90 @@ export function calendarEvents(actor: Actor, from: string, to: string): CalEvent
 /** Every event that touches a given day, from a window already fetched (so a month grid asks once). */
 export function eventsOnDay(events: CalEvent[], date: string): CalEvent[] {
   return events.filter((e) => e.date <= date && e.endDate >= date);
+}
+
+// ── The Timeline (build prompt v4, section 12) ───────────────
+
+export interface TimelineMarker {
+  date: string;
+  kind: "session" | "callsheet" | "episode";
+  title: string;
+  open: Route;
+}
+
+export interface TimelineRow {
+  id: string; // the project's Content ID
+  title: string;
+  category: CategoryKey;
+  color: string;
+  stage: string; // where it stands: Development, Pre-production, Production, Post production, or Marketing and distribution
+  start: string; // its planned start, or the day it was made
+  end: string; // its due date (the publish date, else its latest deadline, else its last session)
+  openEnded: boolean; // no due date anywhere: drawn faded to a month after its start
+  markers: TimelineMarker[]; // its sessions, published call sheets and episodes' due dates, inside the window
+  open: Route;
+}
+
+/**
+ * The projects as continuous bars from their start to their due date, for those touching the window: open projects of
+ * the five-stage workflow this person may see. Each carries its sessions, published call sheets and episodes' due
+ * dates as markers, for the bar's expanded row.
+ */
+export function timelineRows(actor: Actor, from: string, to: string): TimelineRow[] {
+  const db = getDb();
+  const out: TimelineRow[] = [];
+  for (const r of visibleRecords(actor)) {
+    if (!r.workflow || r.archived || r.workflow.status === "Completed") continue;
+    const p = r as Project;
+    const sessions = db.recordingSessions.filter((x) => x.contentId === p.contentId && !x.archivedAt && x.scheduledDate);
+    const episodes = db.records.filter((e) => e.parentId === p.contentId && e.episode && !e.archived);
+    const start = p.workflow.plannedStart || p.createdAt.slice(0, 10);
+    const dues = [
+      ...Object.values(p.stageDeadlines),
+      ...episodes.flatMap((e) => Object.values(e.stageDeadlines)),
+      ...sessions.map((x) => x.scheduledDate!),
+    ].filter((d): d is string => !!d && d >= start);
+    const due = p.deadline && p.deadline >= start ? p.deadline : dues.sort().pop();
+    const end = due ?? addDays(start, 30);
+    if (!overlaps(start, end, from, to)) continue;
+    const markers: TimelineMarker[] = [];
+    for (const x of sessions) {
+      if (inRange(x.scheduledDate!, from, to))
+        markers.push({ date: x.scheduledDate!, kind: "session", title: `${x.name?.trim() || x.id}`, open: { n: "session", id: x.id } });
+      const cs = x.callSheetId ? db.callSheets.find((c) => c.id === x.callSheetId) : undefined;
+      if (cs && cs.status === "final" && inRange(cs.date, from, to))
+        markers.push({ date: cs.date, kind: "callsheet", title: `Call sheet ${cs.id}`, open: { n: "callsheet", id: cs.id } });
+    }
+    for (const e of episodes) {
+      if (e.episode!.mdStage === "Published") continue;
+      const d = e.stageDeadlines[e.episode!.stage];
+      if (d && inRange(d, from, to))
+        markers.push({ date: d, kind: "episode", title: `${e.title}: ${e.episode!.stage} due`, open: { n: "record", id: e.contentId } });
+    }
+    out.push({
+      id: p.contentId,
+      title: p.title,
+      category: p.category,
+      color: categoryOf(p.category).color,
+      stage: workStage(p, sessions.length > 0, episodes),
+      start,
+      end,
+      openEnded: !due,
+      markers: markers.sort((a, b) => a.date.localeCompare(b.date)),
+      open: { n: "record", id: p.contentId },
+    });
+  }
+  return out.sort((a, b) => a.start.localeCompare(b.start) || a.title.localeCompare(b.title));
+}
+
+const addDays = (iso: string, n: number): string => new Date(Date.parse(`${iso}T12:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+
+/** The stage a project's work is at, for its bar's colour: its own stage, or its sessions' and episodes' furthest. */
+function workStage(p: Project, hasSessions: boolean, episodes: ContentRecord[]): string {
+  if (p.workflow.stage === "Development") return "Development";
+  const eps = episodes.map((e) => e.episode!);
+  if (eps.some((e) => e.stage === "Marketing and distribution")) return "Marketing and distribution";
+  if (eps.length) return "Post production";
+  const open = getDb().recordingSessions.some((x) => x.contentId === p.contentId && x.status !== "Planned" && !x.archivedAt);
+  return open ? "Production" : hasSessions || p.workflow.stage === "Pre-production" ? "Pre-production" : "Development";
 }

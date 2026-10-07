@@ -9,15 +9,25 @@ import { can } from "../src/services/permissions";
 import { instancesBetween } from "../src/services/productionInstances";
 
 // A person can choose to link a Google account. Nothing in the app needs it. When they do, they also
-// choose what it may be used for: putting their reminders in their Google Calendar, and sending
+// choose what it may be used for: putting their dates in a Google Calendar of their own, and sending
 // reminder emails from their Gmail. Tokens are encrypted, and unlinking revokes them at Google.
+//
+// The calendar (build prompt v4, section 12) is a dedicated "DOF Production Hub" calendar that the app makes on the
+// first sync, with the narrow calendar.app.created scope: the app can see and change only what it made, never the
+// rest of the person's calendar. It is one way, from the hub to Google; updates and cancellations follow; nothing is
+// ever read back into the pipeline. A link made before this (the calendar.events scope, on the main calendar) is
+// linked again once.
 
 const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const REVOKE_URL = "https://oauth2.googleapis.com/revoke";
-const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
+const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.app.created";
+const CALENDAR_API = "https://www.googleapis.com/calendar/v3";
+export const CALENDAR_NAME = "DOF Production Hub";
+/** 2: the dedicated calendar. 1 (or none): the person's main calendar, before data version 24. */
+const CALENDAR_VERSION = 2;
 const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.send";
-const TIME_ZONE = "Africa/Nairobi";
+const DEFAULT_TIME_ZONE = "Africa/Nairobi";
 
 const cfg = () => ({ id: process.env.GOOGLE_CLIENT_ID ?? "", secret: process.env.GOOGLE_CLIENT_SECRET ?? "" });
 export const googleAvailable = (): boolean => !!(cfg().id && cfg().secret && process.env.TOKEN_ENCRYPTION_KEY);
@@ -31,7 +41,11 @@ export interface GoogleStatus {
   calendar?: boolean;
   gmail?: boolean;
   linkedAt?: string;
+  relink?: boolean; // linked to the main calendar before the dedicated one: link again once
+  calendarName?: string;
 }
+
+const needsRelink = (d: GoogleDoc): boolean => d.scopes.includes("calendar") && (d.calendarVersion ?? 1) < CALENDAR_VERSION;
 
 export async function status(store: Store, who: Authed): Promise<GoogleStatus> {
   const d = await store.google.get(who.user._id);
@@ -42,6 +56,8 @@ export async function status(store: Store, who: Authed): Promise<GoogleStatus> {
     calendar: d?.scopes.includes("calendar"),
     gmail: d?.scopes.includes("gmail"),
     linkedAt: d?.linkedAt,
+    ...(d && needsRelink(d) ? { relink: true } : {}),
+    ...(d?.scopes.includes("calendar") ? { calendarName: CALENDAR_NAME } : {}),
   };
 }
 
@@ -115,6 +131,7 @@ export async function finishLink(store: Store, who: Authed, origin: string, code
     scopes: pending.scopes,
     refresh: encrypt(tok.refresh_token),
     linkedAt: new Date().toISOString(),
+    ...(pending.scopes.includes("calendar") ? { calendarVersion: CALENDAR_VERSION, calendarId: null, synced: [] } : {}),
   };
   await store.google.put(doc);
   return doc;
@@ -175,12 +192,23 @@ interface CalendarItem {
 }
 
 /**
- * Puts the person's coming reminders, and the recording sessions and show days they are on the call sheet of (the next
- * 60 days), in their own Google Calendar: one way, from the hub to Google. Each item is always the same event, so
- * syncing again updates it (a session moved to another day moves in Google too) and never adds it twice. Opt-in: only
- * for someone who linked Google and allowed the calendar.
+ * Puts the person's dates in their own "DOF Production Hub" calendar at Google: their coming reminders and due dates,
+ * the recording sessions and show days they are on the call sheet of (the next 60 days), and, for those who use the
+ * equipment, loans due back. One way, from the hub to Google. Each item is always the same event, so syncing again
+ * updates it (a session moved to another day moves in Google too) and never adds it twice; an item that is gone
+ * (cancelled, or no longer theirs) is taken off. A date with no time is an all-day event. Opt-in: only for someone who
+ * linked Google and allowed the calendar.
  */
-export async function addToCalendar(store: Store, who: Authed): Promise<{ added: number; already: number; failed: number }> {
+export async function addToCalendar(
+  store: Store,
+  who: Authed,
+): Promise<{ added: number; already: number; failed: number; removed: number; calendar: string }> {
+  const doc = await store.google.get(who.user._id);
+  if (doc && needsRelink(doc))
+    throw new HttpError(
+      409,
+      `Your Google link is from before the app had its own calendar. Unlink, then link again once: your dates then go into a calendar of their own, "${CALENDAR_NAME}", and the app no longer touches the rest of your calendar.`,
+    );
   const token = await accessToken(store, who.user._id, "calendar");
   const loaded = await loadDb(store, [
     "records",
@@ -191,8 +219,10 @@ export async function addToCalendar(store: Store, who: Authed): Promise<{ added:
     "counters",
     "members",
     "recordingSessions",
+    "loans",
   ]);
   if (!loaded) throw new HttpError(503, "Not set up.");
+  const zone = loaded.db.settings.timeZone || DEFAULT_TIME_ZONE;
   const items = withDb(loaded.db, (): CalendarItem[] => {
     const lead = loaded.db.settings.stageReminderHours;
     const out: CalendarItem[] = remindersFor(who.person.personId).map((r) => ({
@@ -221,19 +251,52 @@ export async function addToCalendar(store: Store, who: Authed): Promise<{ added:
         popupMinutes: 1440,
       });
     }
+    if (can(who.actor, "equipment.use"))
+      for (const l of loaded.db.loans ?? []) {
+        if (l.status !== "out" || l.expectedReturn < today) continue;
+        out.push({
+          key: `loan:${l.id}`,
+          title: `Loan back: ${l.borrowerName}`,
+          detail: `Loan ${l.id}${l.organisation ? `, ${l.organisation}` : ""}.`,
+          date: l.expectedReturn,
+          time: "",
+          end: "",
+          popupMinutes: 1440,
+        });
+      }
     return out;
   });
-  const out = { added: 0, already: 0, failed: 0 };
+  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  const linked = (await store.google.get(who.user._id))!;
+  // The dedicated calendar: made on the first sync, and made again if the person deleted it at Google.
+  const makeCalendar = async (): Promise<string> => {
+    const res = await web()(`${CALENDAR_API}/calendars`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ summary: CALENDAR_NAME, description: "Dates from the Dawn of Faith Production Hub.", timeZone: zone }),
+    });
+    const made = (await res.json().catch(() => ({}))) as { id?: string };
+    if (!res.ok || !made.id) throw new HttpError(502, "Google could not make the calendar. Try again in a minute.");
+    linked.calendarId = made.id;
+    linked.synced = [];
+    await store.google.put(linked);
+    return made.id;
+  };
+  let calendarId = linked.calendarId || (await makeCalendar());
+  const eventsUrl = () => `${CALENDAR_API}/calendars/${encodeURIComponent(calendarId)}/events`;
+  const out = { added: 0, already: 0, failed: 0, removed: 0, calendar: CALENDAR_NAME };
+  const ids: string[] = [];
   for (const r of items) {
-    const start = r.time ? { dateTime: `${r.date}T${r.time}:00`, timeZone: TIME_ZONE } : { date: r.date };
+    const start = r.time ? { dateTime: `${r.date}T${r.time}:00`, timeZone: zone } : { date: r.date };
     const endTime =
       r.end && r.time && r.end > r.time
         ? r.end
         : r.time
           ? `${String(Math.min(23, Number(r.time.slice(0, 2)) + 8)).padStart(2, "0")}:${r.time.slice(3)}`
           : "";
-    const end = r.time ? { dateTime: `${r.date}T${endTime}:00`, timeZone: TIME_ZONE } : { date: addDay(r.date) };
+    const end = r.time ? { dateTime: `${r.date}T${endTime}:00`, timeZone: zone } : { date: addDay(r.date) };
     const id = createHash("sha1").update(r.key).digest("hex");
+    ids.push(id);
     const body = JSON.stringify({
       id,
       summary: r.title,
@@ -242,18 +305,29 @@ export async function addToCalendar(store: Store, who: Authed): Promise<{ added:
       end,
       reminders: { useDefault: false, overrides: [{ method: "popup", minutes: r.popupMinutes }] },
     });
-    const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
-    // Update it where it is; if Google does not have it yet, add it.
-    const put = await web()(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${id}`, { method: "PUT", headers, body });
+    // Update it where it is; if Google does not have it yet, add it. A calendar that is gone is made again.
+    const put = await web()(`${eventsUrl()}/${id}`, { method: "PUT", headers, body });
     if (put.ok) {
       out.already++;
       continue;
     }
-    const res = await web()("https://www.googleapis.com/calendar/v3/calendars/primary/events", { method: "POST", headers, body });
+    let res = await web()(eventsUrl(), { method: "POST", headers, body });
+    if (res.status === 404) {
+      calendarId = await makeCalendar();
+      res = await web()(eventsUrl(), { method: "POST", headers, body });
+    }
     if (res.ok) out.added++;
     else if (res.status === 409) out.already++;
     else out.failed++;
   }
+  // Cancellations: what was put there before and is no longer an item comes off.
+  for (const gone of (linked.synced ?? []).filter((x) => !ids.includes(x))) {
+    const res = await web()(`${eventsUrl()}/${gone}`, { method: "DELETE", headers });
+    if (res.ok || res.status === 404 || res.status === 410) out.removed++;
+    else ids.push(gone); // tried again next time
+  }
+  linked.synced = ids;
+  await store.google.put(linked);
   return out;
 }
 

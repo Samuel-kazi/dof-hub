@@ -28,6 +28,8 @@ import { Empty, RiskBadge, StageBadge } from "../ui/parts";
 import { IconChevron, IconDown, IconPlus } from "../ui/Icons";
 import { EditRecordModal, NewRecordModal } from "./RecordForms";
 import { WorkflowBoard } from "./workflow/Board";
+import { ImportProjectModal } from "./workflow/ImportProject";
+import { hasStorageAccess } from "../services/storage";
 
 /** Right-click and "more" actions shared by every record row and card. */
 export function useRecordMenu() {
@@ -61,11 +63,55 @@ export function useRecordMenu() {
   return { onContext: (e: React.MouseEvent, r: ContentRecord) => menu(e, items(r)), modal };
 }
 
+/** General Use is not a pipeline (build prompt v4): an old link to it says where lent gear is, and lists its old records. */
+function GeneralUseMoved() {
+  const { actor, go } = useApp();
+  useDb();
+  const old = visibleRecords(actor, true).filter((r) => r.category === "general" && r.hierarchyLevel === 0);
+  return (
+    <div className="page">
+      <div className="page-head">
+        <div className="grow">
+          <h1>General Use</h1>
+          <p className="sub">
+            Equipment lent outside a production (to a church, a partner or a member) is in Equipment, under Lending. General Use is no
+            longer a pipeline.
+          </p>
+        </div>
+        <button className="btn primary" onClick={() => go({ n: "equipment", tab: "lending" })}>
+          Open Lending
+        </button>
+      </div>
+      <section className="glass panel" aria-label="Earlier General Use records">
+        <h2>Earlier records</h2>
+        {old.length === 0 ? (
+          <Empty>None.</Empty>
+        ) : (
+          <div className="list">
+            {old.map((r) => (
+              <div key={r.contentId} className="list-item" onClick={() => go({ n: "record", id: r.contentId })}>
+                <span className="cid">{r.contentId}</span> {r.title}
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="muted">They keep their IDs, and their links still open them.</p>
+      </section>
+    </div>
+  );
+}
+
 export function Pipeline({ category }: { category?: CategoryKey }) {
+  if (category === "general") return <GeneralUseMoved />;
+  return <PipelineBoard category={category} />;
+}
+
+function PipelineBoard({ category }: { category?: CategoryKey }) {
   const { actor, go, menu } = useApp();
   useDb();
   const [view, setView] = useState<"board" | "tree">("board");
   const [adding, setAdding] = useState<CategoryKey | null>(null);
+  const [importing, setImporting] = useState(false);
   const [showClosed, setShowClosed] = useState(false);
   const [showPublished, setShowPublished] = useState(false);
   const rm = useRecordMenu();
@@ -127,6 +173,12 @@ export function Pipeline({ category }: { category?: CategoryKey }) {
           </div>
         )}
         <ReportButton scope="pipeline" />
+        {can(actor, "pipeline.manage") && hasStorageAccess(actor) && (!cfg || cfg.workflow) && (
+          // A project recorded before the system, brought in from its folder on a drive (build prompt v4, 7A).
+          <button className="btn" onClick={() => setImporting(true)}>
+            Import existing project
+          </button>
+        )}
         {can(actor, "pipeline.manage") && (
           <div className="split">
             <button className="btn primary" onClick={(e) => (cfg ? setAdding(cfg.key) : pickCategory(e))}>
@@ -208,6 +260,7 @@ export function Pipeline({ category }: { category?: CategoryKey }) {
       )}
 
       {rm.modal}
+      {importing && <ImportProjectModal category={cfg?.key} onClose={() => setImporting(false)} />}
       {adding && (
         <NewRecordModal
           category={adding}

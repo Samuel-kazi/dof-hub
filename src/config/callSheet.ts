@@ -1,4 +1,16 @@
-import type { CallSheet, EquipCategoryKey, EventPlan, Logistics, Rehearsal, SheetContent } from "../types";
+import type {
+  CallSheet,
+  CheckItem,
+  CheckState,
+  EquipCategoryKey,
+  EventPlan,
+  LiveLightKey,
+  LiveLightState,
+  Logistics,
+  Rehearsal,
+  RehearsalStep,
+  SheetContent,
+} from "../types";
 
 // What every call sheet contains, whichever way its day was made (a recurring show's template, a one-time or
 // multi-day event, or a recording session): one shape, one list of sections, the same screens.
@@ -58,6 +70,54 @@ export const DEFAULT_TECH_CHECK = [
   "Recording media and batteries",
   "Stream or recording test",
   "Power and backup",
+];
+
+/**
+ * A live show's Tech Check to start from (build prompt v4, section 9): one line for each part of the chain, each with
+ * who checks it, how it stands, the inventory item and the test result. Lines can be renamed, added and removed.
+ */
+export const LIVE_TECH_CHECK = [
+  "Cameras",
+  "Lenses",
+  "Tripods",
+  "Switcher",
+  "Audio console",
+  "Wireless mics",
+  "Comms",
+  "Lighting",
+  "Graphics",
+  "Playback",
+  "Internet",
+  "Streaming encoder",
+  "Recording",
+  "Backup recording",
+];
+
+export const CHECK_STATES: CheckState[] = ["Not checked", "OK", "Issue"];
+
+/** How a line of a check stands: its state, or, on a line from before data version 24, its tick. */
+export const checkStateOf = (c: CheckItem): CheckState => c.state ?? (c.done ? "OK" : "Not checked");
+
+/** A live show's Rehearsal Log to start from. Steps can be renamed, added and removed. Never a gate. */
+export const REHEARSAL_STEPS = ["Setup", "Line check", "Camera check", "Audio", "Lighting", "Graphics", "Full rehearsal", "Final sign-off"];
+
+export const blankStep = (id: string, step: string): RehearsalStep => ({ id, step, time: "", personId: null, notes: "", done: false });
+
+/** Live Control's status lights (build prompt v4, section 9b), each set by hand. */
+export const LIVE_LIGHTS: { key: LiveLightKey; label: string }[] = [
+  { key: "cameras", label: "Cameras" },
+  { key: "audio", label: "Audio" },
+  { key: "stream", label: "Stream" },
+  { key: "graphics", label: "Graphics" },
+  { key: "recording", label: "Recording" },
+  { key: "comms", label: "Comms" },
+  { key: "internet", label: "Internet" },
+];
+export const LIGHT_STATES: { key: LiveLightState; label: string }[] = [
+  { key: "off", label: "Not set" },
+  { key: "ok", label: "OK" },
+  { key: "watch", label: "Watch" },
+  { key: "down", label: "Down" },
 ];
 
 export const blankLogistics = (): Logistics => ({ transport: "", parking: "", meals: "", accommodation: "", other: "" });

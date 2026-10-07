@@ -85,6 +85,7 @@ export function theologyStatus(projectId: string, passedByHand = true): Theology
  * earlier pipeline after Development, whose review was done there.
  */
 function legacyApproval(p: Project, passedByHand: boolean): string | null {
+  if (p.workflow.reviewedBeforeSystem) return "Reviewed before the system";
   if ((["pitch", "outline_script"] as const).every((k) => checkpoint(p.contentId, k)?.status === "Approved"))
     return "Approved on the earlier review checkpoints";
   const form = getDb().developmentForms.find((f) => f.contentId === p.contentId);

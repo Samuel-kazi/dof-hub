@@ -18,6 +18,7 @@ import { todayIso } from "../services/utils";
 import { migrateDocuments } from "./migrateDocuments";
 import { logId, sessionCode, sessionCounter, syncRecordCounters } from "./ids";
 import { liveMusicToWorkflow } from "./migrateLiveMusic";
+import { toV24 } from "./migrateV24";
 
 // Upgrades saved data from version 2 to 3. It only touches plain data, so it can run while the
 // store is loading. It is safe to run twice: anything already present is left alone.
@@ -833,5 +834,16 @@ export function upgradeToV23(db: Database): Database {
   // Their Development forms move into their documents, as every project's did at version 17.
   if (moved.changed) migrateDocuments(db, { at: new Date().toISOString() });
   db.schemaVersion = 23;
+  return db;
+}
+
+/**
+ * Data version 24 (build prompt v4): the Recording Log and storage assigned in Production, and the rest of this round
+ * (./migrateV24.ts). A copy of the data is kept first (`before_v24`); going back is restoring it. Running it again
+ * changes nothing.
+ */
+export function upgradeToV24(db: Database): Database {
+  toV24(db);
+  db.schemaVersion = 24;
   return db;
 }
