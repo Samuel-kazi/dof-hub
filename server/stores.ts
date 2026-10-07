@@ -54,6 +54,12 @@ export interface GoogleDoc {
   scopes: string[]; // "calendar" and "gmail" are the choices a person makes
   refresh: string; // encrypted
   linkedAt: string;
+  // Google Calendar (build prompt v4, section 12): a dedicated "DOF Production Hub" calendar, made by the app with the
+  // narrow calendar.app.created scope. Version 1 was the person's main calendar with calendar.events: such a link is
+  // linked again once.
+  calendarVersion?: number;
+  calendarId?: string | null; // the dedicated calendar, made on the first sync
+  synced?: string[]; // the events put there last time, so an item that is gone is taken off too
 }
 
 export interface OAuthDoc {

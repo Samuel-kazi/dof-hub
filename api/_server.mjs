@@ -4333,7 +4333,7 @@ __export(people_exports, {
   deactivatePerson: () => deactivatePerson,
   generatePersonId: () => generatePersonId,
   getPerson: () => getPerson,
-  nameOf: () => nameOf,
+  nameOf: () => nameOf2,
   projectHistory: () => projectHistory,
   reactivatePerson: () => reactivatePerson,
   removeFromProject: () => removeFromProject,
@@ -4342,802 +4342,50 @@ __export(people_exports, {
   updatePersonCategory: () => updatePersonCategory,
   workOwnedOn: () => workOwnedOn
 });
-var STAFF_CATEGORIES = ["CRW", "VOL", "PTR"];
-function requireStaffCategory(category2) {
-  if (!STAFF_CATEGORIES.includes(category2)) throw new RuleError("Choose Crew, Volunteer or Partner.");
-}
-function generatePersonId(category2) {
-  const prefix = ROLES[category2].idPrefix;
-  const nums = getDb().people.filter((p) => p.personId.startsWith(prefix + "-")).map((p) => parseInt(p.personId.slice(prefix.length + 1), 10)).filter((n) => !Number.isNaN(n));
-  return claimId(`${prefix}-${pad((nums.length ? Math.max(...nums) : 0) + 1)}`);
-}
-function requireHop2(actor, what) {
-  requireCan(actor, "people.manage", what);
-}
-function getPerson(id2) {
-  return getDb().people.find((p) => p.personId === id2);
-}
-var nameOf = (id2) => id2 ? getPerson(id2)?.name ?? id2 : "Unassigned";
-function createLoginForPerson(actor, personId, email, password) {
-  requireHop2(actor, "create logins");
-  const p = getPerson(personId);
-  if (!p) throw new RuleError("Person not found.");
-  if (getDb().users.some((u) => u.personId === personId)) throw new RuleError("This person already has a login.");
-  if (!email.trim()) throw new RuleError("Enter an email address for the login.");
-  if (getDb().users.some((u) => u.email.toLowerCase() === email.trim().toLowerCase()))
-    throw new RuleError("That email is already used by another login.");
-  if (password.length < 4) throw new RuleError("Password must be at least 4 characters.");
-  const user = {
-    userId: `U-${pad(getDb().users.length + 1)}`,
-    personId,
-    email: email.trim(),
-    password,
-    // MOCK ONLY: hash with bcrypt once a real backend exists
-    role: p.category,
-    // auto-set from category, overridable later without touching the profile
-    active: true
-  };
-  getDb().users.push(user);
-  p.hasLogin = true;
-  logAudit(actor, "create-login", "person", personId, email);
-  commit();
-  return user;
-}
-function createPerson(actor, input, login2) {
-  requireHop2(actor, "add people");
-  requireStaffCategory(input.category);
-  if (!input.name.trim()) throw new RuleError("Enter a name.");
-  if (login2) {
-    if (!login2.email.trim()) throw new RuleError("Enter an email address for the login.");
-    if (getDb().users.some((u) => u.email.toLowerCase() === login2.email.trim().toLowerCase()))
-      throw new RuleError("That email is already used by another login.");
-    if (login2.password.length < 4) throw new RuleError("Password must be at least 4 characters.");
-  }
-  const person2 = {
-    personId: generatePersonId(input.category),
-    category: input.category,
-    name: input.name.trim(),
-    email: input.email.trim(),
-    phone: input.phone.trim(),
-    skills: input.skills,
-    equipmentFamiliarity: input.equipmentFamiliarity,
-    hasLogin: false,
-    status: "active",
-    createdAt: todayIso()
-  };
-  getDb().people.push(person2);
-  logAudit(actor, "create", "person", person2.personId, person2.name);
-  commit();
-  if (login2) createLoginForPerson(actor, person2.personId, login2.email, login2.password);
-  return person2;
-}
-var PERSON_EDITABLE = ["name", "email", "phone", "skills", "equipmentFamiliarity"];
-function updatePerson(actor, personId, input) {
-  requireHop2(actor, "edit people");
-  const patch = pickKeys(input, PERSON_EDITABLE);
-  const p = getPerson(personId);
-  if (!p) throw new RuleError("Person not found.");
-  if (p.category === "HOP" && !isHop(actor))
-    throw new RuleError("Only the Head of Production can change the Head of Production's details.");
-  if (redactPerson(actor, p).contactHidden) {
-    delete patch.email;
-    delete patch.phone;
-    delete patch.equipmentFamiliarity;
-  }
-  if (patch.name !== void 0 && !patch.name.trim()) throw new RuleError("Enter a name.");
-  Object.assign(p, patch);
-  logAudit(actor, "update", "person", personId, Object.keys(patch).join(", "));
-  commit();
-  return p;
-}
-function updateOwnProfile(actor, patch) {
-  const p = getPerson(actor.personId);
-  if (!p) throw new RuleError("Person not found.");
-  if (patch.name !== void 0 && !patch.name.trim()) throw new RuleError("Enter your name.");
-  if (patch.photoUrl && patch.photoUrl.length > 4e5) throw new RuleError("That photo is too large. Choose a smaller image.");
-  if (patch.photoUrl && !patch.photoUrl.startsWith("data:image/") && !STORED_FILE.test(patch.photoUrl))
-    throw new RuleError("Choose a photo from your device.");
-  Object.assign(p, {
-    ...patch.name !== void 0 ? { name: patch.name.trim() } : {},
-    ...patch.email !== void 0 ? { email: patch.email.trim() } : {},
-    ...patch.phone !== void 0 ? { phone: patch.phone.trim() } : {},
-    ...patch.notifyEmail !== void 0 ? { notifyEmail: patch.notifyEmail } : {},
-    ...patch.notifySms !== void 0 ? { notifySms: patch.notifySms } : {},
-    ...patch.photoUrl !== void 0 ? { photoUrl: patch.photoUrl } : {},
-    ...patch.fontSize !== void 0 ? { fontSize: patch.fontSize } : {},
-    ...patch.density !== void 0 ? { density: patch.density } : {}
-  });
-  logAudit(actor, "update-profile", "person", actor.personId, Object.keys(patch).join(", "));
-  commit();
-  return p;
-}
-function updatePersonCategory(actor, personId, newCategory) {
-  requireHop2(actor, "change someone's category");
-  requireStaffCategory(newCategory);
-  const p = getPerson(personId);
-  if (!p) throw new RuleError("Person not found.");
-  if (p.category === "HOP") throw new RuleError("The Head of Production category cannot be changed here.");
-  requireNotBeyond(actor, p.category, personId, "change the category");
-  requireNotBeyond(actor, newCategory, personId, "change the category");
-  const from = p.category;
-  p.category = newCategory;
-  const u = getDb().users.find((x) => x.personId === personId);
-  if (u) u.role = newCategory;
-  logAudit(actor, "change-category", "person", personId, `${from} \u2192 ${newCategory}`);
-  commit();
-  return p;
-}
-function deactivatePerson(actor, personId) {
-  requireHop2(actor, "deactivate people");
-  const p = getPerson(personId);
-  if (!p) throw new RuleError("Person not found.");
-  if (p.category === "HOP") throw new RuleError("The Head of Production cannot be deactivated.");
-  requireNotBeyond(actor, p.category, personId, "deactivate a login");
-  p.status = "inactive";
-  const u = getDb().users.find((x) => x.personId === personId);
-  if (u) u.active = false;
-  logAudit(actor, "deactivate", "person", personId);
-  commit();
-}
-function reactivatePerson(actor, personId) {
-  requireHop2(actor, "reactivate people");
-  const p = getPerson(personId);
-  if (!p) throw new RuleError("Person not found.");
-  requireNotBeyond(actor, p.category, personId, "reactivate a login");
-  p.status = "active";
-  const u = getDb().users.find((x) => x.personId === personId);
-  if (u) u.active = true;
-  logAudit(actor, "reactivate", "person", personId);
-  commit();
-}
-function projectHistory(personId) {
-  return getDb().members.filter((m) => m.personId === personId).map((member) => ({ member, record: getRecord(member.projectContentId) })).filter((x) => !!x.record);
-}
-function assignToProject(actor, personId, contentId, roleOnProject, canComment2) {
-  requireHop2(actor, "assign people to projects");
-  const rec2 = getRecord(contentId);
-  if (!rec2) throw new RuleError("Project not found.");
-  if (getDb().members.some((m) => m.personId === personId && m.projectContentId === contentId))
-    throw new RuleError("Already assigned to this project.");
-  const roles2 = cleanRoles(roleOnProject.split(","));
-  getDb().members.push({ personId, projectContentId: contentId, roleOnProject: roles2.join(", ") || "Team member", canComment: canComment2 });
-  logAudit(actor, "assign", "person", personId, contentId);
-  commit();
-}
-function workOwnedOn(personId, contentId) {
-  const under = getDb().records.filter((r) => !r.archived && (r.contentId === contentId || r.contentId.startsWith(`${contentId}-`)));
-  return {
-    stages: under.reduce(
-      (n, r) => n + Object.values(r.stageAssignees).filter((list) => list.some((o) => o.personId === personId)).length,
-      0
-    ),
-    tasks: under.reduce((n, r) => n + r.tasks.filter((t2) => t2.assigneePersonId === personId && !t2.done).length, 0)
-  };
-}
-function removeFromProject(actor, personId, contentId) {
-  requireHop2(actor, "remove people from projects");
-  const owned = workOwnedOn(personId, contentId);
-  if (owned.stages || owned.tasks) {
-    const parts = [
-      owned.stages ? `${owned.stages} stage${owned.stages > 1 ? "s" : ""}` : "",
-      owned.tasks ? `${owned.tasks} open task${owned.tasks > 1 ? "s" : ""}` : ""
-    ].filter(Boolean).join(" and ");
-    throw new RuleError(`${getPerson(personId)?.name ?? personId} still owns ${parts} on this project. Hand them to someone else first.`);
-  }
-  getDb().members = getDb().members.filter((m) => !(m.personId === personId && m.projectContentId === contentId));
-  logAudit(actor, "unassign", "person", personId, contentId);
-  commit();
-}
-function crewAvailableOn(date2) {
-  const db2 = getDb();
-  const total = db2.people.filter((p) => p.category === "CRW" && p.status === "active");
-  const busy = new Set(db2.callSheets.filter((cs) => cs.date === date2).flatMap((cs) => cs.crewPersonIds));
-  return { available: total.filter((p) => !busy.has(p.personId)), total };
-}
 
-// src/services/equipment-reports.ts
-function inventoryReport(category2, includeOutOfService) {
-  const groups = [];
-  for (const cat of EQUIP_CATEGORIES) {
-    if (category2 !== "all" && cat.key !== category2) continue;
-    const items = getDb().equipment.filter((i) => i.category === cat.key && (includeOutOfService || i.baseStatus === "active" || i.baseStatus === "in-repair")).sort((a, b) => a.id.localeCompare(b.id));
-    if (!items.length) continue;
-    const rows2 = items.map((i) => ({
-      id: i.id,
-      name: i.name,
-      detail: [i.make, i.model].filter(Boolean).join(" "),
-      serial: [i.serialNumber, i.unitLabel].filter(Boolean).join(" ") || "",
-      qty: i.quantityTotal,
-      free: qtyFree(i),
-      condition: i.condition,
-      status: displayStatus(i).label,
-      cost: i.unitCost,
-      vendor: i.vendor,
-      purchased: i.purchaseDate ? fmtShort(i.purchaseDate) : "",
-      packaging: i.packaging,
-      accessories: i.accessories
-    }));
-    groups.push({ category: cat.key, label: cat.label, rows: rows2, units: rows2.reduce((n, r) => n + r.qty, 0) });
-  }
-  return groups;
-}
-function groupByFamily(items) {
-  const map = /* @__PURE__ */ new Map();
-  for (const i of items.filter((x) => x.trackingType === "aggregate")) {
-    const k = familyOf(i);
-    if (!map.has(k)) map.set(k, { key: k, name: i.name, category: i.category, items: [] });
-    map.get(k).items.push(i);
-  }
-  for (const f2 of map.values()) f2.items.sort((a, b) => (a.purchaseDate ?? a.createdAt).localeCompare(b.purchaseDate ?? b.createdAt));
-  return [...map.values()];
-}
-var modelKeyOf = (i) => {
-  const make = i.make.trim().toLowerCase();
-  const model = i.model.trim().toLowerCase();
-  return make && model ? `${i.category}::${make}::${model}` : null;
-};
-function groupSerializedByModel(items) {
-  const map = /* @__PURE__ */ new Map();
-  for (const i of items.filter((x) => x.trackingType === "serialized")) {
-    const k = modelKeyOf(i);
-    if (!k) continue;
-    if (!map.has(k)) map.set(k, { key: k, name: `${i.make.trim()} ${i.model.trim()}`.trim(), category: i.category, items: [] });
-    map.get(k).items.push(i);
-  }
-  for (const f2 of map.values()) f2.items.sort((a, b) => (a.purchaseDate ?? a.createdAt).localeCompare(b.purchaseDate ?? b.createdAt));
-  return [...map.values()];
-}
-var itemHistory = (id2) => getDb().equipmentHistory.map((h, n) => ({ h, n })).filter(({ h }) => h.equipmentId === id2).sort((a, b) => b.h.at.localeCompare(a.h.at) || b.n - a.n).map(({ h }) => h);
-var itemIncidents = (id2) => getDb().incidents.filter((i) => i.equipmentId === id2).sort((a, b) => b.at.localeCompare(a.at));
-var allIncidents = () => [...getDb().incidents].sort((a, b) => b.at.localeCompare(a.at));
+// src/services/alerts.ts
+var alerts_exports = {};
+__export(alerts_exports, {
+  EMAIL_MIN_OFFSET: () => EMAIL_MIN_OFFSET,
+  OFFSETS: () => OFFSETS,
+  createReminder: () => createReminder,
+  deleteReminder: () => deleteReminder,
+  fireReminders: () => fireReminders,
+  markNotificationsRead: () => markNotificationsRead,
+  nairobiInstant: () => nairobiInstant,
+  nextFireAt: () => nextFireAt,
+  notificationsFor: () => notificationsFor,
+  pruneNotifications: () => pruneNotifications,
+  remindersOn: () => remindersOn,
+  targetWhen: () => targetWhen,
+  unreadCount: () => unreadCount,
+  updateReminder: () => updateReminder
+});
 
-// src/services/sheetLock.ts
-var OPEN = { locked: false, why: "" };
-function pastShooting(r) {
-  if (r.episode) return r.episode.stage === "Post production" || r.episode.stage === "Marketing and distribution";
-  if (isComplete(r)) return true;
-  const stages = categoryOf(r.category).stages.map((s2) => s2.name);
-  const at = stages.indexOf(r.pipelineStage ?? "");
-  if (at < 0) return false;
-  if (r.category === "live") {
-    const post = stages.indexOf("Post production");
-    return post >= 0 && at >= post;
-  }
-  return at > stages.indexOf(categoryOf(r.category).footageStage);
-}
-function sheetLock(cs) {
-  const db2 = getDb();
-  const session = db2.recordingSessions.find((s2) => s2.callSheetId === cs.id);
-  if (session) {
-    if (session.status !== "Closed") return OPEN;
-    const live = db2.records.find((r) => r.contentId === session.contentId)?.category === "live";
-    return live ? { locked: true, why: `${session.name?.trim() || "Day"} (${session.id}) is closed: what it recorded is in Post production.` } : { locked: true, why: `Recording session ${session.id} is closed: its episodes are in Post production.` };
-  }
-  if (cs.instanceId) {
-    const day = db2.records.find((r) => r.contentId === cs.instanceId);
-    return day && pastShooting(day) ? { locked: true, why: `${day.title} has reached Post production.` } : OPEN;
-  }
-  const linked = cs.linkedEpisodeIds.map((id2) => db2.records.find((r) => r.contentId === id2)).filter((r) => !!r && !r.archived);
-  if (linked.length && linked.every(pastShooting)) return { locked: true, why: "Everything on this sheet is in Post production." };
-  return OPEN;
-}
-function assertSheetOpen(cs) {
-  const l = sheetLock(cs);
-  if (l.locked) throw new RuleError(`This call sheet is locked. ${l.why}`);
-}
-
-// src/services/equipment-manifests.ts
-var getManifest = (id2) => getDb().manifests.find((m) => m.id === id2);
-function addDays(iso2, n) {
-  const [y, m, d] = iso2.split("-").map(Number);
-  const dt = new Date(y, m - 1, d + n);
-  const p = (x) => String(x).padStart(2, "0");
-  return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`;
-}
-function checkLine(item2, qty, from, to, excludeManifestId) {
-  if (!item2) throw new RuleError("That item no longer exists.");
-  if (!Number.isInteger(qty) || qty < 1) throw new RuleError("Quantity must be at least 1.");
-  if (item2.trackingType === "serialized" && qty !== 1) throw new RuleError(`${item2.name} is a single unit.`);
-  if (item2.baseStatus !== "active") {
-    const word = item2.baseStatus === "in-repair" ? "in repair" : item2.baseStatus;
-    throw new RuleError(`${item2.name} (${item2.id}) is ${word} and cannot be assigned.`);
-  }
-  const a = availabilityOn(item2, from, to, excludeManifestId);
-  if (a.availableQty < qty) {
-    throw new RuleError(
-      item2.trackingType === "aggregate" && a.availableQty > 0 ? `Only ${a.availableQty} of ${item2.name} (${item2.id}) are free for those dates. ${a.reason}.` : `${item2.name} (${item2.id}) is not free for those dates. ${a.reason}.`
-    );
-  }
-  return item2;
-}
-function loadManifest(actor, id2) {
-  requireGearAccess(actor);
-  const m = getManifest(id2);
-  if (!m) throw new RuleError("Checkout list not found.");
-  const rec2 = getRecord(m.contentId);
-  if (rec2 ? !canWrite(actor, rec2) : !isHop(actor)) throw new RuleError("You are not attached to this project.");
-  return m;
-}
-function newLine(item2, quantity) {
-  return {
-    equipmentId: item2.id,
-    quantity,
-    conditionOut: item2.condition,
-    photosOut: [],
-    conditionIn: null,
-    photosIn: [],
-    returnedGood: 0,
-    damaged: 0,
-    lost: 0
-  };
-}
-function mergeRequests(lines) {
-  const map = /* @__PURE__ */ new Map();
-  for (const l of lines) map.set(l.equipmentId, (map.get(l.equipmentId) ?? 0) + l.quantity);
-  return [...map].map(([equipmentId, quantity]) => ({ equipmentId, quantity }));
-}
-function createManifest(actor, input) {
-  requireGearAccess(actor);
-  const rec2 = getRecord(input.contentId);
-  if (!rec2) throw new RuleError("Choose the project this gear is for.");
-  if (!canWrite(actor, rec2)) throw new RuleError("You are not attached to this project.");
-  if (!input.date) throw new RuleError("Choose a date.");
-  const lines = mergeRequests(input.lines);
-  if (!lines.length) throw new RuleError("Add at least one item.");
-  const outside = input.destination === "outside" || input.status === "checked-out";
-  const expectedReturn = outside ? input.expectedReturn || addDays(input.date, getDb().settings.checkoutReturnDays) : null;
-  if (expectedReturn && expectedReturn < input.date) throw new RuleError("The return date cannot be before the start date.");
-  const to = expectedReturn ?? input.date;
-  const responsible = input.responsiblePersonId ?? actor.personId;
-  const person2 = getPerson(responsible);
-  if (!person2 || person2.status !== "active" || person2.category !== "CRW" && person2.category !== "HOP")
-    throw new RuleError("The person responsible must be active crew.");
-  const items = lines.map((l) => checkLine(getItem(l.equipmentId), l.quantity, input.date, to));
-  const m = {
-    id: claimId(`DOF-MF-${pad(nextCounter("manifest"))}`),
-    contentId: input.contentId,
-    callSheetId: input.callSheetId ?? null,
-    destination: outside ? "outside" : "studio",
-    status: input.status,
-    date: input.date,
-    expectedReturn,
-    responsiblePersonId: responsible,
-    lines: lines.map((l, i) => newLine(items[i], l.quantity)),
-    notes: input.notes ?? "",
-    createdAt: (/* @__PURE__ */ new Date()).toISOString(),
-    createdBy: actor.personId,
-    checkedOutAt: input.status === "checked-out" ? (/* @__PURE__ */ new Date()).toISOString() : null,
-    returnedAt: null
-  };
-  getDb().manifests.push(m);
-  for (const l of m.lines)
-    hist(
-      actor,
-      l.equipmentId,
-      m.status === "checked-out" ? "checked-out" : "assigned",
-      `${l.quantity > 1 ? `${l.quantity} units, ` : ""}${m.contentId}, ${fmtShort(m.date)}`,
-      { contentId: m.contentId, manifestId: m.id }
-    );
-  logAudit(actor, "create", "manifest", m.id, `${m.status}, ${m.lines.length} lines`);
-  syncSheetEquipment(m.callSheetId);
-  commit();
-  return m;
-}
-function addLine(actor, manifestId, equipmentId, quantity) {
-  const m = loadManifest(actor, manifestId);
-  if (m.status !== "assigned") throw new RuleError("Items can only be added before the gear goes out.");
-  const existing = m.lines.find((l) => l.equipmentId === equipmentId);
-  const item2 = checkLine(getItem(equipmentId), (existing?.quantity ?? 0) + quantity, m.date, m.expectedReturn ?? m.date, m.id);
-  if (existing) existing.quantity += quantity;
-  else m.lines.push(newLine(item2, quantity));
-  hist(actor, equipmentId, "assigned", `${quantity > 1 ? `${quantity} units, ` : ""}${m.contentId}, ${fmtShort(m.date)}`, {
-    contentId: m.contentId,
-    manifestId: m.id
-  });
-  syncSheetEquipment(m.callSheetId);
-  commit();
-  return m;
-}
-function addLines(actor, manifestId, lines) {
-  const m = loadManifest(actor, manifestId);
-  if (m.status !== "assigned") throw new RuleError("Items can only be added before the gear goes out.");
-  const merged = mergeRequests(lines);
-  for (const l of merged) {
-    const cur = m.lines.find((x) => x.equipmentId === l.equipmentId)?.quantity ?? 0;
-    checkLine(getItem(l.equipmentId), cur + l.quantity, m.date, m.expectedReturn ?? m.date, m.id);
-  }
-  for (const l of merged) addLine(actor, manifestId, l.equipmentId, l.quantity);
-  return m;
-}
-function removeLine(actor, manifestId, equipmentId) {
-  const m = loadManifest(actor, manifestId);
-  if (m.status !== "assigned") throw new RuleError("Items can only be removed before the gear goes out.");
-  m.lines = m.lines.filter((l) => l.equipmentId !== equipmentId);
-  hist(actor, equipmentId, "released", `Taken off ${m.id}`, { contentId: m.contentId, manifestId: m.id });
-  if (!m.lines.length) m.status = "released";
-  syncSheetEquipment(m.callSheetId);
-  commit();
-  return m;
-}
-function goneOutDefaults(m) {
-  return m.expectedReturn ?? addDays(m.date > todayIso() ? m.date : todayIso(), getDb().settings.checkoutReturnDays);
-}
-function markGoneOut(actor, manifestId, opts = {}) {
-  const m = loadManifest(actor, manifestId);
-  if (m.status !== "assigned") throw new RuleError("Only assigned gear can be marked as gone out.");
-  const expectedReturn = opts.expectedReturn || goneOutDefaults(m);
-  if (expectedReturn < m.date) throw new RuleError("The return date cannot be before the start date.");
-  const responsible = opts.responsiblePersonId ?? m.responsiblePersonId;
-  const person2 = getPerson(responsible);
-  if (!person2 || person2.status !== "active") throw new RuleError("The person responsible must be active crew.");
-  const items = m.lines.map((l) => checkLine(getItem(l.equipmentId), l.quantity, m.date, expectedReturn, m.id));
-  const photoAtts = m.lines.map((l) => (opts.photos?.[l.equipmentId] ?? []).map((p) => makeAttachment(actor, p)));
-  m.lines.forEach((l, i) => {
-    l.conditionOut = items[i].condition;
-    l.photosOut.push(...photoAtts[i]);
-    hist(actor, l.equipmentId, "checked-out", `${m.contentId}, back by ${fmtShort(expectedReturn)}`, {
-      contentId: m.contentId,
-      manifestId: m.id
-    });
-  });
-  m.status = "checked-out";
-  m.destination = "outside";
-  m.expectedReturn = expectedReturn;
-  m.responsiblePersonId = responsible;
-  m.checkedOutAt = (/* @__PURE__ */ new Date()).toISOString();
-  logAudit(actor, "check-out", "manifest", m.id, `back by ${expectedReturn}`);
-  commit();
-  return m;
-}
-var nonNeg = (n) => Number.isInteger(n) && n >= 0;
-function checkIn(actor, manifestId, returns) {
-  const m = loadManifest(actor, manifestId);
-  if (m.status !== "checked-out") throw new RuleError("This gear is not checked out.");
-  const plans = m.lines.map((line3) => {
-    const item2 = getItem(line3.equipmentId);
-    if (!item2) throw new RuleError("An item on this list no longer exists.");
-    const r = returns.find((x) => x.equipmentId === line3.equipmentId);
-    if (!r) throw new RuleError(`Record the return for ${item2.name}.`);
-    if (![r.returnedGood, r.damaged, r.lost].every(nonNeg)) throw new RuleError(`Counts for ${item2.name} must be whole numbers.`);
-    if (r.returnedGood + r.damaged + r.lost !== line3.quantity)
-      throw new RuleError(`${item2.name}: returned, damaged and lost must add up to ${line3.quantity}.`);
-    let good = r.returnedGood;
-    let damaged = r.damaged;
-    const lost = r.lost;
-    let cond = null;
-    if (item2.trackingType === "serialized") {
-      if (good + damaged > 0) {
-        if (!r.conditionIn) throw new RuleError(`Choose the condition ${item2.name} came back in.`);
-        cond = r.conditionIn;
-        if (good === 1 && conditionRank(cond) > conditionRank(line3.conditionOut)) {
-          good = 0;
-          damaged = 1;
-        }
-      }
-    } else if (good > 0 && r.conditionIn) {
-      cond = r.conditionIn;
-    }
-    const desc = (r.description ?? "").trim();
-    if (damaged + lost > 0 && !desc) throw new RuleError(`Describe what happened to ${item2.name}.`);
-    if (damaged + lost > item2.quantityTotal) throw new RuleError(`${item2.name}: more units damaged or lost than the batch holds.`);
-    return {
-      line: line3,
-      item: item2,
-      good,
-      damaged,
-      lost,
-      cond,
-      desc,
-      repair: !!r.sendToRepair && item2.trackingType === "serialized" && damaged === 1,
-      photos: (r.photos ?? []).map((p) => makeAttachment(actor, p))
-    };
-  });
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  for (const p of plans) {
-    p.line.returnedGood = p.good;
-    p.line.damaged = p.damaged;
-    p.line.lost = p.lost;
-    p.line.conditionIn = p.cond;
-    p.line.photosIn.push(...p.photos);
-    if (p.item.trackingType === "serialized") {
-      if (p.cond) p.item.condition = p.cond;
-    } else {
-      let bd = removeWorstFirst(p.item.conditionBreakdown ?? {}, p.damaged + p.lost);
-      if (p.good > 0 && p.cond && p.cond !== p.line.conditionOut) {
-        bd = addUnits(removeFromThenWorst(bd, p.line.conditionOut, p.good), p.good, p.cond);
-      }
-      applyConditionBreakdown(p.item, bd);
-      p.item.quantityTotal -= p.damaged + p.lost;
-      p.item.quantityDamaged += p.damaged;
-      p.item.quantityLost += p.lost;
-    }
-    const addIncident = (type, qty) => {
-      const inc = {
-        id: `DOF-INC-${pad(nextCounter("incident"))}`,
-        equipmentId: p.item.id,
-        at: now,
-        type,
-        quantity: qty,
-        description: p.desc,
-        personId: m.responsiblePersonId,
-        contentId: m.contentId,
-        manifestId: m.id
-      };
-      getDb().incidents.push(inc);
-      hist(actor, p.item.id, "incident", `${type === "damage" ? "Damaged" : "Lost"}${qty > 1 ? ` (${qty} units)` : ""}: ${p.desc}`, {
-        contentId: m.contentId,
-        manifestId: m.id
-      });
-    };
-    if (p.damaged) addIncident("damage", p.damaged);
-    if (p.lost) {
-      addIncident("loss", p.lost);
-      if (p.item.trackingType === "serialized") p.item.baseStatus = "lost";
-    }
-    if (p.repair) {
-      p.item.baseStatus = "in-repair";
-      hist(actor, p.item.id, "repair-start", `Sent for repair after ${m.contentId}`, { contentId: m.contentId, manifestId: m.id });
-    }
-    hist(
-      actor,
-      p.item.id,
-      "checked-in",
-      `${m.contentId}${p.cond ? `, back in ${p.cond} condition` : ""}${p.good && p.item.trackingType === "aggregate" ? `, ${p.good} returned` : ""}`,
-      { contentId: m.contentId, manifestId: m.id }
-    );
-  }
-  m.status = "returned";
-  m.returnedAt = now;
-  logAudit(actor, "check-in", "manifest", m.id, plans.some((p) => p.damaged + p.lost) ? "with incidents" : "clean");
-  syncSheetEquipment(m.callSheetId);
-  commit();
-  return m;
-}
-function attachManifest(actor, manifestId, contentId) {
-  requireGearAccess(actor);
-  const m = getManifest(manifestId);
-  if (!m) throw new RuleError("Checkout list not found.");
-  const target = getRecord(contentId);
-  if (!target) throw new RuleError("Project not found.");
-  const current3 = getRecord(m.contentId);
-  if (!canWrite(actor, target) || (current3 ? !canWrite(actor, current3) : !isHop(actor)))
-    throw new RuleError("You are not attached to both projects.");
-  if (m.callSheetId) throw new RuleError("This list belongs to a call sheet. It moves with that sheet.");
-  if (m.status === "released") throw new RuleError("This list was released, so it cannot be attached.");
-  if (m.contentId === contentId) throw new RuleError("This list is already attached here.");
-  const from = m.contentId;
-  m.contentId = contentId;
-  for (const l of m.lines)
-    hist(actor, l.equipmentId, "edited", `${m.id} moved from ${from} to ${contentId}`, { contentId, manifestId: m.id });
-  logAudit(actor, "attach", "manifest", m.id, `${from} to ${contentId}`);
-  commit();
-  return m;
-}
-var checkedOutFor = (contentId) => getDb().manifests.filter((m) => m.contentId === contentId && m.status === "checked-out");
-var reservedFor = (contentId) => getDb().manifests.filter((m) => m.contentId === contentId && m.status === "assigned");
-function releaseReservedFor(actor, contentId) {
-  const lists = reservedFor(contentId);
-  for (const m of lists) {
-    m.status = "released";
-    for (const l of m.lines) hist(actor, l.equipmentId, "released", `Released: ${contentId} was deleted`, { contentId, manifestId: m.id });
-    logAudit(actor, "release", "manifest", m.id, "project deleted");
-    syncSheetEquipment(m.callSheetId);
-  }
-  return lists.length;
-}
-function releaseManifest(actor, manifestId) {
-  const m = loadManifest(actor, manifestId);
-  if (m.status !== "assigned") throw new RuleError("Only assigned gear can be released. Checked-out gear is checked in.");
-  m.status = "released";
-  for (const l of m.lines)
-    hist(actor, l.equipmentId, "released", `Released from ${m.contentId}`, { contentId: m.contentId, manifestId: m.id });
-  logAudit(actor, "release", "manifest", m.id);
-  syncSheetEquipment(m.callSheetId);
-  commit();
-  return m;
-}
-function addLinePhoto(actor, manifestId, equipmentId, input) {
-  const m = loadManifest(actor, manifestId);
-  if (m.status !== "assigned" && m.status !== "checked-out") throw new RuleError("Photos are added while the gear is out.");
-  const line3 = m.lines.find((l) => l.equipmentId === equipmentId);
-  if (!line3) throw new RuleError("That item is not on this list.");
-  line3.photosOut.push(makeAttachment(actor, input));
-  commit();
-}
-function listManifests(actor) {
-  requireGearAccess(actor);
-  return getDb().manifests.filter((m) => {
-    if (isHop(actor) || m.responsiblePersonId === actor.personId) return true;
-    const rec2 = getRecord(m.contentId);
-    return !!rec2 && canView(actor, rec2);
-  }).sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
-}
-var manifestsForContent = (contentId) => getDb().manifests.filter((m) => m.contentId === contentId && m.status !== "released").sort((a, b) => a.date.localeCompare(b.date));
-var overdueManifests = () => getDb().manifests.filter(isOverdue).sort((a, b) => (a.expectedReturn ?? "").localeCompare(b.expectedReturn ?? ""));
-var checkedOutManifests = () => getDb().manifests.filter((m) => m.status === "checked-out").sort((a, b) => (a.expectedReturn ?? "").localeCompare(b.expectedReturn ?? ""));
-function manifestSummary(m) {
-  const units = m.lines.reduce((n, l) => n + l.quantity, 0);
-  return `${m.lines.length} item${m.lines.length === 1 ? "" : "s"}, ${units} unit${units === 1 ? "" : "s"}`;
-}
-function manifestStatusView(m) {
-  if (isOverdue(m)) return { label: "Overdue", tone: "bad" };
-  switch (m.status) {
-    case "assigned":
-      return { label: "Assigned", tone: "accent" };
-    case "checked-out":
-      return { label: "Checked out", tone: "warn" };
-    case "returned":
-      return { label: "Returned", tone: "ok" };
-    case "released":
-      return { label: "Released", tone: "" };
-  }
-}
-function pickerRows(from, to, excludeManifestId) {
-  const all = getDb().equipment;
-  const rows2 = [];
-  for (const i of all.filter((x) => x.trackingType === "serialized")) {
-    const a = availabilityOn(i, from, to, excludeManifestId);
-    rows2.push({
-      key: i.id,
-      name: i.name,
-      sub: [i.make, i.model].filter(Boolean).join(" ") + (i.make || i.model ? ", " : "") + i.id,
-      category: i.category,
-      item: i,
-      availableQty: a.availableQty,
-      totalQty: 1,
-      state: a.state,
-      reason: a.reason
-    });
-  }
-  for (const f2 of groupByFamily(all)) {
-    const batches = f2.items.map((item2) => {
-      const a = availabilityOn(item2, from, to, excludeManifestId);
-      return { item: item2, availableQty: a.availableQty, state: a.state, reason: a.reason };
-    });
-    const available = batches.reduce((n, b) => n + b.availableQty, 0);
-    const total = f2.items.filter((b) => b.baseStatus === "active").reduce((n, b) => n + b.quantityTotal, 0);
-    rows2.push({
-      key: f2.key,
-      name: f2.name,
-      sub: `${f2.key}, ${f2.items.length} batch${f2.items.length === 1 ? "" : "es"}`,
-      category: f2.category,
-      batches,
-      availableQty: available,
-      totalQty: total,
-      state: available === 0 ? "conflict" : available < total ? "partial" : "ok",
-      reason: available === 0 ? "None free for those dates" : ""
-    });
-  }
-  return rows2.sort((a, b) => a.name.localeCompare(b.name));
-}
-function allocateFifo(familyKey, quantity, from, to, excludeManifestId) {
-  const fam = groupByFamily(getDb().equipment).find((f2) => f2.key === familyKey);
-  if (!fam) throw new RuleError("That item family no longer exists.");
-  let need = quantity;
-  const lines = [];
-  for (const b of fam.items) {
-    if (need <= 0) break;
-    const a = availabilityOn(b, from, to, excludeManifestId);
-    const take = Math.min(a.availableQty, need);
-    if (take > 0) {
-      lines.push({ equipmentId: b.id, quantity: take });
-      need -= take;
-    }
-  }
-  if (need > 0) throw new RuleError(`Only ${quantity - need} of ${fam.name} are free for those dates.`);
-  return lines;
-}
-function syncSheetEquipment(sheetId) {
-  if (!sheetId) return;
-  const cs = getDb().callSheets.find((c) => c.id === sheetId);
-  if (!cs) return;
-  const m = manifestForSheet(sheetId);
-  cs.equipmentIds = m && m.status !== "released" ? m.lines.map((l) => l.equipmentId) : [];
-}
-function manifestForSheet(sheetId) {
-  return getDb().manifests.filter((m) => m.callSheetId === sheetId && m.status !== "released").sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-}
-function addGearToSheet(actor, sheet, lines) {
-  const m = bookOnSheet(actor, sheet, lines);
-  lockInstanceOfSheet(actor, sheet.id);
-  return m;
-}
-function bookOnSheet(actor, sheet, lines) {
-  requireGearAccess(actor);
-  const cs = getDb().callSheets.find((c) => c.id === sheet.id);
-  if (!cs) throw new RuleError("Call sheet not found.");
-  assertSheetOpen(cs);
-  const project = getRecord(cs.contentId);
-  if (!project || !canWrite(actor, project)) throw new RuleError("You have view-only access to this project.");
-  const existing = manifestForSheet(cs.id);
-  if (existing) {
-    if (existing.status !== "assigned")
-      throw new RuleError("This call sheet's gear has already gone out. Manage it from the checkout list.");
-    return addLines(actor, existing.id, lines);
-  }
-  return createManifest(actor, {
-    contentId: cs.contentId,
-    date: cs.date,
-    destination: "studio",
-    status: "assigned",
-    lines,
-    callSheetId: cs.id,
-    // Booked by a person: they answer for it. Booked by the daily check (a show's template gear): the sheet's crew
-    // lead, else whoever is responsible for the show, else the Head of Production.
-    responsiblePersonId: actor.personId === "system" ? answerableFor(cs.crewLeadId, project.assigneePersonId) : void 0
-  });
-}
-var canAnswer = (id2) => {
-  const p = id2 ? getPerson(id2) : void 0;
-  return !!p && p.status === "active" && (p.category === "CRW" || p.category === "HOP");
-};
-function answerableFor(...candidates) {
-  return candidates.find(canAnswer) ?? getDb().people.find((p) => p.category === "HOP" && p.status === "active")?.personId;
-}
-function removeGearFromSheet(actor, sheetId, equipmentId) {
-  const cs = getDb().callSheets.find((c) => c.id === sheetId);
-  if (cs) assertSheetOpen(cs);
-  const m = manifestForSheet(sheetId);
-  if (!m) return;
-  removeLine(actor, m.id, equipmentId);
-  lockInstanceOfSheet(actor, sheetId);
-}
-function bookWhatIsFree(actor, dst, lines) {
-  const out = { booked: [], skipped: [] };
-  const existing = manifestForSheet(dst.id);
-  for (const l of lines) {
-    const item2 = getItem(l.equipmentId);
-    try {
-      checkLine(item2, l.quantity, dst.date, dst.date, existing?.id);
-      if (existing?.lines.some((x) => x.equipmentId === l.equipmentId)) continue;
-      out.booked.push({ equipmentId: l.equipmentId, quantity: l.quantity });
-    } catch (e) {
-      out.skipped.push({ line: l, reason: e instanceof RuleError ? e.message : `${item2?.name ?? l.equipmentId} could not be booked.` });
-    }
-  }
-  if (out.booked.length) bookOnSheet(actor, dst, out.booked);
-  return out;
-}
-function copyGearBetweenSheets(actor, srcSheetId, dst) {
-  const src = manifestForSheet(srcSheetId);
-  if (!src) return { copied: 0, skipped: [] };
-  const r = bookWhatIsFree(
-    actor,
-    dst,
-    src.lines.map((l) => ({ equipmentId: l.equipmentId, quantity: l.quantity }))
-  );
-  return { copied: r.booked.length, skipped: r.skipped.map((x) => x.reason) };
-}
-function rebookSheetGear(actor, sheetId, newDate) {
-  const m = manifestForSheet(sheetId);
-  if (!m) return;
-  if (m.status !== "assigned") throw new RuleError("This sheet's gear has already gone out, so its date cannot change.");
-  for (const l of m.lines) checkLine(getItem(l.equipmentId), l.quantity, newDate, newDate, m.id);
-  m.date = newDate;
-  logAudit(actor, "rebook", "manifest", m.id, newDate);
-  commit();
-}
-function gearIssues(sheetId) {
-  const m = manifestForSheet(sheetId);
-  if (!m || m.status !== "assigned") return [];
-  const out = [];
-  for (const l of m.lines) {
-    const item2 = getItem(l.equipmentId);
-    if (!item2) continue;
-    try {
-      checkLine(item2, l.quantity, m.date, m.expectedReturn ?? m.date, m.id);
-    } catch (e) {
-      if (e instanceof RuleError) out.push(e.message);
-    }
-  }
-  return out;
-}
-function releaseSheetGear(actor, sheetId) {
-  const m = manifestForSheet(sheetId);
-  if (!m) return;
-  if (m.status === "checked-out") throw new RuleError("This sheet's gear is checked out. Check it in before deleting the call sheet.");
-  if (m.status === "assigned") releaseManifest(actor, m.id);
-}
+// src/services/storage.ts
+var storage_exports = {};
+__export(storage_exports, {
+  addAllocation: () => addAllocation,
+  allDriveUsage: () => allDriveUsage,
+  allocationsForRecord: () => allocationsForRecord,
+  clearRecordFromDrives: () => clearRecordFromDrives,
+  createDrive: () => createDrive,
+  deleteDrive: () => deleteDrive,
+  driveReportText: () => driveReportText,
+  driveUsage: () => driveUsage,
+  fleetReportText: () => fleetReportText,
+  fleetTotals: () => fleetTotals,
+  forecast: () => forecast,
+  getDrive: () => getDrive,
+  hasStorageAccess: () => hasStorageAccess,
+  isNearlyFull: () => isNearlyFull,
+  moveAllocation: () => moveAllocation,
+  recordSnapshot: () => recordSnapshot,
+  removeAllocation: () => removeAllocation,
+  standaloneAllocations: () => standaloneAllocations,
+  updateAllocation: () => updateAllocation,
+  updateDrive: () => updateDrive
+});
 
 // src/services/driveUsage.ts
 var getDrive = (id2) => getDb().drives.find((d) => d.id === id2);
@@ -5180,29 +4428,249 @@ function recordSnapshot() {
   db2.snapshots.sort((a, b) => a.date.localeCompare(b.date));
 }
 
-// src/services/urls.ts
-var MAX_LENGTH = 2048;
-function asWebUrl(value) {
-  if (typeof value !== "string") return null;
-  const raw = value.trim();
-  if (!raw || raw.length > MAX_LENGTH) return null;
-  if (/[\s\u0000-\u001f\u007f]/.test(raw)) return null;
-  let url2;
-  try {
-    url2 = new URL(raw);
-  } catch {
-    return null;
-  }
-  if (url2.protocol !== "http:" && url2.protocol !== "https:") return null;
-  if (!url2.hostname) return null;
-  if (url2.username || url2.password) return null;
-  return url2.href;
+// src/services/storage.ts
+var hasStorageAccess = (actor) => can(actor, "storage.use");
+function requireStorageAccess(actor) {
+  if (!hasStorageAccess(actor)) throw new RuleError("Storage is managed by crew and the Head of Production.");
 }
-function requireWebUrl(value, what, optional = false) {
-  if (optional && value.trim() === "") return "";
-  const url2 = asWebUrl(value);
-  if (!url2) throw new RuleError(`${what} must be a web link starting with http:// or https://.`);
-  return url2;
+function validateDrive(input, selfId) {
+  if (!input.name.trim()) throw new RuleError("Give the drive a name.");
+  if (getDb().drives.some((d) => d.id !== selfId && d.name.toLowerCase() === input.name.trim().toLowerCase()))
+    throw new RuleError("A drive with that name already exists.");
+  if (!Number.isFinite(input.capacityGB) || input.capacityGB <= 0) throw new RuleError("Capacity must be more than zero.");
+  if (input.otherUsedGB !== void 0 && (!Number.isFinite(input.otherUsedGB) || input.otherUsedGB < 0))
+    throw new RuleError("Other used space cannot be negative.");
+}
+function createDrive(actor, input) {
+  requireCan(actor, "storage.admin", "add drives");
+  validateDrive(input);
+  const d = {
+    id: claimId(`DRV-${pad(nextCounter("drive"))}`),
+    name: input.name.trim(),
+    capacityGB: input.capacityGB,
+    otherUsedGB: input.otherUsedGB ?? 0,
+    notes: input.notes ?? ""
+  };
+  if (d.otherUsedGB > d.capacityGB) throw new RuleError("Used space is larger than the drive.");
+  getDb().drives.push(d);
+  logAudit(actor, "create", "drive", d.id, d.name);
+  recordSnapshot();
+  commit();
+  return d;
+}
+function updateDrive(actor, id2, patch) {
+  requireStorageAccess(actor);
+  const d = getDrive(id2);
+  if (!d) throw new RuleError("Drive not found.");
+  const structural = patch.name !== void 0 || patch.capacityGB !== void 0;
+  if (structural) requireCan(actor, "storage.admin", "rename a drive or change its capacity");
+  const next2 = {
+    name: patch.name ?? d.name,
+    capacityGB: patch.capacityGB ?? d.capacityGB,
+    otherUsedGB: patch.otherUsedGB ?? d.otherUsedGB,
+    notes: patch.notes ?? d.notes
+  };
+  validateDrive(next2, id2);
+  const allocated = getDb().allocations.filter((a) => a.driveId === id2).reduce((n, a) => n + a.sizeGB, 0);
+  if (allocated + next2.otherUsedGB > next2.capacityGB)
+    throw new RuleError(`That would put ${fmtSize(allocated + next2.otherUsedGB)} on a ${fmtSize(next2.capacityGB)} drive.`);
+  Object.assign(d, { name: next2.name.trim(), capacityGB: next2.capacityGB, otherUsedGB: next2.otherUsedGB, notes: next2.notes });
+  if (patch.offline !== void 0) d.offline = !!patch.offline;
+  logAudit(actor, "update", "drive", id2, Object.keys(patch).join(", "));
+  recordSnapshot();
+  commit();
+  return d;
+}
+function deleteDrive(actor, id2) {
+  requireCan(actor, "storage.admin", "remove drives");
+  const d = getDrive(id2);
+  if (!d) throw new RuleError("Drive not found.");
+  if (getDb().allocations.some((a) => a.driveId === id2))
+    throw new RuleError("Projects are still recorded on this drive. Remove them first.");
+  getDb().drives = getDb().drives.filter((x) => x.id !== id2);
+  for (const r of getDb().records) if (r.workflow?.storageDriveId === id2) r.workflow.storageDriveId = null;
+  for (const s2 of getDb().recordingSessions) if (s2.storageDriveId === id2) s2.storageDriveId = null;
+  logAudit(actor, "delete", "drive", id2, d.name);
+  recordSnapshot();
+  commit();
+}
+function requireProjectWrite(actor, contentId) {
+  const rec2 = getRecord(contentId);
+  if (!rec2) throw new RuleError("Choose the project this footage belongs to.");
+  if (!canWrite(actor, rec2)) throw new RuleError("You are not attached to this project.");
+  return rec2;
+}
+function requireLabel(label) {
+  const l = (label ?? "").trim();
+  if (!l)
+    throw new RuleError(
+      "Give this entry a short label, for example the project or shoot it is holding footage for, since it is not tied to a project yet."
+    );
+  return l;
+}
+function addAllocation(actor, input) {
+  requireStorageAccess(actor);
+  const drive = getDrive(input.driveId);
+  if (!drive) throw new RuleError("Drive not found.");
+  const label = input.contentId === null ? requireLabel(input.label) : (input.label ?? "").trim();
+  if (input.contentId !== null) requireProjectWrite(actor, input.contentId);
+  if (!Number.isFinite(input.sizeGB) || input.sizeGB <= 0) throw new RuleError("Enter the size in GB.");
+  const u = driveUsage(drive);
+  if (input.sizeGB > u.freeGB + 1e-6) throw new RuleError(`${drive.name} has only ${fmtSize(u.freeGB)} free.`);
+  const a = {
+    id: claimId(`ALC-${pad(nextCounter("allocation"), 4)}`),
+    driveId: drive.id,
+    contentId: input.contentId,
+    label,
+    sizeGB: input.sizeGB,
+    kind: input.kind,
+    note: input.note ?? "",
+    updatedAt: todayIso()
+  };
+  getDb().allocations.push(a);
+  logAudit(actor, "allocate", "drive", drive.id, `${input.contentId ?? label} ${fmtSize(a.sizeGB)}`);
+  recordSnapshot();
+  commit();
+  return a;
+}
+var ALLOCATION_EDITABLE = ["sizeGB", "kind", "note", "label", "driveId"];
+var ALLOCATION_KINDS = ["raw", "project", "delivered", "other"];
+function updateAllocation(actor, id2, input) {
+  requireStorageAccess(actor);
+  const patch = pickKeys(input, ALLOCATION_EDITABLE);
+  const a = getDb().allocations.find((x) => x.id === id2);
+  if (!a) throw new RuleError("Entry not found.");
+  if (patch.kind !== void 0 && !ALLOCATION_KINDS.includes(patch.kind)) throw new RuleError("Choose raw, project, delivered or other.");
+  const rec2 = a.contentId !== null ? requireProjectWrite(actor, a.contentId) : null;
+  if (rec2 && a.kind === "raw" && patch.kind && patch.kind !== "raw" && !isHop(actor) && leavesUnder(rec2).some((l) => !isComplete(l))) {
+    throw new RuleError(`Raw footage for ${rec2.title} stays marked as raw until everything under it is Delivered.`);
+  }
+  const label = a.contentId === null ? requireLabel(patch.label ?? a.label) : patch.label ?? a.label;
+  const target = getDrive(patch.driveId ?? a.driveId);
+  if (!target) throw new RuleError("Drive not found.");
+  const newSize = patch.sizeGB ?? a.sizeGB;
+  if (!Number.isFinite(newSize) || newSize <= 0) throw new RuleError("Enter the size in GB.");
+  const u = driveUsage(target);
+  const alreadyThere = target.id === a.driveId ? a.sizeGB : 0;
+  if (newSize - alreadyThere > u.freeGB + 1e-6) throw new RuleError(`${target.name} has only ${fmtSize(u.freeGB + alreadyThere)} free.`);
+  Object.assign(a, patch, { label, updatedAt: todayIso() });
+  logAudit(actor, "update", "allocation", id2, Object.keys(patch).join(", "));
+  recordSnapshot();
+  commit();
+  return a;
+}
+function moveAllocation(actor, id2, contentId) {
+  requireStorageAccess(actor);
+  const a = getDb().allocations.find((x) => x.id === id2);
+  if (!a) throw new RuleError("Entry not found.");
+  if (a.contentId === contentId) throw new RuleError("This entry is already attached here.");
+  const target = getRecord(contentId);
+  if (!target) throw new RuleError("Project not found.");
+  const current3 = a.contentId ? getRecord(a.contentId) : null;
+  if (!canWrite(actor, target) || (current3 ? !canWrite(actor, current3) : !isHop(actor)))
+    throw new RuleError("You are not attached to both projects.");
+  const from = a.contentId ?? a.label;
+  a.contentId = contentId;
+  a.updatedAt = todayIso();
+  logAudit(actor, "update", "allocation", id2, `moved from ${from} to ${contentId}`);
+  commit();
+  return a;
+}
+function removeAllocation(actor, id2) {
+  requireStorageAccess(actor);
+  const a = getDb().allocations.find((x) => x.id === id2);
+  if (!a) throw new RuleError("Entry not found.");
+  if (a.contentId !== null) {
+    const rec2 = requireProjectWrite(actor, a.contentId);
+    if (a.kind === "raw") {
+      const leaves = leavesUnder(rec2);
+      if (leaves.some((l) => !isComplete(l)))
+        throw new RuleError(`Raw footage for ${rec2.title} cannot be removed until everything under it is Delivered.`);
+    }
+  }
+  getDb().allocations = getDb().allocations.filter((x) => x.id !== id2);
+  logAudit(actor, "deallocate", "drive", a.driveId, `${a.contentId ?? a.label} ${fmtSize(a.sizeGB)}`);
+  recordSnapshot();
+  commit();
+}
+function standaloneAllocations(actor) {
+  requireStorageAccess(actor);
+  return getDb().allocations.filter((a) => a.contentId === null);
+}
+function clearRecordFromDrives(actor, contentId) {
+  requireStorageAccess(actor);
+  const rec2 = requireProjectWrite(actor, contentId);
+  const mine = getDb().allocations.filter((a) => a.contentId === contentId);
+  if (!mine.length) throw new RuleError("Nothing is recorded on drives for this item.");
+  if (mine.some((a) => a.kind === "raw") && leavesUnder(rec2).some((l) => !isComplete(l)))
+    throw new RuleError(`Raw footage for ${rec2.title} cannot be cleared until everything under it is Delivered.`);
+  const gb = mine.reduce((n, a) => n + a.sizeGB, 0);
+  for (const a of mine) logAudit(actor, "deallocate", "drive", a.driveId, `${contentId} ${fmtSize(a.sizeGB)}`);
+  getDb().allocations = getDb().allocations.filter((a) => a.contentId !== contentId);
+  recordSnapshot();
+  commit();
+  return { count: mine.length, gb };
+}
+function descendantIds2(r) {
+  return [r.contentId, ...getChildren(r.contentId, true).flatMap(descendantIds2)];
+}
+function allocationsForRecord(record2) {
+  const ids2 = /* @__PURE__ */ new Set([...descendantIds2(record2), ...selfAndAncestors(record2).map((r) => r.contentId)]);
+  return getDb().allocations.filter((a) => a.contentId !== null && ids2.has(a.contentId));
+}
+function forecast(horizonDays = 90) {
+  const t2 = fleetTotals();
+  const snaps = getDb().snapshots.slice(-16);
+  const history = snaps.map((s2) => ({ date: s2.date, usedGB: s2.usedGB }));
+  const thresholdGB = t2.capacity * getDb().settings.storageWarningThreshold / 100;
+  let slope = 0;
+  if (snaps.length >= 2) {
+    const xs = snaps.map((s2) => dayNumber(s2.date));
+    const ys = snaps.map((s2) => s2.usedGB);
+    const mx = xs.reduce((a, b) => a + b, 0) / xs.length;
+    const my = ys.reduce((a, b) => a + b, 0) / ys.length;
+    const den = xs.reduce((n, x) => n + (x - mx) ** 2, 0);
+    slope = den ? xs.reduce((n, x, i) => n + (x - mx) * (ys[i] - my), 0) / den : 0;
+  }
+  const today = dayNumber(todayIso());
+  const projected = [{ date: todayIso(), usedGB: t2.used }];
+  if (slope > 0)
+    for (let d = 7; d <= horizonDays; d += 7)
+      projected.push({ date: fromDayNumber(today + d), usedGB: Math.min(t2.capacity * 1.05, t2.used + slope * d) });
+  let fillDate = null;
+  if (slope > 0 && t2.used < thresholdGB) fillDate = fromDayNumber(today + Math.ceil((thresholdGB - t2.used) / slope));
+  else if (t2.used >= thresholdGB) fillDate = todayIso();
+  return { history, projected, capacityGB: t2.capacity, thresholdGB, slopeGBPerDay: slope, fillDate };
+}
+function driveReportText(driveId) {
+  const d = getDrive(driveId);
+  if (!d) throw new RuleError("Drive not found.");
+  const u = driveUsage(d);
+  const lines = [
+    `Drive report: ${d.name}`,
+    `Date: ${fmtDate(todayIso())}`,
+    `Capacity ${fmtSize(d.capacityGB)}, used ${fmtSize(u.usedGB)} (${u.pct.toFixed(1)}%), free ${fmtSize(u.freeGB)}`,
+    "",
+    "Projects on this drive:",
+    ...u.projects.length ? u.projects.map(
+      (p) => `  ${p.contentId ?? "No project yet"}  ${p.contentId ? getRecord(p.contentId)?.title ?? "" : p.label}  ${fmtSize(p.gb)}  (${p.kinds.join(", ")})`
+    ) : ["  None recorded"],
+    ...u.otherGB ? [`  Other files  ${fmtSize(u.otherGB)}`] : []
+  ];
+  return lines.join("\n");
+}
+function fleetReportText() {
+  const t2 = fleetTotals();
+  const rows2 = allDriveUsage();
+  return [
+    "Storage report: all drives",
+    `Date: ${fmtDate(todayIso())}`,
+    `Total capacity ${fmtSize(t2.capacity)}, used ${fmtSize(t2.used)}, free ${fmtSize(t2.capacity - t2.used)}`,
+    "",
+    ...rows2.map(
+      (u) => `${u.drive.name}: ${fmtSize(u.usedGB)} of ${fmtSize(u.drive.capacityGB)} (${u.pct.toFixed(0)}%)${u.projects.length ? `. Projects: ${u.projects.map((p) => `${p.contentId ?? p.label} ${fmtSize(p.gb)}`).join(", ")}` : ""}`
+    )
+  ].join("\n");
 }
 
 // src/services/workflow/common.ts
@@ -5325,47 +4793,6 @@ function openRequired(key2, ownerId) {
   const stored = checklistItems(key2, ownerId);
   return def.items.filter((i) => i.required && !i.auto && !stored.some((c) => c.itemKey === i.key && c.done)).map((i) => i.label);
 }
-
-// src/services/production.ts
-var production_exports = {};
-__export(production_exports, {
-  BOARD_AHEAD_DAYS: () => BOARD_AHEAD_DAYS,
-  BOARD_PAST_DAYS: () => BOARD_PAST_DAYS,
-  DAY_LABELS: () => DAY_LABELS,
-  DEFAULT_HORIZON_COUNT: () => DEFAULT_HORIZON_COUNT,
-  DEFAULT_HORIZON_WEEKS: () => DEFAULT_HORIZON_WEEKS,
-  GEAR_WINDOW_DAYS: () => GEAR_WINDOW_DAYS,
-  MAX_HORIZON_COUNT: () => MAX_HORIZON_COUNT,
-  MAX_HORIZON_WEEKS: () => MAX_HORIZON_WEEKS,
-  addEventDay: () => addEventDay,
-  applyDayToFuture: () => applyDayToFuture,
-  canPlanEvent: () => canPlanEvent,
-  cancelDay: () => cancelDay,
-  checkEventSetup: () => checkEventSetup,
-  createProduction: () => createProduction,
-  dayTitle: () => dayTitle,
-  daysOfEvent: () => daysOfEvent,
-  followsTemplate: () => followsTemplate,
-  getTemplate: () => getTemplate,
-  horizonEnd: () => horizonEnd,
-  instanceTitle: () => instanceTitle,
-  isLiveEvent: () => isLiveEvent,
-  modeLabel: () => modeLabel,
-  offSchedule: () => offSchedule,
-  onBoard: () => onBoard,
-  productionOf: () => productionOf,
-  recurringDue: () => recurringDue,
-  resetToTemplate: () => resetToTemplate,
-  setDayLabel: () => setDayLabel,
-  setShowSchedule: () => setShowSchedule,
-  setUpEventDays: () => setUpEventDays,
-  sheetOfDay: () => sheetOfDay,
-  templateOfEvent: () => templateOfEvent,
-  topUpRecurring: () => topUpRecurring,
-  topUpShow: () => topUpShow,
-  updateEventPlan: () => updateEventPlan,
-  updateShowTemplate: () => updateShowTemplate
-});
 
 // src/services/callsheets.ts
 var callsheets_exports = {};
@@ -5636,7 +5063,7 @@ function trackedOf(cs) {
 }
 var isTracked = (cs) => !!cs.sharedAt || Object.keys(cs.confirmations ?? {}).length > 0;
 var placeOf = (cs) => [cs.location.trim(), cs.locationAddress.trim()].filter(Boolean).join(", ");
-var nameOf2 = (personId) => personId ? getDb().people.find((p) => p.personId === personId)?.name ?? personId : "";
+var nameOf = (personId) => personId ? getDb().people.find((p) => p.personId === personId)?.name ?? personId : "";
 var orNone = (v) => v || "not set";
 var talentCallOf = (cs, t2) => t2.callTime || cs.talentCall || cs.callTime;
 var talentLine = (t2) => `${t2.name}${t2.role ? ` (${t2.role})` : ""}${t2.callTime ? `, call ${t2.callTime}` : ""}`;
@@ -5653,12 +5080,12 @@ function diffTracked(a, b) {
   ])
     if (a[k] !== b[k]) add(what, orNone(a[k]), orNone(b[k]));
   if (a.location !== b.location) add("Location", orNone(a.location), orNone(b.location));
-  for (const pid of b.crew) if (!a.crew.includes(pid)) add("Crew added", "", `${nameOf2(pid)}${b.roles[pid] ? ` (${b.roles[pid]})` : ""}`);
-  for (const pid of a.crew) if (!b.crew.includes(pid)) add("Crew removed", nameOf2(pid), "");
+  for (const pid of b.crew) if (!a.crew.includes(pid)) add("Crew added", "", `${nameOf(pid)}${b.roles[pid] ? ` (${b.roles[pid]})` : ""}`);
+  for (const pid of a.crew) if (!b.crew.includes(pid)) add("Crew removed", nameOf(pid), "");
   for (const pid of b.crew)
     if (a.crew.includes(pid) && (a.roles[pid] ?? "") !== (b.roles[pid] ?? ""))
-      add(`Role of ${nameOf2(pid)}`, orNone(a.roles[pid] ?? ""), orNone(b.roles[pid] ?? ""));
-  if (a.lead !== b.lead) add("Crew lead", nameOf2(a.lead) || "none", nameOf2(b.lead) || "none");
+      add(`Role of ${nameOf(pid)}`, orNone(a.roles[pid] ?? ""), orNone(b.roles[pid] ?? ""));
+  if (a.lead !== b.lead) add("Crew lead", nameOf(a.lead) || "none", nameOf(b.lead) || "none");
   rows(a.talent, b.talent, talentLine, "Talent", add);
   rows(a.runOfShow, b.runOfShow, runLine, "Run of show", add);
   return out;
@@ -5683,7 +5110,7 @@ function confirmationTerms(cs, key2) {
 }
 function confirmationName(cs, key2) {
   if (key2.startsWith("talent:")) return cs.talent.find((x) => x.id === key2.slice(7))?.name ?? "Talent";
-  return nameOf2(key2);
+  return nameOf(key2);
 }
 function confirmationHolds(cs, key2) {
   const c = cs.confirmations[key2];
@@ -5713,6 +5140,41 @@ function noteChanges(actor, cs, before) {
   }
   cs.changeLog.push(...lines);
   return lines;
+}
+
+// src/services/sheetLock.ts
+var OPEN = { locked: false, why: "" };
+function pastShooting(r) {
+  if (r.episode) return r.episode.stage === "Post production" || r.episode.stage === "Marketing and distribution";
+  if (isComplete(r)) return true;
+  const stages = categoryOf(r.category).stages.map((s2) => s2.name);
+  const at = stages.indexOf(r.pipelineStage ?? "");
+  if (at < 0) return false;
+  if (r.category === "live") {
+    const post = stages.indexOf("Post production");
+    return post >= 0 && at >= post;
+  }
+  return at > stages.indexOf(categoryOf(r.category).footageStage);
+}
+function sheetLock(cs) {
+  const db2 = getDb();
+  const session = db2.recordingSessions.find((s2) => s2.callSheetId === cs.id);
+  if (session) {
+    if (session.status !== "Closed") return OPEN;
+    const live = db2.records.find((r) => r.contentId === session.contentId)?.category === "live";
+    return live ? { locked: true, why: `${session.name?.trim() || "Day"} (${session.id}) is closed: what it recorded is in Post production.` } : { locked: true, why: `Recording session ${session.id} is closed: its episodes are in Post production.` };
+  }
+  if (cs.instanceId) {
+    const day = db2.records.find((r) => r.contentId === cs.instanceId);
+    return day && pastShooting(day) ? { locked: true, why: `${day.title} has reached Post production.` } : OPEN;
+  }
+  const linked = cs.linkedEpisodeIds.map((id2) => db2.records.find((r) => r.contentId === id2)).filter((r) => !!r && !r.archived);
+  if (linked.length && linked.every(pastShooting)) return { locked: true, why: "Everything on this sheet is in Post production." };
+  return OPEN;
+}
+function assertSheetOpen(cs) {
+  const l = sheetLock(cs);
+  if (l.locked) throw new RuleError(`This call sheet is locked. ${l.why}`);
 }
 
 // src/services/callsheets.ts
@@ -6017,6 +5479,72 @@ function runOfShowTotals(cs) {
   const pad2 = (n) => String(n).padStart(2, "0");
   return { minutes: end - first, ends: `${pad2(Math.floor(end / 60) % 24)}:${pad2(end % 60)}` };
 }
+
+// src/services/urls.ts
+var MAX_LENGTH = 2048;
+function asWebUrl(value) {
+  if (typeof value !== "string") return null;
+  const raw = value.trim();
+  if (!raw || raw.length > MAX_LENGTH) return null;
+  if (/[\s\u0000-\u001f\u007f]/.test(raw)) return null;
+  let url2;
+  try {
+    url2 = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (url2.protocol !== "http:" && url2.protocol !== "https:") return null;
+  if (!url2.hostname) return null;
+  if (url2.username || url2.password) return null;
+  return url2.href;
+}
+function requireWebUrl(value, what, optional = false) {
+  if (optional && value.trim() === "") return "";
+  const url2 = asWebUrl(value);
+  if (!url2) throw new RuleError(`${what} must be a web link starting with http:// or https://.`);
+  return url2;
+}
+
+// src/services/production.ts
+var production_exports = {};
+__export(production_exports, {
+  BOARD_AHEAD_DAYS: () => BOARD_AHEAD_DAYS,
+  BOARD_PAST_DAYS: () => BOARD_PAST_DAYS,
+  DAY_LABELS: () => DAY_LABELS,
+  DEFAULT_HORIZON_COUNT: () => DEFAULT_HORIZON_COUNT,
+  DEFAULT_HORIZON_WEEKS: () => DEFAULT_HORIZON_WEEKS,
+  GEAR_WINDOW_DAYS: () => GEAR_WINDOW_DAYS,
+  MAX_HORIZON_COUNT: () => MAX_HORIZON_COUNT,
+  MAX_HORIZON_WEEKS: () => MAX_HORIZON_WEEKS,
+  addEventDay: () => addEventDay,
+  applyDayToFuture: () => applyDayToFuture,
+  canPlanEvent: () => canPlanEvent,
+  cancelDay: () => cancelDay,
+  checkEventSetup: () => checkEventSetup,
+  createProduction: () => createProduction,
+  dayTitle: () => dayTitle,
+  daysOfEvent: () => daysOfEvent,
+  followsTemplate: () => followsTemplate,
+  getTemplate: () => getTemplate,
+  horizonEnd: () => horizonEnd,
+  instanceTitle: () => instanceTitle,
+  isLiveEvent: () => isLiveEvent,
+  modeLabel: () => modeLabel,
+  offSchedule: () => offSchedule,
+  onBoard: () => onBoard,
+  productionOf: () => productionOf,
+  recurringDue: () => recurringDue,
+  resetToTemplate: () => resetToTemplate,
+  setDayLabel: () => setDayLabel,
+  setShowSchedule: () => setShowSchedule,
+  setUpEventDays: () => setUpEventDays,
+  sheetOfDay: () => sheetOfDay,
+  templateOfEvent: () => templateOfEvent,
+  topUpRecurring: () => topUpRecurring,
+  topUpShow: () => topUpShow,
+  updateEventPlan: () => updateEventPlan,
+  updateShowTemplate: () => updateShowTemplate
+});
 
 // src/services/recurrence.ts
 var DAY = 864e5;
@@ -6395,6 +5923,7 @@ function setUpEventDays(actor, event, input) {
       id: claimId(`DOF-TPL-${pad(nextCounter("showTemplate"))}`),
       contentId: event.contentId,
       rule: structuredClone(input.rule),
+      timeZone: getDb().settings.timeZone || TIME_ZONE,
       sheet: content,
       productionLevel: input.productionLevel ?? null,
       ownerPersonId: null,
@@ -7615,274 +7144,6 @@ var reviewWindowsDue = (today = todayIso()) => getDb().developmentForms.some(
   (f2) => !!f2.reviewWindowDate && f2.reviewWindowDate < today && f2.outcome === null && !!getDb().records.find((r) => r.contentId === f2.contentId && r.workflow && !r.archived)
 );
 
-// src/services/storage.ts
-var storage_exports = {};
-__export(storage_exports, {
-  addAllocation: () => addAllocation,
-  allDriveUsage: () => allDriveUsage,
-  allocationsForRecord: () => allocationsForRecord,
-  clearRecordFromDrives: () => clearRecordFromDrives,
-  createDrive: () => createDrive,
-  deleteDrive: () => deleteDrive,
-  driveReportText: () => driveReportText,
-  driveUsage: () => driveUsage,
-  fleetReportText: () => fleetReportText,
-  fleetTotals: () => fleetTotals,
-  forecast: () => forecast,
-  getDrive: () => getDrive,
-  hasStorageAccess: () => hasStorageAccess,
-  isNearlyFull: () => isNearlyFull,
-  moveAllocation: () => moveAllocation,
-  recordSnapshot: () => recordSnapshot,
-  removeAllocation: () => removeAllocation,
-  standaloneAllocations: () => standaloneAllocations,
-  updateAllocation: () => updateAllocation,
-  updateDrive: () => updateDrive
-});
-var hasStorageAccess = (actor) => can(actor, "storage.use");
-function requireStorageAccess(actor) {
-  if (!hasStorageAccess(actor)) throw new RuleError("Storage is managed by crew and the Head of Production.");
-}
-function validateDrive(input, selfId) {
-  if (!input.name.trim()) throw new RuleError("Give the drive a name.");
-  if (getDb().drives.some((d) => d.id !== selfId && d.name.toLowerCase() === input.name.trim().toLowerCase()))
-    throw new RuleError("A drive with that name already exists.");
-  if (!Number.isFinite(input.capacityGB) || input.capacityGB <= 0) throw new RuleError("Capacity must be more than zero.");
-  if (input.otherUsedGB !== void 0 && (!Number.isFinite(input.otherUsedGB) || input.otherUsedGB < 0))
-    throw new RuleError("Other used space cannot be negative.");
-}
-function createDrive(actor, input) {
-  requireCan(actor, "storage.admin", "add drives");
-  validateDrive(input);
-  const d = {
-    id: claimId(`DRV-${pad(nextCounter("drive"))}`),
-    name: input.name.trim(),
-    capacityGB: input.capacityGB,
-    otherUsedGB: input.otherUsedGB ?? 0,
-    notes: input.notes ?? ""
-  };
-  if (d.otherUsedGB > d.capacityGB) throw new RuleError("Used space is larger than the drive.");
-  getDb().drives.push(d);
-  logAudit(actor, "create", "drive", d.id, d.name);
-  recordSnapshot();
-  commit();
-  return d;
-}
-function updateDrive(actor, id2, patch) {
-  requireStorageAccess(actor);
-  const d = getDrive(id2);
-  if (!d) throw new RuleError("Drive not found.");
-  const structural = patch.name !== void 0 || patch.capacityGB !== void 0;
-  if (structural) requireCan(actor, "storage.admin", "rename a drive or change its capacity");
-  const next2 = {
-    name: patch.name ?? d.name,
-    capacityGB: patch.capacityGB ?? d.capacityGB,
-    otherUsedGB: patch.otherUsedGB ?? d.otherUsedGB,
-    notes: patch.notes ?? d.notes
-  };
-  validateDrive(next2, id2);
-  const allocated = getDb().allocations.filter((a) => a.driveId === id2).reduce((n, a) => n + a.sizeGB, 0);
-  if (allocated + next2.otherUsedGB > next2.capacityGB)
-    throw new RuleError(`That would put ${fmtSize(allocated + next2.otherUsedGB)} on a ${fmtSize(next2.capacityGB)} drive.`);
-  Object.assign(d, { name: next2.name.trim(), capacityGB: next2.capacityGB, otherUsedGB: next2.otherUsedGB, notes: next2.notes });
-  if (patch.offline !== void 0) d.offline = !!patch.offline;
-  logAudit(actor, "update", "drive", id2, Object.keys(patch).join(", "));
-  recordSnapshot();
-  commit();
-  return d;
-}
-function deleteDrive(actor, id2) {
-  requireCan(actor, "storage.admin", "remove drives");
-  const d = getDrive(id2);
-  if (!d) throw new RuleError("Drive not found.");
-  if (getDb().allocations.some((a) => a.driveId === id2))
-    throw new RuleError("Projects are still recorded on this drive. Remove them first.");
-  getDb().drives = getDb().drives.filter((x) => x.id !== id2);
-  for (const r of getDb().records) if (r.workflow?.storageDriveId === id2) r.workflow.storageDriveId = null;
-  for (const s2 of getDb().recordingSessions) if (s2.storageDriveId === id2) s2.storageDriveId = null;
-  logAudit(actor, "delete", "drive", id2, d.name);
-  recordSnapshot();
-  commit();
-}
-function requireProjectWrite(actor, contentId) {
-  const rec2 = getRecord(contentId);
-  if (!rec2) throw new RuleError("Choose the project this footage belongs to.");
-  if (!canWrite(actor, rec2)) throw new RuleError("You are not attached to this project.");
-  return rec2;
-}
-function requireLabel(label) {
-  const l = (label ?? "").trim();
-  if (!l)
-    throw new RuleError(
-      "Give this entry a short label, for example the project or shoot it is holding footage for, since it is not tied to a project yet."
-    );
-  return l;
-}
-function addAllocation(actor, input) {
-  requireStorageAccess(actor);
-  const drive = getDrive(input.driveId);
-  if (!drive) throw new RuleError("Drive not found.");
-  const label = input.contentId === null ? requireLabel(input.label) : (input.label ?? "").trim();
-  if (input.contentId !== null) requireProjectWrite(actor, input.contentId);
-  if (!Number.isFinite(input.sizeGB) || input.sizeGB <= 0) throw new RuleError("Enter the size in GB.");
-  const u = driveUsage(drive);
-  if (input.sizeGB > u.freeGB + 1e-6) throw new RuleError(`${drive.name} has only ${fmtSize(u.freeGB)} free.`);
-  const a = {
-    id: claimId(`ALC-${pad(nextCounter("allocation"), 4)}`),
-    driveId: drive.id,
-    contentId: input.contentId,
-    label,
-    sizeGB: input.sizeGB,
-    kind: input.kind,
-    note: input.note ?? "",
-    updatedAt: todayIso()
-  };
-  getDb().allocations.push(a);
-  logAudit(actor, "allocate", "drive", drive.id, `${input.contentId ?? label} ${fmtSize(a.sizeGB)}`);
-  recordSnapshot();
-  commit();
-  return a;
-}
-var ALLOCATION_EDITABLE = ["sizeGB", "kind", "note", "label", "driveId"];
-var ALLOCATION_KINDS = ["raw", "project", "delivered", "other"];
-function updateAllocation(actor, id2, input) {
-  requireStorageAccess(actor);
-  const patch = pickKeys(input, ALLOCATION_EDITABLE);
-  const a = getDb().allocations.find((x) => x.id === id2);
-  if (!a) throw new RuleError("Entry not found.");
-  if (patch.kind !== void 0 && !ALLOCATION_KINDS.includes(patch.kind)) throw new RuleError("Choose raw, project, delivered or other.");
-  const rec2 = a.contentId !== null ? requireProjectWrite(actor, a.contentId) : null;
-  if (rec2 && a.kind === "raw" && patch.kind && patch.kind !== "raw" && !isHop(actor) && leavesUnder(rec2).some((l) => !isComplete(l))) {
-    throw new RuleError(`Raw footage for ${rec2.title} stays marked as raw until everything under it is Delivered.`);
-  }
-  const label = a.contentId === null ? requireLabel(patch.label ?? a.label) : patch.label ?? a.label;
-  const target = getDrive(patch.driveId ?? a.driveId);
-  if (!target) throw new RuleError("Drive not found.");
-  const newSize = patch.sizeGB ?? a.sizeGB;
-  if (!Number.isFinite(newSize) || newSize <= 0) throw new RuleError("Enter the size in GB.");
-  const u = driveUsage(target);
-  const alreadyThere = target.id === a.driveId ? a.sizeGB : 0;
-  if (newSize - alreadyThere > u.freeGB + 1e-6) throw new RuleError(`${target.name} has only ${fmtSize(u.freeGB + alreadyThere)} free.`);
-  Object.assign(a, patch, { label, updatedAt: todayIso() });
-  logAudit(actor, "update", "allocation", id2, Object.keys(patch).join(", "));
-  recordSnapshot();
-  commit();
-  return a;
-}
-function moveAllocation(actor, id2, contentId) {
-  requireStorageAccess(actor);
-  const a = getDb().allocations.find((x) => x.id === id2);
-  if (!a) throw new RuleError("Entry not found.");
-  if (a.contentId === contentId) throw new RuleError("This entry is already attached here.");
-  const target = getRecord(contentId);
-  if (!target) throw new RuleError("Project not found.");
-  const current3 = a.contentId ? getRecord(a.contentId) : null;
-  if (!canWrite(actor, target) || (current3 ? !canWrite(actor, current3) : !isHop(actor)))
-    throw new RuleError("You are not attached to both projects.");
-  const from = a.contentId ?? a.label;
-  a.contentId = contentId;
-  a.updatedAt = todayIso();
-  logAudit(actor, "update", "allocation", id2, `moved from ${from} to ${contentId}`);
-  commit();
-  return a;
-}
-function removeAllocation(actor, id2) {
-  requireStorageAccess(actor);
-  const a = getDb().allocations.find((x) => x.id === id2);
-  if (!a) throw new RuleError("Entry not found.");
-  if (a.contentId !== null) {
-    const rec2 = requireProjectWrite(actor, a.contentId);
-    if (a.kind === "raw") {
-      const leaves = leavesUnder(rec2);
-      if (leaves.some((l) => !isComplete(l)))
-        throw new RuleError(`Raw footage for ${rec2.title} cannot be removed until everything under it is Delivered.`);
-    }
-  }
-  getDb().allocations = getDb().allocations.filter((x) => x.id !== id2);
-  logAudit(actor, "deallocate", "drive", a.driveId, `${a.contentId ?? a.label} ${fmtSize(a.sizeGB)}`);
-  recordSnapshot();
-  commit();
-}
-function standaloneAllocations(actor) {
-  requireStorageAccess(actor);
-  return getDb().allocations.filter((a) => a.contentId === null);
-}
-function clearRecordFromDrives(actor, contentId) {
-  requireStorageAccess(actor);
-  const rec2 = requireProjectWrite(actor, contentId);
-  const mine = getDb().allocations.filter((a) => a.contentId === contentId);
-  if (!mine.length) throw new RuleError("Nothing is recorded on drives for this item.");
-  if (mine.some((a) => a.kind === "raw") && leavesUnder(rec2).some((l) => !isComplete(l)))
-    throw new RuleError(`Raw footage for ${rec2.title} cannot be cleared until everything under it is Delivered.`);
-  const gb = mine.reduce((n, a) => n + a.sizeGB, 0);
-  for (const a of mine) logAudit(actor, "deallocate", "drive", a.driveId, `${contentId} ${fmtSize(a.sizeGB)}`);
-  getDb().allocations = getDb().allocations.filter((a) => a.contentId !== contentId);
-  recordSnapshot();
-  commit();
-  return { count: mine.length, gb };
-}
-function descendantIds2(r) {
-  return [r.contentId, ...getChildren(r.contentId, true).flatMap(descendantIds2)];
-}
-function allocationsForRecord(record2) {
-  const ids2 = /* @__PURE__ */ new Set([...descendantIds2(record2), ...selfAndAncestors(record2).map((r) => r.contentId)]);
-  return getDb().allocations.filter((a) => a.contentId !== null && ids2.has(a.contentId));
-}
-function forecast(horizonDays = 90) {
-  const t2 = fleetTotals();
-  const snaps = getDb().snapshots.slice(-16);
-  const history = snaps.map((s2) => ({ date: s2.date, usedGB: s2.usedGB }));
-  const thresholdGB = t2.capacity * getDb().settings.storageWarningThreshold / 100;
-  let slope = 0;
-  if (snaps.length >= 2) {
-    const xs = snaps.map((s2) => dayNumber(s2.date));
-    const ys = snaps.map((s2) => s2.usedGB);
-    const mx = xs.reduce((a, b) => a + b, 0) / xs.length;
-    const my = ys.reduce((a, b) => a + b, 0) / ys.length;
-    const den = xs.reduce((n, x) => n + (x - mx) ** 2, 0);
-    slope = den ? xs.reduce((n, x, i) => n + (x - mx) * (ys[i] - my), 0) / den : 0;
-  }
-  const today = dayNumber(todayIso());
-  const projected = [{ date: todayIso(), usedGB: t2.used }];
-  if (slope > 0)
-    for (let d = 7; d <= horizonDays; d += 7)
-      projected.push({ date: fromDayNumber(today + d), usedGB: Math.min(t2.capacity * 1.05, t2.used + slope * d) });
-  let fillDate = null;
-  if (slope > 0 && t2.used < thresholdGB) fillDate = fromDayNumber(today + Math.ceil((thresholdGB - t2.used) / slope));
-  else if (t2.used >= thresholdGB) fillDate = todayIso();
-  return { history, projected, capacityGB: t2.capacity, thresholdGB, slopeGBPerDay: slope, fillDate };
-}
-function driveReportText(driveId) {
-  const d = getDrive(driveId);
-  if (!d) throw new RuleError("Drive not found.");
-  const u = driveUsage(d);
-  const lines = [
-    `Drive report: ${d.name}`,
-    `Date: ${fmtDate(todayIso())}`,
-    `Capacity ${fmtSize(d.capacityGB)}, used ${fmtSize(u.usedGB)} (${u.pct.toFixed(1)}%), free ${fmtSize(u.freeGB)}`,
-    "",
-    "Projects on this drive:",
-    ...u.projects.length ? u.projects.map(
-      (p) => `  ${p.contentId ?? "No project yet"}  ${p.contentId ? getRecord(p.contentId)?.title ?? "" : p.label}  ${fmtSize(p.gb)}  (${p.kinds.join(", ")})`
-    ) : ["  None recorded"],
-    ...u.otherGB ? [`  Other files  ${fmtSize(u.otherGB)}`] : []
-  ];
-  return lines.join("\n");
-}
-function fleetReportText() {
-  const t2 = fleetTotals();
-  const rows2 = allDriveUsage();
-  return [
-    "Storage report: all drives",
-    `Date: ${fmtDate(todayIso())}`,
-    `Total capacity ${fmtSize(t2.capacity)}, used ${fmtSize(t2.used)}, free ${fmtSize(t2.capacity - t2.used)}`,
-    "",
-    ...rows2.map(
-      (u) => `${u.drive.name}: ${fmtSize(u.usedGB)} of ${fmtSize(u.drive.capacityGB)} (${u.pct.toFixed(0)}%)${u.projects.length ? `. Projects: ${u.projects.map((p) => `${p.contentId ?? p.label} ${fmtSize(p.gb)}`).join(", ")}` : ""}`
-    )
-  ].join("\n");
-}
-
 // src/services/workflow/status.ts
 function refreshProjectStatus(p) {
   if (p.archived || p.workflow.stage !== "Pre-production") return;
@@ -7976,6 +7237,856 @@ function archivePlannedEpisode(actor, id2, reason) {
   logAudit(actor, "planned-archive", "record", p.contentId, `${id2}: ${reason.trim()}`);
   commit();
   return p;
+}
+
+// src/services/documents/nudges.ts
+var GATED = /* @__PURE__ */ new Set([
+  "Brief: Logline",
+  "Brief: Core question or tension",
+  "Brief: Core message",
+  "Brief: Purpose of the event",
+  "Guest: Name",
+  "Guest: Contact"
+]);
+var KEPT_SECTIONS = ["Entry", "Guest"];
+function softNudges(projectId) {
+  const p = projectOf(projectId);
+  if (p.workflow.imported) return [];
+  const formType2 = p.workflow.formType;
+  const out = [];
+  for (const problem of formProblems(projectId, 1)) {
+    if (GATED.has(problem)) continue;
+    if (KEPT_SECTIONS.some((s2) => problem.startsWith(`${s2}:`))) out.push(`${problem} not filled in yet`);
+  }
+  const briefKey = briefKeyOf(formType2);
+  const brief = documentOf(projectId, "Development", briefKey);
+  const briefTitle = catalogEntry(formType2, "Development", briefKey)?.title ?? "brief";
+  if (catalogTypeOf(formType2) === "devotion") {
+    if (!brief) out.push(`The ${briefTitle} is not started yet`);
+    return out;
+  }
+  if (!brief) out.push(`The ${briefTitle} is not started yet`);
+  else
+    for (const page of pagesOf(brief.id)) if (!textOf(page.bodyHtml)) out.push(`${brief.title}: ${page.title || "a page"} not written yet`);
+  const greenlight2 = documentOf(projectId, "Development", "greenlight");
+  if (!greenlight2 || !documentHasContent(greenlight2.id)) out.push("Greenlight: the six criteria not written up yet");
+  if (plannedOf(projectId).length === 0 && catalogTypeOf(formType2) !== "live")
+    out.push(`No planned ${planLabels(formType2).many} listed yet`);
+  out.push(...openRequired("handoff", projectId).map((l) => `Handoff: ${l} not ticked yet`));
+  return out;
+}
+
+// src/services/workflow/recordingLog.ts
+function attendeesOf(session) {
+  if (session.attendees) return session.attendees;
+  const sheet = session.callSheetId ? getDb().callSheets.find((c) => c.id === session.callSheetId) : void 0;
+  return sheet ? [...sheet.crewPersonIds] : [];
+}
+var pickupsOf = (sessionId) => rowsOf(sessionId).filter((r) => r.status === "Pickup needed");
+var folderOf = (a) => a.folderPath?.trim() || a.label.trim() || a.contentId || a.id;
+var isProjectLink = (a) => !a.sessionId;
+function lineage(project) {
+  const out = [project.contentId];
+  if (project.parentId) out.push(project.parentId);
+  const root = rootOf(project).contentId;
+  if (!out.includes(root)) out.push(root);
+  return out;
+}
+function driveFolders(driveId) {
+  return getDb().allocations.filter((a) => a.driveId === driveId && isProjectLink(a)).map((a) => ({
+    allocationId: a.id,
+    driveId,
+    contentId: a.contentId,
+    title: a.contentId ? getRecord(a.contentId)?.title ?? a.contentId : a.label,
+    folderPath: folderOf(a)
+  })).sort((a, b) => a.folderPath.localeCompare(b.folderPath));
+}
+function projectLinks(project) {
+  const ids2 = lineage(project);
+  return getDb().allocations.filter((a) => isProjectLink(a) && a.contentId !== null && ids2.includes(a.contentId));
+}
+function bestFolder(driveId, project) {
+  const folders = driveFolders(driveId);
+  for (const id2 of lineage(project)) {
+    const hit = folders.find((f2) => f2.contentId === id2);
+    if (hit) return hit;
+  }
+  const name = project.title.trim().toLowerCase();
+  const parent = project.parentId ? getRecord(project.parentId)?.title.trim().toLowerCase() : void 0;
+  return folders.find((f2) => {
+    const t2 = `${f2.title} ${f2.folderPath}`.toLowerCase();
+    return !!name && t2.includes(name) || !!parent && t2.includes(parent);
+  });
+}
+function sessionStorage(sessionId) {
+  const mine = getDb().allocations.filter((a) => a.sessionId === sessionId);
+  return { primary: mine.find((a) => a.role !== "backup"), backup: mine.find((a) => a.role === "backup") };
+}
+function folderFor(session, project, inside) {
+  const pattern = getDb().settings.storageFolderPattern?.trim() || DEFAULT_FOLDER_PATTERN;
+  const clean = (v) => v.replace(/[\\/:*?"<>|]+/g, "-").trim();
+  const label = clean(session.label || sessionName(session)).replace(/\s+/g, "-");
+  const path = pattern.split("{contentId}").join(project.contentId).split("{date}").join(session.scheduledDate ?? todayIso()).split("{label}").join(label).split("{session}").join(session.id);
+  if (!inside) return path;
+  const last = path.split("/").filter(Boolean).pop() ?? path;
+  return `${inside.replace(/\/+$/, "")}/${last}`;
+}
+function suggestedStorage(sessionId) {
+  const session = getDb().recordingSessions.find((s2) => s2.id === sessionId);
+  const project = session ? getRecord(session.contentId) : void 0;
+  if (!session || !project?.workflow) return { link: null, choices: [] };
+  const choices2 = projectLinks(project);
+  return { link: choices2.length === 1 ? choices2[0] : null, choices: choices2 };
+}
+var requireStorage = (actor) => {
+  if (!hasStorageAccess(actor)) throw new RuleError("Only someone who may use storage can choose where the footage goes.");
+};
+function newEntry(fields) {
+  const a = { id: claimId(`ALC-${pad(nextCounter("allocation"), 4)}`), updatedAt: todayIso(), ...fields };
+  getDb().allocations.push(a);
+  return a;
+}
+function assignSessionStorage(actor, sessionId, input) {
+  const { session, project } = sessionForWrite(actor, sessionId);
+  requireStorage(actor);
+  const drive = getDrive(input.driveId);
+  if (!drive) throw new RuleError("Choose one of the drives on the Storage & Media screen.");
+  if (input.role !== "primary" && input.role !== "backup") throw new RuleError("Choose the main drive or the backup.");
+  const current3 = sessionStorage(sessionId);
+  const other = input.role === "primary" ? current3.backup : current3.primary;
+  if (other && other.driveId === drive.id)
+    throw new RuleError(
+      `The backup must be on another drive than the footage itself: ${drive.name} is already the ${input.role === "primary" ? "backup" : "main drive"}.`
+    );
+  let link;
+  if (input.linkId) {
+    link = getDb().allocations.find((a2) => a2.id === input.linkId);
+    if (!link || link.driveId !== drive.id || !isProjectLink(link)) throw new RuleError("Choose one of the folders on that drive.");
+    if (link.contentId === null) {
+      link.contentId = project.contentId;
+      link.folderPath ||= link.label;
+      link.updatedAt = todayIso();
+    }
+  } else if (input.addToDrive) {
+    link = newEntry({
+      driveId: drive.id,
+      contentId: project.contentId,
+      label: project.title,
+      sizeGB: 0,
+      kind: "raw",
+      note: `Added from the Recording Log of ${session.id}`,
+      folderPath: project.contentId
+    });
+  }
+  const folder = (input.folderPath ?? "").trim() || folderFor(session, project, link ? folderOf(link) : void 0);
+  if (folder.length > 240) throw new RuleError("Keep the folder path under 240 characters.");
+  const mine = input.role === "primary" ? current3.primary : current3.backup;
+  let a;
+  if (mine) {
+    if (mine.driveId !== drive.id && mine.sizeGB > driveUsage(drive).freeGB + 1e-6)
+      throw new RuleError(`${drive.name} has only ${fmtSize(driveUsage(drive).freeGB)} free.`);
+    Object.assign(mine, { driveId: drive.id, folderPath: folder, updatedAt: todayIso() });
+    a = mine;
+  } else {
+    a = newEntry({
+      driveId: drive.id,
+      contentId: project.contentId,
+      label: `${sessionName(session)} ${input.role === "backup" ? "backup" : "footage"}`,
+      sizeGB: input.role === "backup" ? current3.primary?.sizeGB ?? 0 : 0,
+      kind: "raw",
+      note: `Recording session ${session.id}`,
+      sessionId,
+      role: input.role,
+      folderPath: folder,
+      offloadedAt: null,
+      offloadedBy: null,
+      backedUpAt: null,
+      backedUpBy: null
+    });
+  }
+  if (input.role === "primary") session.storageDriveId = drive.id;
+  session.updatedAt = nowStamp();
+  logAudit(actor, "storage-assign", "session", sessionId, `${input.role === "backup" ? "backup" : "footage"} on ${drive.name}: ${folder}`);
+  recordSnapshot();
+  commit();
+  return a;
+}
+function clearSessionStorage(actor, sessionId, role) {
+  const { session } = sessionForWrite(actor, sessionId);
+  requireStorage(actor);
+  const a = sessionStorage(sessionId)[role];
+  if (!a) throw new RuleError("Nothing is assigned there.");
+  if (a.offloadedAt || a.backedUpAt) throw new RuleError("The footage is marked copied there. Untick it first.");
+  if (a.sizeGB > 0 && role === "primary")
+    throw new RuleError("The footage's size is entered on this drive. Move it to another drive instead.");
+  getDb().allocations = getDb().allocations.filter((x) => x.id !== a.id);
+  if (role === "primary") session.storageDriveId = null;
+  session.updatedAt = nowStamp();
+  logAudit(actor, "storage-clear", "session", sessionId, role);
+  recordSnapshot();
+  commit();
+}
+function markStorage(actor, sessionId, role, done) {
+  const { session } = sessionForWrite(actor, sessionId);
+  requireStorage(actor);
+  if (session.status === "Planned") throw new RuleError("The footage is offloaded once recording has started.");
+  const a = sessionStorage(sessionId)[role];
+  if (!a) throw new RuleError(role === "primary" ? "Choose the drive the footage goes on first." : "Choose the backup drive first.");
+  const at = done ? nowStamp() : null;
+  const by = done ? actor.personId : null;
+  if (role === "primary") Object.assign(a, { offloadedAt: at, offloadedBy: by });
+  else Object.assign(a, { backedUpAt: at, backedUpBy: by });
+  a.updatedAt = todayIso();
+  logAudit(actor, "storage-mark", "session", sessionId, `${role === "primary" ? "offloaded" : "backed up"}: ${done ? "yes" : "no"}`);
+  commit();
+  return a;
+}
+function storageWarnings(sessionId) {
+  const session = getDb().recordingSessions.find((s2) => s2.id === sessionId);
+  if (!session) return [];
+  const { primary, backup } = sessionStorage(sessionId);
+  const out = [];
+  if (!primary) out.push("No drive chosen for the footage");
+  if (!backup) out.push("No backup drive");
+  for (const a of [primary, backup]) {
+    const d = a ? getDrive(a.driveId) : void 0;
+    if (!d) continue;
+    if (d.offline) out.push(`${d.name} is marked offline`);
+    const u = driveUsage(d);
+    if (isNearlyFull(u)) out.push(`${d.name} is ${Math.round(u.pct)}% full`);
+  }
+  if (session.status !== "Planned") {
+    if (primary && !primary.offloadedAt) out.push("The footage is not marked offloaded yet");
+    if (backup && !backup.backedUpAt) out.push("The backup is not marked made yet");
+  }
+  return out;
+}
+function footageWhere(projectId) {
+  const ids2 = new Set(
+    getDb().recordingSessions.filter((s2) => s2.contentId === projectId).map((s2) => s2.id)
+  );
+  return getDb().allocations.filter((a) => a.sessionId && ids2.has(a.sessionId)).map((a) => ({
+    sessionId: a.sessionId,
+    role: a.role === "backup" ? "backup" : "primary",
+    drive: getDrive(a.driveId)?.name ?? a.driveId,
+    folder: folderOf(a)
+  })).sort((a, b) => a.sessionId.localeCompare(b.sessionId) || a.role.localeCompare(b.role));
+}
+
+// src/services/workflow/history.ts
+function projectFor(r) {
+  if (!r) return void 0;
+  if (r.workflow) return r;
+  return r.parentId ? getDb().records.find((x) => x.contentId === r.parentId && x.workflow) : void 0;
+}
+function isHistory(record2, date2) {
+  const r = typeof record2 === "string" ? getDb().records.find((x) => x.contentId === record2) : record2;
+  const p = projectFor(r);
+  if (!p?.workflow?.imported || !date2) return false;
+  const since = (p.workflow.importedAt ?? "").slice(0, 10);
+  return !!since && date2.slice(0, 10) <= since;
+}
+var isImported = (record2) => {
+  const r = typeof record2 === "string" ? getDb().records.find((x) => x.contentId === record2) : record2;
+  return !!projectFor(r)?.workflow?.imported;
+};
+
+// src/services/workflow/gates.ts
+var result = (missing, warnings = []) => ({ passed: missing.length === 0, missing, warnings });
+var gateError = (stage, missing) => new RuleError(`Not ready to leave ${stage}. Still needed: ${missing.join("; ")}.`);
+var projectOf2 = (id2) => {
+  const r = getRecord(id2);
+  return r?.workflow ? r : null;
+};
+function lateDates(project, dates) {
+  const publish = project.deadline;
+  if (!publish) return [];
+  return dates.filter(([, d]) => !!d && d > publish).map(([what, d]) => `${what} (${d}) is after the publish date (${publish})`);
+}
+function developmentGate(p) {
+  const late = lateDates(p, [["The Development deadline", p.stageDeadlines.Development]]);
+  const missing = p.workflow.stage === "Development" ? hardGatesMissing(p.contentId) : ["The project has already left Development"];
+  return result(missing, [...softNudges(p.contentId), ...late]);
+}
+function preProductionProjectGate(p) {
+  const missing = [];
+  if (p.workflow.stage !== "Pre-production") missing.push("The project must have left Development");
+  if (!p.workflow.showProducerId) missing.push("A show producer");
+  const roles2 = getDb().projectRoles.filter((r) => r.contentId === p.contentId);
+  const warnings = lateDates(p, [["The Pre-production deadline", p.stageDeadlines["Pre-production"]]]);
+  {
+    if (!roles2.length) missing.push("Roles: list the project's roles in the Recording Plan");
+    for (const r of roles2) if (!roleHolder(r)) missing.push(`Role: ${roleName(r)} needs a person`);
+    const waiting2 = unassignedDevotions(p.contentId).length;
+    const L = planLabels(p.workflow.formType);
+    if (waiting2) warnings.push(`${waiting2} ${waiting2 === 1 ? `${L.one} is` : `${L.many} are`} not assigned to a session yet`);
+  }
+  missing.push(...openRequired("preProject", p.contentId).map((l) => `Pre-production: ${l}`));
+  if (p.workflow.formType === "documentary_dof" && latestDecision(formOf(p.contentId), 2)?.outcome !== "Greenlight")
+    missing.push("Second greenlight decision: Greenlight (shoot budget, interview sets and shot list)");
+  return result(missing, warnings);
+}
+function preProductionSessionGate(s2, p) {
+  const project = preProductionProjectGate(p);
+  const missing = [...project.missing];
+  const warnings = [...project.warnings, ...lateDates(p, [[`Session ${s2.id}`, s2.scheduledDate]])];
+  if (s2.status !== "Planned") missing.push("The session must be in Pre-production (Planned)");
+  if (!s2.scheduledDate) missing.push("The session's date");
+  const sheet = s2.callSheetId ? getDb().callSheets.find((c) => c.id === s2.callSheetId) : void 0;
+  if (!sheet) missing.push("A call sheet for this session");
+  else {
+    const gear = manifestForSheet(sheet.id);
+    if (!gear || gear.lines.length === 0) missing.push("Gear selected from the Equipment picker");
+    missing.push(...gearIssues(sheet.id).map((g) => `Gear: ${g}`));
+    if (sheet.status !== "final") missing.push(`Call sheet ${sheet.id} issued (final)`);
+    for (const c of sheet.technicalCheck)
+      if (checkStateOf(c) === "Issue")
+        warnings.push(`Tech Check: ${c.label} has an issue${c.note || c.result ? ` (${c.note || c.result})` : ""}`);
+    if (s2.scheduledDate && sheet.date !== s2.scheduledDate)
+      missing.push(`Call sheet ${sheet.id} is for ${sheet.date}, not the session's date, ${s2.scheduledDate}`);
+  }
+  missing.push(...openRequired("preSession", s2.id).map((l) => `Session: ${l}`));
+  if (!freeFormLog(p) && rowsOf(s2.id).length === 0)
+    warnings.push(`No ${planLabels(p.workflow.formType).many} are planned for this session yet`);
+  return result(missing, warnings);
+}
+function productionGate(s2, p) {
+  const missing = [];
+  const warnings = [];
+  const live = isLiveProject(p);
+  if (s2.status !== "Open") missing.push(live ? "The day must be in Production (on air)" : "The session must be in Production (Open)");
+  const rows2 = rowsOf(s2.id);
+  if (!live && !rows2.some((r) => r.status === "Recorded" || r.status === "Pickup needed"))
+    missing.push("At least one item recorded in the Recording Log (Good or Pickup needed)");
+  warnings.push(...openRequired("wrap", s2.id).map((l) => `Wrap: ${l}`));
+  for (const r of rows2) if (!r.status) warnings.push(`No take mark for "${r.itemLabel || r.plannedEpisodeId}": it counts as not recorded`);
+  warnings.push(...storageWarnings(s2.id));
+  return result(missing, warnings);
+}
+function editingGate(ep) {
+  const missing = [];
+  if (ep.episode.stage !== "Post production" || ep.episode.postStage !== "Editing") missing.push("The episode must be in Editing");
+  if (!ep.episode.readyForReview) missing.push("The editor marks it ready for review");
+  if (!asWebUrl(ep.episode.reviewLink)) missing.push("A review link (http or https)");
+  return result(missing);
+}
+function postGate(ep, p) {
+  const missing = [];
+  if (ep.episode.stage !== "Post production") missing.push("The episode must be in Post production");
+  for (const [key2, label] of [
+    ["rough_cut", "Rough cut"],
+    ["final", "Final"]
+  ])
+    if (checkpoint(ep.contentId, key2)?.status !== "Approved") missing.push(`${label} review checkpoint Approved`);
+  return result(missing, lateDates(p, [["The Post production deadline", ep.stageDeadlines["Post production"]]]));
+}
+function marketingGate(ep, p) {
+  const missing = [];
+  if (ep.episode.stage !== "Marketing and distribution") missing.push("The episode must be in Marketing and distribution");
+  if (ep.episode.mdStage === "Published") missing.push("The episode is already published");
+  missing.push(...openRequired("release", ep.contentId).map((l) => `Release plan: ${l}`));
+  if (!ep.episode.distribution.some((d) => asWebUrl(d.link))) missing.push("At least one distribution link logged");
+  return result(missing, lateDates(p, [["The Marketing and distribution deadline", ep.stageDeadlines["Marketing and distribution"]]]));
+}
+function evaluateGate(stage, level2, id2) {
+  if (level2 === "project") {
+    const p = projectOf2(id2);
+    if (!p) return result(["Project not found"]);
+    if (p.archived) return result(["The project is closed"]);
+    if (stage === "Development") return developmentGate(p);
+    if (stage === "Pre-production") return preProductionProjectGate(p);
+  }
+  if (level2 === "session") {
+    const s2 = getSession(id2);
+    const p = s2 ? projectOf2(s2.contentId) : null;
+    if (!s2 || !p) return result(["Session not found"]);
+    if (p.archived || s2.archivedAt) return result(["The session is closed"]);
+    if (stage === "Pre-production") return preProductionSessionGate(s2, p);
+    if (stage === "Production") return productionGate(s2, p);
+  }
+  if (level2 === "episode") {
+    const r = getRecord(id2);
+    const p = r?.episode ? projectOf2(r.parentId ?? "") : null;
+    if (!r?.episode || !p) return result(["Episode not found"]);
+    if (r.archived || p.archived) return result(["The episode is archived"]);
+    const ep = r;
+    if (stage === "Editing") return editingGate(ep);
+    if (stage === "Post production") return postGate(ep, p);
+    if (stage === "Marketing and distribution") return marketingGate(ep, p);
+  }
+  return result([`${stage} has no gate at the ${level2} level`]);
+}
+function episodeOverdue(ep, today = todayIso()) {
+  if (!ep.episode || ep.archived || ep.episode.mdStage === "Published") return false;
+  const due = ep.stageDeadlines[ep.episode.stage];
+  return !!due && due < today && !isHistory(ep, due);
+}
+function projectSummary(p) {
+  if (p.archived) {
+    const label = p.workflow.status === "Advice only" ? "Advice only" : "Closed";
+    return { stage: label, text: `${label}${p.closedReason ? `: ${p.closedReason}` : ""}` };
+  }
+  if (p.workflow.stage === "Development") {
+    const outcome2 = formOf(p.contentId).outcome;
+    return { stage: "Development", text: outcome2 && outcome2 !== "Greenlight" ? `Development: ${outcome2}.` : "Development." };
+  }
+  const sessions = sessionsOf(p.contentId).filter((s2) => !s2.archivedAt);
+  const eps = episodesOf(p.contentId);
+  const inPost = eps.filter((e) => e.episode.stage === "Post production").length;
+  const inMd = eps.filter((e) => e.episode.stage === "Marketing and distribution" && e.episode.mdStage !== "Published").length;
+  const published = eps.filter((e) => e.episode.mdStage === "Published").length;
+  const closed = sessions.filter((s2) => s2.status === "Closed").length;
+  const parts = [];
+  const one = sessionLabelOf(p.category) === "Day" ? "day" : "session";
+  const ep = (categoryOf(p.category).workflow?.episodeLabel ?? "Episode").toLowerCase();
+  if (sessions.length) parts.push(`Production: ${closed} of ${sessions.length} ${one}${sessions.length === 1 ? "" : "s"} closed.`);
+  if (inPost) parts.push(`Post: ${inPost} ${ep}${inPost === 1 ? "" : "s"}.`);
+  if (inMd) parts.push(`Marketing and distribution: ${inMd} ${ep}${inMd === 1 ? "" : "s"}.`);
+  if (published) parts.push(`Published: ${published}.`);
+  const doc2 = isDocumentary(p);
+  const toPlan = sessions.some((s2) => s2.status === "Planned") || !doc2 && unscheduledPlanned(p.contentId) > 0;
+  const stage = p.workflow.status === "Completed" ? "Completed" : sessions.some((s2) => s2.status === "Open") ? "Production" : toPlan || sessions.length === 0 && eps.length === 0 ? "Pre-production" : doc2 && eps.length === 0 ? "Production" : inPost ? "Post production" : inMd ? "Marketing and distribution" : "Pre-production";
+  return { stage, text: parts.length ? parts.join(" ") : `Pre-production: no ${sessionLabelOf(p.category).toLowerCase()}s yet.` };
+}
+
+// src/services/workflow/projects.ts
+var CONTAINER = {
+  series: { one: "series", child: "Season" },
+  music: { one: "music project", child: "Release" },
+  live: { one: "live show", child: "Event" }
+};
+function blankForm(projectId, formType2) {
+  const at = nowStamp();
+  return {
+    id: projectId,
+    contentId: projectId,
+    formType: formType2,
+    sections: {},
+    greenlightStage: formTypeOf(formType2).greenlights === 2 ? 1 : null,
+    criteria: Object.fromEntries(CRITERIA.map((c) => [c.key, { met: null, note: "" }])),
+    outcome: null,
+    reviewNotes: "",
+    decisionDate: null,
+    reviewWindowDate: null,
+    decisions: [],
+    createdAt: at,
+    updatedAt: at
+  };
+}
+function blankCheckpoint(contentId, episodeId, key2, reviewerIds = []) {
+  const at = nowStamp();
+  return {
+    id: `${episodeId ?? contentId}|${key2}`,
+    contentId,
+    episodeId,
+    checkpoint: key2,
+    reviewerIds,
+    status: "Pending",
+    note: "",
+    decidedAt: null,
+    decidedById: null,
+    createdAt: at,
+    updatedAt: at
+  };
+}
+function startProject(actor, r, formType2, deadline) {
+  if (deadline && !isIsoDate(deadline)) throw new RuleError("Pick the publish date.");
+  r.deadline = deadline || null;
+  r.workflow = {
+    formType: formType2,
+    status: "Development",
+    stage: "Development",
+    showProducerId: null,
+    producerAssignedById: null,
+    producerAssignedAt: null,
+    sermonFormat: null,
+    migrated: false
+  };
+  const db2 = getDb();
+  db2.records.push(r);
+  db2.developmentForms.push(blankForm(r.contentId, formType2));
+  ensureChecklist("handoff", "project", r.contentId);
+  logAudit(actor, "create", "record", r.contentId, `${formTypeOf(formType2).label}: ${r.title}`);
+  return r;
+}
+function createWorkflowProject(actor, input) {
+  if (!isWorkflowCategory(input.category))
+    throw new RuleError("Choose a series, a devotion, a documentary, a live event or a music release.");
+  const name = input.title.trim();
+  if (input.category === "series" || input.category === "music" || input.category === "live") {
+    const cat = input.category;
+    const words = CONTAINER[cat];
+    const formType3 = cat === "series" ? "podcast" : cat === "live" ? "live_event" : input.formType ?? "";
+    if (cat === "music" && !isMusicForm(formType3)) throw new RuleError("Choose a single or an album.");
+    if (cat === "live") {
+      if (!input.event) throw new RuleError("Choose how the event runs: one day, several days, or a recurring show.");
+      checkEventSetup(input.event);
+    }
+    let parent;
+    if (input.seriesId) {
+      const found = getRecord(input.seriesId);
+      if (!found || found.category !== cat || found.hierarchyLevel !== 0 || found.archived)
+        throw new RuleError(`${words.one.charAt(0).toUpperCase()}${words.one.slice(1)} not found.`);
+      if (cat === "series" && !found.seriesType)
+        throw new RuleError("This series was made before the new workflow. Its seasons are added the earlier way.");
+      if (!canWrite(actor, found)) throw new RuleError(`You are not assigned to this ${words.one}.`);
+      if (cat !== "series" && !name) throw new RuleError(`Give the ${words.child.toLowerCase()} a title.`);
+      parent = found;
+    } else {
+      requireCan(actor, "pipeline.manage", `create a new ${words.one}`);
+      if (!name) throw new RuleError(`Give the ${words.one} a title.`);
+      if (cat === "series" && !input.seriesType) throw new RuleError("Choose the kind of series: podcast, testimonial or sermon.");
+      parent = blankRecord(nextTopLevelId(cat), cat, name, null, 0);
+      if (cat === "series") parent.seriesType = input.seriesType;
+      getDb().records.push(parent);
+      logAudit(actor, "create", "record", parent.contentId, `${words.one.charAt(0).toUpperCase()}${words.one.slice(1)}: ${parent.title}`);
+    }
+    const id2 = nextChildId(parent);
+    const number = id2.slice(id2.lastIndexOf("-") + 2);
+    const title2 = cat === "series" ? (input.seriesId ? name : "") || `Season ${number}` : (input.seriesId ? name : input.projectTitle?.trim() || name) || `${words.child} ${number}`;
+    const child = blankRecord(id2, cat, title2, parent.contentId, 1);
+    const project2 = startProject(actor, child, cat === "series" ? formTypeForSeries(parent.seriesType) : formType3, input.deadline);
+    if (formType3 === "music_single") {
+      const { id: plannedId, n } = nextPlanned(project2.contentId);
+      const at = nowStamp();
+      getDb().plannedEpisodes.push({
+        id: plannedId,
+        contentId: project2.contentId,
+        episodeNumber: n,
+        workingTitle: project2.title,
+        question: "",
+        guest: "",
+        notes: "",
+        details: {},
+        reservedId: null,
+        sourcePageId: null,
+        createdAt: at,
+        updatedAt: at,
+        archivedAt: null,
+        archivedReason: null
+      });
+    }
+    if (cat === "live") setUpEventDays(actor, project2, input.event);
+    commit();
+    return project2;
+  }
+  requireCan(actor, "pipeline.manage", "create a new project");
+  if (!name) throw new RuleError("Give the project a title.");
+  const formType2 = input.category === "devotional" ? "devotion" : input.formType ?? "";
+  const def = FORM_TYPES.find((f2) => f2.key === formType2);
+  if (!def || def.category !== input.category)
+    throw new RuleError("Choose whether DOF is making the documentary or it was pitched by others.");
+  const project = startProject(actor, blankRecord(nextTopLevelId(input.category), input.category, name, null, 0), formType2, input.deadline);
+  commit();
+  return project;
+}
+function assignProducer(actor, projectId, personId) {
+  if (!canNameProducer(actor))
+    throw new RuleError(`Only the Head of Production, or someone given "Assign other people's work", can name the show producer.`);
+  const p = requireProject(projectId);
+  if (p.archived) throw new RuleError("This project is closed.");
+  if (personId) {
+    requireCrew(personId, "The show producer");
+    joinProject(actor, personId, p);
+  }
+  p.workflow.showProducerId = personId;
+  p.workflow.producerAssignedById = personId ? actor.personId : null;
+  p.workflow.producerAssignedAt = personId ? nowStamp() : null;
+  p.assigneePersonId = personId;
+  p.version += 1;
+  logAudit(actor, "producer", "record", projectId, personId ?? "none");
+  commit();
+  return p;
+}
+function closeProject(actor, projectId, reason) {
+  const p = requireProject(projectId);
+  if (!canDecide(actor) && !isProducer(actor, p))
+    throw new RuleError('Only the show producer, the Head of Production, or someone given "Create projects", can close a project.');
+  if (p.archived) throw new RuleError("This project is already closed.");
+  if (!reason.trim()) throw new RuleError("Write why the project is being closed. It is kept with the project.");
+  p.workflow.status = "Closed";
+  p.closedReason = reason.trim();
+  p.archived = true;
+  p.version += 1;
+  logAudit(actor, "close", "record", projectId, reason.trim());
+  commit();
+  return p;
+}
+var PROJECT_STAGES = ["Development", "Pre-production"];
+var EPISODE_STAGES = ["Post production", "Marketing and distribution"];
+function setWorkflowDeadline(actor, id2, stage, date2) {
+  const target = getRecord(id2)?.episode ? episodeForWrite(actor, id2).ep : projectForWrite(actor, id2);
+  const allowed2 = target.episode ? EPISODE_STAGES : PROJECT_STAGES;
+  if (!allowed2.includes(stage))
+    throw new RuleError(
+      `${target.episode ? "An episode" : "A project"} has deadlines for ${allowed2.join(" and ")} only. A session's deadline is its date.`
+    );
+  if (date2 !== null && date2 !== "" && !isIsoDate(date2)) throw new RuleError("Pick the deadline's date.");
+  if (date2) target.stageDeadlines[stage] = date2;
+  else delete target.stageDeadlines[stage];
+  target.version += 1;
+  logAudit(actor, "stage-deadline", "record", id2, `${stage} \u2192 ${date2 || "none"}`);
+  commit();
+  return target;
+}
+function setPlannedStart(actor, projectId, date2) {
+  const p = projectForWrite(actor, projectId);
+  if (date2 !== null && date2 !== "" && !isIsoDate(date2)) throw new RuleError("Pick the planned start date.");
+  if (date2 && p.deadline && date2 > p.deadline) throw new RuleError(`The planned start is after the publish date (${p.deadline}).`);
+  p.workflow.plannedStart = date2 || null;
+  p.version += 1;
+  logAudit(actor, "planned-start", "record", projectId, date2 || "none");
+  commit();
+  return p;
+}
+function advanceProject(actor, projectId) {
+  const p = projectForWrite(actor, projectId);
+  if (p.workflow.stage !== "Development") throw new RuleError("This project has already left Development.");
+  const gate = evaluateGate("Development", "project", projectId);
+  if (!gate.passed) throw gateError("Development", gate.missing);
+  p.workflow.stage = "Pre-production";
+  p.workflow.status = "Active";
+  p.version += 1;
+  const form2 = formOf(projectId);
+  if (form2.greenlightStage === 1) {
+    form2.greenlightStage = 2;
+    form2.outcome = null;
+    form2.reviewWindowDate = null;
+    form2.updatedAt = nowStamp();
+  }
+  ensureChecklist("preProject", "project", projectId);
+  logAudit(actor, "stage-advance", "record", projectId, "Development \u2192 Pre-production");
+  commit();
+  return p;
+}
+var projectLabelOf = (p) => categoryOf(p.category).workflow?.projectLabel ?? "Project";
+
+// src/services/workflow/episodes.ts
+var POST_DAYS = 14;
+var MARKETING_DAYS = 28;
+function makeEpisode(actor, project, input, kept2) {
+  let id2;
+  let n;
+  let r;
+  if (typeof kept2 === "string") {
+    id2 = kept2;
+    n = codeNumber(id2, project.contentId, episodeTokenOf(project.category));
+    if (Number.isNaN(n) || getDb().records.some((x) => x.contentId === id2))
+      throw new RuleError(`${id2} cannot become an episode of ${project.contentId}.`);
+    r = blankRecord(id2, project.category, input.title, project.contentId, project.hierarchyLevel + 1);
+  } else if (kept2) {
+    id2 = kept2.contentId;
+    n = codeNumber(id2, project.contentId, episodeTokenOf(project.category));
+    if (kept2.parentId !== project.contentId || kept2.episode && !kept2.archived || Number.isNaN(n))
+      throw new RuleError(`${id2} cannot become an episode of ${project.contentId}.`);
+    r = kept2;
+    r.archived = false;
+    r.closedReason = null;
+    r.version += 1;
+  } else {
+    ({ id: id2, n } = nextEpisode(project.contentId));
+    r = blankRecord(id2, project.category, input.title, project.contentId, project.hierarchyLevel + 1);
+  }
+  const info = {
+    episodeNumber: n,
+    plannedEpisodeId: input.plannedEpisodeId,
+    sourceSessionId: input.sourceSessionId,
+    productionNotes: input.productionNotes,
+    stage: "Post production",
+    postStage: "Not started",
+    roughCutStatus: "Pending",
+    finalReviewStatus: "Pending",
+    editorId: getDb().projectRoles.find((x) => x.id === `${project.contentId}|editor`)?.crewId ?? null,
+    readyForReview: false,
+    reviewLink: "",
+    finalFileLink: "",
+    sendBackReason: null,
+    mdStage: "Release plan",
+    distribution: [],
+    learningNotes: "",
+    ...input.sourceRowId ? { sourceRowId: input.sourceRowId } : {}
+  };
+  r.episode = info;
+  r.scheduledDate = input.scheduledDate;
+  r.stageDeadlines = {
+    ...kept2 && typeof kept2 !== "string" ? r.stageDeadlines : {},
+    "Post production": addDaysIso(todayIso(), POST_DAYS),
+    "Marketing and distribution": addDaysIso(todayIso(), MARKETING_DAYS)
+  };
+  r.stageEnteredAt = todayIso();
+  r.assigneePersonId = info.editorId;
+  const db2 = getDb();
+  if (!kept2 || typeof kept2 === "string") db2.records.push(r);
+  const brief = documentIdOf(project.contentId, "Development", briefKeyOf(project.workflow.formType), null);
+  const briefReviewers = db2.documentReviews.filter((x) => x.documentId === brief && x.reviewerId !== "system").map((x) => x.reviewerId);
+  const reviewers = briefReviewers.length ? briefReviewers : checkpoint(project.contentId, "outline_script")?.reviewerIds ?? [];
+  for (const key2 of ["rough_cut", "final"]) {
+    const earlier = checkpoint(id2, key2);
+    if (earlier)
+      Object.assign(earlier, { status: "Pending", note: "", decidedAt: null, decidedById: null, updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
+    else db2.reviewCheckpoints.push(blankCheckpoint(project.contentId, id2, key2, reviewers));
+  }
+  ensureChecklist("post", "episode", id2);
+  logAudit(
+    actor,
+    kept2 ? "recorded" : "create",
+    "record",
+    id2,
+    `Episode ${n}: ${kept2 ? `${r.title} (kept its Content ID from before the workflow)` : input.title}`
+  );
+  return r;
+}
+function setEpisodeEditor(actor, episodeId, personId) {
+  const { ep } = episodeForWrite(actor, episodeId);
+  if (personId) requireCrew(personId, "The editor");
+  ep.episode.editorId = personId;
+  ep.assigneePersonId = personId;
+  ep.version += 1;
+  logAudit(actor, "editor", "record", episodeId, personId ?? "none");
+  commit();
+  return ep;
+}
+function setEpisodeLinks(actor, episodeId, links) {
+  const { ep } = episodeForWrite(actor, episodeId);
+  const info = ep.episode;
+  if (links.reviewLink !== void 0) {
+    const url2 = requireWebUrl(links.reviewLink, "The review link", true);
+    if (!url2 && (info.postStage === "Rough cut review" || info.postStage === "Final review"))
+      throw new RuleError("The episode is in review, so it needs its review link.");
+    info.reviewLink = url2;
+  }
+  if (links.finalFileLink !== void 0) info.finalFileLink = requireWebUrl(links.finalFileLink, "The final file link", true);
+  ep.version += 1;
+  logAudit(actor, "episode-links", "record", episodeId, Object.keys(links).join(", "));
+  commit();
+  return ep;
+}
+function startEditing(actor, episodeId) {
+  const { ep } = episodeForWrite(actor, episodeId);
+  if (ep.episode.stage !== "Post production" || ep.episode.postStage !== "Not started") throw new RuleError("Editing has already started.");
+  ep.episode.postStage = "Editing";
+  ep.stageEnteredAt = todayIso();
+  ep.version += 1;
+  logAudit(actor, "post-stage", "record", episodeId, "Not started \u2192 Editing");
+  commit();
+  return ep;
+}
+function setReadyForReview(actor, episodeId, ready) {
+  const { ep } = episodeForWrite(actor, episodeId);
+  if (ep.episode.postStage !== "Editing") throw new RuleError("Only a cut in Editing can be marked ready for review.");
+  ep.episode.readyForReview = ready;
+  ep.version += 1;
+  logAudit(actor, "post-ready", "record", episodeId, ready ? "Ready for review" : "Not ready for review");
+  commit();
+  return ep;
+}
+function sendForReview(actor, episodeId) {
+  const { ep } = episodeForWrite(actor, episodeId);
+  const gate = evaluateGate("Editing", "episode", episodeId);
+  if (!gate.passed) throw gateError("Editing", gate.missing);
+  const roughApproved = checkpoint(episodeId, "rough_cut")?.status === "Approved";
+  const next2 = roughApproved ? "final" : "rough_cut";
+  ep.episode.postStage = roughApproved ? "Final review" : "Rough cut review";
+  const c = checkpoint(episodeId, next2);
+  if (c && c.status !== "Pending")
+    Object.assign(c, { status: "Pending", decidedAt: null, decidedById: null, updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
+  ep.version += 1;
+  logAudit(actor, "post-stage", "record", episodeId, `Editing \u2192 ${ep.episode.postStage}`);
+  commit();
+  return ep;
+}
+function moveToMarketing(actor, episodeId) {
+  const { ep } = episodeForWrite(actor, episodeId);
+  const gate = evaluateGate("Post production", "episode", episodeId);
+  if (!gate.passed) throw gateError("Post production", gate.missing);
+  ep.episode.postStage = "Approved";
+  ep.episode.stage = "Marketing and distribution";
+  ep.episode.mdStage = "Release plan";
+  ep.stageEnteredAt = todayIso();
+  ep.version += 1;
+  ensureChecklist("release", "episode", episodeId);
+  logAudit(actor, "stage-advance", "record", episodeId, "Post production \u2192 Marketing and distribution");
+  commit();
+  return ep;
+}
+function approveReleasePlan(actor, episodeId) {
+  const { ep } = episodeForWrite(actor, episodeId);
+  if (ep.episode.stage !== "Marketing and distribution" || ep.episode.mdStage !== "Release plan")
+    throw new RuleError("This episode is not at its release plan.");
+  const open = openRequired("release", episodeId);
+  if (open.length)
+    throw gateError(
+      "Marketing and distribution",
+      open.map((l) => `Release plan: ${l}`)
+    );
+  ep.episode.mdStage = "Scheduled";
+  ep.version += 1;
+  logAudit(actor, "md-stage", "record", episodeId, "Release plan \u2192 Scheduled");
+  commit();
+  return ep;
+}
+function publishEpisode(actor, episodeId) {
+  const { ep, project } = episodeForWrite(actor, episodeId);
+  const gate = evaluateGate("Marketing and distribution", "episode", episodeId);
+  if (!gate.passed) throw gateError("Marketing and distribution", gate.missing);
+  ep.episode.mdStage = "Published";
+  ep.version += 1;
+  refreshProjectStatus(project);
+  logAudit(actor, "md-stage", "record", episodeId, "Published");
+  commit();
+  return ep;
+}
+function checkDistribution(input) {
+  const platform = input.platform.trim();
+  if (!platform) throw new RuleError("Name the platform, for example YouTube.");
+  if (platform.length > 100) throw new RuleError("Keep the platform's name short.");
+  const link = requireWebUrl(input.link ?? "", "The link", true);
+  if (input.status === "Published" && !link) throw new RuleError("A published entry needs its link.");
+  const date2 = input.date || null;
+  if (date2 !== null && !isIsoDate(date2)) throw new RuleError("Pick the date.");
+  return { platform, status: input.status, link, date: date2 };
+}
+function addDistribution(actor, episodeId, input) {
+  const { ep } = episodeForWrite(actor, episodeId);
+  if (ep.episode.stage !== "Marketing and distribution")
+    throw new RuleError("Distribution is logged once the episode reaches Marketing and distribution.");
+  const entry = {
+    id: localId("D", (x) => ep.episode.distribution.some((d) => d.id === x)),
+    ...checkDistribution(input)
+  };
+  ep.episode.distribution.push(entry);
+  ep.version += 1;
+  logAudit(actor, "distribution-add", "record", episodeId, `${entry.platform}: ${entry.status}`);
+  commit();
+  return entry;
+}
+function updateDistribution(actor, episodeId, entryId, input) {
+  const { ep } = episodeForWrite(actor, episodeId);
+  const entry = ep.episode.distribution.find((d) => d.id === entryId);
+  if (!entry) throw new RuleError("That distribution entry no longer exists.");
+  Object.assign(entry, checkDistribution(input));
+  ep.version += 1;
+  logAudit(actor, "distribution-update", "record", episodeId, `${entry.platform}: ${entry.status}`);
+  commit();
+  return entry;
+}
+function removeDistribution(actor, episodeId, entryId) {
+  const { ep } = episodeForWrite(actor, episodeId);
+  if (ep.episode.mdStage === "Published" && ep.episode.distribution.filter((d) => d.link).length <= 1)
+    throw new RuleError("A published episode keeps at least one distribution link.");
+  ep.episode.distribution = ep.episode.distribution.filter((d) => d.id !== entryId);
+  ep.version += 1;
+  logAudit(actor, "distribution-remove", "record", episodeId, entryId);
+  commit();
+}
+function setLearningNotes(actor, episodeId, notes) {
+  const { ep } = episodeForWrite(actor, episodeId);
+  if (notes.length > 2e4) throw new RuleError("Keep the learning notes under 20,000 characters.");
+  ep.episode.learningNotes = notes.trim();
+  ep.version += 1;
+  logAudit(actor, "learning-notes", "record", episodeId);
+  commit();
+  return ep;
 }
 
 // src/services/workflow/editNotes.ts
@@ -8805,7 +8916,7 @@ function setSessionBoards(actor, sessionId, choice) {
   commit();
   return session;
 }
-var requireStorage = (actor) => {
+var requireStorage2 = (actor) => {
   if (!hasStorageAccess(actor)) throw new RuleError("Only someone who may use storage can choose the drive.");
 };
 var requireDrive = (driveId) => {
@@ -8815,7 +8926,7 @@ var requireDrive = (driveId) => {
 };
 function setProjectDrive(actor, projectId, driveId) {
   const p = projectForWrite(actor, projectId);
-  requireStorage(actor);
+  requireStorage2(actor);
   if (driveId) requireDrive(driveId);
   p.workflow.storageDriveId = driveId || null;
   p.version += 1;
@@ -8831,7 +8942,7 @@ var footageOf = (sessionId) => getDb().allocations.find((a) => a.sessionId === s
 var assetsOf = (episodeId) => getDb().allocations.find((a) => a.contentId === episodeId && a.kind === "project" && !a.sessionId);
 function setSessionDrive(actor, sessionId, driveId) {
   const { session } = sessionForWrite(actor, sessionId);
-  requireStorage(actor);
+  requireStorage2(actor);
   if (driveId) requireDrive(driveId);
   session.storageDriveId = driveId || null;
   session.updatedAt = nowStamp();
@@ -8895,844 +9006,1059 @@ function setEpisodeAssets(actor, episodeId, input) {
 var unassignedDevotions = (projectId) => devotionPlacements(projectId).filter((x) => !x.sessionId && !x.locked);
 var onSession = (sessionId, plannedId) => rowsOf(sessionId).some((r) => r.plannedEpisodeId === plannedId);
 
-// src/services/documents/nudges.ts
-var GATED = /* @__PURE__ */ new Set([
-  "Brief: Logline",
-  "Brief: Core question or tension",
-  "Brief: Core message",
-  "Brief: Purpose of the event",
-  "Guest: Name",
-  "Guest: Contact"
-]);
-var KEPT_SECTIONS = ["Entry", "Guest"];
-function softNudges(projectId) {
-  const p = projectOf(projectId);
-  if (p.workflow.imported) return [];
-  const formType2 = p.workflow.formType;
+// src/services/productionInstances.ts
+var sheetOf = (id2) => id2 ? getDb().callSheets.find((c) => c.id === id2) : void 0;
+function dayLabel(s2) {
+  const name = s2.name?.trim() || `Day ${s2.sessionNumber}`;
+  const label = s2.instance?.label ?? s2.label;
+  return label ? `${name}, ${label}` : name;
+}
+function sessionInstance(s2) {
+  const cs = sheetOf(s2.callSheetId) ?? getDb().callSheets.find((c) => c.instanceId === s2.id);
+  const status2 = s2.archivedAt ? "cancelled" : s2.status === "Closed" ? "done" : cs?.status === "final" ? "published" : "draft";
+  const project = getRecord(s2.contentId);
+  const live = project?.category === "live";
+  return {
+    kind: live ? "day" : "session",
+    id: s2.id,
+    projectId: s2.contentId,
+    projectTitle: project?.title ?? s2.contentId,
+    label: live ? dayLabel(s2) : sessionName(s2),
+    date: s2.scheduledDate,
+    start: s2.startTime || cs?.startTime || cs?.callTime || "",
+    end: s2.endTime || cs?.wrapTime || "",
+    location: cs?.location || s2.venue,
+    status: status2,
+    callSheetId: cs?.id ?? null
+  };
+}
+function instancesBetween(actor, from, to) {
   const out = [];
-  for (const problem of formProblems(projectId, 1)) {
-    if (GATED.has(problem)) continue;
-    if (KEPT_SECTIONS.some((s2) => problem.startsWith(`${s2}:`))) out.push(`${problem} not filled in yet`);
+  for (const s2 of getDb().recordingSessions) {
+    if (!s2.scheduledDate || s2.scheduledDate < from || s2.scheduledDate > to) continue;
+    const p = getRecord(s2.contentId);
+    if (p && canView(actor, p)) out.push(sessionInstance(s2));
   }
-  const briefKey = briefKeyOf(formType2);
-  const brief = documentOf(projectId, "Development", briefKey);
-  const briefTitle = catalogEntry(formType2, "Development", briefKey)?.title ?? "brief";
-  if (catalogTypeOf(formType2) === "devotion") {
-    if (!brief) out.push(`The ${briefTitle} is not started yet`);
-    return out;
+  return out.sort((a, b) => (a.date ?? "").localeCompare(b.date ?? "") || a.start.localeCompare(b.start) || a.id.localeCompare(b.id));
+}
+var instanceLine = (i) => `${i.projectTitle}, ${i.label}${i.date && !i.label.includes(fmtDate(i.date)) ? `, ${fmtDate(i.date)}` : ""}`;
+
+// src/services/alerts.ts
+var OFFSETS = [
+  { minutes: 0, label: "At the time" },
+  { minutes: 60, label: "1 hour before" },
+  { minutes: 1440, label: "1 day before" },
+  { minutes: 10080, label: "1 week before" }
+];
+var EMAIL_MIN_OFFSET = 1440;
+var MAX_OFFSET = 60 * 24 * 60;
+var NAIROBI_OFFSET_MIN = 180;
+var DEFAULT_TIME = "08:00";
+function nairobiInstant(date2, time2) {
+  const [h, m] = (time2 || DEFAULT_TIME).split(":").map(Number);
+  const t2 = Date.parse(`${date2}T00:00:00Z`) + (h * 60 + m - NAIROBI_OFFSET_MIN) * 6e4;
+  return new Date(t2).toISOString();
+}
+function targetWhen(db2, type, id2) {
+  if (type === "instance") {
+    const s2 = db2.recordingSessions.find((x) => x.id === id2);
+    const inst = s2 ? sessionInstance(s2) : void 0;
+    if (!inst?.date || inst.status === "cancelled") return void 0;
+    return {
+      date: inst.date,
+      time: inst.start,
+      title: instanceLine(inst),
+      link: inst.callSheetId ? `#/callsheet/${inst.callSheetId}` : `#/session/${id2}`
+    };
   }
-  if (!brief) out.push(`The ${briefTitle} is not started yet`);
-  else
-    for (const page of pagesOf(brief.id)) if (!textOf(page.bodyHtml)) out.push(`${brief.title}: ${page.title || "a page"} not written yet`);
-  const greenlight2 = documentOf(projectId, "Development", "greenlight");
-  if (!greenlight2 || !documentHasContent(greenlight2.id)) out.push("Greenlight: the six criteria not written up yet");
-  if (plannedOf(projectId).length === 0 && catalogTypeOf(formType2) !== "live")
-    out.push(`No planned ${planLabels(formType2).many} listed yet`);
-  out.push(...openRequired("handoff", projectId).map((l) => `Handoff: ${l} not ticked yet`));
+  if (type === "callsheet") {
+    const cs = db2.callSheets.find((c) => c.id === id2);
+    return cs?.date ? { date: cs.date, time: cs.callTime, title: cs.title, link: `#/callsheet/${cs.id}` } : void 0;
+  }
+  if (type === "episode" || type === "project") {
+    const r = db2.records.find((x) => x.contentId === id2);
+    if (!r || r.archived) return void 0;
+    const due = r.episode ? r.stageDeadlines[r.episode.stage] : (r.workflow ? r.stageDeadlines[r.workflow.stage] : null) || r.deadline;
+    return due ? { date: due, time: "", title: `${r.title} due`, link: `#/record/${id2}` } : void 0;
+  }
+  const loan = (db2.loans ?? []).find((l) => l.id === id2);
+  return loan && loan.status === "out" ? { date: loan.expectedReturn, time: "", title: `${loan.borrowerName} returns ${loan.id}`, link: `#/equipment` } : void 0;
+}
+function nextFireAt(db2, r) {
+  if (!r.targetType) return r.date ? new Date(Date.parse(nairobiInstant(r.date, r.time)) - r.offsetMinutes * 6e4).toISOString() : null;
+  const when = targetWhen(db2, r.targetType, r.targetId ?? "");
+  if (!when) return null;
+  return new Date(Date.parse(nairobiInstant(when.date, when.time)) - r.offsetMinutes * 6e4).toISOString();
+}
+var TIME3 = /^([01]\d|2[0-3]):[0-5]\d$/;
+function canSeeTarget(actor, type, id2) {
+  const db2 = getDb();
+  if (type === "loan") return (db2.loans ?? []).some((l) => l.id === id2);
+  if (type === "callsheet") return visibleCallSheets(actor).some((c) => c.id === id2);
+  const rec2 = getRecord(id2);
+  if (rec2) return canView(actor, rec2.parentId && type === "instance" ? getRecord(rec2.parentId) ?? rec2 : rec2);
+  const s2 = db2.recordingSessions.find((x) => x.id === id2);
+  const p = s2 ? getRecord(s2.contentId) : void 0;
+  return !!p && canView(actor, p);
+}
+function check(actor, r) {
+  const db2 = getDb();
+  if (r.targetType) {
+    if (!r.targetId || !canSeeTarget(actor, r.targetType, r.targetId)) throw new RuleError("That item is not there to be reminded about.");
+    if (!targetWhen(db2, r.targetType, r.targetId))
+      throw new RuleError("That item has no date yet, so there is nothing to time a reminder from.");
+    if (r.repeat !== "none") throw new RuleError("Only a reminder standing alone repeats; one on an item follows its date.");
+  } else {
+    if (!r.title.trim()) throw new RuleError("Say what the reminder is for.");
+    if (!isIsoDate(r.date)) throw new RuleError("Pick the reminder's date.");
+  }
+  if (r.title.length > 200) throw new RuleError("Keep the reminder under 200 characters.");
+  if (r.time && !TIME3.test(r.time)) throw new RuleError("Enter the time as hours and minutes, for example 09:30.");
+  if (!Number.isInteger(r.offsetMinutes) || r.offsetMinutes < 0 || r.offsetMinutes > MAX_OFFSET)
+    throw new RuleError("A reminder can come from the moment itself up to 60 days before.");
+  if (!r.channels.length) throw new RuleError("Choose the bell, email, or both.");
+  if (r.channels.includes("email") && r.offsetMinutes < EMAIL_MIN_OFFSET)
+    throw new RuleError("Email reminders need to be a day or more ahead: the server sends email once each morning.");
+  if (!r.recipientIds.length) throw new RuleError("Choose who gets the reminder.");
+  if (r.recipientIds.length > 50) throw new RuleError("A reminder can go to up to 50 people.");
+  for (const pid of r.recipientIds) {
+    const p = db2.people.find((x) => x.personId === pid);
+    if (!p || p.status !== "active") throw new RuleError("Reminders go to active people.");
+  }
+  if (r.recipientIds.some((pid) => pid !== actor.personId) && !isHop(actor) && actor.role !== "CRW")
+    throw new RuleError("You can set reminders for yourself.");
+}
+function createReminder(actor, input) {
+  const at = (/* @__PURE__ */ new Date()).toISOString();
+  const r = {
+    id: localId("RM"),
+    targetType: input.targetType ?? null,
+    targetId: input.targetType ? input.targetId ?? null : null,
+    title: (input.title ?? "").trim(),
+    date: input.targetType ? "" : input.date ?? "",
+    time: input.time ?? "",
+    offsetMinutes: input.offsetMinutes ?? 0,
+    channels: [...new Set(input.channels ?? ["app"])],
+    recipientIds: [...new Set(input.recipientIds?.length ? input.recipientIds : [actor.personId])],
+    repeat: input.repeat ?? "none",
+    fireAt: null,
+    firedAt: null,
+    emailedAt: null,
+    createdBy: actor.personId,
+    createdAt: at,
+    updatedAt: at
+  };
+  if (r.targetType) r.time = "";
+  check(actor, r);
+  r.fireAt = nextFireAt(getDb(), r);
+  (getDb().calendarReminders ??= []).push(r);
+  logAudit(actor, "create", "reminder", r.id, r.targetId ?? r.title);
+  commit();
+  return r;
+}
+function ownReminder(actor, id2) {
+  const r = (getDb().calendarReminders ?? []).find((x) => x.id === id2);
+  if (!r) throw new RuleError("That reminder no longer exists.");
+  if (r.createdBy !== actor.personId && !isHop(actor)) throw new RuleError("Only the person who set this reminder can change it.");
+  return r;
+}
+function updateReminder(actor, id2, input) {
+  const r = ownReminder(actor, id2);
+  const next2 = {
+    ...r,
+    title: input.title !== void 0 ? input.title.trim() : r.title,
+    date: r.targetType ? "" : input.date ?? r.date,
+    time: r.targetType ? "" : input.time ?? r.time,
+    offsetMinutes: input.offsetMinutes ?? r.offsetMinutes,
+    channels: input.channels ? [...new Set(input.channels)] : r.channels,
+    recipientIds: input.recipientIds ? [...new Set(input.recipientIds)] : r.recipientIds,
+    repeat: input.repeat ?? r.repeat
+  };
+  check(actor, next2);
+  const fireAt = nextFireAt(getDb(), next2);
+  const moved = fireAt !== r.fireAt;
+  Object.assign(r, next2, { fireAt, updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
+  if (moved) {
+    r.firedAt = null;
+    r.emailedAt = null;
+  }
+  logAudit(actor, "update", "reminder", id2);
+  commit();
+  return r;
+}
+function deleteReminder(actor, id2) {
+  ownReminder(actor, id2);
+  getDb().calendarReminders = getDb().calendarReminders.filter((x) => x.id !== id2);
+  logAudit(actor, "delete", "reminder", id2);
+  commit();
+}
+var remindersOn = (type, id2) => (getDb().calendarReminders ?? []).filter((r) => r.targetType === type && r.targetId === id2);
+function advance(date2, repeat) {
+  if (repeat === "daily") return addDaysIso(date2, 1);
+  if (repeat === "weekly") return addDaysIso(date2, 7);
+  const [y, m, d] = date2.split("-").map(Number);
+  const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  return `${m === 12 ? y + 1 : y}-${String(m % 12 + 1).padStart(2, "0")}-${String(Math.min(d, last)).padStart(2, "0")}`;
+}
+function notifyPerson(db2, personId, n, at) {
+  db2.notifications ??= [];
+  if (db2.notifications.some((x) => x.personId === personId && x.key === n.key)) return false;
+  db2.notifications.push({ id: localId("NT"), personId, at, readAt: null, ...n });
+  return true;
+}
+function fireReminders(db2, now, emailUntil) {
+  const out = { inApp: 0, emails: [] };
+  const people = new Map(db2.people.map((p) => [p.personId, p]));
+  for (const r of db2.calendarReminders ?? []) {
+    const fireAt = nextFireAt(db2, r);
+    if (fireAt !== r.fireAt) {
+      r.fireAt = fireAt;
+      r.firedAt = null;
+      r.emailedAt = null;
+    }
+    if (!r.fireAt) continue;
+    const when = r.targetType ? targetWhen(db2, r.targetType, r.targetId ?? "") : void 0;
+    const title2 = when ? `${when.title}${r.title ? `: ${r.title}` : ""}` : r.title;
+    const day = when?.date ?? r.date;
+    const link = when?.link ?? null;
+    if (r.channels.includes("app") && !r.firedAt && r.fireAt <= now) {
+      for (const pid of r.recipientIds)
+        if (notifyPerson(
+          db2,
+          pid,
+          {
+            title: "Reminder",
+            body: `${title2}, ${day}${when?.time ? ` at ${when.time}` : ""}`,
+            link,
+            key: `reminder:${r.id}:${r.fireAt}`
+          },
+          now
+        ))
+          out.inApp++;
+      r.firedAt = now;
+    }
+    if (emailUntil && r.channels.includes("email") && !r.emailedAt && r.fireAt <= emailUntil) {
+      for (const pid of r.recipientIds) {
+        const p = people.get(pid);
+        if (!p?.email || p.status !== "active") continue;
+        out.emails.push({
+          personId: pid,
+          to: p.email,
+          subject: `Reminder: ${title2}`,
+          body: `Hi ${p.name.split(" ")[0]},
+
+${title2}: ${day}${when?.time ? ` at ${when.time}` : ""}.
+
+Open the Production Hub for the details.
+
+Dawn of Faith Production Hub`,
+          key: `reminder:${r.id}:${r.fireAt}:${pid}`
+        });
+      }
+      r.emailedAt = now;
+    }
+    const appDone = !r.channels.includes("app") || !!r.firedAt;
+    const emailDone = !r.channels.includes("email") || !!r.emailedAt;
+    if (appDone && emailDone && r.repeat !== "none" && !r.targetType) {
+      r.date = advance(r.date, r.repeat);
+      r.fireAt = nextFireAt(db2, r);
+      r.firedAt = null;
+      r.emailedAt = null;
+    }
+  }
   return out;
+}
+var notificationsFor = (personId) => (getDb().notifications ?? []).filter((n) => n.personId === personId).sort((a, b) => b.at.localeCompare(a.at));
+var unreadCount = (personId) => notificationsFor(personId).filter((n) => !n.readAt).length;
+function markNotificationsRead(actor, ids2) {
+  const at = (/* @__PURE__ */ new Date()).toISOString();
+  let n = 0;
+  for (const x of getDb().notifications ?? [])
+    if (x.personId === actor.personId && !x.readAt && (!ids2.length || ids2.includes(x.id))) {
+      x.readAt = at;
+      n++;
+    }
+  commit();
+  return n;
+}
+function pruneNotifications(db2, today = todayIso()) {
+  const before = (db2.notifications ?? []).length;
+  const cutoff = addDaysIso(today, -30);
+  db2.notifications = (db2.notifications ?? []).filter((n) => !n.readAt || n.readAt.slice(0, 10) >= cutoff);
+  return before - db2.notifications.length;
 }
 
-// src/services/workflow/recordingLog.ts
-function attendeesOf(session) {
-  if (session.attendees) return session.attendees;
-  const sheet = session.callSheetId ? getDb().callSheets.find((c) => c.id === session.callSheetId) : void 0;
-  return sheet ? [...sheet.crewPersonIds] : [];
+// src/services/people.ts
+var STAFF_CATEGORIES = ["CRW", "VOL", "PTR"];
+function requireStaffCategory(category2) {
+  if (!STAFF_CATEGORIES.includes(category2)) throw new RuleError("Choose Crew, Volunteer or Partner.");
 }
-var pickupsOf = (sessionId) => rowsOf(sessionId).filter((r) => r.status === "Pickup needed");
-var folderOf = (a) => a.folderPath?.trim() || a.label.trim() || a.contentId || a.id;
-var isProjectLink = (a) => !a.sessionId;
-function lineage(project) {
-  const out = [project.contentId];
-  if (project.parentId) out.push(project.parentId);
-  const root = rootOf(project).contentId;
-  if (!out.includes(root)) out.push(root);
-  return out;
+function generatePersonId(category2) {
+  const prefix = ROLES[category2].idPrefix;
+  const nums = getDb().people.filter((p) => p.personId.startsWith(prefix + "-")).map((p) => parseInt(p.personId.slice(prefix.length + 1), 10)).filter((n) => !Number.isNaN(n));
+  return claimId(`${prefix}-${pad((nums.length ? Math.max(...nums) : 0) + 1)}`);
 }
-function driveFolders(driveId) {
-  return getDb().allocations.filter((a) => a.driveId === driveId && isProjectLink(a)).map((a) => ({
-    allocationId: a.id,
-    driveId,
-    contentId: a.contentId,
-    title: a.contentId ? getRecord(a.contentId)?.title ?? a.contentId : a.label,
-    folderPath: folderOf(a)
-  })).sort((a, b) => a.folderPath.localeCompare(b.folderPath));
+function requireHop2(actor, what) {
+  requireCan(actor, "people.manage", what);
 }
-function projectLinks(project) {
-  const ids2 = lineage(project);
-  return getDb().allocations.filter((a) => isProjectLink(a) && a.contentId !== null && ids2.includes(a.contentId));
+function getPerson(id2) {
+  return getDb().people.find((p) => p.personId === id2);
 }
-function bestFolder(driveId, project) {
-  const folders = driveFolders(driveId);
-  for (const id2 of lineage(project)) {
-    const hit = folders.find((f2) => f2.contentId === id2);
-    if (hit) return hit;
+var nameOf2 = (id2) => id2 ? getPerson(id2)?.name ?? id2 : "Unassigned";
+function createLoginForPerson(actor, personId, email, password) {
+  requireHop2(actor, "create logins");
+  const p = getPerson(personId);
+  if (!p) throw new RuleError("Person not found.");
+  if (getDb().users.some((u) => u.personId === personId)) throw new RuleError("This person already has a login.");
+  if (!email.trim()) throw new RuleError("Enter an email address for the login.");
+  if (getDb().users.some((u) => u.email.toLowerCase() === email.trim().toLowerCase()))
+    throw new RuleError("That email is already used by another login.");
+  if (password.length < 4) throw new RuleError("Password must be at least 4 characters.");
+  const user = {
+    userId: `U-${pad(getDb().users.length + 1)}`,
+    personId,
+    email: email.trim(),
+    password,
+    // MOCK ONLY: hash with bcrypt once a real backend exists
+    role: p.category,
+    // auto-set from category, overridable later without touching the profile
+    active: true
+  };
+  getDb().users.push(user);
+  p.hasLogin = true;
+  logAudit(actor, "create-login", "person", personId, email);
+  commit();
+  return user;
+}
+function createPerson(actor, input, login2) {
+  requireHop2(actor, "add people");
+  requireStaffCategory(input.category);
+  if (!input.name.trim()) throw new RuleError("Enter a name.");
+  if (login2) {
+    if (!login2.email.trim()) throw new RuleError("Enter an email address for the login.");
+    if (getDb().users.some((u) => u.email.toLowerCase() === login2.email.trim().toLowerCase()))
+      throw new RuleError("That email is already used by another login.");
+    if (login2.password.length < 4) throw new RuleError("Password must be at least 4 characters.");
   }
-  const name = project.title.trim().toLowerCase();
-  const parent = project.parentId ? getRecord(project.parentId)?.title.trim().toLowerCase() : void 0;
-  return folders.find((f2) => {
-    const t2 = `${f2.title} ${f2.folderPath}`.toLowerCase();
-    return !!name && t2.includes(name) || !!parent && t2.includes(parent);
+  const person2 = {
+    personId: generatePersonId(input.category),
+    category: input.category,
+    name: input.name.trim(),
+    email: input.email.trim(),
+    phone: input.phone.trim(),
+    skills: input.skills,
+    equipmentFamiliarity: input.equipmentFamiliarity,
+    hasLogin: false,
+    status: "active",
+    createdAt: todayIso()
+  };
+  getDb().people.push(person2);
+  logAudit(actor, "create", "person", person2.personId, person2.name);
+  commit();
+  if (login2) createLoginForPerson(actor, person2.personId, login2.email, login2.password);
+  return person2;
+}
+var PERSON_EDITABLE = ["name", "email", "phone", "skills", "equipmentFamiliarity"];
+function updatePerson(actor, personId, input) {
+  requireHop2(actor, "edit people");
+  const patch = pickKeys(input, PERSON_EDITABLE);
+  const p = getPerson(personId);
+  if (!p) throw new RuleError("Person not found.");
+  if (p.category === "HOP" && !isHop(actor))
+    throw new RuleError("Only the Head of Production can change the Head of Production's details.");
+  if (redactPerson(actor, p).contactHidden) {
+    delete patch.email;
+    delete patch.phone;
+    delete patch.equipmentFamiliarity;
+  }
+  if (patch.name !== void 0 && !patch.name.trim()) throw new RuleError("Enter a name.");
+  Object.assign(p, patch);
+  logAudit(actor, "update", "person", personId, Object.keys(patch).join(", "));
+  commit();
+  return p;
+}
+function updateOwnProfile(actor, patch) {
+  const p = getPerson(actor.personId);
+  if (!p) throw new RuleError("Person not found.");
+  if (patch.name !== void 0 && !patch.name.trim()) throw new RuleError("Enter your name.");
+  if (patch.photoUrl && patch.photoUrl.length > 4e5) throw new RuleError("That photo is too large. Choose a smaller image.");
+  if (patch.photoUrl && !patch.photoUrl.startsWith("data:image/") && !STORED_FILE.test(patch.photoUrl))
+    throw new RuleError("Choose a photo from your device.");
+  if (patch.quietHours) {
+    const hm = /^([01]\d|2[0-3]):[0-5]\d$/;
+    if (!hm.test(patch.quietHours.from) || !hm.test(patch.quietHours.to))
+      throw new RuleError("Enter quiet hours as hours and minutes, for example 21:00 to 07:00.");
+    if (patch.quietHours.from === patch.quietHours.to) throw new RuleError("Quiet hours need a different start and end.");
+  }
+  if (patch.reminderLead !== void 0 && !OFFSETS.some((o) => o.minutes === patch.reminderLead))
+    throw new RuleError("Choose when reminders start from the list.");
+  Object.assign(p, {
+    ...patch.name !== void 0 ? { name: patch.name.trim() } : {},
+    ...patch.email !== void 0 ? { email: patch.email.trim() } : {},
+    ...patch.phone !== void 0 ? { phone: patch.phone.trim() } : {},
+    ...patch.notifyEmail !== void 0 ? { notifyEmail: patch.notifyEmail } : {},
+    ...patch.notifySms !== void 0 ? { notifySms: patch.notifySms } : {},
+    ...patch.photoUrl !== void 0 ? { photoUrl: patch.photoUrl } : {},
+    ...patch.fontSize !== void 0 ? { fontSize: patch.fontSize } : {},
+    ...patch.density !== void 0 ? { density: patch.density } : {},
+    ...patch.quietHours !== void 0 ? { quietHours: patch.quietHours } : {},
+    ...patch.reminderLead !== void 0 ? { reminderLead: patch.reminderLead } : {}
+  });
+  logAudit(actor, "update-profile", "person", actor.personId, Object.keys(patch).join(", "));
+  commit();
+  return p;
+}
+function updatePersonCategory(actor, personId, newCategory) {
+  requireHop2(actor, "change someone's category");
+  requireStaffCategory(newCategory);
+  const p = getPerson(personId);
+  if (!p) throw new RuleError("Person not found.");
+  if (p.category === "HOP") throw new RuleError("The Head of Production category cannot be changed here.");
+  requireNotBeyond(actor, p.category, personId, "change the category");
+  requireNotBeyond(actor, newCategory, personId, "change the category");
+  const from = p.category;
+  p.category = newCategory;
+  const u = getDb().users.find((x) => x.personId === personId);
+  if (u) u.role = newCategory;
+  logAudit(actor, "change-category", "person", personId, `${from} \u2192 ${newCategory}`);
+  commit();
+  return p;
+}
+function deactivatePerson(actor, personId) {
+  requireHop2(actor, "deactivate people");
+  const p = getPerson(personId);
+  if (!p) throw new RuleError("Person not found.");
+  if (p.category === "HOP") throw new RuleError("The Head of Production cannot be deactivated.");
+  requireNotBeyond(actor, p.category, personId, "deactivate a login");
+  p.status = "inactive";
+  const u = getDb().users.find((x) => x.personId === personId);
+  if (u) u.active = false;
+  logAudit(actor, "deactivate", "person", personId);
+  commit();
+}
+function reactivatePerson(actor, personId) {
+  requireHop2(actor, "reactivate people");
+  const p = getPerson(personId);
+  if (!p) throw new RuleError("Person not found.");
+  requireNotBeyond(actor, p.category, personId, "reactivate a login");
+  p.status = "active";
+  const u = getDb().users.find((x) => x.personId === personId);
+  if (u) u.active = true;
+  logAudit(actor, "reactivate", "person", personId);
+  commit();
+}
+function projectHistory(personId) {
+  return getDb().members.filter((m) => m.personId === personId).map((member) => ({ member, record: getRecord(member.projectContentId) })).filter((x) => !!x.record);
+}
+function assignToProject(actor, personId, contentId, roleOnProject, canComment2) {
+  requireHop2(actor, "assign people to projects");
+  const rec2 = getRecord(contentId);
+  if (!rec2) throw new RuleError("Project not found.");
+  if (getDb().members.some((m) => m.personId === personId && m.projectContentId === contentId))
+    throw new RuleError("Already assigned to this project.");
+  const roles2 = cleanRoles(roleOnProject.split(","));
+  getDb().members.push({ personId, projectContentId: contentId, roleOnProject: roles2.join(", ") || "Team member", canComment: canComment2 });
+  logAudit(actor, "assign", "person", personId, contentId);
+  commit();
+}
+function workOwnedOn(personId, contentId) {
+  const under = getDb().records.filter((r) => !r.archived && (r.contentId === contentId || r.contentId.startsWith(`${contentId}-`)));
+  return {
+    stages: under.reduce(
+      (n, r) => n + Object.values(r.stageAssignees).filter((list) => list.some((o) => o.personId === personId)).length,
+      0
+    ),
+    tasks: under.reduce((n, r) => n + r.tasks.filter((t2) => t2.assigneePersonId === personId && !t2.done).length, 0)
+  };
+}
+function removeFromProject(actor, personId, contentId) {
+  requireHop2(actor, "remove people from projects");
+  const owned = workOwnedOn(personId, contentId);
+  if (owned.stages || owned.tasks) {
+    const parts = [
+      owned.stages ? `${owned.stages} stage${owned.stages > 1 ? "s" : ""}` : "",
+      owned.tasks ? `${owned.tasks} open task${owned.tasks > 1 ? "s" : ""}` : ""
+    ].filter(Boolean).join(" and ");
+    throw new RuleError(`${getPerson(personId)?.name ?? personId} still owns ${parts} on this project. Hand them to someone else first.`);
+  }
+  getDb().members = getDb().members.filter((m) => !(m.personId === personId && m.projectContentId === contentId));
+  logAudit(actor, "unassign", "person", personId, contentId);
+  commit();
+}
+function crewAvailableOn(date2) {
+  const db2 = getDb();
+  const total = db2.people.filter((p) => p.category === "CRW" && p.status === "active");
+  const busy = new Set(db2.callSheets.filter((cs) => cs.date === date2).flatMap((cs) => cs.crewPersonIds));
+  return { available: total.filter((p) => !busy.has(p.personId)), total };
+}
+
+// src/services/equipment-reports.ts
+function inventoryReport(category2, includeOutOfService) {
+  const groups = [];
+  for (const cat of EQUIP_CATEGORIES) {
+    if (category2 !== "all" && cat.key !== category2) continue;
+    const items = getDb().equipment.filter((i) => i.category === cat.key && (includeOutOfService || i.baseStatus === "active" || i.baseStatus === "in-repair")).sort((a, b) => a.id.localeCompare(b.id));
+    if (!items.length) continue;
+    const rows2 = items.map((i) => ({
+      id: i.id,
+      name: i.name,
+      detail: [i.make, i.model].filter(Boolean).join(" "),
+      serial: [i.serialNumber, i.unitLabel].filter(Boolean).join(" ") || "",
+      qty: i.quantityTotal,
+      free: qtyFree(i),
+      condition: i.condition,
+      status: displayStatus(i).label,
+      cost: i.unitCost,
+      vendor: i.vendor,
+      purchased: i.purchaseDate ? fmtShort(i.purchaseDate) : "",
+      packaging: i.packaging,
+      accessories: i.accessories
+    }));
+    groups.push({ category: cat.key, label: cat.label, rows: rows2, units: rows2.reduce((n, r) => n + r.qty, 0) });
+  }
+  return groups;
+}
+function groupByFamily(items) {
+  const map = /* @__PURE__ */ new Map();
+  for (const i of items.filter((x) => x.trackingType === "aggregate")) {
+    const k = familyOf(i);
+    if (!map.has(k)) map.set(k, { key: k, name: i.name, category: i.category, items: [] });
+    map.get(k).items.push(i);
+  }
+  for (const f2 of map.values()) f2.items.sort((a, b) => (a.purchaseDate ?? a.createdAt).localeCompare(b.purchaseDate ?? b.createdAt));
+  return [...map.values()];
+}
+var modelKeyOf = (i) => {
+  const make = i.make.trim().toLowerCase();
+  const model = i.model.trim().toLowerCase();
+  return make && model ? `${i.category}::${make}::${model}` : null;
+};
+function groupSerializedByModel(items) {
+  const map = /* @__PURE__ */ new Map();
+  for (const i of items.filter((x) => x.trackingType === "serialized")) {
+    const k = modelKeyOf(i);
+    if (!k) continue;
+    if (!map.has(k)) map.set(k, { key: k, name: `${i.make.trim()} ${i.model.trim()}`.trim(), category: i.category, items: [] });
+    map.get(k).items.push(i);
+  }
+  for (const f2 of map.values()) f2.items.sort((a, b) => (a.purchaseDate ?? a.createdAt).localeCompare(b.purchaseDate ?? b.createdAt));
+  return [...map.values()];
+}
+var itemHistory = (id2) => getDb().equipmentHistory.map((h, n) => ({ h, n })).filter(({ h }) => h.equipmentId === id2).sort((a, b) => b.h.at.localeCompare(a.h.at) || b.n - a.n).map(({ h }) => h);
+var itemIncidents = (id2) => getDb().incidents.filter((i) => i.equipmentId === id2).sort((a, b) => b.at.localeCompare(a.at));
+var allIncidents = () => [...getDb().incidents].sort((a, b) => b.at.localeCompare(a.at));
+
+// src/services/equipment-manifests.ts
+var getManifest = (id2) => getDb().manifests.find((m) => m.id === id2);
+function addDays(iso2, n) {
+  const [y, m, d] = iso2.split("-").map(Number);
+  const dt = new Date(y, m - 1, d + n);
+  const p = (x) => String(x).padStart(2, "0");
+  return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`;
+}
+function checkLine(item2, qty, from, to, excludeManifestId) {
+  if (!item2) throw new RuleError("That item no longer exists.");
+  if (!Number.isInteger(qty) || qty < 1) throw new RuleError("Quantity must be at least 1.");
+  if (item2.trackingType === "serialized" && qty !== 1) throw new RuleError(`${item2.name} is a single unit.`);
+  if (item2.baseStatus !== "active") {
+    const word = item2.baseStatus === "in-repair" ? "in repair" : item2.baseStatus;
+    throw new RuleError(`${item2.name} (${item2.id}) is ${word} and cannot be assigned.`);
+  }
+  const a = availabilityOn(item2, from, to, excludeManifestId);
+  if (a.availableQty < qty) {
+    throw new RuleError(
+      item2.trackingType === "aggregate" && a.availableQty > 0 ? `Only ${a.availableQty} of ${item2.name} (${item2.id}) are free for those dates. ${a.reason}.` : `${item2.name} (${item2.id}) is not free for those dates. ${a.reason}.`
+    );
+  }
+  return item2;
+}
+function loadManifest(actor, id2) {
+  requireGearAccess(actor);
+  const m = getManifest(id2);
+  if (!m) throw new RuleError("Checkout list not found.");
+  const rec2 = getRecord(m.contentId);
+  if (rec2 ? !canWrite(actor, rec2) : !isHop(actor)) throw new RuleError("You are not attached to this project.");
+  return m;
+}
+function newLine(item2, quantity) {
+  return {
+    equipmentId: item2.id,
+    quantity,
+    conditionOut: item2.condition,
+    photosOut: [],
+    conditionIn: null,
+    photosIn: [],
+    returnedGood: 0,
+    damaged: 0,
+    lost: 0
+  };
+}
+function mergeRequests(lines) {
+  const map = /* @__PURE__ */ new Map();
+  for (const l of lines) map.set(l.equipmentId, (map.get(l.equipmentId) ?? 0) + l.quantity);
+  return [...map].map(([equipmentId, quantity]) => ({ equipmentId, quantity }));
+}
+function createManifest(actor, input) {
+  requireGearAccess(actor);
+  const rec2 = getRecord(input.contentId);
+  if (!rec2) throw new RuleError("Choose the project this gear is for.");
+  if (!canWrite(actor, rec2)) throw new RuleError("You are not attached to this project.");
+  if (!input.date) throw new RuleError("Choose a date.");
+  const lines = mergeRequests(input.lines);
+  if (!lines.length) throw new RuleError("Add at least one item.");
+  const outside = input.destination === "outside" || input.status === "checked-out";
+  const expectedReturn = outside ? input.expectedReturn || addDays(input.date, getDb().settings.checkoutReturnDays) : null;
+  if (expectedReturn && expectedReturn < input.date) throw new RuleError("The return date cannot be before the start date.");
+  const to = expectedReturn ?? input.date;
+  const responsible = input.responsiblePersonId ?? actor.personId;
+  const person2 = getPerson(responsible);
+  if (!person2 || person2.status !== "active" || person2.category !== "CRW" && person2.category !== "HOP")
+    throw new RuleError("The person responsible must be active crew.");
+  const items = lines.map((l) => checkLine(getItem(l.equipmentId), l.quantity, input.date, to));
+  const m = {
+    id: claimId(`DOF-MF-${pad(nextCounter("manifest"))}`),
+    contentId: input.contentId,
+    callSheetId: input.callSheetId ?? null,
+    destination: outside ? "outside" : "studio",
+    status: input.status,
+    date: input.date,
+    expectedReturn,
+    responsiblePersonId: responsible,
+    lines: lines.map((l, i) => newLine(items[i], l.quantity)),
+    notes: input.notes ?? "",
+    createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+    createdBy: actor.personId,
+    checkedOutAt: input.status === "checked-out" ? (/* @__PURE__ */ new Date()).toISOString() : null,
+    returnedAt: null
+  };
+  getDb().manifests.push(m);
+  for (const l of m.lines)
+    hist(
+      actor,
+      l.equipmentId,
+      m.status === "checked-out" ? "checked-out" : "assigned",
+      `${l.quantity > 1 ? `${l.quantity} units, ` : ""}${m.contentId}, ${fmtShort(m.date)}`,
+      { contentId: m.contentId, manifestId: m.id }
+    );
+  logAudit(actor, "create", "manifest", m.id, `${m.status}, ${m.lines.length} lines`);
+  syncSheetEquipment(m.callSheetId);
+  commit();
+  return m;
+}
+function addLine(actor, manifestId, equipmentId, quantity) {
+  const m = loadManifest(actor, manifestId);
+  if (m.status !== "assigned") throw new RuleError("Items can only be added before the gear goes out.");
+  const existing = m.lines.find((l) => l.equipmentId === equipmentId);
+  const item2 = checkLine(getItem(equipmentId), (existing?.quantity ?? 0) + quantity, m.date, m.expectedReturn ?? m.date, m.id);
+  if (existing) existing.quantity += quantity;
+  else m.lines.push(newLine(item2, quantity));
+  hist(actor, equipmentId, "assigned", `${quantity > 1 ? `${quantity} units, ` : ""}${m.contentId}, ${fmtShort(m.date)}`, {
+    contentId: m.contentId,
+    manifestId: m.id
+  });
+  syncSheetEquipment(m.callSheetId);
+  commit();
+  return m;
+}
+function addLines(actor, manifestId, lines) {
+  const m = loadManifest(actor, manifestId);
+  if (m.status !== "assigned") throw new RuleError("Items can only be added before the gear goes out.");
+  const merged = mergeRequests(lines);
+  for (const l of merged) {
+    const cur = m.lines.find((x) => x.equipmentId === l.equipmentId)?.quantity ?? 0;
+    checkLine(getItem(l.equipmentId), cur + l.quantity, m.date, m.expectedReturn ?? m.date, m.id);
+  }
+  for (const l of merged) addLine(actor, manifestId, l.equipmentId, l.quantity);
+  return m;
+}
+function removeLine(actor, manifestId, equipmentId) {
+  const m = loadManifest(actor, manifestId);
+  if (m.status !== "assigned") throw new RuleError("Items can only be removed before the gear goes out.");
+  m.lines = m.lines.filter((l) => l.equipmentId !== equipmentId);
+  hist(actor, equipmentId, "released", `Taken off ${m.id}`, { contentId: m.contentId, manifestId: m.id });
+  if (!m.lines.length) m.status = "released";
+  syncSheetEquipment(m.callSheetId);
+  commit();
+  return m;
+}
+function goneOutDefaults(m) {
+  return m.expectedReturn ?? addDays(m.date > todayIso() ? m.date : todayIso(), getDb().settings.checkoutReturnDays);
+}
+function markGoneOut(actor, manifestId, opts = {}) {
+  const m = loadManifest(actor, manifestId);
+  if (m.status !== "assigned") throw new RuleError("Only assigned gear can be marked as gone out.");
+  const expectedReturn = opts.expectedReturn || goneOutDefaults(m);
+  if (expectedReturn < m.date) throw new RuleError("The return date cannot be before the start date.");
+  const responsible = opts.responsiblePersonId ?? m.responsiblePersonId;
+  const person2 = getPerson(responsible);
+  if (!person2 || person2.status !== "active") throw new RuleError("The person responsible must be active crew.");
+  const items = m.lines.map((l) => checkLine(getItem(l.equipmentId), l.quantity, m.date, expectedReturn, m.id));
+  const photoAtts = m.lines.map((l) => (opts.photos?.[l.equipmentId] ?? []).map((p) => makeAttachment(actor, p)));
+  m.lines.forEach((l, i) => {
+    l.conditionOut = items[i].condition;
+    l.photosOut.push(...photoAtts[i]);
+    hist(actor, l.equipmentId, "checked-out", `${m.contentId}, back by ${fmtShort(expectedReturn)}`, {
+      contentId: m.contentId,
+      manifestId: m.id
+    });
+  });
+  m.status = "checked-out";
+  m.destination = "outside";
+  m.expectedReturn = expectedReturn;
+  m.responsiblePersonId = responsible;
+  m.checkedOutAt = (/* @__PURE__ */ new Date()).toISOString();
+  logAudit(actor, "check-out", "manifest", m.id, `back by ${expectedReturn}`);
+  commit();
+  return m;
+}
+var nonNeg = (n) => Number.isInteger(n) && n >= 0;
+function checkIn(actor, manifestId, returns) {
+  const m = loadManifest(actor, manifestId);
+  if (m.status !== "checked-out") throw new RuleError("This gear is not checked out.");
+  const plans = m.lines.map((line3) => {
+    const item2 = getItem(line3.equipmentId);
+    if (!item2) throw new RuleError("An item on this list no longer exists.");
+    const r = returns.find((x) => x.equipmentId === line3.equipmentId);
+    if (!r) throw new RuleError(`Record the return for ${item2.name}.`);
+    if (![r.returnedGood, r.damaged, r.lost].every(nonNeg)) throw new RuleError(`Counts for ${item2.name} must be whole numbers.`);
+    if (r.returnedGood + r.damaged + r.lost !== line3.quantity)
+      throw new RuleError(`${item2.name}: returned, damaged and lost must add up to ${line3.quantity}.`);
+    let good = r.returnedGood;
+    let damaged = r.damaged;
+    const lost = r.lost;
+    let cond = null;
+    if (item2.trackingType === "serialized") {
+      if (good + damaged > 0) {
+        if (!r.conditionIn) throw new RuleError(`Choose the condition ${item2.name} came back in.`);
+        cond = r.conditionIn;
+        if (good === 1 && conditionRank(cond) > conditionRank(line3.conditionOut)) {
+          good = 0;
+          damaged = 1;
+        }
+      }
+    } else if (good > 0 && r.conditionIn) {
+      cond = r.conditionIn;
+    }
+    const desc = (r.description ?? "").trim();
+    if (damaged + lost > 0 && !desc) throw new RuleError(`Describe what happened to ${item2.name}.`);
+    if (damaged + lost > item2.quantityTotal) throw new RuleError(`${item2.name}: more units damaged or lost than the batch holds.`);
+    return {
+      line: line3,
+      item: item2,
+      good,
+      damaged,
+      lost,
+      cond,
+      desc,
+      repair: !!r.sendToRepair && item2.trackingType === "serialized" && damaged === 1,
+      photos: (r.photos ?? []).map((p) => makeAttachment(actor, p))
+    };
+  });
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  for (const p of plans) {
+    p.line.returnedGood = p.good;
+    p.line.damaged = p.damaged;
+    p.line.lost = p.lost;
+    p.line.conditionIn = p.cond;
+    p.line.photosIn.push(...p.photos);
+    if (p.item.trackingType === "serialized") {
+      if (p.cond) p.item.condition = p.cond;
+    } else {
+      let bd = removeWorstFirst(p.item.conditionBreakdown ?? {}, p.damaged + p.lost);
+      if (p.good > 0 && p.cond && p.cond !== p.line.conditionOut) {
+        bd = addUnits(removeFromThenWorst(bd, p.line.conditionOut, p.good), p.good, p.cond);
+      }
+      applyConditionBreakdown(p.item, bd);
+      p.item.quantityTotal -= p.damaged + p.lost;
+      p.item.quantityDamaged += p.damaged;
+      p.item.quantityLost += p.lost;
+    }
+    const addIncident = (type, qty) => {
+      const inc = {
+        id: `DOF-INC-${pad(nextCounter("incident"))}`,
+        equipmentId: p.item.id,
+        at: now,
+        type,
+        quantity: qty,
+        description: p.desc,
+        personId: m.responsiblePersonId,
+        contentId: m.contentId,
+        manifestId: m.id
+      };
+      getDb().incidents.push(inc);
+      hist(actor, p.item.id, "incident", `${type === "damage" ? "Damaged" : "Lost"}${qty > 1 ? ` (${qty} units)` : ""}: ${p.desc}`, {
+        contentId: m.contentId,
+        manifestId: m.id
+      });
+    };
+    if (p.damaged) addIncident("damage", p.damaged);
+    if (p.lost) {
+      addIncident("loss", p.lost);
+      if (p.item.trackingType === "serialized") p.item.baseStatus = "lost";
+    }
+    if (p.repair) {
+      p.item.baseStatus = "in-repair";
+      hist(actor, p.item.id, "repair-start", `Sent for repair after ${m.contentId}`, { contentId: m.contentId, manifestId: m.id });
+    }
+    hist(
+      actor,
+      p.item.id,
+      "checked-in",
+      `${m.contentId}${p.cond ? `, back in ${p.cond} condition` : ""}${p.good && p.item.trackingType === "aggregate" ? `, ${p.good} returned` : ""}`,
+      { contentId: m.contentId, manifestId: m.id }
+    );
+  }
+  m.status = "returned";
+  m.returnedAt = now;
+  logAudit(actor, "check-in", "manifest", m.id, plans.some((p) => p.damaged + p.lost) ? "with incidents" : "clean");
+  syncSheetEquipment(m.callSheetId);
+  commit();
+  return m;
+}
+function attachManifest(actor, manifestId, contentId) {
+  requireGearAccess(actor);
+  const m = getManifest(manifestId);
+  if (!m) throw new RuleError("Checkout list not found.");
+  const target = getRecord(contentId);
+  if (!target) throw new RuleError("Project not found.");
+  const current3 = getRecord(m.contentId);
+  if (!canWrite(actor, target) || (current3 ? !canWrite(actor, current3) : !isHop(actor)))
+    throw new RuleError("You are not attached to both projects.");
+  if (m.callSheetId) throw new RuleError("This list belongs to a call sheet. It moves with that sheet.");
+  if (m.status === "released") throw new RuleError("This list was released, so it cannot be attached.");
+  if (m.contentId === contentId) throw new RuleError("This list is already attached here.");
+  const from = m.contentId;
+  m.contentId = contentId;
+  for (const l of m.lines)
+    hist(actor, l.equipmentId, "edited", `${m.id} moved from ${from} to ${contentId}`, { contentId, manifestId: m.id });
+  logAudit(actor, "attach", "manifest", m.id, `${from} to ${contentId}`);
+  commit();
+  return m;
+}
+var checkedOutFor = (contentId) => getDb().manifests.filter((m) => m.contentId === contentId && m.status === "checked-out");
+var reservedFor = (contentId) => getDb().manifests.filter((m) => m.contentId === contentId && m.status === "assigned");
+function releaseReservedFor(actor, contentId) {
+  const lists = reservedFor(contentId);
+  for (const m of lists) {
+    m.status = "released";
+    for (const l of m.lines) hist(actor, l.equipmentId, "released", `Released: ${contentId} was deleted`, { contentId, manifestId: m.id });
+    logAudit(actor, "release", "manifest", m.id, "project deleted");
+    syncSheetEquipment(m.callSheetId);
+  }
+  return lists.length;
+}
+function releaseManifest(actor, manifestId) {
+  const m = loadManifest(actor, manifestId);
+  if (m.status !== "assigned") throw new RuleError("Only assigned gear can be released. Checked-out gear is checked in.");
+  m.status = "released";
+  for (const l of m.lines)
+    hist(actor, l.equipmentId, "released", `Released from ${m.contentId}`, { contentId: m.contentId, manifestId: m.id });
+  logAudit(actor, "release", "manifest", m.id);
+  syncSheetEquipment(m.callSheetId);
+  commit();
+  return m;
+}
+function addLinePhoto(actor, manifestId, equipmentId, input) {
+  const m = loadManifest(actor, manifestId);
+  if (m.status !== "assigned" && m.status !== "checked-out") throw new RuleError("Photos are added while the gear is out.");
+  const line3 = m.lines.find((l) => l.equipmentId === equipmentId);
+  if (!line3) throw new RuleError("That item is not on this list.");
+  line3.photosOut.push(makeAttachment(actor, input));
+  commit();
+}
+function listManifests(actor) {
+  requireGearAccess(actor);
+  return getDb().manifests.filter((m) => {
+    if (isHop(actor) || m.responsiblePersonId === actor.personId) return true;
+    const rec2 = getRecord(m.contentId);
+    return !!rec2 && canView(actor, rec2);
+  }).sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+}
+var manifestsForContent = (contentId) => getDb().manifests.filter((m) => m.contentId === contentId && m.status !== "released").sort((a, b) => a.date.localeCompare(b.date));
+var overdueManifests = () => getDb().manifests.filter(isOverdue).sort((a, b) => (a.expectedReturn ?? "").localeCompare(b.expectedReturn ?? ""));
+var checkedOutManifests = () => getDb().manifests.filter((m) => m.status === "checked-out").sort((a, b) => (a.expectedReturn ?? "").localeCompare(b.expectedReturn ?? ""));
+function manifestSummary(m) {
+  const units = m.lines.reduce((n, l) => n + l.quantity, 0);
+  return `${m.lines.length} item${m.lines.length === 1 ? "" : "s"}, ${units} unit${units === 1 ? "" : "s"}`;
+}
+function manifestStatusView(m) {
+  if (isOverdue(m)) return { label: "Overdue", tone: "bad" };
+  switch (m.status) {
+    case "assigned":
+      return { label: "Assigned", tone: "accent" };
+    case "checked-out":
+      return { label: "Checked out", tone: "warn" };
+    case "returned":
+      return { label: "Returned", tone: "ok" };
+    case "released":
+      return { label: "Released", tone: "" };
+  }
+}
+function pickerRows(from, to, excludeManifestId) {
+  const all = getDb().equipment;
+  const rows2 = [];
+  for (const i of all.filter((x) => x.trackingType === "serialized")) {
+    const a = availabilityOn(i, from, to, excludeManifestId);
+    rows2.push({
+      key: i.id,
+      name: i.name,
+      sub: [i.make, i.model].filter(Boolean).join(" ") + (i.make || i.model ? ", " : "") + i.id,
+      category: i.category,
+      item: i,
+      availableQty: a.availableQty,
+      totalQty: 1,
+      state: a.state,
+      reason: a.reason
+    });
+  }
+  for (const f2 of groupByFamily(all)) {
+    const batches = f2.items.map((item2) => {
+      const a = availabilityOn(item2, from, to, excludeManifestId);
+      return { item: item2, availableQty: a.availableQty, state: a.state, reason: a.reason };
+    });
+    const available = batches.reduce((n, b) => n + b.availableQty, 0);
+    const total = f2.items.filter((b) => b.baseStatus === "active").reduce((n, b) => n + b.quantityTotal, 0);
+    rows2.push({
+      key: f2.key,
+      name: f2.name,
+      sub: `${f2.key}, ${f2.items.length} batch${f2.items.length === 1 ? "" : "es"}`,
+      category: f2.category,
+      batches,
+      availableQty: available,
+      totalQty: total,
+      state: available === 0 ? "conflict" : available < total ? "partial" : "ok",
+      reason: available === 0 ? "None free for those dates" : ""
+    });
+  }
+  return rows2.sort((a, b) => a.name.localeCompare(b.name));
+}
+function allocateFifo(familyKey, quantity, from, to, excludeManifestId) {
+  const fam = groupByFamily(getDb().equipment).find((f2) => f2.key === familyKey);
+  if (!fam) throw new RuleError("That item family no longer exists.");
+  let need = quantity;
+  const lines = [];
+  for (const b of fam.items) {
+    if (need <= 0) break;
+    const a = availabilityOn(b, from, to, excludeManifestId);
+    const take = Math.min(a.availableQty, need);
+    if (take > 0) {
+      lines.push({ equipmentId: b.id, quantity: take });
+      need -= take;
+    }
+  }
+  if (need > 0) throw new RuleError(`Only ${quantity - need} of ${fam.name} are free for those dates.`);
+  return lines;
+}
+function syncSheetEquipment(sheetId) {
+  if (!sheetId) return;
+  const cs = getDb().callSheets.find((c) => c.id === sheetId);
+  if (!cs) return;
+  const m = manifestForSheet(sheetId);
+  cs.equipmentIds = m && m.status !== "released" ? m.lines.map((l) => l.equipmentId) : [];
+}
+function manifestForSheet(sheetId) {
+  return getDb().manifests.filter((m) => m.callSheetId === sheetId && m.status !== "released").sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+}
+function addGearToSheet(actor, sheet, lines) {
+  const m = bookOnSheet(actor, sheet, lines);
+  lockInstanceOfSheet(actor, sheet.id);
+  return m;
+}
+function bookOnSheet(actor, sheet, lines) {
+  requireGearAccess(actor);
+  const cs = getDb().callSheets.find((c) => c.id === sheet.id);
+  if (!cs) throw new RuleError("Call sheet not found.");
+  assertSheetOpen(cs);
+  const project = getRecord(cs.contentId);
+  if (!project || !canWrite(actor, project)) throw new RuleError("You have view-only access to this project.");
+  const existing = manifestForSheet(cs.id);
+  if (existing) {
+    if (existing.status !== "assigned")
+      throw new RuleError("This call sheet's gear has already gone out. Manage it from the checkout list.");
+    return addLines(actor, existing.id, lines);
+  }
+  return createManifest(actor, {
+    contentId: cs.contentId,
+    date: cs.date,
+    destination: "studio",
+    status: "assigned",
+    lines,
+    callSheetId: cs.id,
+    // Booked by a person: they answer for it. Booked by the daily check (a show's template gear): the sheet's crew
+    // lead, else whoever is responsible for the show, else the Head of Production.
+    responsiblePersonId: actor.personId === "system" ? answerableFor(cs.crewLeadId, project.assigneePersonId) : void 0
   });
 }
-function sessionStorage(sessionId) {
-  const mine = getDb().allocations.filter((a) => a.sessionId === sessionId);
-  return { primary: mine.find((a) => a.role !== "backup"), backup: mine.find((a) => a.role === "backup") };
-}
-function folderFor(session, project, inside) {
-  const pattern = getDb().settings.storageFolderPattern?.trim() || DEFAULT_FOLDER_PATTERN;
-  const clean = (v) => v.replace(/[\\/:*?"<>|]+/g, "-").trim();
-  const label = clean(session.label || sessionName(session)).replace(/\s+/g, "-");
-  const path = pattern.split("{contentId}").join(project.contentId).split("{date}").join(session.scheduledDate ?? todayIso()).split("{label}").join(label).split("{session}").join(session.id);
-  if (!inside) return path;
-  const last = path.split("/").filter(Boolean).pop() ?? path;
-  return `${inside.replace(/\/+$/, "")}/${last}`;
-}
-function suggestedStorage(sessionId) {
-  const session = getDb().recordingSessions.find((s2) => s2.id === sessionId);
-  const project = session ? getRecord(session.contentId) : void 0;
-  if (!session || !project?.workflow) return { link: null, choices: [] };
-  const choices2 = projectLinks(project);
-  return { link: choices2.length === 1 ? choices2[0] : null, choices: choices2 };
-}
-var requireStorage2 = (actor) => {
-  if (!hasStorageAccess(actor)) throw new RuleError("Only someone who may use storage can choose where the footage goes.");
+var canAnswer = (id2) => {
+  const p = id2 ? getPerson(id2) : void 0;
+  return !!p && p.status === "active" && (p.category === "CRW" || p.category === "HOP");
 };
-function newEntry(fields) {
-  const a = { id: claimId(`ALC-${pad(nextCounter("allocation"), 4)}`), updatedAt: todayIso(), ...fields };
-  getDb().allocations.push(a);
-  return a;
+function answerableFor(...candidates) {
+  return candidates.find(canAnswer) ?? getDb().people.find((p) => p.category === "HOP" && p.status === "active")?.personId;
 }
-function assignSessionStorage(actor, sessionId, input) {
-  const { session, project } = sessionForWrite(actor, sessionId);
-  requireStorage2(actor);
-  const drive = getDrive(input.driveId);
-  if (!drive) throw new RuleError("Choose one of the drives on the Storage & Media screen.");
-  if (input.role !== "primary" && input.role !== "backup") throw new RuleError("Choose the main drive or the backup.");
-  const current3 = sessionStorage(sessionId);
-  const other = input.role === "primary" ? current3.backup : current3.primary;
-  if (other && other.driveId === drive.id)
-    throw new RuleError(
-      `The backup must be on another drive than the footage itself: ${drive.name} is already the ${input.role === "primary" ? "backup" : "main drive"}.`
-    );
-  let link;
-  if (input.linkId) {
-    link = getDb().allocations.find((a2) => a2.id === input.linkId);
-    if (!link || link.driveId !== drive.id || !isProjectLink(link)) throw new RuleError("Choose one of the folders on that drive.");
-    if (link.contentId === null) {
-      link.contentId = project.contentId;
-      link.folderPath ||= link.label;
-      link.updatedAt = todayIso();
+function removeGearFromSheet(actor, sheetId, equipmentId) {
+  const cs = getDb().callSheets.find((c) => c.id === sheetId);
+  if (cs) assertSheetOpen(cs);
+  const m = manifestForSheet(sheetId);
+  if (!m) return;
+  removeLine(actor, m.id, equipmentId);
+  lockInstanceOfSheet(actor, sheetId);
+}
+function bookWhatIsFree(actor, dst, lines) {
+  const out = { booked: [], skipped: [] };
+  const existing = manifestForSheet(dst.id);
+  for (const l of lines) {
+    const item2 = getItem(l.equipmentId);
+    try {
+      checkLine(item2, l.quantity, dst.date, dst.date, existing?.id);
+      if (existing?.lines.some((x) => x.equipmentId === l.equipmentId)) continue;
+      out.booked.push({ equipmentId: l.equipmentId, quantity: l.quantity });
+    } catch (e) {
+      out.skipped.push({ line: l, reason: e instanceof RuleError ? e.message : `${item2?.name ?? l.equipmentId} could not be booked.` });
     }
-  } else if (input.addToDrive) {
-    link = newEntry({
-      driveId: drive.id,
-      contentId: project.contentId,
-      label: project.title,
-      sizeGB: 0,
-      kind: "raw",
-      note: `Added from the Recording Log of ${session.id}`,
-      folderPath: project.contentId
-    });
   }
-  const folder = (input.folderPath ?? "").trim() || folderFor(session, project, link ? folderOf(link) : void 0);
-  if (folder.length > 240) throw new RuleError("Keep the folder path under 240 characters.");
-  const mine = input.role === "primary" ? current3.primary : current3.backup;
-  let a;
-  if (mine) {
-    if (mine.driveId !== drive.id && mine.sizeGB > driveUsage(drive).freeGB + 1e-6)
-      throw new RuleError(`${drive.name} has only ${fmtSize(driveUsage(drive).freeGB)} free.`);
-    Object.assign(mine, { driveId: drive.id, folderPath: folder, updatedAt: todayIso() });
-    a = mine;
-  } else {
-    a = newEntry({
-      driveId: drive.id,
-      contentId: project.contentId,
-      label: `${sessionName(session)} ${input.role === "backup" ? "backup" : "footage"}`,
-      sizeGB: input.role === "backup" ? current3.primary?.sizeGB ?? 0 : 0,
-      kind: "raw",
-      note: `Recording session ${session.id}`,
-      sessionId,
-      role: input.role,
-      folderPath: folder,
-      offloadedAt: null,
-      offloadedBy: null,
-      backedUpAt: null,
-      backedUpBy: null
-    });
-  }
-  if (input.role === "primary") session.storageDriveId = drive.id;
-  session.updatedAt = nowStamp();
-  logAudit(actor, "storage-assign", "session", sessionId, `${input.role === "backup" ? "backup" : "footage"} on ${drive.name}: ${folder}`);
-  recordSnapshot();
-  commit();
-  return a;
+  if (out.booked.length) bookOnSheet(actor, dst, out.booked);
+  return out;
 }
-function clearSessionStorage(actor, sessionId, role) {
-  const { session } = sessionForWrite(actor, sessionId);
-  requireStorage2(actor);
-  const a = sessionStorage(sessionId)[role];
-  if (!a) throw new RuleError("Nothing is assigned there.");
-  if (a.offloadedAt || a.backedUpAt) throw new RuleError("The footage is marked copied there. Untick it first.");
-  if (a.sizeGB > 0 && role === "primary")
-    throw new RuleError("The footage's size is entered on this drive. Move it to another drive instead.");
-  getDb().allocations = getDb().allocations.filter((x) => x.id !== a.id);
-  if (role === "primary") session.storageDriveId = null;
-  session.updatedAt = nowStamp();
-  logAudit(actor, "storage-clear", "session", sessionId, role);
-  recordSnapshot();
+function copyGearBetweenSheets(actor, srcSheetId, dst) {
+  const src = manifestForSheet(srcSheetId);
+  if (!src) return { copied: 0, skipped: [] };
+  const r = bookWhatIsFree(
+    actor,
+    dst,
+    src.lines.map((l) => ({ equipmentId: l.equipmentId, quantity: l.quantity }))
+  );
+  return { copied: r.booked.length, skipped: r.skipped.map((x) => x.reason) };
+}
+function rebookSheetGear(actor, sheetId, newDate) {
+  const m = manifestForSheet(sheetId);
+  if (!m) return;
+  if (m.status !== "assigned") throw new RuleError("This sheet's gear has already gone out, so its date cannot change.");
+  for (const l of m.lines) checkLine(getItem(l.equipmentId), l.quantity, newDate, newDate, m.id);
+  m.date = newDate;
+  logAudit(actor, "rebook", "manifest", m.id, newDate);
   commit();
 }
-function markStorage(actor, sessionId, role, done) {
-  const { session } = sessionForWrite(actor, sessionId);
-  requireStorage2(actor);
-  if (session.status === "Planned") throw new RuleError("The footage is offloaded once recording has started.");
-  const a = sessionStorage(sessionId)[role];
-  if (!a) throw new RuleError(role === "primary" ? "Choose the drive the footage goes on first." : "Choose the backup drive first.");
-  const at = done ? nowStamp() : null;
-  const by = done ? actor.personId : null;
-  if (role === "primary") Object.assign(a, { offloadedAt: at, offloadedBy: by });
-  else Object.assign(a, { backedUpAt: at, backedUpBy: by });
-  a.updatedAt = todayIso();
-  logAudit(actor, "storage-mark", "session", sessionId, `${role === "primary" ? "offloaded" : "backed up"}: ${done ? "yes" : "no"}`);
-  commit();
-  return a;
-}
-function storageWarnings(sessionId) {
-  const session = getDb().recordingSessions.find((s2) => s2.id === sessionId);
-  if (!session) return [];
-  const { primary, backup } = sessionStorage(sessionId);
+function gearIssues(sheetId) {
+  const m = manifestForSheet(sheetId);
+  if (!m || m.status !== "assigned") return [];
   const out = [];
-  if (!primary) out.push("No drive chosen for the footage");
-  if (!backup) out.push("No backup drive");
-  for (const a of [primary, backup]) {
-    const d = a ? getDrive(a.driveId) : void 0;
-    if (!d) continue;
-    if (d.offline) out.push(`${d.name} is marked offline`);
-    const u = driveUsage(d);
-    if (isNearlyFull(u)) out.push(`${d.name} is ${Math.round(u.pct)}% full`);
-  }
-  if (session.status !== "Planned") {
-    if (primary && !primary.offloadedAt) out.push("The footage is not marked offloaded yet");
-    if (backup && !backup.backedUpAt) out.push("The backup is not marked made yet");
+  for (const l of m.lines) {
+    const item2 = getItem(l.equipmentId);
+    if (!item2) continue;
+    try {
+      checkLine(item2, l.quantity, m.date, m.expectedReturn ?? m.date, m.id);
+    } catch (e) {
+      if (e instanceof RuleError) out.push(e.message);
+    }
   }
   return out;
 }
-function footageWhere(projectId) {
-  const ids2 = new Set(
-    getDb().recordingSessions.filter((s2) => s2.contentId === projectId).map((s2) => s2.id)
-  );
-  return getDb().allocations.filter((a) => a.sessionId && ids2.has(a.sessionId)).map((a) => ({
-    sessionId: a.sessionId,
-    role: a.role === "backup" ? "backup" : "primary",
-    drive: getDrive(a.driveId)?.name ?? a.driveId,
-    folder: folderOf(a)
-  })).sort((a, b) => a.sessionId.localeCompare(b.sessionId) || a.role.localeCompare(b.role));
-}
-
-// src/services/workflow/history.ts
-function projectFor(r) {
-  if (!r) return void 0;
-  if (r.workflow) return r;
-  return r.parentId ? getDb().records.find((x) => x.contentId === r.parentId && x.workflow) : void 0;
-}
-function isHistory(record2, date2) {
-  const r = typeof record2 === "string" ? getDb().records.find((x) => x.contentId === record2) : record2;
-  const p = projectFor(r);
-  if (!p?.workflow?.imported || !date2) return false;
-  const since = (p.workflow.importedAt ?? "").slice(0, 10);
-  return !!since && date2.slice(0, 10) <= since;
-}
-var isImported = (record2) => {
-  const r = typeof record2 === "string" ? getDb().records.find((x) => x.contentId === record2) : record2;
-  return !!projectFor(r)?.workflow?.imported;
-};
-
-// src/services/workflow/gates.ts
-var result = (missing, warnings = []) => ({ passed: missing.length === 0, missing, warnings });
-var gateError = (stage, missing) => new RuleError(`Not ready to leave ${stage}. Still needed: ${missing.join("; ")}.`);
-var projectOf2 = (id2) => {
-  const r = getRecord(id2);
-  return r?.workflow ? r : null;
-};
-function lateDates(project, dates) {
-  const publish = project.deadline;
-  if (!publish) return [];
-  return dates.filter(([, d]) => !!d && d > publish).map(([what, d]) => `${what} (${d}) is after the publish date (${publish})`);
-}
-function developmentGate(p) {
-  const late = lateDates(p, [["The Development deadline", p.stageDeadlines.Development]]);
-  const missing = p.workflow.stage === "Development" ? hardGatesMissing(p.contentId) : ["The project has already left Development"];
-  return result(missing, [...softNudges(p.contentId), ...late]);
-}
-function preProductionProjectGate(p) {
-  const missing = [];
-  if (p.workflow.stage !== "Pre-production") missing.push("The project must have left Development");
-  if (!p.workflow.showProducerId) missing.push("A show producer");
-  const roles2 = getDb().projectRoles.filter((r) => r.contentId === p.contentId);
-  const warnings = lateDates(p, [["The Pre-production deadline", p.stageDeadlines["Pre-production"]]]);
-  {
-    if (!roles2.length) missing.push("Roles: list the project's roles in the Recording Plan");
-    for (const r of roles2) if (!roleHolder(r)) missing.push(`Role: ${roleName(r)} needs a person`);
-    const waiting2 = unassignedDevotions(p.contentId).length;
-    const L = planLabels(p.workflow.formType);
-    if (waiting2) warnings.push(`${waiting2} ${waiting2 === 1 ? `${L.one} is` : `${L.many} are`} not assigned to a session yet`);
-  }
-  missing.push(...openRequired("preProject", p.contentId).map((l) => `Pre-production: ${l}`));
-  if (p.workflow.formType === "documentary_dof" && latestDecision(formOf(p.contentId), 2)?.outcome !== "Greenlight")
-    missing.push("Second greenlight decision: Greenlight (shoot budget, interview sets and shot list)");
-  return result(missing, warnings);
-}
-function preProductionSessionGate(s2, p) {
-  const project = preProductionProjectGate(p);
-  const missing = [...project.missing];
-  const warnings = [...project.warnings, ...lateDates(p, [[`Session ${s2.id}`, s2.scheduledDate]])];
-  if (s2.status !== "Planned") missing.push("The session must be in Pre-production (Planned)");
-  if (!s2.scheduledDate) missing.push("The session's date");
-  const sheet = s2.callSheetId ? getDb().callSheets.find((c) => c.id === s2.callSheetId) : void 0;
-  if (!sheet) missing.push("A call sheet for this session");
-  else {
-    const gear = manifestForSheet(sheet.id);
-    if (!gear || gear.lines.length === 0) missing.push("Gear selected from the Equipment picker");
-    missing.push(...gearIssues(sheet.id).map((g) => `Gear: ${g}`));
-    if (sheet.status !== "final") missing.push(`Call sheet ${sheet.id} issued (final)`);
-    for (const c of sheet.technicalCheck)
-      if (checkStateOf(c) === "Issue")
-        warnings.push(`Tech Check: ${c.label} has an issue${c.note || c.result ? ` (${c.note || c.result})` : ""}`);
-    if (s2.scheduledDate && sheet.date !== s2.scheduledDate)
-      missing.push(`Call sheet ${sheet.id} is for ${sheet.date}, not the session's date, ${s2.scheduledDate}`);
-  }
-  missing.push(...openRequired("preSession", s2.id).map((l) => `Session: ${l}`));
-  if (!freeFormLog(p) && rowsOf(s2.id).length === 0)
-    warnings.push(`No ${planLabels(p.workflow.formType).many} are planned for this session yet`);
-  return result(missing, warnings);
-}
-function productionGate(s2, p) {
-  const missing = [];
-  const warnings = [];
-  const live = isLiveProject(p);
-  if (s2.status !== "Open") missing.push(live ? "The day must be in Production (on air)" : "The session must be in Production (Open)");
-  const rows2 = rowsOf(s2.id);
-  if (!live && !rows2.some((r) => r.status === "Recorded" || r.status === "Pickup needed"))
-    missing.push("At least one item recorded in the Recording Log (Good or Pickup needed)");
-  warnings.push(...openRequired("wrap", s2.id).map((l) => `Wrap: ${l}`));
-  for (const r of rows2) if (!r.status) warnings.push(`No take mark for "${r.itemLabel || r.plannedEpisodeId}": it counts as not recorded`);
-  warnings.push(...storageWarnings(s2.id));
-  return result(missing, warnings);
-}
-function editingGate(ep) {
-  const missing = [];
-  if (ep.episode.stage !== "Post production" || ep.episode.postStage !== "Editing") missing.push("The episode must be in Editing");
-  if (!ep.episode.readyForReview) missing.push("The editor marks it ready for review");
-  if (!asWebUrl(ep.episode.reviewLink)) missing.push("A review link (http or https)");
-  return result(missing);
-}
-function postGate(ep, p) {
-  const missing = [];
-  if (ep.episode.stage !== "Post production") missing.push("The episode must be in Post production");
-  for (const [key2, label] of [
-    ["rough_cut", "Rough cut"],
-    ["final", "Final"]
-  ])
-    if (checkpoint(ep.contentId, key2)?.status !== "Approved") missing.push(`${label} review checkpoint Approved`);
-  return result(missing, lateDates(p, [["The Post production deadline", ep.stageDeadlines["Post production"]]]));
-}
-function marketingGate(ep, p) {
-  const missing = [];
-  if (ep.episode.stage !== "Marketing and distribution") missing.push("The episode must be in Marketing and distribution");
-  if (ep.episode.mdStage === "Published") missing.push("The episode is already published");
-  missing.push(...openRequired("release", ep.contentId).map((l) => `Release plan: ${l}`));
-  if (!ep.episode.distribution.some((d) => asWebUrl(d.link))) missing.push("At least one distribution link logged");
-  return result(missing, lateDates(p, [["The Marketing and distribution deadline", ep.stageDeadlines["Marketing and distribution"]]]));
-}
-function evaluateGate(stage, level2, id2) {
-  if (level2 === "project") {
-    const p = projectOf2(id2);
-    if (!p) return result(["Project not found"]);
-    if (p.archived) return result(["The project is closed"]);
-    if (stage === "Development") return developmentGate(p);
-    if (stage === "Pre-production") return preProductionProjectGate(p);
-  }
-  if (level2 === "session") {
-    const s2 = getSession(id2);
-    const p = s2 ? projectOf2(s2.contentId) : null;
-    if (!s2 || !p) return result(["Session not found"]);
-    if (p.archived || s2.archivedAt) return result(["The session is closed"]);
-    if (stage === "Pre-production") return preProductionSessionGate(s2, p);
-    if (stage === "Production") return productionGate(s2, p);
-  }
-  if (level2 === "episode") {
-    const r = getRecord(id2);
-    const p = r?.episode ? projectOf2(r.parentId ?? "") : null;
-    if (!r?.episode || !p) return result(["Episode not found"]);
-    if (r.archived || p.archived) return result(["The episode is archived"]);
-    const ep = r;
-    if (stage === "Editing") return editingGate(ep);
-    if (stage === "Post production") return postGate(ep, p);
-    if (stage === "Marketing and distribution") return marketingGate(ep, p);
-  }
-  return result([`${stage} has no gate at the ${level2} level`]);
-}
-function episodeOverdue(ep, today = todayIso()) {
-  if (!ep.episode || ep.archived || ep.episode.mdStage === "Published") return false;
-  const due = ep.stageDeadlines[ep.episode.stage];
-  return !!due && due < today && !isHistory(ep, due);
-}
-function projectSummary(p) {
-  if (p.archived) {
-    const label = p.workflow.status === "Advice only" ? "Advice only" : "Closed";
-    return { stage: label, text: `${label}${p.closedReason ? `: ${p.closedReason}` : ""}` };
-  }
-  if (p.workflow.stage === "Development") {
-    const outcome2 = formOf(p.contentId).outcome;
-    return { stage: "Development", text: outcome2 && outcome2 !== "Greenlight" ? `Development: ${outcome2}.` : "Development." };
-  }
-  const sessions = sessionsOf(p.contentId).filter((s2) => !s2.archivedAt);
-  const eps = episodesOf(p.contentId);
-  const inPost = eps.filter((e) => e.episode.stage === "Post production").length;
-  const inMd = eps.filter((e) => e.episode.stage === "Marketing and distribution" && e.episode.mdStage !== "Published").length;
-  const published = eps.filter((e) => e.episode.mdStage === "Published").length;
-  const closed = sessions.filter((s2) => s2.status === "Closed").length;
-  const parts = [];
-  const one = sessionLabelOf(p.category) === "Day" ? "day" : "session";
-  const ep = (categoryOf(p.category).workflow?.episodeLabel ?? "Episode").toLowerCase();
-  if (sessions.length) parts.push(`Production: ${closed} of ${sessions.length} ${one}${sessions.length === 1 ? "" : "s"} closed.`);
-  if (inPost) parts.push(`Post: ${inPost} ${ep}${inPost === 1 ? "" : "s"}.`);
-  if (inMd) parts.push(`Marketing and distribution: ${inMd} ${ep}${inMd === 1 ? "" : "s"}.`);
-  if (published) parts.push(`Published: ${published}.`);
-  const doc2 = isDocumentary(p);
-  const toPlan = sessions.some((s2) => s2.status === "Planned") || !doc2 && unscheduledPlanned(p.contentId) > 0;
-  const stage = p.workflow.status === "Completed" ? "Completed" : sessions.some((s2) => s2.status === "Open") ? "Production" : toPlan || sessions.length === 0 && eps.length === 0 ? "Pre-production" : doc2 && eps.length === 0 ? "Production" : inPost ? "Post production" : inMd ? "Marketing and distribution" : "Pre-production";
-  return { stage, text: parts.length ? parts.join(" ") : `Pre-production: no ${sessionLabelOf(p.category).toLowerCase()}s yet.` };
-}
-
-// src/services/workflow/projects.ts
-var CONTAINER = {
-  series: { one: "series", child: "Season" },
-  music: { one: "music project", child: "Release" },
-  live: { one: "live show", child: "Event" }
-};
-function blankForm(projectId, formType2) {
-  const at = nowStamp();
-  return {
-    id: projectId,
-    contentId: projectId,
-    formType: formType2,
-    sections: {},
-    greenlightStage: formTypeOf(formType2).greenlights === 2 ? 1 : null,
-    criteria: Object.fromEntries(CRITERIA.map((c) => [c.key, { met: null, note: "" }])),
-    outcome: null,
-    reviewNotes: "",
-    decisionDate: null,
-    reviewWindowDate: null,
-    decisions: [],
-    createdAt: at,
-    updatedAt: at
-  };
-}
-function blankCheckpoint(contentId, episodeId, key2, reviewerIds = []) {
-  const at = nowStamp();
-  return {
-    id: `${episodeId ?? contentId}|${key2}`,
-    contentId,
-    episodeId,
-    checkpoint: key2,
-    reviewerIds,
-    status: "Pending",
-    note: "",
-    decidedAt: null,
-    decidedById: null,
-    createdAt: at,
-    updatedAt: at
-  };
-}
-function startProject(actor, r, formType2, deadline) {
-  if (deadline && !isIsoDate(deadline)) throw new RuleError("Pick the publish date.");
-  r.deadline = deadline || null;
-  r.workflow = {
-    formType: formType2,
-    status: "Development",
-    stage: "Development",
-    showProducerId: null,
-    producerAssignedById: null,
-    producerAssignedAt: null,
-    sermonFormat: null,
-    migrated: false
-  };
-  const db2 = getDb();
-  db2.records.push(r);
-  db2.developmentForms.push(blankForm(r.contentId, formType2));
-  ensureChecklist("handoff", "project", r.contentId);
-  logAudit(actor, "create", "record", r.contentId, `${formTypeOf(formType2).label}: ${r.title}`);
-  return r;
-}
-function createWorkflowProject(actor, input) {
-  if (!isWorkflowCategory(input.category))
-    throw new RuleError("Choose a series, a devotion, a documentary, a live event or a music release.");
-  const name = input.title.trim();
-  if (input.category === "series" || input.category === "music" || input.category === "live") {
-    const cat = input.category;
-    const words = CONTAINER[cat];
-    const formType3 = cat === "series" ? "podcast" : cat === "live" ? "live_event" : input.formType ?? "";
-    if (cat === "music" && !isMusicForm(formType3)) throw new RuleError("Choose a single or an album.");
-    if (cat === "live") {
-      if (!input.event) throw new RuleError("Choose how the event runs: one day, several days, or a recurring show.");
-      checkEventSetup(input.event);
-    }
-    let parent;
-    if (input.seriesId) {
-      const found = getRecord(input.seriesId);
-      if (!found || found.category !== cat || found.hierarchyLevel !== 0 || found.archived)
-        throw new RuleError(`${words.one.charAt(0).toUpperCase()}${words.one.slice(1)} not found.`);
-      if (cat === "series" && !found.seriesType)
-        throw new RuleError("This series was made before the new workflow. Its seasons are added the earlier way.");
-      if (!canWrite(actor, found)) throw new RuleError(`You are not assigned to this ${words.one}.`);
-      if (cat !== "series" && !name) throw new RuleError(`Give the ${words.child.toLowerCase()} a title.`);
-      parent = found;
-    } else {
-      requireCan(actor, "pipeline.manage", `create a new ${words.one}`);
-      if (!name) throw new RuleError(`Give the ${words.one} a title.`);
-      if (cat === "series" && !input.seriesType) throw new RuleError("Choose the kind of series: podcast, testimonial or sermon.");
-      parent = blankRecord(nextTopLevelId(cat), cat, name, null, 0);
-      if (cat === "series") parent.seriesType = input.seriesType;
-      getDb().records.push(parent);
-      logAudit(actor, "create", "record", parent.contentId, `${words.one.charAt(0).toUpperCase()}${words.one.slice(1)}: ${parent.title}`);
-    }
-    const id2 = nextChildId(parent);
-    const number = id2.slice(id2.lastIndexOf("-") + 2);
-    const title2 = cat === "series" ? (input.seriesId ? name : "") || `Season ${number}` : (input.seriesId ? name : input.projectTitle?.trim() || name) || `${words.child} ${number}`;
-    const child = blankRecord(id2, cat, title2, parent.contentId, 1);
-    const project2 = startProject(actor, child, cat === "series" ? formTypeForSeries(parent.seriesType) : formType3, input.deadline);
-    if (formType3 === "music_single") {
-      const { id: plannedId, n } = nextPlanned(project2.contentId);
-      const at = nowStamp();
-      getDb().plannedEpisodes.push({
-        id: plannedId,
-        contentId: project2.contentId,
-        episodeNumber: n,
-        workingTitle: project2.title,
-        question: "",
-        guest: "",
-        notes: "",
-        details: {},
-        reservedId: null,
-        sourcePageId: null,
-        createdAt: at,
-        updatedAt: at,
-        archivedAt: null,
-        archivedReason: null
-      });
-    }
-    if (cat === "live") setUpEventDays(actor, project2, input.event);
-    commit();
-    return project2;
-  }
-  requireCan(actor, "pipeline.manage", "create a new project");
-  if (!name) throw new RuleError("Give the project a title.");
-  const formType2 = input.category === "devotional" ? "devotion" : input.formType ?? "";
-  const def = FORM_TYPES.find((f2) => f2.key === formType2);
-  if (!def || def.category !== input.category)
-    throw new RuleError("Choose whether DOF is making the documentary or it was pitched by others.");
-  const project = startProject(actor, blankRecord(nextTopLevelId(input.category), input.category, name, null, 0), formType2, input.deadline);
-  commit();
-  return project;
-}
-function assignProducer(actor, projectId, personId) {
-  if (!canNameProducer(actor))
-    throw new RuleError(`Only the Head of Production, or someone given "Assign other people's work", can name the show producer.`);
-  const p = requireProject(projectId);
-  if (p.archived) throw new RuleError("This project is closed.");
-  if (personId) {
-    requireCrew(personId, "The show producer");
-    joinProject(actor, personId, p);
-  }
-  p.workflow.showProducerId = personId;
-  p.workflow.producerAssignedById = personId ? actor.personId : null;
-  p.workflow.producerAssignedAt = personId ? nowStamp() : null;
-  p.assigneePersonId = personId;
-  p.version += 1;
-  logAudit(actor, "producer", "record", projectId, personId ?? "none");
-  commit();
-  return p;
-}
-function closeProject(actor, projectId, reason) {
-  const p = requireProject(projectId);
-  if (!canDecide(actor) && !isProducer(actor, p))
-    throw new RuleError('Only the show producer, the Head of Production, or someone given "Create projects", can close a project.');
-  if (p.archived) throw new RuleError("This project is already closed.");
-  if (!reason.trim()) throw new RuleError("Write why the project is being closed. It is kept with the project.");
-  p.workflow.status = "Closed";
-  p.closedReason = reason.trim();
-  p.archived = true;
-  p.version += 1;
-  logAudit(actor, "close", "record", projectId, reason.trim());
-  commit();
-  return p;
-}
-var PROJECT_STAGES = ["Development", "Pre-production"];
-var EPISODE_STAGES = ["Post production", "Marketing and distribution"];
-function setWorkflowDeadline(actor, id2, stage, date2) {
-  const target = getRecord(id2)?.episode ? episodeForWrite(actor, id2).ep : projectForWrite(actor, id2);
-  const allowed2 = target.episode ? EPISODE_STAGES : PROJECT_STAGES;
-  if (!allowed2.includes(stage))
-    throw new RuleError(
-      `${target.episode ? "An episode" : "A project"} has deadlines for ${allowed2.join(" and ")} only. A session's deadline is its date.`
-    );
-  if (date2 !== null && date2 !== "" && !isIsoDate(date2)) throw new RuleError("Pick the deadline's date.");
-  if (date2) target.stageDeadlines[stage] = date2;
-  else delete target.stageDeadlines[stage];
-  target.version += 1;
-  logAudit(actor, "stage-deadline", "record", id2, `${stage} \u2192 ${date2 || "none"}`);
-  commit();
-  return target;
-}
-function advanceProject(actor, projectId) {
-  const p = projectForWrite(actor, projectId);
-  if (p.workflow.stage !== "Development") throw new RuleError("This project has already left Development.");
-  const gate = evaluateGate("Development", "project", projectId);
-  if (!gate.passed) throw gateError("Development", gate.missing);
-  p.workflow.stage = "Pre-production";
-  p.workflow.status = "Active";
-  p.version += 1;
-  const form2 = formOf(projectId);
-  if (form2.greenlightStage === 1) {
-    form2.greenlightStage = 2;
-    form2.outcome = null;
-    form2.reviewWindowDate = null;
-    form2.updatedAt = nowStamp();
-  }
-  ensureChecklist("preProject", "project", projectId);
-  logAudit(actor, "stage-advance", "record", projectId, "Development \u2192 Pre-production");
-  commit();
-  return p;
-}
-var projectLabelOf = (p) => categoryOf(p.category).workflow?.projectLabel ?? "Project";
-
-// src/services/workflow/episodes.ts
-var POST_DAYS = 14;
-var MARKETING_DAYS = 28;
-function makeEpisode(actor, project, input, kept2) {
-  let id2;
-  let n;
-  let r;
-  if (typeof kept2 === "string") {
-    id2 = kept2;
-    n = codeNumber(id2, project.contentId, episodeTokenOf(project.category));
-    if (Number.isNaN(n) || getDb().records.some((x) => x.contentId === id2))
-      throw new RuleError(`${id2} cannot become an episode of ${project.contentId}.`);
-    r = blankRecord(id2, project.category, input.title, project.contentId, project.hierarchyLevel + 1);
-  } else if (kept2) {
-    id2 = kept2.contentId;
-    n = codeNumber(id2, project.contentId, episodeTokenOf(project.category));
-    if (kept2.parentId !== project.contentId || kept2.episode && !kept2.archived || Number.isNaN(n))
-      throw new RuleError(`${id2} cannot become an episode of ${project.contentId}.`);
-    r = kept2;
-    r.archived = false;
-    r.closedReason = null;
-    r.version += 1;
-  } else {
-    ({ id: id2, n } = nextEpisode(project.contentId));
-    r = blankRecord(id2, project.category, input.title, project.contentId, project.hierarchyLevel + 1);
-  }
-  const info = {
-    episodeNumber: n,
-    plannedEpisodeId: input.plannedEpisodeId,
-    sourceSessionId: input.sourceSessionId,
-    productionNotes: input.productionNotes,
-    stage: "Post production",
-    postStage: "Not started",
-    roughCutStatus: "Pending",
-    finalReviewStatus: "Pending",
-    editorId: getDb().projectRoles.find((x) => x.id === `${project.contentId}|editor`)?.crewId ?? null,
-    readyForReview: false,
-    reviewLink: "",
-    finalFileLink: "",
-    sendBackReason: null,
-    mdStage: "Release plan",
-    distribution: [],
-    learningNotes: "",
-    ...input.sourceRowId ? { sourceRowId: input.sourceRowId } : {}
-  };
-  r.episode = info;
-  r.scheduledDate = input.scheduledDate;
-  r.stageDeadlines = {
-    ...kept2 && typeof kept2 !== "string" ? r.stageDeadlines : {},
-    "Post production": addDaysIso(todayIso(), POST_DAYS),
-    "Marketing and distribution": addDaysIso(todayIso(), MARKETING_DAYS)
-  };
-  r.stageEnteredAt = todayIso();
-  r.assigneePersonId = info.editorId;
-  const db2 = getDb();
-  if (!kept2 || typeof kept2 === "string") db2.records.push(r);
-  const brief = documentIdOf(project.contentId, "Development", briefKeyOf(project.workflow.formType), null);
-  const briefReviewers = db2.documentReviews.filter((x) => x.documentId === brief && x.reviewerId !== "system").map((x) => x.reviewerId);
-  const reviewers = briefReviewers.length ? briefReviewers : checkpoint(project.contentId, "outline_script")?.reviewerIds ?? [];
-  for (const key2 of ["rough_cut", "final"]) {
-    const earlier = checkpoint(id2, key2);
-    if (earlier)
-      Object.assign(earlier, { status: "Pending", note: "", decidedAt: null, decidedById: null, updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
-    else db2.reviewCheckpoints.push(blankCheckpoint(project.contentId, id2, key2, reviewers));
-  }
-  ensureChecklist("post", "episode", id2);
-  logAudit(
-    actor,
-    kept2 ? "recorded" : "create",
-    "record",
-    id2,
-    `Episode ${n}: ${kept2 ? `${r.title} (kept its Content ID from before the workflow)` : input.title}`
-  );
-  return r;
-}
-function setEpisodeEditor(actor, episodeId, personId) {
-  const { ep } = episodeForWrite(actor, episodeId);
-  if (personId) requireCrew(personId, "The editor");
-  ep.episode.editorId = personId;
-  ep.assigneePersonId = personId;
-  ep.version += 1;
-  logAudit(actor, "editor", "record", episodeId, personId ?? "none");
-  commit();
-  return ep;
-}
-function setEpisodeLinks(actor, episodeId, links) {
-  const { ep } = episodeForWrite(actor, episodeId);
-  const info = ep.episode;
-  if (links.reviewLink !== void 0) {
-    const url2 = requireWebUrl(links.reviewLink, "The review link", true);
-    if (!url2 && (info.postStage === "Rough cut review" || info.postStage === "Final review"))
-      throw new RuleError("The episode is in review, so it needs its review link.");
-    info.reviewLink = url2;
-  }
-  if (links.finalFileLink !== void 0) info.finalFileLink = requireWebUrl(links.finalFileLink, "The final file link", true);
-  ep.version += 1;
-  logAudit(actor, "episode-links", "record", episodeId, Object.keys(links).join(", "));
-  commit();
-  return ep;
-}
-function startEditing(actor, episodeId) {
-  const { ep } = episodeForWrite(actor, episodeId);
-  if (ep.episode.stage !== "Post production" || ep.episode.postStage !== "Not started") throw new RuleError("Editing has already started.");
-  ep.episode.postStage = "Editing";
-  ep.stageEnteredAt = todayIso();
-  ep.version += 1;
-  logAudit(actor, "post-stage", "record", episodeId, "Not started \u2192 Editing");
-  commit();
-  return ep;
-}
-function setReadyForReview(actor, episodeId, ready) {
-  const { ep } = episodeForWrite(actor, episodeId);
-  if (ep.episode.postStage !== "Editing") throw new RuleError("Only a cut in Editing can be marked ready for review.");
-  ep.episode.readyForReview = ready;
-  ep.version += 1;
-  logAudit(actor, "post-ready", "record", episodeId, ready ? "Ready for review" : "Not ready for review");
-  commit();
-  return ep;
-}
-function sendForReview(actor, episodeId) {
-  const { ep } = episodeForWrite(actor, episodeId);
-  const gate = evaluateGate("Editing", "episode", episodeId);
-  if (!gate.passed) throw gateError("Editing", gate.missing);
-  const roughApproved = checkpoint(episodeId, "rough_cut")?.status === "Approved";
-  const next2 = roughApproved ? "final" : "rough_cut";
-  ep.episode.postStage = roughApproved ? "Final review" : "Rough cut review";
-  const c = checkpoint(episodeId, next2);
-  if (c && c.status !== "Pending")
-    Object.assign(c, { status: "Pending", decidedAt: null, decidedById: null, updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
-  ep.version += 1;
-  logAudit(actor, "post-stage", "record", episodeId, `Editing \u2192 ${ep.episode.postStage}`);
-  commit();
-  return ep;
-}
-function moveToMarketing(actor, episodeId) {
-  const { ep } = episodeForWrite(actor, episodeId);
-  const gate = evaluateGate("Post production", "episode", episodeId);
-  if (!gate.passed) throw gateError("Post production", gate.missing);
-  ep.episode.postStage = "Approved";
-  ep.episode.stage = "Marketing and distribution";
-  ep.episode.mdStage = "Release plan";
-  ep.stageEnteredAt = todayIso();
-  ep.version += 1;
-  ensureChecklist("release", "episode", episodeId);
-  logAudit(actor, "stage-advance", "record", episodeId, "Post production \u2192 Marketing and distribution");
-  commit();
-  return ep;
-}
-function approveReleasePlan(actor, episodeId) {
-  const { ep } = episodeForWrite(actor, episodeId);
-  if (ep.episode.stage !== "Marketing and distribution" || ep.episode.mdStage !== "Release plan")
-    throw new RuleError("This episode is not at its release plan.");
-  const open = openRequired("release", episodeId);
-  if (open.length)
-    throw gateError(
-      "Marketing and distribution",
-      open.map((l) => `Release plan: ${l}`)
-    );
-  ep.episode.mdStage = "Scheduled";
-  ep.version += 1;
-  logAudit(actor, "md-stage", "record", episodeId, "Release plan \u2192 Scheduled");
-  commit();
-  return ep;
-}
-function publishEpisode(actor, episodeId) {
-  const { ep, project } = episodeForWrite(actor, episodeId);
-  const gate = evaluateGate("Marketing and distribution", "episode", episodeId);
-  if (!gate.passed) throw gateError("Marketing and distribution", gate.missing);
-  ep.episode.mdStage = "Published";
-  ep.version += 1;
-  refreshProjectStatus(project);
-  logAudit(actor, "md-stage", "record", episodeId, "Published");
-  commit();
-  return ep;
-}
-function checkDistribution(input) {
-  const platform = input.platform.trim();
-  if (!platform) throw new RuleError("Name the platform, for example YouTube.");
-  if (platform.length > 100) throw new RuleError("Keep the platform's name short.");
-  const link = requireWebUrl(input.link ?? "", "The link", true);
-  if (input.status === "Published" && !link) throw new RuleError("A published entry needs its link.");
-  const date2 = input.date || null;
-  if (date2 !== null && !isIsoDate(date2)) throw new RuleError("Pick the date.");
-  return { platform, status: input.status, link, date: date2 };
-}
-function addDistribution(actor, episodeId, input) {
-  const { ep } = episodeForWrite(actor, episodeId);
-  if (ep.episode.stage !== "Marketing and distribution")
-    throw new RuleError("Distribution is logged once the episode reaches Marketing and distribution.");
-  const entry = {
-    id: localId("D", (x) => ep.episode.distribution.some((d) => d.id === x)),
-    ...checkDistribution(input)
-  };
-  ep.episode.distribution.push(entry);
-  ep.version += 1;
-  logAudit(actor, "distribution-add", "record", episodeId, `${entry.platform}: ${entry.status}`);
-  commit();
-  return entry;
-}
-function updateDistribution(actor, episodeId, entryId, input) {
-  const { ep } = episodeForWrite(actor, episodeId);
-  const entry = ep.episode.distribution.find((d) => d.id === entryId);
-  if (!entry) throw new RuleError("That distribution entry no longer exists.");
-  Object.assign(entry, checkDistribution(input));
-  ep.version += 1;
-  logAudit(actor, "distribution-update", "record", episodeId, `${entry.platform}: ${entry.status}`);
-  commit();
-  return entry;
-}
-function removeDistribution(actor, episodeId, entryId) {
-  const { ep } = episodeForWrite(actor, episodeId);
-  if (ep.episode.mdStage === "Published" && ep.episode.distribution.filter((d) => d.link).length <= 1)
-    throw new RuleError("A published episode keeps at least one distribution link.");
-  ep.episode.distribution = ep.episode.distribution.filter((d) => d.id !== entryId);
-  ep.version += 1;
-  logAudit(actor, "distribution-remove", "record", episodeId, entryId);
-  commit();
-}
-function setLearningNotes(actor, episodeId, notes) {
-  const { ep } = episodeForWrite(actor, episodeId);
-  if (notes.length > 2e4) throw new RuleError("Keep the learning notes under 20,000 characters.");
-  ep.episode.learningNotes = notes.trim();
-  ep.version += 1;
-  logAudit(actor, "learning-notes", "record", episodeId);
-  commit();
-  return ep;
+function releaseSheetGear(actor, sheetId) {
+  const m = manifestForSheet(sheetId);
+  if (!m) return;
+  if (m.status === "checked-out") throw new RuleError("This sheet's gear is checked out. Check it in before deleting the call sheet.");
+  if (m.status === "assigned") releaseManifest(actor, m.id);
 }
 
 // src/services/content.ts
@@ -11052,6 +11378,14 @@ function toV24(db2) {
       `${pages.length} Recording Plan ${pages.length === 1 ? "page" : "pages"} "Cards and storage" renamed "Cards" (storage is now chosen in Production)`
     );
   liveShows(db2, lines);
+  if (!db2.settings.timeZone) {
+    db2.settings.timeZone = "Africa/Nairobi";
+    lines.push("The workspace's time zone is stored: Africa/Nairobi (as every date and time already was)");
+  }
+  const zoneless = (db2.showTemplates ?? []).filter((t2) => !t2.timeZone);
+  for (const t2 of zoneless) t2.timeZone = db2.settings.timeZone;
+  if (zoneless.length)
+    lines.push(`${zoneless.length} recurring show ${zoneless.length === 1 ? "template stores its" : "templates store their"} time zone`);
   return { lines, changed: lines.length > 0 };
 }
 var LIVE_TITLES = {
@@ -14294,307 +14628,6 @@ async function afterPeopleChange(store2, personId) {
   for (const u of await store2.users.find({ personId })) await revokeSessions(store2, u._id);
 }
 
-// src/services/alerts.ts
-var alerts_exports = {};
-__export(alerts_exports, {
-  EMAIL_MIN_OFFSET: () => EMAIL_MIN_OFFSET,
-  OFFSETS: () => OFFSETS,
-  createReminder: () => createReminder,
-  deleteReminder: () => deleteReminder,
-  fireReminders: () => fireReminders,
-  markNotificationsRead: () => markNotificationsRead,
-  nairobiInstant: () => nairobiInstant,
-  nextFireAt: () => nextFireAt,
-  notificationsFor: () => notificationsFor,
-  pruneNotifications: () => pruneNotifications,
-  remindersOn: () => remindersOn,
-  targetWhen: () => targetWhen,
-  unreadCount: () => unreadCount,
-  updateReminder: () => updateReminder
-});
-
-// src/services/productionInstances.ts
-var sheetOf = (id2) => id2 ? getDb().callSheets.find((c) => c.id === id2) : void 0;
-function dayLabel(s2) {
-  const name = s2.name?.trim() || `Day ${s2.sessionNumber}`;
-  const label = s2.instance?.label ?? s2.label;
-  return label ? `${name}, ${label}` : name;
-}
-function sessionInstance(s2) {
-  const cs = sheetOf(s2.callSheetId) ?? getDb().callSheets.find((c) => c.instanceId === s2.id);
-  const status2 = s2.archivedAt ? "cancelled" : s2.status === "Closed" ? "done" : cs?.status === "final" ? "published" : "draft";
-  const project = getRecord(s2.contentId);
-  const live = project?.category === "live";
-  return {
-    kind: live ? "day" : "session",
-    id: s2.id,
-    projectId: s2.contentId,
-    projectTitle: project?.title ?? s2.contentId,
-    label: live ? dayLabel(s2) : sessionName(s2),
-    date: s2.scheduledDate,
-    start: s2.startTime || cs?.startTime || cs?.callTime || "",
-    end: s2.endTime || cs?.wrapTime || "",
-    location: cs?.location || s2.venue,
-    status: status2,
-    callSheetId: cs?.id ?? null
-  };
-}
-function instancesBetween(actor, from, to) {
-  const out = [];
-  for (const s2 of getDb().recordingSessions) {
-    if (!s2.scheduledDate || s2.scheduledDate < from || s2.scheduledDate > to) continue;
-    const p = getRecord(s2.contentId);
-    if (p && canView(actor, p)) out.push(sessionInstance(s2));
-  }
-  return out.sort((a, b) => (a.date ?? "").localeCompare(b.date ?? "") || a.start.localeCompare(b.start) || a.id.localeCompare(b.id));
-}
-var instanceLine = (i) => `${i.projectTitle}, ${i.label}${i.date && !i.label.includes(fmtDate(i.date)) ? `, ${fmtDate(i.date)}` : ""}`;
-
-// src/services/alerts.ts
-var OFFSETS = [
-  { minutes: 0, label: "At the time" },
-  { minutes: 60, label: "1 hour before" },
-  { minutes: 1440, label: "1 day before" },
-  { minutes: 10080, label: "1 week before" }
-];
-var EMAIL_MIN_OFFSET = 1440;
-var MAX_OFFSET = 60 * 24 * 60;
-var NAIROBI_OFFSET_MIN = 180;
-var DEFAULT_TIME = "08:00";
-function nairobiInstant(date2, time2) {
-  const [h, m] = (time2 || DEFAULT_TIME).split(":").map(Number);
-  const t2 = Date.parse(`${date2}T00:00:00Z`) + (h * 60 + m - NAIROBI_OFFSET_MIN) * 6e4;
-  return new Date(t2).toISOString();
-}
-function targetWhen(db2, type, id2) {
-  if (type === "instance") {
-    const s2 = db2.recordingSessions.find((x) => x.id === id2);
-    const inst = s2 ? sessionInstance(s2) : void 0;
-    if (!inst?.date || inst.status === "cancelled") return void 0;
-    return {
-      date: inst.date,
-      time: inst.start,
-      title: instanceLine(inst),
-      link: inst.callSheetId ? `#/callsheet/${inst.callSheetId}` : `#/session/${id2}`
-    };
-  }
-  if (type === "callsheet") {
-    const cs = db2.callSheets.find((c) => c.id === id2);
-    return cs?.date ? { date: cs.date, time: cs.callTime, title: cs.title, link: `#/callsheet/${cs.id}` } : void 0;
-  }
-  if (type === "episode" || type === "project") {
-    const r = db2.records.find((x) => x.contentId === id2);
-    if (!r || r.archived) return void 0;
-    const due = r.episode ? r.stageDeadlines[r.episode.stage] : (r.workflow ? r.stageDeadlines[r.workflow.stage] : null) || r.deadline;
-    return due ? { date: due, time: "", title: `${r.title} due`, link: `#/record/${id2}` } : void 0;
-  }
-  const loan = (db2.loans ?? []).find((l) => l.id === id2);
-  return loan && loan.status === "out" ? { date: loan.expectedReturn, time: "", title: `${loan.borrowerName} returns ${loan.id}`, link: `#/equipment` } : void 0;
-}
-function nextFireAt(db2, r) {
-  if (!r.targetType) return r.date ? new Date(Date.parse(nairobiInstant(r.date, r.time)) - r.offsetMinutes * 6e4).toISOString() : null;
-  const when = targetWhen(db2, r.targetType, r.targetId ?? "");
-  if (!when) return null;
-  return new Date(Date.parse(nairobiInstant(when.date, when.time)) - r.offsetMinutes * 6e4).toISOString();
-}
-var TIME3 = /^([01]\d|2[0-3]):[0-5]\d$/;
-function canSeeTarget(actor, type, id2) {
-  const db2 = getDb();
-  if (type === "loan") return (db2.loans ?? []).some((l) => l.id === id2);
-  if (type === "callsheet") return visibleCallSheets(actor).some((c) => c.id === id2);
-  const rec2 = getRecord(id2);
-  if (rec2) return canView(actor, rec2.parentId && type === "instance" ? getRecord(rec2.parentId) ?? rec2 : rec2);
-  const s2 = db2.recordingSessions.find((x) => x.id === id2);
-  const p = s2 ? getRecord(s2.contentId) : void 0;
-  return !!p && canView(actor, p);
-}
-function check(actor, r) {
-  const db2 = getDb();
-  if (r.targetType) {
-    if (!r.targetId || !canSeeTarget(actor, r.targetType, r.targetId)) throw new RuleError("That item is not there to be reminded about.");
-    if (!targetWhen(db2, r.targetType, r.targetId))
-      throw new RuleError("That item has no date yet, so there is nothing to time a reminder from.");
-    if (r.repeat !== "none") throw new RuleError("Only a reminder standing alone repeats; one on an item follows its date.");
-  } else {
-    if (!r.title.trim()) throw new RuleError("Say what the reminder is for.");
-    if (!isIsoDate(r.date)) throw new RuleError("Pick the reminder's date.");
-  }
-  if (r.title.length > 200) throw new RuleError("Keep the reminder under 200 characters.");
-  if (r.time && !TIME3.test(r.time)) throw new RuleError("Enter the time as hours and minutes, for example 09:30.");
-  if (!Number.isInteger(r.offsetMinutes) || r.offsetMinutes < 0 || r.offsetMinutes > MAX_OFFSET)
-    throw new RuleError("A reminder can come from the moment itself up to 60 days before.");
-  if (!r.channels.length) throw new RuleError("Choose the bell, email, or both.");
-  if (r.channels.includes("email") && r.offsetMinutes < EMAIL_MIN_OFFSET)
-    throw new RuleError("Email reminders need to be a day or more ahead: the server sends email once each morning.");
-  if (!r.recipientIds.length) throw new RuleError("Choose who gets the reminder.");
-  if (r.recipientIds.length > 50) throw new RuleError("A reminder can go to up to 50 people.");
-  for (const pid of r.recipientIds) {
-    const p = db2.people.find((x) => x.personId === pid);
-    if (!p || p.status !== "active") throw new RuleError("Reminders go to active people.");
-  }
-  if (r.recipientIds.some((pid) => pid !== actor.personId) && !isHop(actor) && actor.role !== "CRW")
-    throw new RuleError("You can set reminders for yourself.");
-}
-function createReminder(actor, input) {
-  const at = (/* @__PURE__ */ new Date()).toISOString();
-  const r = {
-    id: localId("RM"),
-    targetType: input.targetType ?? null,
-    targetId: input.targetType ? input.targetId ?? null : null,
-    title: (input.title ?? "").trim(),
-    date: input.targetType ? "" : input.date ?? "",
-    time: input.time ?? "",
-    offsetMinutes: input.offsetMinutes ?? 0,
-    channels: [...new Set(input.channels ?? ["app"])],
-    recipientIds: [...new Set(input.recipientIds?.length ? input.recipientIds : [actor.personId])],
-    repeat: input.repeat ?? "none",
-    fireAt: null,
-    firedAt: null,
-    emailedAt: null,
-    createdBy: actor.personId,
-    createdAt: at,
-    updatedAt: at
-  };
-  if (r.targetType) r.time = "";
-  check(actor, r);
-  r.fireAt = nextFireAt(getDb(), r);
-  (getDb().calendarReminders ??= []).push(r);
-  logAudit(actor, "create", "reminder", r.id, r.targetId ?? r.title);
-  commit();
-  return r;
-}
-function ownReminder(actor, id2) {
-  const r = (getDb().calendarReminders ?? []).find((x) => x.id === id2);
-  if (!r) throw new RuleError("That reminder no longer exists.");
-  if (r.createdBy !== actor.personId && !isHop(actor)) throw new RuleError("Only the person who set this reminder can change it.");
-  return r;
-}
-function updateReminder(actor, id2, input) {
-  const r = ownReminder(actor, id2);
-  const next2 = {
-    ...r,
-    title: input.title !== void 0 ? input.title.trim() : r.title,
-    date: r.targetType ? "" : input.date ?? r.date,
-    time: r.targetType ? "" : input.time ?? r.time,
-    offsetMinutes: input.offsetMinutes ?? r.offsetMinutes,
-    channels: input.channels ? [...new Set(input.channels)] : r.channels,
-    recipientIds: input.recipientIds ? [...new Set(input.recipientIds)] : r.recipientIds,
-    repeat: input.repeat ?? r.repeat
-  };
-  check(actor, next2);
-  const fireAt = nextFireAt(getDb(), next2);
-  const moved = fireAt !== r.fireAt;
-  Object.assign(r, next2, { fireAt, updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
-  if (moved) {
-    r.firedAt = null;
-    r.emailedAt = null;
-  }
-  logAudit(actor, "update", "reminder", id2);
-  commit();
-  return r;
-}
-function deleteReminder(actor, id2) {
-  ownReminder(actor, id2);
-  getDb().calendarReminders = getDb().calendarReminders.filter((x) => x.id !== id2);
-  logAudit(actor, "delete", "reminder", id2);
-  commit();
-}
-var remindersOn = (type, id2) => (getDb().calendarReminders ?? []).filter((r) => r.targetType === type && r.targetId === id2);
-function advance(date2, repeat) {
-  if (repeat === "daily") return addDaysIso(date2, 1);
-  if (repeat === "weekly") return addDaysIso(date2, 7);
-  const [y, m, d] = date2.split("-").map(Number);
-  const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
-  return `${m === 12 ? y + 1 : y}-${String(m % 12 + 1).padStart(2, "0")}-${String(Math.min(d, last)).padStart(2, "0")}`;
-}
-function notifyPerson(db2, personId, n, at) {
-  db2.notifications ??= [];
-  if (db2.notifications.some((x) => x.personId === personId && x.key === n.key)) return false;
-  db2.notifications.push({ id: localId("NT"), personId, at, readAt: null, ...n });
-  return true;
-}
-function fireReminders(db2, now, emailUntil) {
-  const out = { inApp: 0, emails: [] };
-  const people = new Map(db2.people.map((p) => [p.personId, p]));
-  for (const r of db2.calendarReminders ?? []) {
-    const fireAt = nextFireAt(db2, r);
-    if (fireAt !== r.fireAt) {
-      r.fireAt = fireAt;
-      r.firedAt = null;
-      r.emailedAt = null;
-    }
-    if (!r.fireAt) continue;
-    const when = r.targetType ? targetWhen(db2, r.targetType, r.targetId ?? "") : void 0;
-    const title2 = when ? `${when.title}${r.title ? `: ${r.title}` : ""}` : r.title;
-    const day = when?.date ?? r.date;
-    const link = when?.link ?? null;
-    if (r.channels.includes("app") && !r.firedAt && r.fireAt <= now) {
-      for (const pid of r.recipientIds)
-        if (notifyPerson(
-          db2,
-          pid,
-          {
-            title: "Reminder",
-            body: `${title2}, ${day}${when?.time ? ` at ${when.time}` : ""}`,
-            link,
-            key: `reminder:${r.id}:${r.fireAt}`
-          },
-          now
-        ))
-          out.inApp++;
-      r.firedAt = now;
-    }
-    if (emailUntil && r.channels.includes("email") && !r.emailedAt && r.fireAt <= emailUntil) {
-      for (const pid of r.recipientIds) {
-        const p = people.get(pid);
-        if (!p?.email || p.status !== "active") continue;
-        out.emails.push({
-          personId: pid,
-          to: p.email,
-          subject: `Reminder: ${title2}`,
-          body: `Hi ${p.name.split(" ")[0]},
-
-${title2}: ${day}${when?.time ? ` at ${when.time}` : ""}.
-
-Open the Production Hub for the details.
-
-Dawn of Faith Production Hub`,
-          key: `reminder:${r.id}:${r.fireAt}:${pid}`
-        });
-      }
-      r.emailedAt = now;
-    }
-    const appDone = !r.channels.includes("app") || !!r.firedAt;
-    const emailDone = !r.channels.includes("email") || !!r.emailedAt;
-    if (appDone && emailDone && r.repeat !== "none" && !r.targetType) {
-      r.date = advance(r.date, r.repeat);
-      r.fireAt = nextFireAt(db2, r);
-      r.firedAt = null;
-      r.emailedAt = null;
-    }
-  }
-  return out;
-}
-var notificationsFor = (personId) => (getDb().notifications ?? []).filter((n) => n.personId === personId).sort((a, b) => b.at.localeCompare(a.at));
-var unreadCount = (personId) => notificationsFor(personId).filter((n) => !n.readAt).length;
-function markNotificationsRead(actor, ids2) {
-  const at = (/* @__PURE__ */ new Date()).toISOString();
-  let n = 0;
-  for (const x of getDb().notifications ?? [])
-    if (x.personId === actor.personId && !x.readAt && (!ids2.length || ids2.includes(x.id))) {
-      x.readAt = at;
-      n++;
-    }
-  commit();
-  return n;
-}
-function pruneNotifications(db2, today = todayIso()) {
-  const before = (db2.notifications ?? []).length;
-  const cutoff = addDaysIso(today, -30);
-  db2.notifications = (db2.notifications ?? []).filter((n) => !n.readAt || n.readAt.slice(0, 10) >= cutoff);
-  return before - db2.notifications.length;
-}
-
 // src/services/checks.ts
 var checks_exports = {};
 __export(checks_exports, {
@@ -16563,6 +16596,7 @@ __export(workflow_exports, {
   setEpisodeEditor: () => setEpisodeEditor,
   setEpisodeLinks: () => setEpisodeLinks,
   setLearningNotes: () => setLearningNotes,
+  setPlannedStart: () => setPlannedStart,
   setProjectDrive: () => setProjectDrive,
   setReadyForReview: () => setReadyForReview,
   setReviewWindow: () => setReviewWindow,
@@ -17129,6 +17163,7 @@ var RPC_NAMES = {
     "setEpisodeEditor",
     "setEpisodeLinks",
     "setLearningNotes",
+    "setPlannedStart",
     "setProjectDrive",
     "setReadyForReview",
     "setReviewWindow",
@@ -17684,7 +17719,9 @@ var ACTIONS = {
       notifySms: z2.boolean(),
       photoUrl: url.nullable(),
       fontSize: z2.enum(["small", "default", "large", "xl"]),
-      density: z2.enum(["comfortable", "compact"])
+      density: z2.enum(["comfortable", "compact"]),
+      quietHours: z2.object({ from: time, to: time }).nullable(),
+      reminderLead: count(60 * 24 * 60)
     }).partial()
   ]),
   "people.updatePersonCategory": args([id, staffCategory]),
@@ -17838,6 +17875,7 @@ var ACTIONS = {
   ]),
   "workflow.clearSessionStorage": args([id, storageRole]),
   "workflow.markStorage": args([id, storageRole, z2.boolean()]),
+  "workflow.setPlannedStart": args([id, date.nullable()]),
   "workflow.importProject": args([
     z2.object({
       allocationId: id,
@@ -18024,13 +18062,17 @@ import { createHash as createHash3 } from "node:crypto";
 var AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 var TOKEN_URL = "https://oauth2.googleapis.com/token";
 var REVOKE_URL = "https://oauth2.googleapis.com/revoke";
-var CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
+var CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.app.created";
+var CALENDAR_API = "https://www.googleapis.com/calendar/v3";
+var CALENDAR_NAME = "DOF Production Hub";
+var CALENDAR_VERSION = 2;
 var GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.send";
-var TIME_ZONE2 = "Africa/Nairobi";
+var DEFAULT_TIME_ZONE = "Africa/Nairobi";
 var cfg = () => ({ id: process.env.GOOGLE_CLIENT_ID ?? "", secret: process.env.GOOGLE_CLIENT_SECRET ?? "" });
 var googleAvailable = () => !!(cfg().id && cfg().secret && process.env.TOKEN_ENCRYPTION_KEY);
 var redirectUri = (origin) => `${origin}/api/google-callback`;
 var web = () => globalThis.fetch;
+var needsRelink = (d) => d.scopes.includes("calendar") && (d.calendarVersion ?? 1) < CALENDAR_VERSION;
 async function status(store2, who) {
   const d = await store2.google.get(who.user._id);
   return {
@@ -18039,7 +18081,9 @@ async function status(store2, who) {
     email: d?.email,
     calendar: d?.scopes.includes("calendar"),
     gmail: d?.scopes.includes("gmail"),
-    linkedAt: d?.linkedAt
+    linkedAt: d?.linkedAt,
+    ...d && needsRelink(d) ? { relink: true } : {},
+    ...d?.scopes.includes("calendar") ? { calendarName: CALENDAR_NAME } : {}
   };
 }
 async function startLink(store2, who, origin, choose) {
@@ -18094,7 +18138,8 @@ async function finishLink(store2, who, origin, code, state) {
     sub: claims.sub,
     scopes: pending.scopes,
     refresh: encrypt(tok.refresh_token),
-    linkedAt: (/* @__PURE__ */ new Date()).toISOString()
+    linkedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    ...pending.scopes.includes("calendar") ? { calendarVersion: CALENDAR_VERSION, calendarId: null, synced: [] } : {}
   };
   await store2.google.put(doc2);
   return doc2;
@@ -18138,6 +18183,12 @@ async function accessToken(store2, username, need) {
 }
 var addDay = (iso2) => new Date(Date.parse(`${iso2}T12:00:00Z`) + 864e5).toISOString().slice(0, 10);
 async function addToCalendar(store2, who) {
+  const doc2 = await store2.google.get(who.user._id);
+  if (doc2 && needsRelink(doc2))
+    throw new HttpError(
+      409,
+      `Your Google link is from before the app had its own calendar. Unlink, then link again once: your dates then go into a calendar of their own, "${CALENDAR_NAME}", and the app no longer touches the rest of your calendar.`
+    );
   const token = await accessToken(store2, who.user._id, "calendar");
   const loaded = await loadDb(store2, [
     "records",
@@ -18147,9 +18198,11 @@ async function addToCalendar(store2, who) {
     "people",
     "counters",
     "members",
-    "recordingSessions"
+    "recordingSessions",
+    "loans"
   ]);
   if (!loaded) throw new HttpError(503, "Not set up.");
+  const zone = loaded.db.settings.timeZone || DEFAULT_TIME_ZONE;
   const items = withDb(loaded.db, () => {
     const lead = loaded.db.settings.stageReminderHours;
     const out2 = remindersFor(who.person.personId).map((r) => ({
@@ -18176,14 +18229,46 @@ async function addToCalendar(store2, who) {
         popupMinutes: 1440
       });
     }
+    if (can(who.actor, "equipment.use"))
+      for (const l of loaded.db.loans ?? []) {
+        if (l.status !== "out" || l.expectedReturn < today) continue;
+        out2.push({
+          key: `loan:${l.id}`,
+          title: `Loan back: ${l.borrowerName}`,
+          detail: `Loan ${l.id}${l.organisation ? `, ${l.organisation}` : ""}.`,
+          date: l.expectedReturn,
+          time: "",
+          end: "",
+          popupMinutes: 1440
+        });
+      }
     return out2;
   });
-  const out = { added: 0, already: 0, failed: 0 };
+  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  const linked = await store2.google.get(who.user._id);
+  const makeCalendar = async () => {
+    const res = await web()(`${CALENDAR_API}/calendars`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ summary: CALENDAR_NAME, description: "Dates from the Dawn of Faith Production Hub.", timeZone: zone })
+    });
+    const made = await res.json().catch(() => ({}));
+    if (!res.ok || !made.id) throw new HttpError(502, "Google could not make the calendar. Try again in a minute.");
+    linked.calendarId = made.id;
+    linked.synced = [];
+    await store2.google.put(linked);
+    return made.id;
+  };
+  let calendarId = linked.calendarId || await makeCalendar();
+  const eventsUrl = () => `${CALENDAR_API}/calendars/${encodeURIComponent(calendarId)}/events`;
+  const out = { added: 0, already: 0, failed: 0, removed: 0, calendar: CALENDAR_NAME };
+  const ids2 = [];
   for (const r of items) {
-    const start = r.time ? { dateTime: `${r.date}T${r.time}:00`, timeZone: TIME_ZONE2 } : { date: r.date };
+    const start = r.time ? { dateTime: `${r.date}T${r.time}:00`, timeZone: zone } : { date: r.date };
     const endTime = r.end && r.time && r.end > r.time ? r.end : r.time ? `${String(Math.min(23, Number(r.time.slice(0, 2)) + 8)).padStart(2, "0")}:${r.time.slice(3)}` : "";
-    const end = r.time ? { dateTime: `${r.date}T${endTime}:00`, timeZone: TIME_ZONE2 } : { date: addDay(r.date) };
+    const end = r.time ? { dateTime: `${r.date}T${endTime}:00`, timeZone: zone } : { date: addDay(r.date) };
     const id2 = createHash3("sha1").update(r.key).digest("hex");
+    ids2.push(id2);
     const body = JSON.stringify({
       id: id2,
       summary: r.title,
@@ -18194,17 +18279,27 @@ From the Dawn of Faith Production Hub.`,
       end,
       reminders: { useDefault: false, overrides: [{ method: "popup", minutes: r.popupMinutes }] }
     });
-    const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
-    const put = await web()(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${id2}`, { method: "PUT", headers, body });
+    const put = await web()(`${eventsUrl()}/${id2}`, { method: "PUT", headers, body });
     if (put.ok) {
       out.already++;
       continue;
     }
-    const res = await web()("https://www.googleapis.com/calendar/v3/calendars/primary/events", { method: "POST", headers, body });
+    let res = await web()(eventsUrl(), { method: "POST", headers, body });
+    if (res.status === 404) {
+      calendarId = await makeCalendar();
+      res = await web()(eventsUrl(), { method: "POST", headers, body });
+    }
     if (res.ok) out.added++;
     else if (res.status === 409) out.already++;
     else out.failed++;
   }
+  for (const gone of (linked.synced ?? []).filter((x) => !ids2.includes(x))) {
+    const res = await web()(`${eventsUrl()}/${gone}`, { method: "DELETE", headers });
+    if (res.ok || res.status === 404 || res.status === 410) out.removed++;
+    else ids2.push(gone);
+  }
+  linked.synced = ids2;
+  await store2.google.put(linked);
   return out;
 }
 var encodeWord = (s2) => /^[\x20-\x7e]*$/.test(s2) ? s2 : `=?UTF-8?B?${Buffer.from(s2, "utf8").toString("base64")}?=`;

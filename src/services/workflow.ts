@@ -7,6 +7,7 @@ export {
   assignProducer,
   closeProject,
   setWorkflowDeadline,
+  setPlannedStart,
   advanceProject,
   projectLabelOf,
 } from "./workflow/projects";

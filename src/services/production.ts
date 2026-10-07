@@ -23,6 +23,7 @@ import {
   blankSheetContent,
 } from "../config/callSheet";
 import { commit, getDb, nextCounter } from "../data/store";
+import { TIME_ZONE } from "./utils";
 import { claimId, localId } from "../data/ids";
 import { canWrite, getRecord, isHop, rootOf } from "./access";
 import { logAudit } from "./audit";
@@ -416,6 +417,7 @@ export function setUpEventDays(actor: Actor, event: ContentRecord, input: EventS
       id: claimId(`DOF-TPL-${pad(nextCounter("showTemplate"))}`),
       contentId: event.contentId,
       rule: structuredClone(input.rule!),
+      timeZone: getDb().settings.timeZone || TIME_ZONE,
       sheet: content,
       productionLevel: input.productionLevel ?? null,
       ownerPersonId: null,

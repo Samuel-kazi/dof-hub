@@ -19,6 +19,7 @@ import { useTheme } from "../ui/theme";
 import { AvatarUpload, Field } from "../ui/parts";
 import { Empty } from "../ui/parts";
 import { MoveExistingPanel } from "./workflow/MoveExisting";
+import { NotificationPrefs } from "./NotificationPrefs";
 
 export function Settings() {
   const { actor, me, attempt, confirm, go, toast } = useApp();
@@ -261,6 +262,7 @@ export function Settings() {
         </div>
       </section>
 
+      <NotificationPrefs />
       {isRemote() && <PasswordSettings username={me.username ?? ""} />}
       {isRemote() && <ConnectedAccounts />}
       <>

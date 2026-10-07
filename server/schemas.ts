@@ -621,6 +621,8 @@ export const ACTIONS: Record<string, ActionSpec> = {
         photoUrl: url.nullable(),
         fontSize: z.enum(["small", "default", "large", "xl"]),
         density: z.enum(["comfortable", "compact"]),
+        quietHours: z.object({ from: time, to: time }).nullable(),
+        reminderLead: count(60 * 24 * 60),
       })
       .partial(),
   ]),
@@ -789,6 +791,7 @@ export const ACTIONS: Record<string, ActionSpec> = {
   ]),
   "workflow.clearSessionStorage": args([id, storageRole]),
   "workflow.markStorage": args([id, storageRole, z.boolean()]),
+  "workflow.setPlannedStart": args([id, date.nullable()]),
   "workflow.importProject": args([
     z
       .object({

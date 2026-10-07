@@ -28,6 +28,7 @@ export interface Person {
   density?: Density; // per-user: Comfortable/Compact
   contactHidden?: boolean; // only in what one person is shown: their email, phone and equipment are private to them, so those fields are left empty
   quietHours?: { from: string; to: string } | null; // HH:MM, Nairobi time: no emails in between (data version 21)
+  reminderLead?: number; // minutes before: the "when" a new reminder starts with (build prompt v4, section 12)
 }
 
 export type FontSize = "small" | "default" | "large" | "xl";
@@ -292,6 +293,7 @@ export interface ShowTemplate {
   id: string; // DOF-TPL-001
   contentId: string; // the show
   rule: RecurrenceRule;
+  timeZone?: string; // the zone its dates and times are in, stored explicitly (data version 24): Africa/Nairobi
   sheet: SheetContent;
   productionLevel: ProductionLevel | null; // each day's level of production
   ownerPersonId: string | null; // responsible for each day
@@ -335,6 +337,7 @@ export interface ProjectWorkflow {
   sermonFormat: SermonFormat | null; // sermon series only
   migrated: boolean; // moved across from the earlier pipeline: gates it passed there count as met
   storageDriveId?: string | null; // the drive its footage is planned to go on (the Recording Plan's Cards and storage)
+  plannedStart?: string | null; // when work is planned to start: the Calendar's Timeline bar runs from it to the due date
   aheadOfReview?: ReviewNote[]; // each time someone went ahead before the theological review was done (build prompt v2, section 14)
   // Recorded before the system and brought in from a drive (build prompt v4, section 7A): its earlier stages show
   // "Recorded before the system", and its dates before importedAt are history (no reminders, overdue, urgency or Google).
@@ -993,6 +996,8 @@ export interface Settings {
   // thresholds where they differ from the defaults (src/config/urgency.ts).
   features?: Record<string, boolean>;
   urgency?: Partial<UrgencyThresholds>;
+  // The workspace's time zone, stored explicitly (build prompt v4, section 7): dates, shows and Google events are in it.
+  timeZone?: string;
 }
 
 /** The urgency report's numbers, kept in settings so they change without code. */

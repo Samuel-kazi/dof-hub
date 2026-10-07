@@ -49,6 +49,7 @@ export const setEpisodeAssets = rpc("workflow.setEpisodeAssets", core.setEpisode
 export const setEpisodeEditor = rpc("workflow.setEpisodeEditor", core.setEpisodeEditor);
 export const setEpisodeLinks = rpc("workflow.setEpisodeLinks", core.setEpisodeLinks);
 export const setLearningNotes = rpc("workflow.setLearningNotes", core.setLearningNotes);
+export const setPlannedStart = rpc("workflow.setPlannedStart", core.setPlannedStart);
 export const setProjectDrive = rpc("workflow.setProjectDrive", core.setProjectDrive);
 export const setReadyForReview = rpc("workflow.setReadyForReview", core.setReadyForReview);
 export const setReviewWindow = rpc("workflow.setReviewWindow", core.setReviewWindow);

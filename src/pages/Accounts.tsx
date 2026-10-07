@@ -250,6 +250,8 @@ interface GoogleStatus {
   calendar?: boolean;
   gmail?: boolean;
   linkedAt?: string;
+  relink?: boolean; // linked to the main calendar before the dedicated one: link again once
+  calendarName?: string;
 }
 
 export function useGoogle(): [GoogleStatus | null, () => void] {
@@ -315,31 +317,44 @@ export function ConnectedAccounts() {
             <dd>{g.linkedAt ? fmtDateTime(g.linkedAt) : ""}</dd>
             <dt>Allowed to</dt>
             <dd>
-              {[g.calendar && "add reminders to your calendar", g.gmail && "send reminder emails from your Gmail"]
+              {[
+                g.calendar && `put your dates in their own calendar, "${g.calendarName ?? "DOF Production Hub"}"`,
+                g.gmail && "send reminder emails from your Gmail",
+              ]
                 .filter(Boolean)
                 .join(", ") || "Nothing yet"}
             </dd>
           </dl>
+          {g.relink && (
+            <div className="banner warn" role="status">
+              <span className="grow">
+                Your Google link is from before the hub had its own calendar. Unlink, then link again once: your dates then go into a
+                calendar of their own, &quot;DOF Production Hub&quot;, and the hub can no longer see or change the rest of your calendar.
+              </span>
+            </div>
+          )}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {g.calendar && (
+            {g.calendar && !g.relink && (
               <button
                 className="btn"
                 disabled={busy}
                 onClick={() =>
                   void go(async () => {
-                    const r = await api.post<{ added: number; already: number; failed: number }>("/api/google-calendar");
+                    const r = await api.post<{ added: number; already: number; failed: number; removed?: number }>("/api/google-calendar");
+                    const parts = [
+                      r.added && `${r.added} added`,
+                      r.already && `${r.already} updated`,
+                      r.removed && `${r.removed} taken off`,
+                      r.failed && `${r.failed} could not be added`,
+                    ].filter(Boolean);
                     toast(
-                      r.failed
-                        ? `${r.added} added, ${r.failed} could not be added`
-                        : r.added
-                          ? `${r.added} reminder${r.added === 1 ? "" : "s"} added to your Google Calendar`
-                          : "Your calendar already has everything",
+                      `${g.calendarName ?? "DOF Production Hub"} calendar: ${parts.length ? parts.join(", ") : "nothing to add"}.`,
                       r.failed ? "error" : "success",
                     );
                   })
                 }
               >
-                Add my reminders to Google Calendar
+                Sync my dates to Google Calendar
               </button>
             )}
             <button
@@ -368,8 +383,9 @@ export function ConnectedAccounts() {
         <div className="stack" style={{ marginTop: 8 }}>
           <p className="muted">Link your Google account only if you want to. Choose what it may be used for. You can unlink at any time.</p>
           <label className="check">
-            <input type="checkbox" checked={calendar} onChange={(e) => setCalendar(e.target.checked)} /> Add my reminders to my Google
-            Calendar
+            <input type="checkbox" checked={calendar} onChange={(e) => setCalendar(e.target.checked)} /> Put my sessions, show days, due
+            dates and reminders in a Google Calendar of their own, &quot;DOF Production Hub&quot; (the hub sees nothing else in your
+            calendar)
           </label>
           <label className="check">
             <input type="checkbox" checked={gmail} onChange={(e) => setGmail(e.target.checked)} /> Send reminder emails from my Gmail (for

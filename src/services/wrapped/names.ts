@@ -278,6 +278,7 @@ export const RPC_NAMES: Record<string, string[]> = {
     "setEpisodeEditor",
     "setEpisodeLinks",
     "setLearningNotes",
+    "setPlannedStart",
     "setProjectDrive",
     "setReadyForReview",
     "setReviewWindow",

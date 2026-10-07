@@ -13,6 +13,7 @@ import { localId } from "./ids";
 //     (Event Brief is the Show Plan, Recording Plan the Broadcast Plan, Show Day Sheet the Live Day, Show Report the
 //     Production Report); every line of a live day's technical check gets its state from its tick (ticked is OK, not
 //     ticked is Not checked); and the days still to come, and recurring shows' templates, get the Rehearsal Log's steps.
+//   - The time zone is stored explicitly: on the settings, and on each recurring show's template (Africa/Nairobi).
 
 export interface V24Change {
   lines: string[]; // what it does, in words, for the dry run (npm run db:upgrade)
@@ -41,6 +42,15 @@ export function toV24(db: Database): V24Change {
       `${pages.length} Recording Plan ${pages.length === 1 ? "page" : "pages"} "Cards and storage" renamed "Cards" (storage is now chosen in Production)`,
     );
   liveShows(db, lines);
+  // The time zone, stored explicitly (build prompt v4, section 7): Nairobi, as every date and time has always been.
+  if (!db.settings.timeZone) {
+    db.settings.timeZone = "Africa/Nairobi";
+    lines.push("The workspace's time zone is stored: Africa/Nairobi (as every date and time already was)");
+  }
+  const zoneless = (db.showTemplates ?? []).filter((t) => !t.timeZone);
+  for (const t of zoneless) t.timeZone = db.settings.timeZone;
+  if (zoneless.length)
+    lines.push(`${zoneless.length} recurring show ${zoneless.length === 1 ? "template stores its" : "templates store their"} time zone`);
   return { lines, changed: lines.length > 0 };
 }
 

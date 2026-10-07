@@ -254,6 +254,18 @@ export function setWorkflowDeadline(actor: Actor, id: string, stage: string, dat
   return target;
 }
 
+/** When work on a project is planned to start: its bar on the Calendar's Timeline runs from it to its due date. */
+export function setPlannedStart(actor: Actor, projectId: string, date: string | null): Project {
+  const p = projectForWrite(actor, projectId);
+  if (date !== null && date !== "" && !isIsoDate(date)) throw new RuleError("Pick the planned start date.");
+  if (date && p.deadline && date > p.deadline) throw new RuleError(`The planned start is after the publish date (${p.deadline}).`);
+  p.workflow.plannedStart = date || null;
+  p.version += 1;
+  logAudit(actor, "planned-start", "record", projectId, date || "none");
+  commit();
+  return p;
+}
+
 /**
  * Leaves Development for Pre-production, if the gate passes: greenlit, form complete, pitch and outline approved,
  * handoff done. A DOF-made documentary then waits for its second greenlight before anything is recorded.

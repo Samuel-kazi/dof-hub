@@ -551,6 +551,8 @@ await t("every action accepts the arguments its screen sends", async () => {
     reviewedBeforeSystem: false,
   });
   await must("workflow.setReviewedBeforeSystem", imported.project.contentId, true);
+  await must("workflow.setPlannedStart", imported.project.contentId, "2024-04-01");
+  await must("people.updateOwnProfile", { quietHours: { from: "21:00", to: "07:00" }, reminderLead: 1440 });
 
   // The Checks panel: a suggestion set aside with a note and brought back, and a manual check ticked with its note.
   await must("checks.dismissCheck", imported.project.contentId, "warn:Something to check", "Not for this project");
