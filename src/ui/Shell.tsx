@@ -445,7 +445,7 @@ export function Shell() {
             {route.n === "storage" && <Storage />}
             {route.n === "drive" && <DrivePage id={route.id} />}
             {route.n === "access" && <Access />}
-            {route.n === "calendar" && <CalendarPage />}
+            {route.n === "calendar" && <CalendarPage key={route.view ?? "calendar"} initialView={route.view} />}
             {route.n === "documents" && <Documents />}
             {route.n === "doc" && <DocPage id={route.id} />}
             {route.n === "soon" && <Soon module={route.module} />}

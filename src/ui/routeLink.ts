@@ -67,7 +67,7 @@ export function encodeRoute(r: Route): string {
     case "access":
       return "/access";
     case "calendar":
-      return "/calendar";
+      return r.view ? `/calendar/${r.view}` : "/calendar";
     case "settings":
       return "/settings";
   }
@@ -123,10 +123,10 @@ export function decodeRoute(path: string): Route {
     case "access":
       return { n: "access" };
     case "reminders":
-      // The Reminders module is part of the Calendar now (build prompt v4): an old link opens the Calendar.
-      return { n: "calendar" };
+      // The Reminders module is part of the Calendar now (build prompt v4): an old link opens the Calendar's Reminders.
+      return { n: "calendar", view: "reminders" };
     case "calendar":
-      return { n: "calendar" };
+      return arg === "reminders" ? { n: "calendar", view: "reminders" } : { n: "calendar" };
     case "settings":
       return { n: "settings" };
     default:

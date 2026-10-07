@@ -274,7 +274,8 @@ export function ChecksPanel({
           }),
     [id, chip], // eslint-disable-line react-hooks/exhaustive-deps
   );
-  // On a wide window the panel floats over the page: a click outside it closes it (a dialog it opened does not).
+  // On a wide window the panel floats over the page: a click outside it closes it (a dialog it opened does not). Esc
+  // closes it wherever the cursor is (an item just dismissed takes the cursor with it), unless a dialog is open.
   useEffect(() => {
     if (!open) return;
     const away = (e: PointerEvent) => {
@@ -282,8 +283,17 @@ export function ChecksPanel({
       if (!isWide() || !t || root.current?.contains(t) || t.closest(".scrim")) return;
       setOpen(false);
     };
+    const esc = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented || document.querySelector(".scrim")) return;
+      setOpen(false);
+      if (!document.activeElement || document.activeElement === document.body) bar.current?.focus();
+    };
     window.addEventListener("pointerdown", away);
-    return () => window.removeEventListener("pointerdown", away);
+    window.addEventListener("keydown", esc);
+    return () => {
+      window.removeEventListener("pointerdown", away);
+      window.removeEventListener("keydown", esc);
+    };
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const project = getRecord(checks.projectId);

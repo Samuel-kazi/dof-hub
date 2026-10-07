@@ -36,6 +36,7 @@ const ROUTES: Route[] = [
   { n: "drive", id: "DRV-001" },
   { n: "access" },
   { n: "calendar" },
+  { n: "calendar", view: "reminders" },
   { n: "settings" },
 ];
 for (const r of ROUTES) {
@@ -47,7 +48,7 @@ t("a Content ID with special characters survives the round trip", () => {
   assert.deepEqual(decodeRoute(encodeRoute(r)), r);
 });
 t("an old Reminders link opens the Calendar, which holds the reminders now", () => {
-  assert.deepEqual(decodeRoute("/reminders"), { n: "calendar" });
+  assert.deepEqual(decodeRoute("/reminders"), { n: "calendar", view: "reminders" });
 });
 t("an empty path is the dashboard", () => assert.deepEqual(decodeRoute(""), { n: "dashboard" }));
 t("a completely unknown path falls back to the dashboard, rather than crashing", () => {

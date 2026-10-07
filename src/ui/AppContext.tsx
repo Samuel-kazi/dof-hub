@@ -28,7 +28,7 @@ export type Route =
   | { n: "storage" }
   | { n: "drive"; id: string }
   | { n: "access" }
-  | { n: "calendar" }
+  | { n: "calendar"; view?: "reminders" } // the Calendar, on its Reminders when an old Reminders link brought someone
   | { n: "settings" };
 
 export interface MenuItem {
