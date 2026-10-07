@@ -2,6 +2,89 @@
 
 What changed in each version, newest first. How to deploy is in GO-LIVE.md.
 
+## Unreleased: build prompt v4 (data version 24)
+
+Built in six steps, each its own commit (A to F), all approved together. Data version 24 keeps a copy first
+(`before_v24`; in the demo and desktop app, `dof-hub-db-before-v24`), and running it again changes nothing.
+
+**A. The Recording Log, storage in Production, and importing existing projects**
+
+- Production has one **Recording Log** per session (a live day's is its **Show Log**). It replaces the Session Log and
+  Storage tiles and the link back to Pre-production. It holds: who attended; what was recorded, one row each, with a
+  take mark (Good, Pickup needed, Re-record), length and notes; issues and pickups; and storage and backup. It works
+  with no Recording Plan and no call sheet.
+- **Storage is chosen in Production**, not Pre-production. Choose a drive (free space and offline shown). The
+  project's folders on that drive are listed, with the best match (Content ID, then name) chosen first; one click
+  confirms. "+ Add to this drive" makes the folder from a pattern (default `{contentId}/{date}_{label}`, in
+  Settings). There is a second drive for the backup, and ticks for Offloaded and Backed up (who and when). Missing
+  storage, a missing backup, low space and an offline drive are warnings only. The call sheet shows the drive read
+  only.
+- The one hard rule for moving to Post production: **at least one item recorded** (Good or Pickup needed). Pickups and
+  issues go into Edit Notes, and the editor sees where the footage is.
+- **Import existing project**, from a folder on a drive (Storage & Media, "Import as project") or the pipeline's
+  button. It gets a Content ID and starts in Production (its Recording Log, blank) or in Post production (one episode
+  for each item recorded). Stages it skipped show "Recorded before the system", never as errors. "Reviewed before
+  the system" clears the theological review banner. Its past dates stay out of reminders, overdue, the urgency report
+  and Google.
+
+**B. One collapsible Checks panel for every stage**
+
+- The long lists of checks become one slim bar under the stage tracker: "Checks: 2 required, 4 suggestions", or "All
+  clear" in green. Opened, it is a popover on wide windows and opens in place on phones, with Required to move on,
+  Suggestions and Completed. Each item says what is missing and has **Go to**, which opens the document or scrolls to
+  the field. Suggestions can be **dismissed with a note** (kept on the project for everyone, and logged). Manual
+  items are ticked in the panel with a note. A Development gate can be passed by hand from it. Call sheet and
+  Recording Log headers show a count chip.
+- Done buttons stay pressable. If something required is missing, they open the panel instead of moving on. Open or
+  closed is remembered. The panel works with the keyboard (Esc, arrow keys) and screen readers.
+
+**C. Live Shows completed, with Live Control**
+
+- The Event Brief is the **Show Plan** (objective, venue, audience and streaming, production type and duration,
+  creative notes, logistics), with the show date and producer in its header. The live gate is **a show date and a
+  show producer**; the Greenlight stays a document.
+- The **Broadcast Plan** has a **Rundown** card (time, length, camera, audio, graphics), copied to the days. **Tech
+  Check**: each line with who checks it, Not checked / OK / Issue, the inventory item, a test result and notes. It can
+  be copied from the previous show. Issues are warnings. **Rehearsal Log**: steps with when each was checked, by
+  whom, and notes; never a gate.
+- The Show Day Sheet is the **Live Day**. **Live Control** shows a clock, the segment on air, next and up next (moved
+  on by hand, with actual times) and status lights set by hand. It has a tile, a button on the day and a page of its
+  own. The Show Report is the **Production Report**, with Lessons learned.
+- **Gear not returned** after a show is flagged on its call sheet, on the day's page and in the urgency report.
+
+**D. The Calendar**
+
+- **Timeline, Month, Week, Day and Agenda** views, with filters in a strip that folds away. The Timeline shows each
+  project as a bar from its **planned start** (new, in the project's Edit dialog) to its due date, coloured by stage
+  or urgency. A bar opens to show its sessions, call sheets and episodes' due dates.
+- Settings has **Notifications**: email on top of the bell, **quiet hours** (no email in between) and when new
+  reminders start.
+- **Google Calendar** is one way, to a dedicated **"DOF Production Hub"** calendar the app makes. It uses the narrow
+  `calendar.app.created` scope: the hub cannot see or change the rest of anyone's calendar. Updates follow, and
+  cancelled items are taken off. Anyone linked before links again once (see GO-LIVE.md).
+- The **time zone** is stored explicitly (Africa/Nairobi), on the settings and on each recurring show's template.
+
+**E. Call Sheets, templates, the brief, email**
+
+- The **Call Sheets module is a read-only index**: find, filter, open and download. A sheet is made from its session's
+  or show day's page. Sheets made on their own before stay listed.
+- A recurring show's day **marks, field by field, what it changed from its template**, in the strip and on each
+  section.
+- The Show Brief (and the documentary and music briefs) **link to Planned Episodes** (Parts, Songs).
+- Settings shows **whether email is set up**, and the Head of Production can send a test email. The account itself is
+  set only in Vercel (SMTP_USER and SMTP_PASS).
+- **Gear is unchanged**: the Gear tile and gear on call sheets stay as they were.
+
+**F. Clean-up**
+
+- **General Use is no longer a pipeline**. Lent gear is in Equipment, under Lending. Old General Use records keep their
+  IDs and open as before; an old link to its pipeline says where Lending is.
+- **The Reminders module is gone**: the Calendar holds the reminders. An old #/reminders link opens the Calendar.
+
+New validated server actions: `workflow.assignSessionStorage`, `clearSessionStorage`, `markStorage`, `importProject`,
+`setReviewedBeforeSystem`, `setPlannedStart`; `checks.dismissCheck`, `restoreCheck`, `setCheck`; `live.setRundown`,
+`copyRundownToDays`, `copyTechCheckFromPrevious`, `advanceRundown`, `setLiveLight`.
+
 ## Unreleased: the rework (build prompt v2)
 
 Phase 1, the foundations (no change on screen yet; each later part ships behind its own switch in Settings):

@@ -95,6 +95,19 @@ Nothing needs this. Do it only if people want reminders in their Google Calendar
 
 Then each person opens Settings, Connected accounts, ticks what they allow, and links their own account.
 
+**The calendar the hub uses (data version 24).** The hub puts each person's dates (sessions and show days they are on,
+due dates, reminders, loan returns) in a calendar of their own called **"DOF Production Hub"**, which it makes on the
+first sync. It asks Google only for the scope `https://www.googleapis.com/auth/calendar.app.created` ("See, create,
+change and delete secondary calendars that this app creates"). It cannot see or change anything else in anyone's
+calendar. On the OAuth consent screen, under Scopes, add that scope (and `gmail.send` if people send reminder emails
+from their Gmail). The older `calendar.events` scope is no longer asked for, and can be removed from the consent
+screen.
+
+**People who linked Google before this version** see "Unlink, then link again once" in Settings. Nothing is pushed
+to their calendar until they do. After linking again, their next sync makes the "DOF Production Hub" calendar. Events
+the old version put in their main calendar stay there; they can delete them by hand. From then on, a date that moves
+moves in Google too, and a cancelled one is taken off. Nothing is ever read back from Google into the hub.
+
 While the consent screen says "Testing", only people you add as test users can link, and Google ends their link after 7 days. For a small team, set publishing status to "In production". Google will show an "unverified app" notice at linking, which is expected for an internal tool.
 
 ## Updating a site that is already live
@@ -362,6 +375,44 @@ The first time a version with data version 23 starts, it keeps a copy (`before_v
 `npm run db:upgrade` is the dry run: it lists, for each live show and album, what will move and to which Content ID,
 before anything does. Running the upgrade again changes nothing. **Going back is restoring the copy** (as for version 15 above, with `v23`). Nothing needs
 setting up, and nothing changes on Vercel's free plan.
+
+### Data version 24: build prompt v4
+
+The first time a version with data version 24 starts, it keeps a copy (`before_v24`; in the demo and desktop app,
+`dof-hub-db-before-v24`), then:
+
+- A session's footage, entered on a drive before, becomes that session's **main drive** in its Recording Log.
+- A Recording Plan's page "Cards and storage" is renamed "Cards": the drive is now chosen in Production. What was
+  written on the page is kept.
+- Live shows' documents take their new names where they kept the old ones: Event Brief is the **Show Plan**,
+  Recording Plan the **Broadcast Plan**, Show Day Sheet the **Live Day**, Show Report the **Production Report**. A
+  document someone renamed keeps its own name.
+- Each line of a live day's technical check gets a **state** from its tick (ticked is OK, not ticked is Not checked).
+  Coming live days and recurring shows' templates get the **Rehearsal Log's steps**.
+- The **time zone** is stored: Africa/Nairobi, on the settings and on each recurring show's template (every date and
+  time already was in Nairobi time).
+
+`npm run db:upgrade` is the dry run: it lists each of these, with counts, before anything changes. Running the upgrade
+again changes nothing. **Going back is restoring the copy** (as for version 15 above, with `v24`).
+
+After updating:
+
+- **Google**: add the `calendar.app.created` scope on the consent screen (section 6). People linked before link again
+  once.
+- **Email**: Settings now shows whether email is set up. To switch it on, add `SMTP_USER` and `SMTP_PASS` in Vercel
+  (Settings, Environment Variables) and redeploy. They are kept there only, never in the app or the code. The Head of
+  Production can then send a test email from Settings.
+- **Call sheets** are made from a recording session's or show day's page ("Make the call sheet"). The Call Sheets
+  module lists them all, read only. Sheets made on their own before are still there.
+- **General Use** is no longer a pipeline: lent gear is in Equipment, under Lending. **Reminders** are in the Calendar;
+  an old Reminders link opens it.
+
+On Vercel's free plan:
+
+- **Live Control** is moved on by hand. Another screen showing it sees the change when it next syncs, within about 15
+  seconds (no instant push on the free plan).
+- Email still goes out with the morning run and as the hub is used, so an email reminder must be a day or more ahead.
+  Quiet hours hold a person's email until they end.
 
 ## What this does not do yet
 

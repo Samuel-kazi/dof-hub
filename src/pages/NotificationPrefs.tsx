@@ -11,7 +11,9 @@ import { Field } from "../ui/parts";
 
 export function NotificationPrefs() {
   useDb();
-  const { actor, me, attempt } = useApp();
+  const { actor, me: shell, attempt } = useApp();
+  // Read straight from the data, so a change shows at once.
+  const me = getDb().people.find((p) => p.personId === actor.personId) ?? shell;
   const [quiet, setQuiet] = useState(!!me.quietHours);
   const [from, setFrom] = useState(me.quietHours?.from ?? "21:00");
   const [to, setTo] = useState(me.quietHours?.to ?? "07:00");
