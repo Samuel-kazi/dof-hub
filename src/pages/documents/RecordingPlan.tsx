@@ -3,10 +3,8 @@ import type { RecordingSession, SessionLabel } from "../../types";
 import { roleName, SESSION_LABELS } from "../../config/workflow";
 import { planLabels } from "../../config/documentCatalog";
 import { getDb } from "../../data/store";
-import { driveUsage } from "../../services/driveUsage";
-import { hasStorageAccess } from "../../services/storage";
 import { canManageTeam } from "../../services/workflow/common";
-import { fmtDate, fmtSize } from "../../services/utils";
+import { fmtDate } from "../../services/utils";
 import { framesOf, makeDevotionEpisodes, rowsOfShotList, shotListsOf, shotNumbers, storyboardsOf } from "../../services/wrapped/documents";
 import { nameOf } from "../../services/wrapped/people";
 import {
@@ -23,7 +21,6 @@ import {
   roleHolder,
   sessionName,
   sessionsOf,
-  setProjectDrive,
   setRolePerson,
   setSessionBoards,
   sheetTimes,
@@ -944,42 +941,6 @@ function BoardsOnSheet({
           )}
         </>
       )}
-    </section>
-  );
-}
-
-// ── Cards and storage: the drive the footage is planned to go on ──
-
-export function PlannedDrive({ project, write }: { project: Project; write: boolean }) {
-  const { actor, attempt } = useApp();
-  const chosen = project.workflow.storageDriveId ?? null;
-  if (!hasStorageAccess(actor))
-    return (
-      <section className="pd-episode rp-drive" aria-label="Footage drive">
-        <b>Footage drive:</b> {chosen ? "chosen" : "not chosen yet"}. It is chosen by someone who may use storage.
-      </section>
-    );
-  const drives = getDb().drives;
-  return (
-    <section className="pd-episode rp-drive" aria-label="Footage drive">
-      <Field label="Drive the footage goes on">
-        <select
-          value={chosen ?? ""}
-          disabled={!write || project.archived}
-          onChange={(e) => attempt(() => setProjectDrive(actor, project.contentId, e.target.value || null), "Footage drive saved")}
-        >
-          <option value="">Not chosen yet</option>
-          {drives.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name} · {fmtSize(driveUsage(d).freeGB)} free
-            </option>
-          ))}
-        </select>
-      </Field>
-      <p className="muted">
-        Each session's footage goes on this drive unless the session chooses another, in Production under Storage, where the size of the
-        recorded footage is entered once recording starts.
-      </p>
     </section>
   );
 }

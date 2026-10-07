@@ -25,7 +25,7 @@ import { FormFields, pageFields, ProjectDetails } from "./ProjectDetails";
 import { PageComments, ReviewBanner, ReviewPanes } from "./ReviewView";
 import { PageEditor, type PageEditorHandle } from "./PageEditor";
 import { PageList } from "./PageList";
-import { PlanSectionView, PlannedDrive, planCards, type PlanSection } from "./RecordingPlan";
+import { PlanSectionView, planCards, type PlanSection } from "./RecordingPlan";
 import { DaySheetForm, EpisodeStrip, SessionPicker, defaultSession, formCards } from "./StagePanes";
 import { usePrintDocument } from "./printDocument";
 import { ReviewNotDone } from "../../ui/ReviewCheck";
@@ -138,6 +138,12 @@ export function ProjectHome({
           <div className="pd-label">
             <span>{stage}</span>
             {stage === current && <span className="pd-now">Now</span>}
+            {project.workflow.imported && (stage === "Development" || (stage === "Pre-production" && !hasPlannedSessions(project))) && (
+              // Imported from before the system: the stages it skipped are history, never errors (build prompt v4, 7A).
+              <span className="pd-now muted" title="This project was recorded before the system and imported">
+                Recorded before the system
+              </span>
+            )}
           </div>
           <div className="pd-tiles">
             {shownAt(project, stage).map((entry) => {
@@ -230,9 +236,6 @@ function DocumentView({
   // title, or the first page if it has been renamed.
   const fieldsPage = entry?.pages?.find((p) => p.fields?.length);
   const fieldsTarget = fieldsPage ? (pages.find((p) => p.title === fieldsPage.title) ?? pages[0]) : undefined;
-  // The page the footage drive is chosen above (a Recording Plan's Cards and storage), found the same way.
-  const storagePage = entry?.pages?.find((p) => p.storage);
-  const storageTarget = storagePage ? (pages.find((p) => p.title === storagePage.title) ?? pages[0]) : undefined;
   const reviewed = entry?.kind === "review" && entry.reviews ? documentOf(project.contentId, "Development", entry.reviews) : undefined;
   const printJob = (only?: DocumentPage) => {
     if (!doc) return;
@@ -403,7 +406,6 @@ function DocumentView({
                   />
                 )}
                 {page?.episodeId && <EpisodeStrip episodeId={page.episodeId} />}
-                {page && page.id === storageTarget?.id && <PlannedDrive project={project} write={write} />}
                 {page ? (
                   <div className={showComments ? "pd-with-comments" : undefined}>
                     <PageEditor
@@ -432,6 +434,10 @@ function DocumentView({
 }
 
 // ── The whole: Project Home, or one thing open ───────────────
+
+/** Whether an imported project has sessions planned since it came in: then its Pre-production is its own work. */
+const hasPlannedSessions = (project: Project): boolean =>
+  getDb().recordingSessions.some((x) => x.contentId === project.contentId && x.status === "Planned" && !x.archivedAt);
 
 export function ProjectDocuments({ project, write }: { project: Project; write: boolean }) {
   useDb();

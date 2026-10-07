@@ -244,16 +244,26 @@ await t("a DOF-made documentary records nothing until its second greenlight, whi
   assert.ok(!W.evaluateGate("Pre-production", "session", s).missing.some((m) => /Second greenlight/.test(m)));
 });
 
-await t("Production gate: the whole wrap checklist and a status on every row", async () => {
-  const project = await readyProject("podcast", 2);
-  const s = await prepareSession(call, project, SOON, [plannedId(project, 1), plannedId(project, 2)], ["DOF-EQ-CAM-001"]);
-  await call("workflow.updateLogRow", `${s}|${plannedId(project, 1)}`, { status: "Recorded" });
-  const g = W.evaluateGate("Production", "session", s);
-  assert.equal(g.missing.filter((m) => m.startsWith("Wrap:")).length, CHECKLISTS.wrap.items.filter((i) => !i.auto).length);
-  assert.ok(g.missing.includes(`A status for log row "${plannedId(project, 2)}"`));
-  await throwsRule(() => call("workflow.closeSession", s), /Not ready to leave Production/);
-  assert.equal(getDb().records.filter((r) => r.parentId === project).length, 0, "a refused close changes nothing");
-});
+await t(
+  "Production gate: at least one item recorded; the wrap checklist and unmarked rows are suggestions (build prompt v4, 7A)",
+  async () => {
+    const project = await readyProject("podcast", 2);
+    const s = await prepareSession(call, project, SOON, [plannedId(project, 1), plannedId(project, 2)], ["DOF-EQ-CAM-001"]);
+    // Nothing recorded yet: the one hard requirement is missing, and a refused close changes nothing.
+    let g = W.evaluateGate("Production", "session", s);
+    assert.deepEqual(g.missing, ["At least one item recorded in the Recording Log (Good or Pickup needed)"]);
+    await throwsRule(() => call("workflow.closeSession", s), /Not ready to leave Production/);
+    assert.equal(getDb().records.filter((r) => r.parentId === project).length, 0, "a refused close changes nothing");
+    await call("workflow.updateLogRow", `${s}|${plannedId(project, 1)}`, { status: "Recorded" });
+    g = W.evaluateGate("Production", "session", s);
+    assert.deepEqual(g.missing, [], "one item recorded is enough to move on");
+    assert.equal(g.warnings.filter((m) => m.startsWith("Wrap:")).length, CHECKLISTS.wrap.items.filter((i) => !i.auto).length);
+    assert.ok(g.warnings.includes(`No take mark for "${plannedId(project, 2)}": it counts as not recorded`));
+    assert.ok(g.warnings.includes("No drive chosen for the footage") && g.warnings.includes("No backup drive"), "storage is a suggestion");
+    const closed = await call("workflow.closeSession", s);
+    assert.deepEqual(closed.made, [`${project}-E01`], "the unmarked row stays planned for a later session");
+  },
+);
 
 await t("Editing, Post production and Marketing gates", async () => {
   const project = await readyProject("podcast", 1);

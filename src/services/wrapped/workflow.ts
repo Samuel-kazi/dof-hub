@@ -13,7 +13,9 @@ export const archiveSession = rpc("workflow.archiveSession", core.archiveSession
 export const assignDevotion = rpc("workflow.assignDevotion", core.assignDevotion);
 export const assignProducer = rpc("workflow.assignProducer", core.assignProducer);
 export const assignRole = rpc("workflow.assignRole", core.assignRole);
+export const assignSessionStorage = rpc("workflow.assignSessionStorage", core.assignSessionStorage);
 export const canShare = rpc("workflow.canShare", core.canShare);
+export const clearSessionStorage = rpc("workflow.clearSessionStorage", core.clearSessionStorage);
 export const closeProject = rpc("workflow.closeProject", core.closeProject);
 export const closeSession = rpc("workflow.closeSession", core.closeSession);
 export const copyShareLink = rpc("workflow.copyShareLink", core.copyShareLink);
@@ -23,6 +25,9 @@ export const createWorkflowProject = rpc("workflow.createWorkflowProject", core.
 export const decideCheckpoint = rpc("workflow.decideCheckpoint", core.decideCheckpoint);
 export const decideGreenlight = rpc("workflow.decideGreenlight", core.decideGreenlight);
 export const duplicateSession = rpc("workflow.duplicateSession", core.duplicateSession);
+export const importProject = rpc("workflow.importProject", core.importProject);
+export const importableFolders = rpc("workflow.importableFolders", core.importableFolders);
+export const markStorage = rpc("workflow.markStorage", core.markStorage);
 export const moveToMarketing = rpc("workflow.moveToMarketing", core.moveToMarketing);
 export const openSession = rpc("workflow.openSession", core.openSession);
 export const publishEpisode = rpc("workflow.publishEpisode", core.publishEpisode);
@@ -47,6 +52,7 @@ export const setLearningNotes = rpc("workflow.setLearningNotes", core.setLearnin
 export const setProjectDrive = rpc("workflow.setProjectDrive", core.setProjectDrive);
 export const setReadyForReview = rpc("workflow.setReadyForReview", core.setReadyForReview);
 export const setReviewWindow = rpc("workflow.setReviewWindow", core.setReviewWindow);
+export const setReviewedBeforeSystem = rpc("workflow.setReviewedBeforeSystem", core.setReviewedBeforeSystem);
 export const setRolePerson = rpc("workflow.setRolePerson", core.setRolePerson);
 export const setSessionBoards = rpc("workflow.setSessionBoards", core.setSessionBoards);
 export const setSessionDrive = rpc("workflow.setSessionDrive", core.setSessionDrive);
@@ -61,5 +67,5 @@ export const updatePlannedEpisode = rpc("workflow.updatePlannedEpisode", core.up
 export const updateRunSheetItem = rpc("workflow.updateRunSheetItem", core.updateRunSheetItem);
 export const updateSession = rpc("workflow.updateSession", core.updateSession);
 export const recordShareLink = serverOnly("workflow.recordShareLink", core.recordShareLink);
-export { NO_HOSTED_FILE, RUN_SHEET_NOTE, SHARE_TOKEN, SYSTEM, applyReviewWindows, assetsOf, availableForLog, checklistItems, checkpointsOf, devotionPlacements, episodeOverdue, episodesOf, evaluateGate, footageOf, formProblems, getSession, greenlightBlockers, greenlightStageOf, isWorkflowEpisode, isWorkflowProject, latestDecision, onSession, planRolesOf, plannedOf, projectLabelOf, projectSummary, requiredSections, resolveShareToken, reviewWindowsDue, roleHolder, rowsOf, runSheetTemplate, sessionDriveId, sessionName, sessionsOf, shareTarget, sheetTimes, unassignedDevotions } from "../workflow";
-export type { AssetsInput, BoardChoice, CheckpointDecision, CloseResult, DecisionInput, DistributionInput, Episode, GateLevel, GateResult, GateStage, LogRowInput, NewWorkflowProject, Placement, PlannedInput, Project, ProjectSummary, RoleInput, RunSheetItemInput, SessionInput, SheetTimes } from "../workflow";
+export { NO_HOSTED_FILE, RUN_SHEET_NOTE, SHARE_TOKEN, SYSTEM, applyReviewWindows, assetsOf, attendeesOf, availableForLog, bestFolder, checklistItems, checkpointsOf, devotionPlacements, driveFolders, episodeOverdue, episodesOf, evaluateGate, folderFor, folderOf, footageOf, footageWhere, formProblems, getSession, greenlightBlockers, greenlightStageOf, isHistory, isImported, isWorkflowEpisode, isWorkflowProject, latestDecision, onSession, pickupsOf, planRolesOf, plannedOf, projectLabelOf, projectLinks, projectSummary, requiredSections, resolveShareToken, reviewWindowsDue, roleHolder, rowsOf, runSheetTemplate, sessionDriveId, sessionName, sessionStorage, sessionsOf, shareTarget, sheetTimes, storageWarnings, suggestedStorage, unassignedDevotions } from "../workflow";
+export type { AssetsInput, BoardChoice, CheckpointDecision, CloseResult, DecisionInput, DistributionInput, DriveFolder, Episode, GateLevel, GateResult, GateStage, ImportCategory, ImportInput, ImportResult, LogRowInput, NewWorkflowProject, Placement, PlannedInput, Project, ProjectSummary, RoleInput, RunSheetItemInput, SessionInput, SheetTimes, StorageAssignInput } from "../workflow";

@@ -28,6 +28,8 @@ import { Empty, RiskBadge, StageBadge } from "../ui/parts";
 import { IconChevron, IconDown, IconPlus } from "../ui/Icons";
 import { EditRecordModal, NewRecordModal } from "./RecordForms";
 import { WorkflowBoard } from "./workflow/Board";
+import { ImportProjectModal } from "./workflow/ImportProject";
+import { hasStorageAccess } from "../services/storage";
 
 /** Right-click and "more" actions shared by every record row and card. */
 export function useRecordMenu() {
@@ -66,6 +68,7 @@ export function Pipeline({ category }: { category?: CategoryKey }) {
   useDb();
   const [view, setView] = useState<"board" | "tree">("board");
   const [adding, setAdding] = useState<CategoryKey | null>(null);
+  const [importing, setImporting] = useState(false);
   const [showClosed, setShowClosed] = useState(false);
   const [showPublished, setShowPublished] = useState(false);
   const rm = useRecordMenu();
@@ -127,6 +130,12 @@ export function Pipeline({ category }: { category?: CategoryKey }) {
           </div>
         )}
         <ReportButton scope="pipeline" />
+        {can(actor, "pipeline.manage") && hasStorageAccess(actor) && (!cfg || cfg.workflow) && (
+          // A project recorded before the system, brought in from its folder on a drive (build prompt v4, 7A).
+          <button className="btn" onClick={() => setImporting(true)}>
+            Import existing project
+          </button>
+        )}
         {can(actor, "pipeline.manage") && (
           <div className="split">
             <button className="btn primary" onClick={(e) => (cfg ? setAdding(cfg.key) : pickCategory(e))}>
@@ -208,6 +217,7 @@ export function Pipeline({ category }: { category?: CategoryKey }) {
       )}
 
       {rm.modal}
+      {importing && <ImportProjectModal category={cfg?.key} onClose={() => setImporting(false)} />}
       {adding && (
         <NewRecordModal
           category={adding}

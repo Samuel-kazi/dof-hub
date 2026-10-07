@@ -1,5 +1,6 @@
 import type { Database } from "../types";
 import { liveMusicPlan } from "./migrateLiveMusic";
+import { v24Plan } from "./migrateV24";
 
 // What the rework (build prompt v2) will need decided about the existing data, reported with every dry run of the
 // upgrade (npm run db:upgrade) and kept out of the upgrade itself until decided:
@@ -29,6 +30,7 @@ export interface ReworkReport {
   textChoosers: number;
   notCarried: string[];
   liveMusic?: string[]; // what data version 23 moves onto the workflow: each live show's event and days, each album's songs
+  v24?: string[]; // what data version 24 changes: the Recording Log's storage, and the rest of build prompt v4
 }
 
 export function reworkReport(db: Database): ReworkReport {
@@ -56,6 +58,7 @@ export function reworkReport(db: Database): ReworkReport {
     textChoosers: db.people.filter((p) => p.notifySms).length,
     notCarried: [],
     liveMusic: liveMusicPlan(db),
+    v24: v24Plan(db),
   };
 }
 
@@ -82,5 +85,9 @@ export function describeRework(r: ReworkReport): string[] {
     out.push("  Live Shows and DOF Music onto the workflow (data version 23). IDs stay; moved records are kept, archived, with a pointer:");
     out.push(...r.liveMusic.map((l) => `  ${l}`));
   } else out.push("  Live Shows and DOF Music: nothing left to move onto the workflow.");
+  if (r.v24?.length) {
+    out.push("  Data version 24 (the Recording Log, storage in Production, and the rest of build prompt v4). Nothing is deleted:");
+    out.push(...r.v24.map((l) => `    ${l}`));
+  } else out.push("  Data version 24: nothing to change.");
   return out;
 }

@@ -21,6 +21,7 @@ import {
   upgradeToV21,
   upgradeToV22,
   upgradeToV23,
+  upgradeToV24,
 } from "../src/data/migrate";
 import { codeNumber, episodeCode, episodeCounter, plannedEpisodeId, plannedCounter, sessionCode, sessionCounter } from "../src/data/ids";
 import { addDaysIso, dateInNairobi, hoursUntilEndOfDay, isIsoDate, todayIso } from "../src/services/utils";
@@ -265,7 +266,7 @@ t("upgrading to versions 15 to 21 adds the workflow's and the documents' lists a
   const before = JSON.stringify(old);
   const up = upgradeDb(JSON.parse(before) as Database)!;
   assert.equal(up.schemaVersion, CURRENT_SCHEMA);
-  assert.equal(CURRENT_SCHEMA, 23);
+  assert.equal(CURRENT_SCHEMA, 24);
   // Version 23 moves the Live Shows and DOF Music onto the workflow (tests/live-music-workflow.test.tsx): their records
   // and what it makes for them are left out here. Everything else is as it was.
   const otherThanLiveMusic = (x: unknown) => !/DOF-(LIVE|MUS)-/.test(JSON.stringify(x));
@@ -287,8 +288,10 @@ t("upgrading to versions 15 to 21 adds the workflow's and the documents' lists a
     "every record is exactly as it was, plus empty fields",
   );
   const twice = JSON.stringify(
-    upgradeToV23(
-      upgradeToV22(upgradeToV21(upgradeToV20(upgradeToV19(upgradeToV18(upgradeToV17(upgradeToV16(upgradeToV15(structuredClone(up))))))))),
+    upgradeToV24(
+      upgradeToV23(
+        upgradeToV22(upgradeToV21(upgradeToV20(upgradeToV19(upgradeToV18(upgradeToV17(upgradeToV16(upgradeToV15(structuredClone(up))))))))),
+      ),
     ),
   );
   assert.equal(twice, JSON.stringify(up), "running it again changes nothing");
@@ -302,7 +305,7 @@ t("upgrading to version 17 moves every workflow project's Development form into 
   old.schemaVersion = 16;
   const formsBefore = JSON.stringify(old.developmentForms);
   const up = upgradeDb(structuredClone(old))!;
-  assert.equal(up.schemaVersion, 23);
+  assert.equal(up.schemaVersion, 24);
   assert.equal("newDocuments" in up.settings, false, "the setting is gone");
   for (const [id, key] of [
     ["DOF-SER-001-S1", "show_brief"],
@@ -316,7 +319,7 @@ t("upgrading to version 17 moves every workflow project's Development form into 
   assert.equal(JSON.stringify(up.developmentForms), formsBefore, "the old forms are left exactly as they were");
   assert.equal(up.audit.filter((a) => a.action === "migrate-documents" && a.byPersonId === "system").length, 1);
   const again = JSON.stringify(
-    upgradeToV23(upgradeToV22(upgradeToV21(upgradeToV20(upgradeToV19(upgradeToV18(upgradeToV17(structuredClone(up)))))))),
+    upgradeToV24(upgradeToV23(upgradeToV22(upgradeToV21(upgradeToV20(upgradeToV19(upgradeToV18(upgradeToV17(structuredClone(up))))))))),
   );
   assert.equal(again, JSON.stringify(up), "running it again changes nothing");
   assert.deepEqual(integrityProblems(up), []);
@@ -347,7 +350,7 @@ t("upgrading to version 18 gives a devotion's call sheets their sessions in its 
   }
   old.schemaVersion = 17;
   const up = upgradeDb(structuredClone(old))!;
-  assert.equal(up.schemaVersion, 23);
+  assert.equal(up.schemaVersion, 24);
   const made = up.recordingSessions.filter((s) => s.contentId === "DOF-DEV-001");
   assert.equal(made.length, 1, "one session for the sheet");
   const [s] = made;
@@ -365,7 +368,9 @@ t("upgrading to version 18 gives a devotion's call sheets their sessions in its 
   // Every session has the new fields, empty; roles their order.
   for (const x of up.recordingSessions) assert.equal(x.storageDriveId, null);
   for (const r of up.projectRoles) assert.equal(typeof r.position, "number");
-  const again = JSON.stringify(upgradeToV23(upgradeToV22(upgradeToV21(upgradeToV20(upgradeToV19(upgradeToV18(structuredClone(up))))))));
+  const again = JSON.stringify(
+    upgradeToV24(upgradeToV23(upgradeToV22(upgradeToV21(upgradeToV20(upgradeToV19(upgradeToV18(structuredClone(up)))))))),
+  );
   assert.equal(again, JSON.stringify(up), "running it again changes nothing");
   assert.deepEqual(integrityProblems(up), []);
   // A devotion still in Development, or a series, keeps its sheets as they are.

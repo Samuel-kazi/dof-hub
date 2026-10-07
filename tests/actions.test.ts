@@ -510,6 +510,47 @@ await t("every action accepts the arguments its screen sends", async () => {
   await must("workflow.setSessionFootage", wow.session2, 120.5);
   await must("workflow.setEpisodeAssets", e01, { sizeGB: 40 });
   await must("workflow.setEpisodeAssets", e01, { driveId: footageDrive, sizeGB: 45 });
+  // The Recording Log (build prompt v4, section 7A): who attended, issues, take lengths, the footage's main drive and
+  // its backup, ticked, a drive marked offline, the folder pattern, and a project recorded before the system imported.
+  const backupDrive = (await must("storage.createDrive", { name: "Backup", capacityGB: 4000, otherUsedGB: 0, notes: "" })).id;
+  await must("storage.updateDrive", backupDrive, { offline: true });
+  await must("settings.updateSettings", { storageFolderPattern: "{contentId}/{date}_{label}" });
+  await call("workflow.updateSession", wow.session2, {
+    attendees: ["DOF-P-CRW-001"],
+    attendeesNote: "The choir",
+    issues: "Hum on channel 2",
+  });
+  await call("workflow.updateLogRow", `${wow.session2}|${wow.project}-P06`, { duration: "58:10" });
+  await call("workflow.assignSessionStorage", wow.session2, { driveId: footageDrive, role: "primary", addToDrive: true });
+  await call("workflow.assignSessionStorage", wow.session2, {
+    driveId: backupDrive,
+    role: "backup",
+    linkId: null,
+    folderPath: "WOW/backup",
+  });
+  await call("workflow.markStorage", wow.session2, "primary", true); // its arguments are accepted
+  await call("workflow.clearSessionStorage", wow.session2, "backup");
+  const loose = (
+    await must("storage.addAllocation", {
+      driveId: footageDrive,
+      contentId: null,
+      label: "Sermons 2024",
+      sizeGB: 50,
+      kind: "raw",
+      note: "",
+    })
+  ).id;
+  const imported = await must("workflow.importProject", {
+    allocationId: loose,
+    category: "series",
+    seriesType: "sermon",
+    title: "Sermons 2024",
+    start: "Post production",
+    recordedOn: "2024-05-01",
+    items: ["Grace", "Faith"],
+    reviewedBeforeSystem: false,
+  });
+  await must("workflow.setReviewedBeforeSystem", imported.project.contentId, true);
 
   // Productions: a recurring show from its template and schedule, a one-time and a multi-day event, and the sections
   // every call sheet now has.

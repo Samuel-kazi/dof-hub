@@ -217,7 +217,7 @@ await t("a multi-day event: a live show with its first event, a day and call she
   );
   assert.deepEqual(
     catalogFor("live_event", "Production").map((e) => e.title),
-    ["Show Day Sheet", "Show Log", "Storage"],
+    ["Show Day Sheet", "Show Log"],
   );
   assert.equal(D.hardGates(event.contentId)[0].label, "The logline and the purpose of the event written in the brief");
   throwsRule(() => W.createSession(hop(), event.contentId, { scheduledDate: start }), /Show Days/);
@@ -409,14 +409,14 @@ await t("version 23 moves the sample live shows and music: events and their days
   );
 });
 
-await t("data saved at version 22 is upgraded to 23 on load, and a recording made of a day already in post production", () => {
+await t("data saved at version 22 is upgraded on load (to 24), and a recording made of a day already in post production", () => {
   const db = buildSeed();
   const day = db.records.find((r) => r.category === "live" && r.hierarchyLevel === 1 && !r.archived)!;
   day.pipelineStage = "Post production";
   day.postProductionNeeded = true;
   db.schemaVersion = 22;
   const up = upgradeDb(db)!;
-  assert.equal(up.schemaVersion, 23);
+  assert.equal(up.schemaVersion, 24);
   const s = up.recordingSessions.find((x) => x.movedFrom === day.contentId)!;
   assert.equal(s.status, "Closed");
   const rec = up.records.find((r) => r.episode?.sourceSessionId === s.id)!;

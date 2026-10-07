@@ -10,6 +10,7 @@ import { can, requireCan } from "./permissions";
 import { getPerson } from "./people";
 import { allWorkItems } from "./workItems";
 import { dayNumber, fmtShort, fromDayNumber, hoursUntilEndOfDay, todayIso } from "./utils";
+import { isHistory } from "./workflow/history";
 
 // Everything a person has coming up that they should not forget: stage deadlines, checklist items,
 // shoot days, recording sessions, reviews and gear to bring back. These feed the bell, the calendar file and the
@@ -53,6 +54,8 @@ function workflowReminders(personId: string, asOf: string, add: (r: NewReminder)
       });
     }
     if (item.ownerId !== personId || !item.due || !item.waitingOn.includes(personId)) continue;
+    // An imported project's dates from before the import are history: no reminders for them.
+    if (isHistory(item.project, item.due)) continue;
     if (item.level === "project" && item.due >= asOf)
       add({
         ...base,

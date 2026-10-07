@@ -15,8 +15,9 @@ export type FormTile =
   | "sessions"
   | "callSheet"
   | "gear"
-  | "sessionLog"
-  | "storage"
+  | "sessionLog" // before data version 24: replaced by the Recording Log
+  | "storage" // before data version 24: replaced by the Recording Log
+  | "recordingLog"
   | "recordingDayView"
   | "episodeTracker"
   | "review"
@@ -69,7 +70,8 @@ const form = (key: string, title: string, tile: FormTile, extra: Partial<Catalog
 const tool = (key: string, title: string, which: "storyboard" | "shotList"): CatalogEntry => ({ key, title, kind: "tool", tool: which });
 const review = (reviews: string): CatalogEntry => ({ key: "theological_review", title: "Theological Review", kind: "review", reviews });
 // One page with four section cards (roles, the items to record, sessions, call sheets), then its own pages.
-const recordingPlan = doc("recording_plan", "Recording Plan", [{ title: "Cards and storage", storage: true }, "Notes"], { plan: true });
+// Storage is assigned in Production, in each session's Recording Log (build prompt v4, section 7A): the plan has none.
+const recordingPlan = doc("recording_plan", "Recording Plan", ["Cards", "Notes"], { plan: true });
 /** A series' or documentary's planning tiles: the Recording Plan (roles, sessions and call sheets are in it). */
 const planOrForms = (): CatalogEntry[] => [
   recordingPlan,
@@ -155,8 +157,7 @@ function musicCatalog(formType: FormType): Record<WorkflowStage, CatalogEntry[]>
         [{ title: "Run sheet", form: "runSheet" }, "Session notes", { title: "Wrap checklist", form: "wrapChecklist" }],
         { per: "session" },
       ),
-      form("session_log", "Session Log", "sessionLog"),
-      form("storage", "Storage", "storage"),
+      form("recording_log", "Recording Log", "recordingLog"),
     ],
     "Post production": [
       doc("edit_notes", "Mix and Edit Notes", ["Mix notes", "Mastering notes", "Video edit notes"]),
@@ -195,8 +196,7 @@ const liveCatalog: Record<WorkflowStage, CatalogEntry[]> = {
       [{ title: "Run of show", form: "runSheet" }, "Show notes", { title: "Strike and wrap checklist", form: "wrapChecklist" }],
       { per: "session" },
     ),
-    form("session_log", "Show Log", "sessionLog"),
-    form("storage", "Storage", "storage"),
+    form("recording_log", "Show Log", "recordingLog"),
   ],
   "Post production": [
     doc("edit_notes", "Edit Notes", ["Recording notes", "Clips to cut", "Graphics and music"]),
@@ -236,8 +236,7 @@ function seriesCatalog(formType: FormType): Record<WorkflowStage, CatalogEntry[]
           per: "session",
         },
       ),
-      form("session_log", "Session Log", "sessionLog"),
-      form("storage", "Storage", "storage"),
+      form("recording_log", "Recording Log", "recordingLog"),
     ],
     "Post production": [
       doc("edit_notes", "Edit Notes", ["Notes to the editor", "Story and theology lock", "Graphics and music"]),
@@ -271,8 +270,7 @@ function documentaryCatalog(formType: FormType): Record<WorkflowStage, CatalogEn
           per: "session",
         },
       ),
-      form("session_log", "Session Log", "sessionLog"),
-      form("storage", "Storage", "storage"),
+      form("recording_log", "Recording Log", "recordingLog"),
     ],
     "Post production": [
       doc("edit_notes", "Edit Notes", ["Assembly notes", "Narration", "Fact-check lock", "Graphics and music"]),
@@ -296,7 +294,10 @@ const devotionCatalog: Record<WorkflowStage, CatalogEntry[]> = {
   // The Recording Plan holds the roles, the devotions, the sessions they are recorded in and each session's call sheet;
   // a session's call sheet shows one storyboard and one shot list of the project's, chosen from these.
   "Pre-production": [recordingPlan, tool("storyboard", "Storyboard", "storyboard"), tool("shot_list", "Shot List", "shotList")],
-  Production: [form("recording_day_view", "Recording Day View", "recordingDayView"), form("storage", "Storage", "storage")],
+  Production: [
+    form("recording_log", "Recording Log", "recordingLog"),
+    form("recording_day_view", "Recording Day View", "recordingDayView"),
+  ],
   "Post production": [doc("edit_notes", "Edit Notes", ["Notes to the editor"]), form("review", "Review", "review")],
   "Marketing and distribution": [
     doc("release_plan", "Release Plan", ["Release message", "Platform plan"]),

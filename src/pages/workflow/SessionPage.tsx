@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { LogStatus, RunItem, SessionLogEntry } from "../../types";
+import type { RunItem } from "../../types";
 import { categoryOf } from "../../config/categories";
 import { PROJECT_ROLE_DEFS } from "../../config/workflow";
 import { getDb, useDb } from "../../data/store";
@@ -8,23 +8,19 @@ import { getBreadcrumb } from "../../services/wrapped/content";
 import { gearIssues, manifestForSheet } from "../../services/wrapped/equipment";
 import { getPerson } from "../../services/wrapped/people";
 import {
-  addLogRow,
   addRunSheetItem,
   archiveSession,
-  availableForLog,
   closeSession,
   createSessionCallSheet,
   duplicateSession,
   evaluateGate,
   getSession,
   openSession,
-  removeLogRow,
   removeRunSheetItem,
   reopenSession,
   resetRunSheet,
   rowsOf,
   RUN_SHEET_NOTE,
-  updateLogRow,
   updateRunSheetItem,
   updateSession,
   type Project,
@@ -45,6 +41,7 @@ import { updateCallSheet } from "../../services/wrapped/callsheets";
 import { dayTitle } from "../../services/wrapped/production";
 import { RunOfShowSection } from "../production/SheetSections";
 import { InstanceStrip } from "../production/InstanceStrip";
+import { RecordingLog } from "./RecordingLog";
 import type { CallSheet } from "../../types";
 
 /** A live day's running order: its call sheet's run of show, with the live columns (status, actual times, cues). */
@@ -63,7 +60,6 @@ export function LiveRunOfShow({ sheet, editable }: { sheet: CallSheet; editable:
 // One recording session: Pre-production while Planned (call sheet, gear, rehearsal), Production while Open (the
 // run sheet and the log, then wrap), and the close that makes the episodes.
 
-const STATUSES: LogStatus[] = ["Recorded", "Pickup needed", "Not recorded"];
 const stageOf = (status: string) => (status === "Planned" ? "Pre-production" : status === "Open" ? "Production" : "Closed");
 
 function RunSheetRow({
@@ -169,105 +165,6 @@ function RunSheetRow({
             className="btn small ghost"
             aria-label={`Remove ${item.title}`}
             onClick={() => attempt(() => removeRunSheetItem(actor, sessionId, item.id))}
-          >
-            Remove
-          </button>
-        )}
-      </td>
-    </tr>
-  );
-}
-
-function LogRow({ row, editable, statusEditable }: { row: SessionLogEntry; editable: boolean; statusEditable: boolean }) {
-  const { actor, attempt, confirm } = useApp();
-  const planned = row.plannedEpisodeId ? getDb().plannedEpisodes.find((p) => p.id === row.plannedEpisodeId) : undefined;
-  const [draft, setDraft, dirty, saved] = useDraft({
-    logDate: row.logDate,
-    guest: row.guest,
-    notesForPost: row.notesForPost,
-    itemLabel: row.itemLabel,
-  });
-  const save = () => dirty && attempt(() => updateLogRow(actor, row.id, draft)) && saved();
-  return (
-    <tr>
-      <td className="cid">{row.sessionId.slice(row.sessionId.lastIndexOf("-") + 1)}</td>
-      <td>
-        <input
-          type="date"
-          aria-label="Date"
-          value={draft.logDate}
-          disabled={!editable}
-          onChange={(e) => setDraft({ ...draft, logDate: e.target.value })}
-          onBlur={save}
-        />
-      </td>
-      <td>
-        {planned ? (
-          <>
-            <span className="cid">{planned.id.slice(planned.contentId.length + 1)}</span> {planned.workingTitle}
-          </>
-        ) : (
-          <input
-            type="text"
-            aria-label="What was recorded"
-            value={draft.itemLabel}
-            disabled={!editable}
-            onChange={(e) => setDraft({ ...draft, itemLabel: e.target.value })}
-            onBlur={save}
-          />
-        )}
-      </td>
-      <td>
-        <input
-          type="text"
-          aria-label="Guest"
-          value={draft.guest}
-          disabled={!editable}
-          onChange={(e) => setDraft({ ...draft, guest: e.target.value })}
-          onBlur={save}
-        />
-      </td>
-      <td>
-        <select
-          aria-label="Status"
-          value={row.status ?? ""}
-          disabled={!statusEditable}
-          title={statusEditable ? "" : "Set during the session, once it is in Production"}
-          onChange={(e) => attempt(() => updateLogRow(actor, row.id, { status: (e.target.value || null) as LogStatus | null }))}
-        >
-          <option value="">No status yet</option>
-          {STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-      </td>
-      <td>
-        <textarea
-          aria-label="Notes for post production"
-          placeholder="Pickups, retakes, timestamps, audio or focus problems, dates"
-          value={draft.notesForPost}
-          disabled={!editable}
-          onChange={(e) => setDraft({ ...draft, notesForPost: e.target.value })}
-          onBlur={save}
-        />
-      </td>
-      <td>
-        {editable && (
-          <button
-            className="btn small ghost"
-            onClick={async () => {
-              if (
-                await confirm({
-                  title: "Remove this row from the log?",
-                  body: `${planned ? planned.workingTitle : row.itemLabel} comes off this session's log.`,
-                  confirmLabel: "Remove",
-                  danger: true,
-                })
-              )
-                attempt(() => removeLogRow(actor, row.id), "Removed");
-            }}
           >
             Remove
           </button>
@@ -529,8 +426,6 @@ export function SessionPage({ id }: { id: string }) {
   useDb();
   const [ask, reasonModal] = useReason();
   const [duplicating, setDuplicating] = useState(false);
-  const [pick, setPick] = useState("");
-  const [label, setLabel] = useState("");
   const [dailyLog, setDailyLog] = useState<string | null>(null);
   const session = getSession(id);
   const project = session ? getRecord(session.contentId) : undefined;
@@ -546,24 +441,15 @@ export function SessionPage({ id }: { id: string }) {
   const isDoc = p.workflow.formType.startsWith("documentary");
   // A live event's day: its running order is its call sheet's run of show, and its show log names what was recorded.
   const live = p.category === "live";
-  const freeForm = isDoc || live;
   const episodeWord = (categoryOf(p.category).workflow?.episodeLabel ?? "Episode").toLowerCase();
   const rows = rowsOf(id);
   const sheet = session.callSheetId ? getDb().callSheets.find((c) => c.id === session.callSheetId) : undefined;
   const gear = sheet ? manifestForSheet(sheet.id) : undefined;
   const issues = sheet ? gearIssues(sheet.id) : [];
-  const available = availableForLog(id);
   const crumbs = getBreadcrumb(p.contentId);
   // The day's notes are written in the session's day sheet once it is started.
   const daySheet = getDb().projectDocuments.find((d) => d.ownerId === id && d.stage === "Production");
 
-  const addRow = () => {
-    const input = freeForm ? { itemLabel: label } : { plannedEpisodeId: pick };
-    if (attempt(() => addLogRow(actor, id, input), "Added to the log")) {
-      setPick("");
-      setLabel("");
-    }
-  };
   const close = async () => {
     const make = rows.filter((r) => r.status === "Recorded" || r.status === "Pickup needed");
     const skip = rows.filter((r) => r.status === "Not recorded");
@@ -744,84 +630,7 @@ export function SessionPage({ id }: { id: string }) {
         <RunSheetPanel sessionId={id} editable={editable} />
       )}
 
-      <section className="glass panel" aria-label={live ? "Show log" : "Recording session log"}>
-        <h2>{live ? "Show log" : "Recording session log"}</h2>
-        <p className="muted">
-          {live
-            ? "Name each part recorded for post production (the full service, a worship set, the message, a testimony), with its status and notes. Leave it empty if nothing needs post production."
-            : "Pickups, retakes, timestamps, audio or focus problems and any dates go in each row's notes for post production."}
-        </p>
-        {rows.length === 0 ? (
-          <Empty>
-            {live
-              ? "Nothing logged for post production yet."
-              : isDoc
-                ? "No items logged yet: interview sets, scenes, locations."
-                : `No ${episodeWord}s on this session's log yet.`}
-          </Empty>
-        ) : (
-          <div className="wf-scroll">
-            <table className="table wf-table">
-              <thead>
-                <tr>
-                  <th>{live ? "Day" : "Session"}</th>
-                  <th>Date</th>
-                  <th>{live ? "Recorded" : isDoc ? "Item" : episodeWord.charAt(0).toUpperCase() + episodeWord.slice(1)}</th>
-                  <th>Guest</th>
-                  <th>Status</th>
-                  <th>Notes for post production</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <LogRow key={r.id} row={r} editable={editable} statusEditable={editable && session.status === "Open"} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {editable && (
-          <div className="row" style={{ alignItems: "end", marginTop: 10 }}>
-            {freeForm ? (
-              <Field
-                label={
-                  live
-                    ? "Add what was recorded: the full service, a worship set, the message"
-                    : "Add an item: an interview set, a scene, a location"
-                }
-              >
-                <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} />
-              </Field>
-            ) : (
-              <Field
-                label={
-                  p.category === "music"
-                    ? "Add a song (it can be on more than one session: its audio, then its video)"
-                    : `Add ${episodeWord === "episode" ? "an episode" : `a ${episodeWord}`} (planned, and not recorded in another session)`
-                }
-              >
-                <select value={pick} onChange={(e) => setPick(e.target.value)}>
-                  <option value="">{available.length ? "Choose…" : `No planned ${episodeWord}s left to add`}</option>
-                  {available.map((pid) => {
-                    const pe = getDb().plannedEpisodes.find((x) => x.id === pid)!;
-                    return (
-                      <option key={pid} value={pid}>
-                        {pid.slice(pe.contentId.length + 1)}: {pe.workingTitle}
-                      </option>
-                    );
-                  })}
-                </select>
-              </Field>
-            )}
-            <div style={{ flex: "none" }}>
-              <button className="btn primary" disabled={freeForm ? !label.trim() : !pick} onClick={addRow}>
-                Add to the log
-              </button>
-            </div>
-          </div>
-        )}
-      </section>
+      <RecordingLog project={p} sessionId={id} write={write} />
 
       {session.status !== "Planned" && (
         <>

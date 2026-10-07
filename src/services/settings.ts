@@ -19,7 +19,11 @@ export const SETTINGS_EDITABLE = [
   "checkoutReturnDays",
   "workDays",
   "effortOverrides",
+  "storageFolderPattern",
 ] as const;
+
+/** A session's folder on a drive, unless Settings says otherwise: the project's Content ID, then the date and label. */
+export const DEFAULT_FOLDER_PATTERN = "{contentId}/{date}_{label}";
 
 export function updateSettings(actor: Actor, input: Partial<Pick<Settings, (typeof SETTINGS_EDITABLE)[number]>>): void {
   requireCan(actor, "backend.settings", "change system settings");
@@ -49,6 +53,12 @@ export function updateSettings(actor: Actor, input: Partial<Pick<Settings, (type
       if (!Number.isFinite(v) || v < 0 || v > 30 || Math.round(v * 4) !== v * 4)
         throw new RuleError(`${key.split(":")[1] ?? key}: use a number of days from 0 to 30, in steps of a quarter day.`);
     }
+  }
+  if (patch.storageFolderPattern !== undefined) {
+    const pattern = patch.storageFolderPattern.trim();
+    if (pattern.length > 120 || /[<>:"|?*\\]/.test(pattern))
+      throw new RuleError('Keep the folder pattern short, with no < > : " | ? * or backslash.');
+    patch.storageFolderPattern = pattern || DEFAULT_FOLDER_PATTERN;
   }
   Object.assign(getDb().settings, patch);
   logAudit(actor, "settings", "settings", "system", Object.keys(patch).join(", "));

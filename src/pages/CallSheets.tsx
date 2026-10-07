@@ -75,6 +75,8 @@ import {
   projectLabel,
   removeGearFromSheet,
 } from "../services/wrapped/equipment";
+import { FootageWhere } from "./workflow/RecordingLog";
+import { sessionStorage } from "../services/wrapped/workflow";
 
 export function CallSheets() {
   const { actor, go, menu, confirm, attempt } = useApp();
@@ -733,6 +735,12 @@ export function CallSheetBody({
         <Field label="Notes">
           <SavedText label="Notes" value={cs.notes} disabled={!editable} onSave={(v) => save({ notes: v.trim() })} />
         </Field>
+        {session && (sessionStorage(session.id).primary || sessionStorage(session.id).backup) && (
+          // Read-only here: the drive is chosen in the session's Recording Log, in Production (build prompt v4, 7A).
+          <div className="muted" aria-label="Footage drive">
+            <b>Footage:</b> <FootageWhere projectId={session.contentId} sessionId={session.id} />
+          </div>
+        )}
         {lock.locked ? (
           <p className="muted">Locked: {lock.why} It is kept as the record of the day.</p>
         ) : (

@@ -29,8 +29,11 @@ import {
   sessionForWrite,
   sessionsOf,
   type Episode,
+  type Project,
 } from "./common";
 import { makeEpisode } from "./episodes";
+import { addPlannedEpisode } from "./planned";
+import { carryToEditNotes } from "./editNotes";
 import { evaluateGate, gateError } from "./gates";
 import { nextSession } from "./ids";
 import { sessionName } from "./plan";
@@ -103,6 +106,10 @@ export interface SessionInput {
   label?: SessionLabel | null;
   startTime?: string | null;
   endTime?: string | null;
+  // The Recording Log's own fields (build prompt v4, section 7A)
+  attendees?: string[] | null;
+  attendeesNote?: string;
+  issues?: string;
 }
 
 const checkDate = (d: string | null | undefined): void => {
@@ -191,7 +198,18 @@ export function createSession(actor: Actor, projectId: string, input: SessionInp
   return s;
 }
 
-export const SESSION_EDITABLE = ["scheduledDate", "venue", "dailyLog", "name", "label", "startTime", "endTime"] as const;
+export const SESSION_EDITABLE = [
+  "scheduledDate",
+  "venue",
+  "dailyLog",
+  "name",
+  "label",
+  "startTime",
+  "endTime",
+  "attendees",
+  "attendeesNote",
+  "issues",
+] as const;
 
 export function updateSession(actor: Actor, sessionId: string, input: SessionInput): RecordingSession {
   const { session } = sessionForWrite(actor, sessionId);
@@ -201,6 +219,13 @@ export function updateSession(actor: Actor, sessionId: string, input: SessionInp
   checkPlanFields(patch);
   if (patch.venue !== undefined && patch.venue.length > 300) throw new RuleError("Keep the venue under 300 characters.");
   if (patch.dailyLog !== undefined && patch.dailyLog.length > 20_000) throw new RuleError("Keep the daily log under 20,000 characters.");
+  if (patch.issues !== undefined && patch.issues.length > 20_000) throw new RuleError("Keep the issues under 20,000 characters.");
+  if (patch.attendeesNote !== undefined && patch.attendeesNote.length > 500)
+    throw new RuleError("Keep the other attendees under 500 characters.");
+  if (patch.attendees) {
+    if (patch.attendees.length > 100) throw new RuleError("That is more people than a session has.");
+    for (const pid of patch.attendees) if (!getPerson(pid)) throw new RuleError("Choose the attendees from Crew.");
+  }
   if (patch.scheduledDate !== undefined) session.scheduledDate = patch.scheduledDate || null;
   if (patch.venue !== undefined) session.venue = patch.venue.trim();
   if (patch.dailyLog !== undefined) session.dailyLog = patch.dailyLog.trim();
@@ -208,6 +233,9 @@ export function updateSession(actor: Actor, sessionId: string, input: SessionInp
   if (patch.label !== undefined) session.label = patch.label || null;
   if (patch.startTime !== undefined) session.startTime = patch.startTime || null;
   if (patch.endTime !== undefined) session.endTime = patch.endTime || null;
+  if (patch.attendees !== undefined) session.attendees = patch.attendees ? [...new Set(patch.attendees)] : null;
+  if (patch.attendeesNote !== undefined) session.attendeesNote = patch.attendeesNote.trim();
+  if (patch.issues !== undefined) session.issues = patch.issues.trim();
   session.updatedAt = nowStamp();
   logAudit(actor, "update", "session", sessionId, Object.keys(patch).join(", "));
   keepCallSheet(actor, session);
@@ -445,6 +473,7 @@ export interface LogRowInput {
   logDate?: string | null; // the session's date unless changed
   status?: LogStatus | null;
   notesForPost?: string; // pickups, retakes, timestamps, audio or focus problems, and any dates
+  duration?: string; // the take's length, as typed
 }
 
 const RECORDED: (LogStatus | null)[] = ["Recorded", "Pickup needed"];
@@ -487,6 +516,11 @@ export function addLogRow(actor: Actor, sessionId: string, input: LogRowInput): 
   const plannedId = input.plannedEpisodeId || null;
   const label = (input.itemLabel ?? "").trim();
   let guest = (input.guest ?? "").trim();
+  let plannedFromLabel: string | null = null;
+  if (!plannedId && label && project.workflow.imported && !freeFormLog(project)) {
+    // An imported project has no plan: what was recorded is named here, and becomes its planned item.
+    plannedFromLabel = importedPlanned(actor, project, label, sessionId);
+  }
   if (freeFormLog(project)) {
     if (!label)
       throw new RuleError(
@@ -494,28 +528,32 @@ export function addLogRow(actor: Actor, sessionId: string, input: LogRowInput): 
           ? "Name what was recorded: the full service, a worship set, a message, a testimony."
           : "Name what was recorded: an interview set, a scene or a location.",
       );
-  } else if (!plannedId) throw new RuleError(`Choose the planned ${planLabels(project.workflow.formType).one} this row is for.`);
-  if (plannedId) {
-    const planned = db.plannedEpisodes.find((p) => p.id === plannedId && p.contentId === project.contentId);
+  } else if (!plannedId && !plannedFromLabel)
+    throw new RuleError(`Choose the planned ${planLabels(project.workflow.formType).one} this row is for.`);
+  const plannedRef = plannedId ?? plannedFromLabel;
+  if (plannedRef) {
+    const planned = db.plannedEpisodes.find((p) => p.id === plannedRef && p.contentId === project.contentId);
     if (!planned || planned.archivedAt) throw new RuleError("That is not one of this project's planned episodes.");
-    if (!availableForLog(sessionId).includes(plannedId))
+    if (!availableForLog(sessionId).includes(plannedRef))
       throw new RuleError(`${planned.workingTitle || planned.id} is already in this log, or was recorded in another session.`);
     guest ||= planned.guest;
   }
   const logDate = input.logDate || session.scheduledDate || todayIso();
   if (!isIsoDate(logDate)) throw new RuleError("Pick the row's date.");
+  const duration = checkDuration(input.duration);
   const at = nowStamp();
   const row: SessionLogEntry = {
-    id: plannedId
-      ? `${sessionId}|${plannedId}`
+    id: plannedRef
+      ? `${sessionId}|${plannedRef}`
       : `${sessionId}|${localId("I", (x) => db.sessionLogEntries.some((e) => e.id === `${sessionId}|${x}`))}`,
     sessionId,
-    plannedEpisodeId: plannedId,
-    itemLabel: label,
+    plannedEpisodeId: plannedRef,
+    itemLabel: plannedFromLabel ? "" : label,
     logDate,
     guest,
     status: input.status ?? null,
     notesForPost: (input.notesForPost ?? "").trim(),
+    ...(duration ? { duration } : {}),
     createdAt: at,
     updatedAt: at,
   };
@@ -526,7 +564,34 @@ export function addLogRow(actor: Actor, sessionId: string, input: LogRowInput): 
   return row;
 }
 
-export const LOG_EDITABLE = ["itemLabel", "guest", "logDate", "status", "notesForPost"] as const;
+export const LOG_EDITABLE = ["itemLabel", "guest", "logDate", "status", "notesForPost", "duration"] as const;
+
+/** A take's length, as typed ("12:30", "58 min"): kept short. */
+function checkDuration(v: string | undefined): string {
+  const d = (v ?? "").trim();
+  if (d.length > 40) throw new RuleError("Keep the length short, for example 12:30 or 58 min.");
+  return d;
+}
+
+/**
+ * What an imported project recorded, named in its Recording Log: the planned item of that name not on this log yet,
+ * or a new one. (A single has its one song already: a new name renames it while it is not recorded.)
+ */
+function importedPlanned(actor: Actor, project: Project, label: string, sessionId: string): string {
+  const db = getDb();
+  const here = new Set(rowsOf(sessionId).map((r) => r.plannedEpisodeId));
+  const free = db.plannedEpisodes.filter((p) => p.contentId === project.contentId && !p.archivedAt && !here.has(p.id));
+  const same = free.find((p) => p.workingTitle.trim().toLowerCase() === label.toLowerCase());
+  if (same) return same.id;
+  if (project.workflow.formType === "music_single") {
+    const song = free.find((p) => !db.records.some((r) => r.episode?.plannedEpisodeId === p.id));
+    if (!song) throw new RuleError("A single has one song, and it is on the log already.");
+    song.workingTitle = label;
+    song.updatedAt = nowStamp();
+    return song.id;
+  }
+  return addPlannedEpisode(actor, project.contentId, { workingTitle: label }).id;
+}
 
 export function updateLogRow(actor: Actor, rowId: string, input: Omit<LogRowInput, "plannedEpisodeId">): SessionLogEntry {
   const row = getDb().sessionLogEntries.find((e) => e.id === rowId);
@@ -547,6 +612,7 @@ export function updateLogRow(actor: Actor, rowId: string, input: Omit<LogRowInpu
     if (patch.notesForPost.length > 20_000) throw new RuleError("Keep the notes under 20,000 characters.");
     row.notesForPost = patch.notesForPost.trim();
   }
+  if (patch.duration !== undefined) row.duration = checkDuration(patch.duration);
   row.updatedAt = nowStamp();
   logAudit(actor, "log-update", "session", row.sessionId, `${row.plannedEpisodeId ?? row.itemLabel}: ${Object.keys(patch).join(", ")}`);
   commit();
@@ -588,13 +654,15 @@ export interface CloseResult {
 
 /**
  * "Close session and send to post production". All of it happens or none of it does:
- * 1. The gate is checked (wrap checklist complete, every log row has a status). If it fails, nothing changes.
+ * 1. The gate is checked: at least one item recorded (build prompt v4, section 7A; the wrap checklist and rows with no
+ *    take mark are suggestions, and a row with none is not recorded). If it fails, nothing changes.
  * 2. Every row Recorded or Pickup needed becomes an episode, {projectId}-E{nn}, numbered on from the project's
  *    last episode in the order of the plan, with the row's notes as its production notes. An episode that already
  *    exists is skipped, so closing twice never makes it twice.
  * 3. Rows Not recorded make nothing, and their planned episodes stay free for a later session.
  * 4. The session is Closed, with the time.
  * 5. Each new episode gets its rough cut and final review checkpoints, Pending.
+ * 6. Pickups and the session's issues are written into the project's Edit Notes, on a page for the session.
  * A documentary's rows are not episodes: its film is made by sendToPostProduction.
  */
 export function closeSession(actor: Actor, sessionId: string): CloseResult {
@@ -685,6 +753,8 @@ export function closeSession(actor: Actor, sessionId: string): CloseResult {
       }
     }
   }
+  // Pickups and the session's issues go to the editor, in the project's Edit Notes (build prompt v4, section 7A).
+  carryToEditNotes(actor, project, session);
   session.status = "Closed";
   session.closedAt = nowStamp();
   session.updatedAt = session.closedAt;

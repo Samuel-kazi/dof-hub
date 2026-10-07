@@ -27,6 +27,8 @@ import { roleHolder, unassignedDevotions } from "./plan";
 import { hardGatesMissing } from "../documents/gates";
 import { planLabels } from "../../config/documentCatalog";
 import { softNudges } from "../documents/nudges";
+import { storageWarnings } from "./recordingLog";
+import { isHistory } from "./history";
 
 // One function decides whether anything may move on: evaluateGate. Every Done button calls it and moves only if
 // it passes; the screens show its `missing` list. Dates in the wrong order are warnings, never blockers.
@@ -117,16 +119,24 @@ function preProductionSessionGate(s: RecordingSession, p: Project): GateResult {
   return result(missing, warnings);
 }
 
+/**
+ * Closing a session (moving what it recorded to Post production). The one hard requirement is at least one item
+ * recorded in its Recording Log, Good or Pickup needed (build prompt v4, section 7A). The wrap checklist, rows with no
+ * take mark (they count as not recorded) and the storage are suggestions. A live day may record nothing for post
+ * production: its show log can stay empty, and closing it makes no recordings.
+ */
 function productionGate(s: RecordingSession, p: Project): GateResult {
   const missing: string[] = [];
+  const warnings: string[] = [];
   const live = isLiveProject(p);
   if (s.status !== "Open") missing.push(live ? "The day must be in Production (on air)" : "The session must be in Production (Open)");
-  missing.push(...openRequired("wrap", s.id).map((l) => `Wrap: ${l}`));
   const rows = rowsOf(s.id);
-  // A live day may record nothing for post production: its show log can stay empty, and closing it makes no recordings.
-  if (rows.length === 0 && !live) missing.push("At least one row in the session log");
-  for (const r of rows) if (!r.status) missing.push(`A status for log row "${r.itemLabel || r.plannedEpisodeId}"`);
-  return result(missing);
+  if (!live && !rows.some((r) => r.status === "Recorded" || r.status === "Pickup needed"))
+    missing.push("At least one item recorded in the Recording Log (Good or Pickup needed)");
+  warnings.push(...openRequired("wrap", s.id).map((l) => `Wrap: ${l}`));
+  for (const r of rows) if (!r.status) warnings.push(`No take mark for "${r.itemLabel || r.plannedEpisodeId}": it counts as not recorded`);
+  warnings.push(...storageWarnings(s.id));
+  return result(missing, warnings);
 }
 
 function editingGate(ep: Episode): GateResult {
@@ -192,7 +202,8 @@ export function evaluateGate(stage: GateStage, level: GateLevel, id: string): Ga
 export function episodeOverdue(ep: ContentRecord, today: string = todayIso()): boolean {
   if (!ep.episode || ep.archived || ep.episode.mdStage === "Published") return false;
   const due = ep.stageDeadlines[ep.episode.stage];
-  return !!due && due < today;
+  // An imported project's dates from before the import are history, never overdue (build prompt v4, section 7A).
+  return !!due && due < today && !isHistory(ep, due);
 }
 
 // ── Where a project stands ───────────────────────────────────

@@ -2,10 +2,12 @@ import type { CatalogEntry } from "../../config/documentCatalog";
 import { plannedSectionOf, sectionOf } from "../../config/devForms";
 import { getDb } from "../../data/store";
 import { pagesOf } from "../../services/wrapped/documents";
-import { sessionsOf, type Project } from "../../services/wrapped/workflow";
+import { sessionName, sessionsOf, type Project } from "../../services/wrapped/workflow";
 import { fmtDate } from "../../services/utils";
 import { useApp } from "../../ui/AppContext";
-import { Empty } from "../../ui/parts";
+import { Empty, Field } from "../../ui/parts";
+import { useState } from "react";
+import { FootageWhere, RecordingLog } from "../workflow/RecordingLog";
 import { DecisionHistory, PlannedEditor, SectionEditor } from "../workflow/Development";
 import { PreProductionTab, RolesPanel } from "../workflow/PreProduction";
 import { EpisodeTracker } from "../workflow/EpisodeTracker";
@@ -86,6 +88,56 @@ function SessionShortcuts({ project, what }: { project: Project; what: Shortcut 
         </ul>
       )}
     </section>
+  );
+}
+
+/**
+ * The Production stage's Recording Log tile (build prompt v4, section 7A): a session picker, the chosen session's log,
+ * and where every session's footage is. It replaces the Session Log and Storage tiles.
+ */
+function RecordingLogPane({ project, write }: { project: Project; write: boolean }) {
+  const { go } = useApp();
+  const sessions = sessionsOf(project.contentId)
+    .filter((s) => !s.archivedAt)
+    .sort((a, b) => (a.scheduledDate ?? "9999").localeCompare(b.scheduledDate ?? "9999") || a.sessionNumber - b.sessionNumber);
+  // The session being recorded, else the last one recorded, else the first planned.
+  const first = sessions.find((s) => s.status === "Open") ?? [...sessions].reverse().find((s) => s.status === "Closed") ?? sessions[0];
+  const [chosen, setChosen] = useState<string | null>(null);
+  const id = chosen ?? first?.id ?? null;
+  const live = project.category === "live";
+  if (!sessions.length)
+    return (
+      <Empty>
+        {live
+          ? "No days yet. They are set in Show Days."
+          : "No recording sessions yet. They are scheduled in Pre-production, in the Recording Plan."}
+      </Empty>
+    );
+  return (
+    <div className="stack">
+      <div className="row" style={{ alignItems: "end" }}>
+        <Field label={live ? "Day" : "Session"}>
+          <select value={id ?? ""} onChange={(e) => setChosen(e.target.value)}>
+            {sessions.map((s) => (
+              <option key={s.id} value={s.id}>
+                {sessionName(s)} · {s.scheduledDate ? fmtDate(s.scheduledDate) : "no date"} ·{" "}
+                {s.status === "Planned" ? "Pre-production" : s.status === "Open" ? "Production" : "Closed"}
+              </option>
+            ))}
+          </select>
+        </Field>
+        {id && (
+          <button className="btn small" onClick={() => go({ n: "session", id })}>
+            Open the {live ? "day" : "session"}
+          </button>
+        )}
+      </div>
+      {id && <RecordingLog key={id} project={project} sessionId={id} write={write} />}
+      <section className="glass panel" aria-label="Where the footage is">
+        <h2>Where the footage is</h2>
+        <FootageWhere projectId={project.contentId} />
+      </section>
+    </div>
   );
 }
 
@@ -177,6 +229,8 @@ export function FormPane({ project, entry, write }: { project: Project; entry: C
       );
     case "storage":
       return <SessionStorage project={project} write={write} />;
+    case "recordingLog":
+      return <RecordingLogPane project={project} write={write} />;
     case "showDays":
       return (
         <div className="stack">
