@@ -66,9 +66,11 @@ export function visibleRecords(actor: Actor, includeArchived = false): ContentRe
 export function visibleCallSheets(actor: Actor): CallSheet[] {
   return getDb().callSheets.filter((cs) => {
     const root = getRecord(cs.contentId);
-    // A day a recurring show's schedule took off is archived, and its sheet goes with it (until the day comes back).
-    const day = cs.instanceId ? getRecord(cs.instanceId) : undefined;
-    return !!root && canView(actor, root) && !day?.archived;
+    // A day a recurring show's schedule took off is archived, and its sheet goes with it (until the day comes back). Since
+    // data version 23 a day is a session of its event; before, a record of its own.
+    const session = cs.instanceId ? getDb().recordingSessions.find((s) => s.id === cs.instanceId) : undefined;
+    const day = cs.instanceId && !session ? getRecord(cs.instanceId) : undefined;
+    return !!root && canView(actor, root) && !day?.archived && !session?.archivedAt;
   });
 }
 

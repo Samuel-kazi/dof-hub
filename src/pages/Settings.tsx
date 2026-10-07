@@ -332,7 +332,13 @@ export function Settings() {
                   <div key={c.key}>
                     <h3 style={{ marginBottom: 6 }}>{c.label}</h3>
                     {[
-                      ...c.stages.filter((st) => st.name !== c.footageStage).map((st) => ({ name: st.name, label: st.name })),
+                      // Live Shows and Music share the workflow's stage names: each is listed once, per episode where it is.
+                      ...c.stages
+                        .filter(
+                          (st) =>
+                            st.name !== c.footageStage && !(c.workflow && (EPISODE_EFFORT_STAGES as readonly string[]).includes(st.name)),
+                        )
+                        .map((st) => ({ name: st.name, label: st.name })),
                       ...(c.workflow
                         ? EPISODE_EFFORT_STAGES.map((name) => ({ name, label: `${name}, each ${c.workflow!.episodeLabel.toLowerCase()}` }))
                         : []),

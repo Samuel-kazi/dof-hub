@@ -10,6 +10,7 @@ import { CalendarWeek } from "../src/pages/CalendarWeek";
 import { login } from "../src/services/auth";
 import { getDb, setDb } from "../src/data/store";
 import { buildSeed } from "../src/data/seed";
+import { liveMusicToWorkflow } from "../src/data/migrateLiveMusic";
 import { calendarEvents, type CalEvent } from "../src/services/calendarView";
 import { layoutWeek, textOn } from "../src/services/calendarBars";
 
@@ -92,31 +93,35 @@ t("label text switches for readability depending on how light the category color
   assert.equal(textOn("#e8703a"), "#fff8f2", "a darker orange bar gets light text");
 });
 
-t("a multi-day live show becomes one production-window bar, and its days stop showing individual dots", () => {
+// Since data version 23 a live show's event is the project and its days are its sessions: the sample moved across.
+t("a multi-day live event becomes one production-window bar, and its days stop showing individual dots", () => {
+  liveMusicToWorkflow(getDb());
   const actor = login("hop@dof.demo", "demo");
-  const show = getDb().records.find((r) => r.contentId === "DOF-LIVE-002")!;
-  const evs = calendarEvents(actor, show.showStart!, show.showEnd!);
-  const window = evs.find((e) => e.id === `window:${show.contentId}`);
-  assert.ok(window, "the show gets a window event");
-  assert.equal(window!.date, show.showStart);
-  assert.equal(window!.endDate, show.showEnd);
+  const event = getDb().records.find((r) => r.contentId === "DOF-LIVE-002-E1")!;
+  const evs = calendarEvents(actor, event.showStart!, event.showEnd!);
+  const window = evs.find((e) => e.id === `window:${event.contentId}`);
+  assert.ok(window, "the event gets a window event");
+  assert.equal(window!.date, event.showStart);
+  assert.equal(window!.endDate, event.showEnd);
+  assert.equal(window!.days?.length, 5, "with each of its days inside it");
   assert.equal(
-    evs.some((e) => e.id.startsWith("shoot:DOF-LIVE-002-D")),
+    evs.some((e) => e.id.startsWith("session:DOF-LIVE-002-E1-D")),
     false,
-    "its days no longer show their own shoot dot",
+    "its days no longer show their own dot",
   );
 });
 
-t("a single-day live show still shows its normal shoot dot, not a window bar", () => {
+t("a single-day live event still shows its day's own dot, not a window bar", () => {
+  liveMusicToWorkflow(getDb());
   const actor = login("hop@dof.demo", "demo");
-  const show = getDb().records.find((r) => r.contentId === "DOF-LIVE-001")!;
-  assert.equal(show.showStart, show.showEnd, "this fixture is genuinely single-day");
-  const evs = calendarEvents(actor, show.showStart!, show.showEnd!);
+  const event = getDb().records.find((r) => r.contentId === "DOF-LIVE-001-E1")!;
+  assert.equal(event.showStart, event.showEnd, "this fixture is genuinely single-day");
+  const evs = calendarEvents(actor, event.showStart!, event.showEnd!);
   assert.equal(
-    evs.some((e) => e.id === `window:${show.contentId}`),
+    evs.some((e) => e.id === `window:${event.contentId}`),
     false,
   );
-  assert.ok(evs.some((e) => e.id.startsWith("shoot:DOF-LIVE-001-D")));
+  assert.ok(evs.some((e) => e.id === "session:DOF-LIVE-001-E1-D01"));
 });
 
 t("an item's current stage becomes a bar from when it was entered to its deadline; future stages stay dots", () => {
@@ -181,15 +186,16 @@ t("a bar segment is clickable and opens its event; a day card click selects the 
   void selectedDay;
 });
 
-t("a multi-day live show gets exactly one bar — its own days never add separate stage bars too", () => {
+t("a multi-day live event gets exactly one bar — its own days never add separate bars too", () => {
+  liveMusicToWorkflow(getDb());
   const actor = login("hop@dof.demo", "demo");
-  const show = getDb().records.find((r) => r.contentId === "DOF-LIVE-002")!;
-  const evs = calendarEvents(actor, show.showStart!, show.showEnd!);
-  const windowBars = evs.filter((e) => e.id === `window:${show.contentId}`);
-  const dayBars = evs.filter((e) => e.id.startsWith(`deadline:${show.contentId}-D`));
+  const event = getDb().records.find((r) => r.contentId === "DOF-LIVE-002-E1")!;
+  const evs = calendarEvents(actor, event.showStart!, event.showEnd!);
+  const windowBars = evs.filter((e) => e.id === `window:${event.contentId}`);
+  const dayBars = evs.filter((e) => e.id.includes(`${event.contentId}-D`));
   assert.equal(windowBars.length, 1);
-  assert.equal(windowBars[0].title, show.title, "the bar names the show, not a particular day");
-  assert.equal(dayBars.length, 0, "no day of the show adds a second bar of its own");
+  assert.equal(windowBars[0].title, event.title, "the bar names the event, not a particular day");
+  assert.equal(dayBars.length, 0, "no day of the event adds a bar of its own");
 });
 
 console.log(`\n${passed} passed`);

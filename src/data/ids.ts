@@ -103,6 +103,12 @@ export const logId = (prefix: string): string => `${prefix}-${Date.now().toStrin
 export const topLevelCounter = (category: CategoryKey): string => `record:${categoryOf(category).code}`;
 /** The counter for one record's children: the episodes of DOF-SER-001-S1 count under "record:DOF-SER-001-S1". */
 export const childCounter = (parentId: string): string => `record:${parentId}`;
+/**
+ * The counter a record's next child is numbered from. A live show's events count on their own ("record:DOF-LIVE-002:E"),
+ * as the show's days before data version 23 counted under the show itself: its first event is E1, not E6.
+ */
+export const childCounterOf = (parent: ContentRecord): string =>
+  parent.category === "live" && parent.hierarchyLevel === 0 ? `${childCounter(parent.contentId)}:E` : childCounter(parent.contentId);
 /** The letters before a child's number: "S" for a season of a series, "E" for its episodes, and so on. */
 export const childToken = (parent: ContentRecord): string => {
   const cfg = categoryOf(parent.category);
@@ -122,7 +128,10 @@ export function syncRecordCounters(db: Database): void {
   for (const r of db.records) {
     if (r.hierarchyLevel === 0) raise(topLevelCounter(r.category), topLevelNumber(r.contentId));
     const parent = r.parentId ? byId.get(r.parentId) : undefined;
-    if (parent) raise(childCounter(parent.contentId), childNumber(r.contentId, parent));
+    if (parent) raise(childCounterOf(parent), childNumber(r.contentId, parent));
+    // A show's days from before data version 23 (D1, D2) keep counting under the show itself.
+    if (parent?.category === "live" && parent.hierarchyLevel === 0 && r.contentId.startsWith(`${parent.contentId}-D`))
+      raise(childCounter(parent.contentId), parseInt(r.contentId.slice(parent.contentId.length + 2), 10));
   }
 }
 
@@ -132,9 +141,9 @@ export function syncRecordCounters(db: Database): void {
 // whatever the project or episode is renamed to.
 
 const two = (n: number): string => String(n).padStart(2, "0");
-export const sessionCode = (projectId: string, n: number): string => `${projectId}-${SESSION_TOKEN}${two(n)}`;
+export const sessionCode = (projectId: string, n: number, token = SESSION_TOKEN): string => `${projectId}-${token}${two(n)}`;
 export const plannedEpisodeId = (projectId: string, n: number): string => `${projectId}-${PLANNED_TOKEN}${two(n)}`;
-export const episodeCode = (projectId: string, n: number): string => `${projectId}-${EPISODE_TOKEN}${two(n)}`;
+export const episodeCode = (projectId: string, n: number, token = EPISODE_TOKEN): string => `${projectId}-${token}${two(n)}`;
 
 export const sessionCounter = (projectId: string): string => `session:${projectId}`;
 export const plannedCounter = (projectId: string): string => `planned:${projectId}`;

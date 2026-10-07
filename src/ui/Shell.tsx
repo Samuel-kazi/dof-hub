@@ -142,6 +142,16 @@ function routeFor(m: ModuleKey): Route {
   }
 }
 
+/** What `work` gives, or `fallback` (with the error in the console) if it throws. */
+function softly<T>(work: () => T, fallback: T): T {
+  try {
+    return work();
+  } catch (e) {
+    console.warn("The deadlines could not be worked out:", e);
+    return fallback;
+  }
+}
+
 export function Shell() {
   const { actor, me, route, go, back, canBack, menu, toast, attempt, logout, notifications, clearNotifications, copyLink } = useApp();
   const db = useDb();
@@ -188,8 +198,10 @@ export function Shell() {
   const unread = bell.filter((n) => !n.readAt);
   const role = ROLES[actor.role];
   const active = moduleOfRoute(route);
-  const reminders = getReminders(actor);
-  const workflowDue = workflowDueSoon(actor.personId);
+  // The menu and the bell must outlive anything that goes wrong while the deadlines are worked out: a page that fails
+  // has its own message (ErrorBoundary), and the app around it stays.
+  const reminders = softly(() => getReminders(actor), []);
+  const workflowDue = softly(() => workflowDueSoon(actor.personId), []);
   void db;
 
   const toggle = () => {
@@ -248,8 +260,8 @@ export function Shell() {
 
   // One heads-up on sign-in for stage deadlines inside the reminder window.
   useEffect(() => {
-    const stages = getReminders(actor).length;
-    const n = stages + workflowDueSoon(actor.personId).length;
+    const stages = softly(() => getReminders(actor), []).length;
+    const n = stages + softly(() => workflowDueSoon(actor.personId), []).length;
     // A session's day or a waiting review is not a stage deadline, so the word is only used when that is all there is.
     const what = n === stages ? "stage deadline" : "deadline";
     if (n) toast(`${n} ${what}${n > 1 ? "s" : ""} need${n > 1 ? "" : "s"} your attention soon. Check the bell.`, "info");

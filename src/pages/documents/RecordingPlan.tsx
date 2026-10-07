@@ -13,6 +13,7 @@ import {
   addPlanRole,
   archiveSession,
   assignDevotion,
+  setSongOnSession,
   createSession,
   createSessionCallSheet,
   devotionPlacements,
@@ -39,6 +40,7 @@ import { CallSheetBody } from "../CallSheets";
 import { useReason } from "../workflow/common";
 import { DuplicateSessionModal, RunSheetPanel } from "../workflow/SessionPage";
 import { imageSrc } from "./images";
+import { ProductionPanel } from "../production/ProductionPanel";
 import type { FixedCard } from "./PageList";
 import { sheetContacts, usePrintCallSheet } from "./printCallSheet";
 import { SavedInput } from "./toolkit";
@@ -61,15 +63,25 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 /** What the plan's items are called for this project: devotions, episodes or parts. */
 const labelsOf = (projectId: string) => planLabels((getDb().records.find((r) => r.contentId === projectId) as Project).workflow.formType);
 
+/** Whether the project is a live event: its days come from its Show Days, and what they record is named on the day. */
+const isEvent = (projectId: string): boolean => getDb().records.find((r) => r.contentId === projectId)?.category === "live";
+
 /** The plan's section cards, with where each stands. */
 export function planCards(projectId: string): FixedCard[] {
   const L = labelsOf(projectId);
+  const event = isEvent(projectId);
   const roles = planRolesOf(projectId);
   const placed = devotionPlacements(projectId);
   const waiting = placed.filter((x) => !x.sessionId && !x.locked).length;
   const sessions = liveSessions(projectId);
   const sheets = sessions.filter((s) => s.callSheetId).length;
   const card = (id: PlanSection, title: string, note: string): FixedCard => ({ id: `plan:${id}`, title, note, at: "start", tag: "plan" });
+  if (event)
+    return [
+      card("roles", "Project roles", roles.length ? `${roles.filter(roleHolder).length} of ${roles.length} have a person` : "No roles yet"),
+      card("sessions", "Show days", sessions.length ? plural(sessions.length, "day") : "None yet"),
+      card("callSheets", "Call sheets", sessions.length ? `${sheets} of ${sessions.length} made` : "One per day"),
+    ];
   return [
     card("roles", "Project roles", roles.length ? `${roles.filter(roleHolder).length} of ${roles.length} have a person` : "No roles yet"),
     card(
@@ -111,7 +123,7 @@ export function PlanSectionView({
     case "devotions":
       return <DevotionsSection project={project} write={write} />;
     case "sessions":
-      return <SessionsSection project={project} write={write} />;
+      return project.category === "live" ? <ShowDaysSection project={project} /> : <SessionsSection project={project} write={write} />;
     case "callSheets":
       return <CallSheetsSection project={project} write={write} onOpenTool={onOpenTool} />;
   }
@@ -330,6 +342,19 @@ interface NewSession {
 }
 const NO_SESSION: NewSession = { name: "", label: "", date: "", start: "", end: "", venue: "" };
 
+/** A live event's days, in the plan: made from its Show Days (one day, several, or a recurring show's dates). */
+function ShowDaysSection({ project }: { project: Project }) {
+  return (
+    <div className="stack" aria-label="Show days">
+      <ProductionPanel show={project} />
+      <p className="muted">
+        Each day has its own call sheet and run of show, below under Call sheets. On the day, open it to start the show, log what was
+        recorded, strike and close it.
+      </p>
+    </div>
+  );
+}
+
 function SessionsSection({ project, write }: { project: Project; write: boolean }) {
   const { actor, attempt } = useApp();
   const [draft, setDraft] = useState<NewSession>(NO_SESSION);
@@ -338,6 +363,7 @@ function SessionsSection({ project, write }: { project: Project; write: boolean 
   const removed = sessionsOf(project.contentId).filter((s) => s.archivedAt);
   const placed = devotionPlacements(project.contentId);
   const L = planLabels(project.workflow.formType);
+  const music = project.category === "music";
   const canAdd = write && !project.archived && project.workflow.stage === "Pre-production";
   const [reviewCheck, reviewModal] = useReviewCheck();
   const add = async () => {
@@ -364,8 +390,10 @@ function SessionsSection({ project, write }: { project: Project; write: boolean 
     <section className="glass panel rp-section" aria-label="Recording sessions">
       <h2>Recording sessions</h2>
       <p className="muted">
-        Tick the {L.many} each session records. Each {L.one} is on one session: ticking it on another moves it there. A session's call sheet
-        is made as soon as it has a date.
+        {music
+          ? `Tick the ${L.many} each session records: a song can be on more than one (its audio, then its video), each with its own storyboard and shot list, or the release's.`
+          : `Tick the ${L.many} each session records. Each ${L.one} is on one session: ticking it on another moves it there.`}{" "}
+        A session's call sheet is made as soon as it has a date.
       </p>
       {sessions.length === 0 && <Empty>No sessions yet.</Empty>}
       {sessions.map((s) => (
@@ -395,9 +423,17 @@ function SessionsSection({ project, write }: { project: Project; write: boolean 
                 type="text"
                 value={draft.name}
                 maxLength={120}
-                placeholder="Day 1"
+                placeholder={music ? "Audio recording" : "Day 1"}
+                list={music ? "music-session-names" : undefined}
                 onChange={(e) => setDraft({ ...draft, name: e.target.value })}
               />
+              {music && (
+                <datalist id="music-session-names">
+                  <option value="Audio recording" />
+                  <option value="Video shoot" />
+                  <option value="Audio and video" />
+                </datalist>
+              )}
             </Field>
             <Field label="Label">
               <select value={draft.label} onChange={(e) => setDraft({ ...draft, label: e.target.value as SessionLabel | "" })}>
@@ -459,7 +495,9 @@ function SessionCard({
   const L = planLabels(project.workflow.formType);
   const edit = write && !project.archived && s.status !== "Closed";
   const save = (patch: Parameters<typeof updateSession>[2]) => attempt(() => updateSession(actor, s.id, patch));
-  const here = placed.filter((x) => x.sessionId === s.id).length;
+  const music = project.category === "music";
+  const onThis = (x: Placement): boolean => (music ? x.sessionIds.includes(s.id) : x.sessionId === s.id);
+  const here = placed.filter(onThis).length;
   return (
     <article className="rp-session" aria-label={sessionName(s)}>
       <div className="wf-head">
@@ -536,25 +574,36 @@ function SessionCard({
           </p>
         ) : (
           placed.map((x) => {
-            const on = x.sessionId === s.id;
-            const elsewhere = x.sessionId && !on ? getDb().recordingSessions.find((o) => o.id === x.sessionId) : undefined;
+            const on = onThis(x);
+            const others = music
+              ? x.sessionIds.filter((id) => id !== s.id).map((id) => getDb().recordingSessions.find((o) => o.id === id))
+              : [];
+            const elsewhere = !music && x.sessionId && !on ? getDb().recordingSessions.find((o) => o.id === x.sessionId) : undefined;
             return (
               <label key={x.planned.id} className="check">
                 <input
                   type="checkbox"
                   checked={on}
-                  disabled={!edit || s.status !== "Planned" || x.locked}
+                  disabled={!edit || s.status !== "Planned" || (!music && x.locked)}
                   onChange={(e) =>
                     attempt(
-                      () => assignDevotion(actor, x.planned.id, e.target.checked ? s.id : null),
-                      e.target.checked ? `${x.title} is on ${sessionName(s)}` : `${x.title} needs a session`,
+                      () =>
+                        music
+                          ? setSongOnSession(actor, x.planned.id, s.id, e.target.checked)
+                          : assignDevotion(actor, x.planned.id, e.target.checked ? s.id : null),
+                      e.target.checked
+                        ? `${x.title} is on ${sessionName(s)}`
+                        : music
+                          ? `${x.title} is off ${sessionName(s)}`
+                          : `${x.title} needs a session`,
                     )
                   }
                 />
                 <span>
                   {x.title}
                   {elsewhere && <span className="muted"> · on {sessionName(elsewhere)}</span>}
-                  {x.locked && !on && !elsewhere && <span className="muted"> · recorded</span>}
+                  {others.length > 0 && <span className="muted"> · also on {others.map((o) => sessionName(o)).join(", ")}</span>}
+                  {x.locked && !on && !elsewhere && !music && <span className="muted"> · recorded</span>}
                 </span>
               </label>
             );
@@ -585,7 +634,11 @@ function CallSheetsSection({
     return (
       <section className="glass panel rp-section" aria-label="Call sheets">
         <h2>Call sheets</h2>
-        <Empty>No sessions yet. Each session added under Recording sessions gets its call sheet here.</Empty>
+        <Empty>
+          {project.category === "live"
+            ? "No days yet. Each day of the event gets its call sheet here."
+            : "No sessions yet. Each session added under Recording sessions gets its call sheet here."}
+        </Empty>
       </section>
     );
   const cs = s.callSheetId ? getDb().callSheets.find((c) => c.id === s.callSheetId) : undefined;
@@ -596,7 +649,7 @@ function CallSheetsSection({
   const planParts = (
     <>
       <RolesOnSheet project={project} />
-      <DevotionsOnSheet project={project} session={s} />
+      {project.category !== "live" && <DevotionsOnSheet project={project} session={s} />}
       <BoardsOnSheet project={project} session={s} edit={edit} onOpenTool={onOpenTool} />
     </>
   );
@@ -659,7 +712,7 @@ function CallSheetsSection({
           </section>
           <TimesAndContacts project={project} session={s} />
           <RolesOnSheet project={project} />
-          <DevotionsOnSheet project={project} session={s} />
+          {project.category !== "live" && <DevotionsOnSheet project={project} session={s} />}
           <RunSheetPanel sessionId={s.id} editable={edit} />
           <BoardsOnSheet project={project} session={s} edit={edit} onOpenTool={onOpenTool} />
         </>

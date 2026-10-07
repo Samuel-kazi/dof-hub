@@ -5,7 +5,7 @@ import type { FormType, WorkflowStage } from "../types";
 // gates and overdue, unchanged). The stage names and their order are the workflow's own (src/config/workflow.ts).
 // A document's starting pages are only a start: people add, rename, reorder and delete pages.
 
-export type CatalogType = "series" | "documentary" | "devotion";
+export type CatalogType = "series" | "documentary" | "devotion" | "music" | "live";
 export type CatalogKind = "document" | "tool" | "form" | "review";
 export type FormTile =
   | "plannedEpisodes"
@@ -21,7 +21,8 @@ export type FormTile =
   | "episodeTracker"
   | "review"
   | "platformStatus"
-  | "archive";
+  | "archive"
+  | "showDays";
 
 export interface CatalogPage {
   title: string;
@@ -76,11 +77,13 @@ const planOrForms = (): CatalogEntry[] => [
   tool("shot_list", "Shot List", "shotList"),
 ];
 
-// The two brief fields the Development gate reads: written at the top of the brief's first page.
-const IDEA_FIELDS = [
+// The two brief fields the Development gate reads: written at the top of the brief's first page. A song's second field
+// is its core message, an event's its purpose: the same field, in their own words.
+const ideaFields = (second = "Core question or tension") => [
   { section: "brief", key: "logline", label: "Logline" },
-  { section: "brief", key: "coreQuestion", label: "Core question or tension" },
+  { section: "brief", key: "coreQuestion", label: second },
 ];
+const IDEA_FIELDS = ideaFields();
 
 const greenlight = doc("greenlight", "Greenlight", [{ title: "Decision", body: `<p>The six criteria:</p>${CRITERIA_LIST}` }]);
 
@@ -122,6 +125,91 @@ const marketing = (): CatalogEntry[] => [
   doc("learning_notes", "Learning Notes", ["Against the success measures"]),
   form("archive", "Archive", "archive"),
 ];
+
+/** A music release, a single or an album: the series' workflow in its own words. Each song can have its own storyboard
+ * and shot list, or share the release's. */
+function musicCatalog(formType: FormType): Record<WorkflowStage, CatalogEntry[]> {
+  const single = formType === "music_single";
+  return {
+    Development: [
+      doc("music_brief", "Music Brief", [
+        { title: "The idea", fields: ideaFields("Core message") },
+        "Lyrics",
+        "Scripture and source basis",
+        "Sound and arrangement",
+        "Ask",
+      ]),
+      review("music_brief"),
+      greenlight,
+      form("planned_episodes", single ? "The Song" : "Planned Songs", "plannedEpisodes"),
+    ],
+    "Pre-production": [
+      doc("production_pack", "Production Pack", ["Arrangement and rehearsal", "Music video concept", "Set and wardrobe"]),
+      ...planOrForms(),
+      form("gear", "Gear", "gear"),
+    ],
+    Production: [
+      doc(
+        "recording_day_sheet",
+        "Recording Day Sheet",
+        [{ title: "Run sheet", form: "runSheet" }, "Session notes", { title: "Wrap checklist", form: "wrapChecklist" }],
+        { per: "session" },
+      ),
+      form("session_log", "Session Log", "sessionLog"),
+      form("storage", "Storage", "storage"),
+    ],
+    "Post production": [
+      doc("edit_notes", "Mix and Edit Notes", ["Mix notes", "Mastering notes", "Video edit notes"]),
+      form("episode_tracker", "Song Tracker", "episodeTracker"),
+      doc("review_thread", "Review Thread", [], { pagePerEpisode: true }),
+    ],
+    "Marketing and distribution": marketing(),
+  };
+}
+
+/** A live event: one day, several days, or a recurring show. Each day is a session with its own call sheet and run of
+ * show; what was recorded on a day goes on as recordings. */
+const liveCatalog: Record<WorkflowStage, CatalogEntry[]> = {
+  Development: [
+    doc("event_brief", "Event Brief", [
+      { title: "The idea", fields: ideaFields("Purpose of the event") },
+      "Theme and scripture",
+      "Format and programme",
+      "Speakers and performers",
+      "Ask",
+    ]),
+    review("event_brief"),
+    greenlight,
+    form("show_days", "Show Days", "showDays"),
+  ],
+  // The Recording Plan holds the roles, the days and each day's call sheet and run of show.
+  "Pre-production": [
+    doc("production_pack", "Production Pack", ["Stage and set design", "Technical plan", "Rehearsal notes"]),
+    ...planOrForms(),
+    form("gear", "Gear", "gear"),
+  ],
+  Production: [
+    doc(
+      "show_day_sheet",
+      "Show Day Sheet",
+      [{ title: "Run of show", form: "runSheet" }, "Show notes", { title: "Strike and wrap checklist", form: "wrapChecklist" }],
+      { per: "session" },
+    ),
+    form("session_log", "Show Log", "sessionLog"),
+    form("storage", "Storage", "storage"),
+  ],
+  "Post production": [
+    doc("edit_notes", "Edit Notes", ["Recording notes", "Clips to cut", "Graphics and music"]),
+    form("episode_tracker", "Recording Tracker", "episodeTracker"),
+    doc("review_thread", "Review Thread", [], { pagePerEpisode: true }),
+  ],
+  "Marketing and distribution": [
+    doc("release_plan", "Release Plan", ["Clips and highlights", "Platform plan"]),
+    form("platform_status", "Platform Status", "platformStatus"),
+    doc("show_report", "Show Report", ["Attendance and reach", "What worked", "What to change"]),
+    form("archive", "Archive", "archive"),
+  ],
+};
 
 function seriesCatalog(formType: FormType): Record<WorkflowStage, CatalogEntry[]> {
   return {
@@ -227,20 +315,49 @@ export interface PlanLabels {
   source: string; // where the list is read from
   detail: string; // the second column: a devotion's scripture, an episode's question
 }
-export const planLabels = (formType: FormType): PlanLabels =>
-  catalogTypeOf(formType) === "devotion"
-    ? { one: "devotion", many: "devotions", title: "Devotions", source: "the Devotional Script", detail: "Scripture" }
-    : catalogTypeOf(formType) === "documentary"
-      ? { one: "part", many: "parts", title: "Parts", source: "the Planned Parts in Development", detail: "Question" }
-      : { one: "episode", many: "episodes", title: "Episodes", source: "the Planned Episodes in Development", detail: "Question" };
+export function planLabels(formType: FormType): PlanLabels {
+  switch (catalogTypeOf(formType)) {
+    case "devotion":
+      return { one: "devotion", many: "devotions", title: "Devotions", source: "the Devotional Script", detail: "Scripture" };
+    case "documentary":
+      return { one: "part", many: "parts", title: "Parts", source: "the Planned Parts in Development", detail: "Question" };
+    case "music":
+      return {
+        one: "song",
+        many: "songs",
+        title: "Songs",
+        source: formType === "music_single" ? "The Song in Development" : "the Planned Songs in Development",
+        detail: "Notes",
+      };
+    case "live":
+      // A live event records what happens on its days: its recordings are named in each day's show log.
+      return { one: "recording", many: "recordings", title: "Recordings", source: "each day's show log", detail: "Notes" };
+    default:
+      return { one: "episode", many: "episodes", title: "Episodes", source: "the Planned Episodes in Development", detail: "Question" };
+  }
+}
 
-export const catalogTypeOf = (formType: FormType): CatalogType =>
-  formType === "devotion" ? "devotion" : formType === "documentary_dof" || formType === "documentary_pitched" ? "documentary" : "series";
+export function catalogTypeOf(formType: FormType): CatalogType {
+  if (formType === "devotion") return "devotion";
+  if (formType === "documentary_dof" || formType === "documentary_pitched") return "documentary";
+  if (formType === "music_single" || formType === "music_album") return "music";
+  if (formType === "live_event") return "live";
+  return "series";
+}
 
 /** What a project of this form type has at this stage, in the order its tiles show. */
 export function catalogFor(formType: FormType, stage: WorkflowStage): CatalogEntry[] {
   const type = catalogTypeOf(formType);
-  const all = type === "devotion" ? devotionCatalog : type === "documentary" ? documentaryCatalog(formType) : seriesCatalog(formType);
+  const all =
+    type === "devotion"
+      ? devotionCatalog
+      : type === "documentary"
+        ? documentaryCatalog(formType)
+        : type === "music"
+          ? musicCatalog(formType)
+          : type === "live"
+            ? liveCatalog
+            : seriesCatalog(formType);
   return all[stage];
 }
 
@@ -249,11 +366,9 @@ export const catalogEntry = (formType: FormType, stage: WorkflowStage, key: stri
 
 /** The document a project's Development writing lives in: the brief, or a devotion's script. */
 export const briefKeyOf = (formType: FormType): string =>
-  catalogTypeOf(formType) === "devotion"
-    ? "devotional_script"
-    : catalogTypeOf(formType) === "documentary"
-      ? "documentary_brief"
-      : "show_brief";
+  ({ devotion: "devotional_script", documentary: "documentary_brief", music: "music_brief", live: "event_brief", series: "show_brief" })[
+    catalogTypeOf(formType)
+  ];
 
 /** Seed values for a shot list's dropdowns. Free text is allowed too. */
 export const SHOT_SIZES = ["Wide", "Medium", "Close-up", "Extreme close-up"];

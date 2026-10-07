@@ -7,7 +7,7 @@ import { fmtDate } from "../../services/utils";
 import { useApp } from "../../ui/AppContext";
 import { Empty } from "../../ui/parts";
 import { OpenLinkButton } from "../../ui/workflow/shared";
-import { RunSheetPanel, WrapPanel } from "../workflow/SessionPage";
+import { LiveRunOfShow, RunSheetPanel, WrapPanel } from "../workflow/SessionPage";
 import type { FixedCard } from "./PageList";
 
 // The documents of the later stages that belong to a session or an episode. A Recording Day Sheet (a documentary's
@@ -38,7 +38,12 @@ export function formCards(entry: CatalogEntry): FixedCard[] {
     out.push({
       id: `form:${p.form}`,
       title: p.title,
-      note: p.form === "runSheet" ? "The day's schedule; it sets the call sheet's call time" : "Ticked off at the end of the day",
+      note:
+        p.form === "runSheet"
+          ? p.title === "Run of show"
+            ? "The day's running order, from its call sheet"
+            : "The day's schedule; it sets the call sheet's call time"
+          : "Ticked off at the end of the day",
       at: written === 0 ? "start" : "end",
     });
   }
@@ -59,7 +64,7 @@ export function SessionPicker({
   return (
     <div className="pd-session-pick">
       <label>
-        <span>Recording session</span>
+        <span>{project.category === "live" ? "Day" : "Recording session"}</span>
         <select value={value ?? ""} onChange={(e) => onChange(e.target.value)}>
           {all.map((s) => (
             <option key={s.id} value={s.id}>
@@ -84,7 +89,18 @@ export function DaySheetForm({ project, sessionId, form }: { project: Project; s
   const session = getDb().recordingSessions.find((s) => s.id === sessionId);
   if (!session) return <Empty>That recording session no longer exists.</Empty>;
   const editable = canWrite(actor, project) && !project.archived && !session.archivedAt && session.status !== "Closed";
-  if (form === "runSheet") return <RunSheetPanel sessionId={sessionId} editable={editable} />;
+  if (form === "runSheet") {
+    // A live day's running order is its call sheet's run of show.
+    if (project.category === "live") {
+      const sheet = getDb().callSheets.find((c) => c.id === session.callSheetId || c.instanceId === session.id);
+      return sheet ? (
+        <LiveRunOfShow sheet={sheet} editable={editable} />
+      ) : (
+        <Empty>This day has no call sheet, so no run of show yet.</Empty>
+      );
+    }
+    return <RunSheetPanel sessionId={sessionId} editable={editable} />;
+  }
   if (session.status === "Planned") return <Empty>The wrap checklist opens once recording starts.</Empty>;
   return <WrapPanel sessionId={sessionId} editable={editable} />;
 }

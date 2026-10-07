@@ -36,10 +36,14 @@ function pastShooting(r: ContentRecord): boolean {
 export function sheetLock(cs: CallSheet): SheetLock {
   const db = getDb();
   const session = db.recordingSessions.find((s) => s.callSheetId === cs.id);
-  if (session)
-    return session.status === "Closed"
-      ? { locked: true, why: `Recording session ${session.id} is closed: its episodes are in Post production.` }
-      : OPEN;
+  if (session) {
+    if (session.status !== "Closed") return OPEN;
+    // A live event's day is closed once the show is over: what it recorded is in Post production.
+    const live = db.records.find((r) => r.contentId === session.contentId)?.category === "live";
+    return live
+      ? { locked: true, why: `${session.name?.trim() || "Day"} (${session.id}) is closed: what it recorded is in Post production.` }
+      : { locked: true, why: `Recording session ${session.id} is closed: its episodes are in Post production.` };
+  }
   if (cs.instanceId) {
     const day = db.records.find((r) => r.contentId === cs.instanceId);
     return day && pastShooting(day) ? { locked: true, why: `${day.title} has reached Post production.` } : OPEN;

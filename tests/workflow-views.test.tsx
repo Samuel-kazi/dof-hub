@@ -191,8 +191,9 @@ t("the Pipeline page shows the workflow board for its categories and the earlier
   assert.match(both, /Made before the new workflow/);
   assert.match(both, /aria-label="Editorial"/);
   assert.match(both, /Old Episode/);
+  // Live Shows are on the workflow's board too (data version 23): an event as a project, each day as it goes on air.
   const live = html(HOP, <Pipeline category="live" />);
-  assert.doesNotMatch(live, /No session is recording/, "Live Shows keep their own board, of days, now on the five stages");
+  assert.match(live, /An event shows in Development and Pre-production, each day in Production/);
   assert.match(live, /aria-label="Pre-production"/);
 });
 

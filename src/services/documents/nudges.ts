@@ -1,4 +1,4 @@
-import { briefKeyOf, catalogEntry, catalogTypeOf } from "../../config/documentCatalog";
+import { briefKeyOf, catalogEntry, catalogTypeOf, planLabels } from "../../config/documentCatalog";
 import { textOf } from "../html";
 import { openRequired } from "../workflow/common";
 import { formProblems } from "../workflow/forms";
@@ -10,7 +10,14 @@ import { documentOf } from "./pages";
 // the gate, each one dismissible, and never blocking (./gates.ts holds the few things that do block).
 
 // What the hard gates already cover, so it is not said twice.
-const GATED = new Set(["Brief: Logline", "Brief: Core question or tension", "Guest: Name", "Guest: Contact"]);
+const GATED = new Set([
+  "Brief: Logline",
+  "Brief: Core question or tension",
+  "Brief: Core message",
+  "Brief: Purpose of the event",
+  "Guest: Name",
+  "Guest: Contact",
+]);
 // Sections kept on the form: the header strip. (A testimonial's consent form is a hard gate.) The rest of the earlier
 // form now lives in the documents.
 const KEPT_SECTIONS = ["Entry", "Guest"];
@@ -36,8 +43,9 @@ export function softNudges(projectId: string): string[] {
     for (const page of pagesOf(brief.id)) if (!textOf(page.bodyHtml)) out.push(`${brief.title}: ${page.title || "a page"} not written yet`);
   const greenlight = documentOf(projectId, "Development", "greenlight");
   if (!greenlight || !documentHasContent(greenlight.id)) out.push("Greenlight: the six criteria not written up yet");
-  if (plannedOf(projectId).length === 0)
-    out.push(catalogTypeOf(formType) === "documentary" ? "No planned parts listed yet" : "No planned episodes listed yet");
+  // A live event's days come from its schedule, not from planned episodes.
+  if (plannedOf(projectId).length === 0 && catalogTypeOf(formType) !== "live")
+    out.push(`No planned ${planLabels(formType).many} listed yet`);
   out.push(...openRequired("handoff", projectId).map((l) => `Handoff: ${l} not ticked yet`));
   return out;
 }

@@ -30,12 +30,27 @@ function imageOf(value: string | null): string | null {
 
 const line = (s: string | undefined): string => (s ?? "").trim().slice(0, MAX_LINE);
 
+/**
+ * The episode a board or list is for: one of the project's episodes, or one it has planned (a song of an album, before
+ * it is recorded: each song can have its own storyboard and shot list, or share the release's).
+ */
 function episodeOf(contentId: string | null, episodeId: string | null | undefined): string | null {
   if (!episodeId) return null;
   if (!contentId) throw new RuleError("A storyboard or shot list kept in Documents belongs to no episode.");
   const ep = getRecord(episodeId);
-  if (!ep?.episode || ep.parentId !== contentId) throw new RuleError("Choose one of this project's episodes.");
-  return episodeId;
+  if (ep?.episode && ep.parentId === contentId) return episodeId;
+  const planned = getDb().plannedEpisodes.find((p) => p.id === episodeId && p.contentId === contentId && !p.archivedAt);
+  if (planned) return episodeId;
+  throw new RuleError("Choose one of this project's episodes.");
+}
+
+/** What a board's or list's episode is called: an episode's title, or a planned one's working title. */
+export function boardEpisodeTitle(episodeId: string | null): string | null {
+  if (!episodeId) return null;
+  const ep = getRecord(episodeId);
+  if (ep) return ep.title;
+  const planned = getDb().plannedEpisodes.find((p) => p.id === episodeId);
+  return planned ? planned.workingTitle || planned.id : episodeId;
 }
 
 // ── Who may see and change them ──────────────────────────────

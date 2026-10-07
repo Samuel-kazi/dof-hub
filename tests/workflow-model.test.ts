@@ -20,6 +20,7 @@ import {
   upgradeToV20,
   upgradeToV21,
   upgradeToV22,
+  upgradeToV23,
 } from "../src/data/migrate";
 import { codeNumber, episodeCode, episodeCounter, plannedEpisodeId, plannedCounter, sessionCode, sessionCounter } from "../src/data/ids";
 import { addDaysIso, dateInNairobi, hoursUntilEndOfDay, isIsoDate, todayIso } from "../src/services/utils";
@@ -53,10 +54,10 @@ t("five stages, in order, each tracked at the level the brief gives", () => {
   );
 });
 
-t("series, devotions and documentaries use the workflow; Live Shows, Music and General Use do not, and their stages are unchanged", () => {
+t("every production category uses the workflow (Live Shows and Music since data version 23); General Use does not", () => {
   assert.deepEqual(
     CATEGORIES.filter((c) => c.workflow).map((c) => c.key),
-    ["series", "devotional", "documentary"],
+    ["series", "devotional", "live", "documentary", "music"],
   );
   for (const c of CATEGORIES) assert.equal(isWorkflowCategory(c.key), !!c.workflow);
   assert.deepEqual(
@@ -264,24 +265,31 @@ t("upgrading to versions 15 to 21 adds the workflow's and the documents' lists a
   const before = JSON.stringify(old);
   const up = upgradeDb(JSON.parse(before) as Database)!;
   assert.equal(up.schemaVersion, CURRENT_SCHEMA);
-  assert.equal(CURRENT_SCHEMA, 22);
-  for (const k of [...WORKFLOW_PARTS, ...DOCUMENT_PARTS]) assert.deepEqual(up[k], []);
+  assert.equal(CURRENT_SCHEMA, 23);
+  // Version 23 moves the Live Shows and DOF Music onto the workflow (tests/live-music-workflow.test.tsx): their records
+  // and what it makes for them are left out here. Everything else is as it was.
+  const otherThanLiveMusic = (x: unknown) => !/DOF-(LIVE|MUS)-/.test(JSON.stringify(x));
+  for (const k of [...WORKFLOW_PARTS, ...DOCUMENT_PARTS]) assert.deepEqual((up[k] as unknown[]).filter(otherThanLiveMusic), []);
   const was = JSON.parse(before) as Database;
-  // Version 19 makes each live show a production (tests/production.test.ts); every other record is unchanged.
+  const kept = (r: { category: string }) => r.category !== "live" && r.category !== "music";
   assert.deepEqual(
-    up.records.map(({ seriesType, workflow, episode, production, instance, ...rest }) => [
-      rest,
-      seriesType,
-      workflow,
-      episode,
-      rest.category === "live" && rest.hierarchyLevel === 0 ? null : production,
-      instance,
-    ]),
-    was.records.map(({ production: _p, instance: _i, ...r }) => [r, null, null, null, null, null]),
+    up.records
+      .filter(kept)
+      .map(({ seriesType, workflow, episode, production, instance, ...rest }) => [
+        rest,
+        seriesType,
+        workflow,
+        episode,
+        production,
+        instance,
+      ]),
+    was.records.filter(kept).map(({ production: _p, instance: _i, ...r }) => [r, null, null, null, null, null]),
     "every record is exactly as it was, plus empty fields",
   );
   const twice = JSON.stringify(
-    upgradeToV22(upgradeToV21(upgradeToV20(upgradeToV19(upgradeToV18(upgradeToV17(upgradeToV16(upgradeToV15(structuredClone(up))))))))),
+    upgradeToV23(
+      upgradeToV22(upgradeToV21(upgradeToV20(upgradeToV19(upgradeToV18(upgradeToV17(upgradeToV16(upgradeToV15(structuredClone(up))))))))),
+    ),
   );
   assert.equal(twice, JSON.stringify(up), "running it again changes nothing");
   assert.equal(upgradeDb(up), up, "data already at the current version is left alone");
@@ -294,7 +302,7 @@ t("upgrading to version 17 moves every workflow project's Development form into 
   old.schemaVersion = 16;
   const formsBefore = JSON.stringify(old.developmentForms);
   const up = upgradeDb(structuredClone(old))!;
-  assert.equal(up.schemaVersion, 22);
+  assert.equal(up.schemaVersion, 23);
   assert.equal("newDocuments" in up.settings, false, "the setting is gone");
   for (const [id, key] of [
     ["DOF-SER-001-S1", "show_brief"],
@@ -307,7 +315,9 @@ t("upgrading to version 17 moves every workflow project's Development form into 
     );
   assert.equal(JSON.stringify(up.developmentForms), formsBefore, "the old forms are left exactly as they were");
   assert.equal(up.audit.filter((a) => a.action === "migrate-documents" && a.byPersonId === "system").length, 1);
-  const again = JSON.stringify(upgradeToV22(upgradeToV21(upgradeToV20(upgradeToV19(upgradeToV18(upgradeToV17(structuredClone(up))))))));
+  const again = JSON.stringify(
+    upgradeToV23(upgradeToV22(upgradeToV21(upgradeToV20(upgradeToV19(upgradeToV18(upgradeToV17(structuredClone(up)))))))),
+  );
   assert.equal(again, JSON.stringify(up), "running it again changes nothing");
   assert.deepEqual(integrityProblems(up), []);
 });
@@ -337,7 +347,7 @@ t("upgrading to version 18 gives a devotion's call sheets their sessions in its 
   }
   old.schemaVersion = 17;
   const up = upgradeDb(structuredClone(old))!;
-  assert.equal(up.schemaVersion, 22);
+  assert.equal(up.schemaVersion, 23);
   const made = up.recordingSessions.filter((s) => s.contentId === "DOF-DEV-001");
   assert.equal(made.length, 1, "one session for the sheet");
   const [s] = made;
@@ -355,7 +365,7 @@ t("upgrading to version 18 gives a devotion's call sheets their sessions in its 
   // Every session has the new fields, empty; roles their order.
   for (const x of up.recordingSessions) assert.equal(x.storageDriveId, null);
   for (const r of up.projectRoles) assert.equal(typeof r.position, "number");
-  const again = JSON.stringify(upgradeToV22(upgradeToV21(upgradeToV20(upgradeToV19(upgradeToV18(structuredClone(up)))))));
+  const again = JSON.stringify(upgradeToV23(upgradeToV22(upgradeToV21(upgradeToV20(upgradeToV19(upgradeToV18(structuredClone(up))))))));
   assert.equal(again, JSON.stringify(up), "running it again changes nothing");
   assert.deepEqual(integrityProblems(up), []);
   // A devotion still in Development, or a series, keeps its sheets as they are.

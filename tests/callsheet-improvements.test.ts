@@ -15,7 +15,7 @@ import * as E from "../src/services/wrapped/equipment";
 import * as L from "../src/services/wrapped/locations";
 import * as P from "../src/services/wrapped/production";
 import * as W from "../src/services/wrapped/workflow";
-import { daysOfShow, sheetOfDay } from "../src/services/production";
+import { daysOfEvent as daysOfShow, sheetOfDay } from "../src/services/production";
 import { gearSuggestions, sheetWarnings, unconfirmedCrew } from "../src/services/sheetAdvice";
 import { changesOf, confirmationHolds } from "../src/services/sheetTracking";
 import { weeklyFrom } from "../src/services/recurrence";
@@ -181,7 +181,7 @@ await t("crew confirm for themselves, anyone on the project records it for other
     ["DOF-P-CRW-002", "16:00", "Floor", "DOF-P-HOP-001"],
   );
   assert.equal(get(cs.id).version, version, "the sheet's version is unchanged, so no one's edit is refused because of it");
-  assert.equal(getDb().records.find((r) => r.contentId === day.contentId)!.instance!.locked, false, "the day still follows its template");
+  assert.equal(getDb().recordingSessions.find((s) => s.id === day.id)!.instance!.locked, false, "the day still follows its template");
   // A final sheet takes confirmations too.
   CS.finalizeCallSheet(hop(), cs.id);
   CS.confirmOnSheet(vol(), cs.id, "DOF-P-VOL-001", false);
@@ -417,15 +417,19 @@ await t("a sheet stays open to edit, published or not, and locks once its sessio
   session2().status = "Open"; // reopened: open again
   commit();
   CS.updateCallSheet(hop(), sheet.id, { callTime: "07:00" });
-  // A live show day's sheet: open through the show, locked once the day reaches Post Production.
+  // A live event's day (a session, data version 23): open through the show, locked once the day is closed and what it
+  // recorded has gone to post production.
   const show = P.createProduction(hop(), { title: "Rally", mode: "one_time", date: "2026-10-20" });
   const day = daysOfShow(show.contentId)[0];
   const cs = sheetOfDay(day)!;
-  getDb().records.find((r) => r.contentId === day.contentId)!.pipelineStage = "Production";
+  getDb().recordingSessions.find((s) => s.id === day.id)!.status = "Open";
   CS.updateCallSheet(hop(), cs.id, { notes: "On the day" });
-  getDb().records.find((r) => r.contentId === day.contentId)!.pipelineStage = "Post production";
+  getDb().recordingSessions.find((s) => s.id === day.id)!.status = "Closed";
   commit();
-  throwsRule(() => CS.updateCallSheet(hop(), cs.id, { notes: "After" }), /locked\. .* has reached Post production/);
+  throwsRule(
+    () => CS.updateCallSheet(hop(), cs.id, { notes: "After" }),
+    /locked\. Show day .* is closed: what it recorded is in Post production/,
+  );
 });
 
 await t("upgrading to version 20 gives every sheet its saved location, confirmations and change log, empty, once", () => {

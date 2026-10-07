@@ -575,7 +575,7 @@ export function CallSheetBody({
   // A sheet made for a recording session lists the episodes planned for it (the five-stage workflow).
   const session = db.recordingSessions.find((s) => s.callSheetId === cs.id);
   const sessionRows = session ? db.sessionLogEntries.filter((e) => e.sessionId === session.id) : [];
-  const day = cs.instanceId ? getRecord(cs.instanceId) : undefined;
+  const day = cs.instanceId ? getDb().recordingSessions.find((s) => s.id === cs.instanceId) : undefined;
   const save = (patch: SheetPatch) => attempt(() => updateCallSheet(actor, cs.id, patch, cs.version));
   const roleHint = (pid: string) => roleOn(pid, root) || null;
   const props = { value: cs, editable, onChange: save };
@@ -782,7 +782,8 @@ export function CallSheetBody({
       </Section>
       <LogisticsSection {...props} />
       <ContactsSection {...props} crewRows={crewContactRows(cs, actor, roleHint)} more={moreContacts} />
-      {session ? (
+      {/* A recording session's run sheet is its own; a live day's running order is its call sheet's run of show. */}
+      {session && root.category !== "live" ? (
         <div id="sec-runOfShow" className="cs-section">
           <RunSheetPanel sessionId={session.id} editable={write && session.status !== "Closed" && !session.archivedAt} />
         </div>

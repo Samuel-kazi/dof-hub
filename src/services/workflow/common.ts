@@ -113,6 +113,12 @@ export const episodesOf = (projectId: string, includeArchived = false): Episode[
     .sort((a, b) => a.episode.episodeNumber - b.episode.episodeNumber);
 export const isDocumentary = (p: Project): boolean =>
   p.workflow.formType === "documentary_dof" || p.workflow.formType === "documentary_pitched";
+/** A live event: its days are its sessions, and what a day recorded is named in its show log, not planned ahead. */
+export const isLiveProject = (p: Project): boolean => p.workflow.formType === "live_event";
+/** A music release: a song can be recorded in more than one session (its audio, then its video). */
+export const isMusicProject = (p: Project): boolean => p.workflow.formType === "music_single" || p.workflow.formType === "music_album";
+/** Whose session log names what was recorded in its own words (an interview set, a scene, a worship set), not planned items. */
+export const freeFormLog = (p: Project): boolean => isDocumentary(p) || isLiveProject(p);
 
 /** Planned episodes not made yet and not on the log of a session still to come: another session is needed for them. */
 export function unscheduledPlanned(projectId: string): number {

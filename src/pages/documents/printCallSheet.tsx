@@ -118,7 +118,8 @@ export function PrintedCallSheet({ job }: { job: CallSheetPrintJob }) {
   // A recurring show's day is called by its date: the date is not said twice.
   const dateText = date ? (name.includes(fmtDate(date)) ? null : fmtDate(date)) : "No date yet";
   const when = [s ? s.label : null, dateText, from && `${from}${to ? `–${to}` : ""}`].filter(Boolean).join(" · ");
-  const run = s ? s.runSheet : (cs?.runOfShow ?? []);
+  // A live day's running order is its call sheet's run of show; a recording session's, its own run sheet.
+  const run = s && project.category !== "live" ? s.runSheet : (cs?.runOfShow ?? []);
   const head = (
     <header className="rp-print-head">
       <h1>{project.title}</h1>

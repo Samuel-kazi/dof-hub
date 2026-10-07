@@ -3,7 +3,17 @@ import { cleanRoles } from "../config/projectRoles";
 import { can, requireCan } from "./permissions";
 import { ConflictError, RuleError } from "../types";
 import { commit, getDb } from "../data/store";
-import { childCounter, childNumber, childToken, claimId, logId, localId, topLevelCounter, topLevelNumber } from "../data/ids";
+import {
+  childCounter,
+  childCounterOf,
+  childNumber,
+  childToken,
+  claimId,
+  logId,
+  localId,
+  topLevelCounter,
+  topLevelNumber,
+} from "../data/ids";
 import { categoryOf, finalStageOf } from "../config/categories";
 import { effortFor } from "../config/capacity";
 import { archiveDocsFor, attachStageDocs, docSubject } from "./docs";
@@ -220,7 +230,7 @@ export function nextTopLevelId(category: CategoryKey): string {
 /** The next child Content ID of a record, such as DOF-SER-001-S2 or DOF-SER-001-S1-E05. */
 export function nextChildId(parent: ContentRecord): string {
   const db = getDb();
-  const key = childCounter(parent.contentId);
+  const key = childCounterOf(parent);
   const width = parent.hierarchyLevel === 0 ? 1 : 2;
   const nums = getChildren(parent.contentId, true)
     .map((c) => childNumber(c.contentId, parent))
@@ -378,8 +388,25 @@ export interface DayInput {
 }
 
 /** One day of a live show: its own item, with its own pipeline. Its call sheet is made by the production service. */
+/**
+ * The next Content ID of a day of a show on the earlier pipeline (DOF-LIVE-002-D3), counted under the show itself as
+ * before data version 23. Since then a show's children are its events (E1); their days are sessions.
+ */
+function nextLegacyDayId(show: ContentRecord): string {
+  const db = getDb();
+  const key = childCounter(show.contentId);
+  const prefix = `${show.contentId}-D`;
+  const nums = db.records
+    .filter((r) => r.parentId === show.contentId && r.contentId.startsWith(prefix))
+    .map((r) => parseInt(r.contentId.slice(prefix.length), 10))
+    .filter((n) => !Number.isNaN(n));
+  const n = Math.max(db.counters[key] ?? 0, ...nums) + 1;
+  db.counters[key] = n;
+  return claimId(`${prefix}${n}`);
+}
+
 export function makeDay(actor: Actor, show: ContentRecord, date: string | null, title: string, input: DayInput = {}): ContentRecord {
-  const day = blankRecord(nextChildId(show), "live", title, show.contentId, 1);
+  const day = blankRecord(nextLegacyDayId(show), "live", title, show.contentId, 1);
   day.scheduledDate = date;
   day.deadline = date ?? input.deadline ?? null; // a live day is published on the day it is streamed
   day.assigneePersonId = input.assigneePersonId || null;
@@ -439,10 +466,21 @@ export function createChildRecord(actor: Actor, parentId: string, input: Omit<Ne
   if (!canWrite(actor, parent)) throw new RuleError("You are not assigned to this project.");
   if (parent.workflow) throw new RuleError("Episodes of this project are made when a recording session closes.");
   if (parent.seriesType) throw new RuleError("Add a season to this series as a new project, so it starts in Development.");
+  // A live show or music project on the workflow takes new events and releases as projects, as a series takes seasons.
+  if (
+    (parent.category === "live" || parent.category === "music") &&
+    parent.hierarchyLevel === 0 &&
+    getDb().records.some((c) => c.parentId === parent.contentId && c.workflow)
+  )
+    throw new RuleError(
+      `Add ${parent.category === "live" ? "an event to this live show" : "a release to this music project"} as a new project, so it starts in Development.`,
+    );
   const kind = childKindFor(parent);
   if (!kind) throw new RuleError(`${categoryOf(parent.category).label} records cannot have children.`);
   if (!input.title.trim()) throw new RuleError(`Give the ${kind.toLowerCase()} a title.`);
-  const r = blankRecord(nextChildId(parent), parent.category, input.title.trim(), parent.contentId, parent.hierarchyLevel + 1);
+  const legacyDay = parent.category === "live" && parent.hierarchyLevel === 0;
+  const id = legacyDay ? nextLegacyDayId(parent) : nextChildId(parent);
+  const r = blankRecord(id, parent.category, input.title.trim(), parent.contentId, parent.hierarchyLevel + 1);
   r.deadline = input.deadline || null;
   r.scheduledDate = input.scheduledDate || null;
   r.assigneePersonId = input.assigneePersonId || null;

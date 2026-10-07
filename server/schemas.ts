@@ -97,6 +97,17 @@ const recurrence = z.object({
   skipDates: z.array(date).max(200),
   extraDates: z.array(date).max(200),
 });
+/** How a live event's days are made (src/services/production.ts checks the rest). */
+const eventSetupFields = {
+  mode: z.enum(["recurring", "one_time", "multi_day"]),
+  date: date.nullable().optional(),
+  startDate: date.nullable().optional(),
+  endDate: date.nullable().optional(),
+  rule: recurrence.nullable().optional(),
+  productionLevel: level.nullable().optional(),
+  callTime: time.optional(),
+  location: short(500).optional(),
+};
 const eventPlan = z
   .object({
     overview: text(4000),
@@ -323,15 +334,9 @@ export const ACTIONS: Record<string, ActionSpec> = {
   "production.createProduction": args([
     z.object({
       title: short(),
-      mode: z.enum(["recurring", "one_time", "multi_day"]),
-      date: date.nullable().optional(),
-      startDate: date.nullable().optional(),
-      endDate: date.nullable().optional(),
-      rule: recurrence.nullable().optional(),
-      productionLevel: level.nullable().optional(),
-      assigneePersonId: ref.nullable().optional(),
-      callTime: time.optional(),
-      location: short(500).optional(),
+      showId: ref.nullable().optional(),
+      deadline: date.nullable().optional(),
+      ...eventSetupFields,
       notes: text().optional(),
     }),
   ]),
@@ -675,12 +680,14 @@ export const ACTIONS: Record<string, ActionSpec> = {
   // The five-stage workflow: projects and Development
   "workflow.createWorkflowProject": args([
     z.object({
-      category: z.enum(["series", "devotional", "documentary"]),
+      category: z.enum(["series", "devotional", "documentary", "music", "live"]),
       title: short(),
       seriesType: seriesType.nullable().optional(),
       seriesId: ref.nullable().optional(),
       formType: formType.nullable().optional(),
+      projectTitle: short().nullable().optional(),
       deadline: date.nullable().optional(),
+      event: z.object(eventSetupFields).nullable().optional(),
     }),
   ]),
   "workflow.assignProducer": args([id, ref.nullable()]),
@@ -733,6 +740,7 @@ export const ACTIONS: Record<string, ActionSpec> = {
   "workflow.renamePlanRole": args([compound, short(60)]),
   "workflow.setRolePerson": args([compound, ref.nullable()]),
   "workflow.assignDevotion": args([id, id.nullable()]),
+  "workflow.setSongOnSession": args([id, id, z.boolean()]),
   "workflow.setSessionBoards": args([id, z.object({ storyboardId: id.nullable(), shotListId: id.nullable() }).partial()]),
   "workflow.setProjectDrive": args([id, id.nullable()]),
   "workflow.setSessionDrive": args([id, id.nullable()]),
@@ -844,7 +852,8 @@ export const NOT_ACTIONS: Record<string, string> = {
   "equipment.copyGearBetweenSheets": "internal step of duplicating a call sheet",
   "equipment.bookWhatIsFree": "internal step of making or copying a call sheet",
   "content.makeDay": "internal step of making a production's days",
-  "production.canPlanShow": "read only",
+  "production.canPlanEvent": "read only",
+  "production.setUpEventDays": "internal step of making a live event",
   "locations.canKeepLocations": "read only",
   "documents.canKeepLibrary": "read only",
   "equipment.rebookSheetGear": "internal step of moving a call sheet",

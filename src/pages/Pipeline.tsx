@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { ReportButton } from "../ui/ReportDialog";
 import { can } from "../services/wrapped/permissions";
-import { onBoard } from "../services/wrapped/production";
 import { pipelineCategories } from "../services/wrapped/settings";
 import type { CategoryKey, ContentRecord } from "../types";
 import { useApp, type MenuItem } from "../ui/AppContext";
@@ -107,7 +106,7 @@ export function Pipeline({ category }: { category?: CategoryKey }) {
           <h1>{cfg ? cfg.label : "Content pipeline"}</h1>
           <p className="sub">
             {cfg?.workflow
-              ? `${WORKFLOW_STAGE_NAMES.join(", ")}. A project shows in Development and Pre-production, a recording session in Production, and each ${cfg.workflow.episodeLabel.toLowerCase()} on its own after that.`
+              ? `${WORKFLOW_STAGE_NAMES.join(", ")}. ${cfg.key === "live" ? "An event" : cfg.key === "music" ? "A release" : "A project"} shows in Development and Pre-production, ${cfg.key === "live" ? "each day" : "a recording session"} in Production, and each ${cfg.workflow.episodeLabel.toLowerCase()} on its own after that.`
               : cfg
                 ? cfg.supportsChildren
                   ? cfg.leafLevel === 1
@@ -184,7 +183,7 @@ export function Pipeline({ category }: { category?: CategoryKey }) {
       {effective === "board" && cfg && !wf && (
         <StageBoard
           cfg={cfg}
-          records={all.filter((r) => r.category === cfg.key && usesPipeline(r) && onBoard(r))}
+          records={all.filter((r) => r.category === cfg.key && usesPipeline(r))}
           closed={showClosed && closedCount > 0 ? legacyClosed : null}
           onContext={rm.onContext}
         />

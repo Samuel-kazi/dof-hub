@@ -1,4 +1,5 @@
 import type { Database } from "../types";
+import { liveMusicPlan } from "./migrateLiveMusic";
 
 // What the rework (build prompt v2) will need decided about the existing data, reported with every dry run of the
 // upgrade (npm run db:upgrade) and kept out of the upgrade itself until decided:
@@ -27,6 +28,7 @@ export interface ReworkReport {
   emailChoosers: number;
   textChoosers: number;
   notCarried: string[];
+  liveMusic?: string[]; // what data version 23 moves onto the workflow: each live show's event and days, each album's songs
 }
 
 export function reworkReport(db: Database): ReworkReport {
@@ -53,6 +55,7 @@ export function reworkReport(db: Database): ReworkReport {
     emailChoosers: db.people.filter((p) => p.notifyEmail).length,
     textChoosers: db.people.filter((p) => p.notifySms).length,
     notCarried: [],
+    liveMusic: liveMusicPlan(db),
   };
 }
 
@@ -75,5 +78,9 @@ export function describeRework(r: ReworkReport): string[] {
       `${r.textChoosers} with text reminders on.`,
   );
   out.push(r.notCarried.length ? `  Not carried over: ${r.notCarried.join("; ")}.` : "  Fields not carried over: none.");
+  if (r.liveMusic?.length) {
+    out.push("  Live Shows and DOF Music onto the workflow (data version 23). IDs stay; moved records are kept, archived, with a pointer:");
+    out.push(...r.liveMusic.map((l) => `  ${l}`));
+  } else out.push("  Live Shows and DOF Music: nothing left to move onto the workflow.");
   return out;
 }

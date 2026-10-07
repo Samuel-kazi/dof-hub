@@ -41,6 +41,24 @@ import { ConfigChecklist, useDraft, useReason } from "./common";
 import { focusNext, useFocusRow } from "../../ui/keys";
 import { askIfScheduling, useReviewCheck } from "../../ui/ReviewCheck";
 import { PersonName } from "../../ui/PersonName";
+import { updateCallSheet } from "../../services/wrapped/callsheets";
+import { dayTitle } from "../../services/wrapped/production";
+import { RunOfShowSection } from "../production/SheetSections";
+import { InstanceStrip } from "../production/InstanceStrip";
+import type { CallSheet } from "../../types";
+
+/** A live day's running order: its call sheet's run of show, with the live columns (status, actual times, cues). */
+export function LiveRunOfShow({ sheet, editable }: { sheet: CallSheet; editable: boolean }) {
+  const { actor, attempt } = useApp();
+  return (
+    <RunOfShowSection
+      value={sheet}
+      editable={editable}
+      onChange={(patch) => attempt(() => updateCallSheet(actor, sheet.id, patch, sheet.version))}
+      live
+    />
+  );
+}
 
 // One recording session: Pre-production while Planned (call sheet, gear, rehearsal), Production while Open (the
 // run sheet and the log, then wrap), and the close that makes the episodes.
@@ -275,8 +293,8 @@ function RecordingDay({ project, sessionId, editable }: { project: Project; sess
     })),
   ];
   return (
-    <section className="glass panel" aria-label="Recording day">
-      <h2>Recording day</h2>
+    <section className="glass panel" aria-label={project.category === "live" ? "Show day" : "Recording day"}>
+      <h2>{project.category === "live" ? "Show day" : "Recording day"}</h2>
       {reviewModal}
       <div className="row" style={{ alignItems: "end" }}>
         <Field label="Date">
@@ -303,7 +321,11 @@ function RecordingDay({ project, sessionId, editable }: { project: Project; sess
       </div>
       <div className="grid-2" style={{ marginTop: 10 }}>
         <div>
-          <h3>Episodes and guests</h3>
+          <h3>
+            {project.category === "live"
+              ? "Logged for post production"
+              : `${categoryOf(project.category).workflow?.episodeLabel ?? "Episode"}s and guests`}
+          </h3>
           {rows.length === 0 ? (
             <p className="muted">None planned yet. Add them to the log below.</p>
           ) : (
@@ -522,6 +544,10 @@ export function SessionPage({ id }: { id: string }) {
   const write = canWrite(actor, p) && !p.archived && !session.archivedAt;
   const editable = write && session.status !== "Closed";
   const isDoc = p.workflow.formType.startsWith("documentary");
+  // A live event's day: its running order is its call sheet's run of show, and its show log names what was recorded.
+  const live = p.category === "live";
+  const freeForm = isDoc || live;
+  const episodeWord = (categoryOf(p.category).workflow?.episodeLabel ?? "Episode").toLowerCase();
   const rows = rowsOf(id);
   const sheet = session.callSheetId ? getDb().callSheets.find((c) => c.id === session.callSheetId) : undefined;
   const gear = sheet ? manifestForSheet(sheet.id) : undefined;
@@ -532,7 +558,7 @@ export function SessionPage({ id }: { id: string }) {
   const daySheet = getDb().projectDocuments.find((d) => d.ownerId === id && d.stage === "Production");
 
   const addRow = () => {
-    const input = isDoc ? { itemLabel: label } : { plannedEpisodeId: pick };
+    const input = freeForm ? { itemLabel: label } : { plannedEpisodeId: pick };
     if (attempt(() => addLogRow(actor, id, input), "Added to the log")) {
       setPick("");
       setLabel("");
@@ -543,10 +569,19 @@ export function SessionPage({ id }: { id: string }) {
     const skip = rows.filter((r) => r.status === "Not recorded");
     const body = isDoc
       ? "The session closes. A documentary's film is made when it is sent to post production."
-      : `${make.length} episode${make.length === 1 ? "" : "s"} will be made${skip.length ? `; ${skip.length} not recorded will stay planned for a later session` : ""}. This cannot be undone once editing starts on them.`;
-    if (!(await confirm({ title: "Close session and send to post production?", body, confirmLabel: "Close session" }))) return;
+      : live
+        ? make.length
+          ? `${make.length} recording${make.length === 1 ? "" : "s"} will go to post production. This cannot be undone once editing starts on them.`
+          : "Nothing was logged for post production: the day closes, and nothing goes to post production."
+        : `${make.length} ${episodeWord}${make.length === 1 ? "" : "s"} will be made${skip.length ? `; ${skip.length} not recorded will stay planned for a later session` : ""}. This cannot be undone once editing starts on them.`;
+    const title = live ? "Close the day?" : "Close session and send to post production?";
+    if (!(await confirm({ title, body, confirmLabel: live ? "Close the day" : "Close session" }))) return;
     const res = attempt(() => closeSession(actor, id));
-    if (res) toast(res.made.length ? `Session closed. Made ${res.made.join(", ")}.` : "Session closed.", "success");
+    if (res)
+      toast(
+        res.made.length ? `${live ? "Day" : "Session"} closed. Made ${res.made.join(", ")}.` : `${live ? "Day" : "Session"} closed.`,
+        "success",
+      );
   };
 
   return (
@@ -564,19 +599,19 @@ export function SessionPage({ id }: { id: string }) {
       </nav>
       <div className="page-head">
         <div className="grow">
-          <h1>Recording session {session.sessionNumber}</h1>
+          <h1>{live ? `${dayTitle(session)}: ${p.title}` : `Recording session ${session.sessionNumber}`}</h1>
           <div className="wf-chips" style={{ marginTop: 4 }}>
             <span className="cid">{session.id}</span>
             <span className={`badge ${session.status === "Closed" ? "ok" : "accent"}`}>{stageOf(session.status)}</span>
             {session.scheduledDate && <span className="muted">{fmtDate(session.scheduledDate)}</span>}
           </div>
         </div>
-        {canWrite(actor, p) && !p.archived && p.workflow.stage === "Pre-production" && (
+        {canWrite(actor, p) && !p.archived && p.workflow.stage === "Pre-production" && !live && (
           <button className="btn" onClick={() => setDuplicating(true)}>
             Duplicate…
           </button>
         )}
-        {write && session.status === "Planned" && (
+        {write && session.status === "Planned" && !session.instance && (
           <button
             className="btn danger"
             onClick={async () => {
@@ -596,7 +631,8 @@ export function SessionPage({ id }: { id: string }) {
       {session.status === "Closed" && (
         <div className="banner">
           <span className="grow">
-            Closed {session.closedAt ? fmtDateTime(session.closedAt) : ""}. Its episodes are in the project's episode tracker.
+            Closed {session.closedAt ? fmtDateTime(session.closedAt) : ""}.{" "}
+            {live ? "What it recorded is in the event's recording tracker." : "Its episodes are in the project's episode tracker."}
           </span>
           {write && (
             <button
@@ -618,6 +654,7 @@ export function SessionPage({ id }: { id: string }) {
         </div>
       )}
 
+      {session.instance && <InstanceStrip day={session} write={write} />}
       <RecordingDay project={p} sessionId={id} editable={editable} />
 
       {session.status === "Planned" && (
@@ -679,41 +716,57 @@ export function SessionPage({ id }: { id: string }) {
             }}
           />
           <GatePanel
-            title="Ready to record"
+            title={live ? "Ready for the show" : "Ready to record"}
             gate={evaluateGate("Pre-production", "session", id)}
-            action="Start recording: move to Production"
+            action={live ? "Start the show: move to Production" : "Start recording: move to Production"}
             disabled={!write}
             onDone={async () => {
               if (
                 await confirm({
-                  title: "Start recording?",
-                  body: "The session moves into Production. It cannot move back to Pre-production.",
-                  confirmLabel: "Start recording",
+                  title: live ? "Start the show?" : "Start recording?",
+                  body: `The ${live ? "day" : "session"} moves into Production. It cannot move back to Pre-production.`,
+                  confirmLabel: live ? "Start the show" : "Start recording",
                 })
               )
-                attempt(() => openSession(actor, id), "Session in Production");
+                attempt(() => openSession(actor, id), live ? "Day in Production" : "Session in Production");
             }}
           />
         </>
       )}
 
-      <RunSheetPanel sessionId={id} editable={editable} />
+      {live ? (
+        sheet ? (
+          <LiveRunOfShow sheet={sheet} editable={editable} />
+        ) : (
+          <Empty>This day has no call sheet, so no run of show yet.</Empty>
+        )
+      ) : (
+        <RunSheetPanel sessionId={id} editable={editable} />
+      )}
 
-      <section className="glass panel" aria-label="Recording session log">
-        <h2>Recording session log</h2>
+      <section className="glass panel" aria-label={live ? "Show log" : "Recording session log"}>
+        <h2>{live ? "Show log" : "Recording session log"}</h2>
         <p className="muted">
-          Pickups, retakes, timestamps, audio or focus problems and any dates go in each row's notes for post production.
+          {live
+            ? "Name each part recorded for post production (the full service, a worship set, the message, a testimony), with its status and notes. Leave it empty if nothing needs post production."
+            : "Pickups, retakes, timestamps, audio or focus problems and any dates go in each row's notes for post production."}
         </p>
         {rows.length === 0 ? (
-          <Empty>{isDoc ? "No items logged yet: interview sets, scenes, locations." : "No episodes on this session's log yet."}</Empty>
+          <Empty>
+            {live
+              ? "Nothing logged for post production yet."
+              : isDoc
+                ? "No items logged yet: interview sets, scenes, locations."
+                : `No ${episodeWord}s on this session's log yet.`}
+          </Empty>
         ) : (
           <div className="wf-scroll">
             <table className="table wf-table">
               <thead>
                 <tr>
-                  <th>Session</th>
+                  <th>{live ? "Day" : "Session"}</th>
                   <th>Date</th>
-                  <th>{isDoc ? "Item" : "Episode"}</th>
+                  <th>{live ? "Recorded" : isDoc ? "Item" : episodeWord.charAt(0).toUpperCase() + episodeWord.slice(1)}</th>
                   <th>Guest</th>
                   <th>Status</th>
                   <th>Notes for post production</th>
@@ -730,14 +783,26 @@ export function SessionPage({ id }: { id: string }) {
         )}
         {editable && (
           <div className="row" style={{ alignItems: "end", marginTop: 10 }}>
-            {isDoc ? (
-              <Field label="Add an item: an interview set, a scene, a location">
+            {freeForm ? (
+              <Field
+                label={
+                  live
+                    ? "Add what was recorded: the full service, a worship set, the message"
+                    : "Add an item: an interview set, a scene, a location"
+                }
+              >
                 <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} />
               </Field>
             ) : (
-              <Field label="Add an episode (planned, and not recorded in another session)">
+              <Field
+                label={
+                  p.category === "music"
+                    ? "Add a song (it can be on more than one session: its audio, then its video)"
+                    : `Add ${episodeWord === "episode" ? "an episode" : `a ${episodeWord}`} (planned, and not recorded in another session)`
+                }
+              >
                 <select value={pick} onChange={(e) => setPick(e.target.value)}>
-                  <option value="">{available.length ? "Choose…" : "No planned episodes left to add"}</option>
+                  <option value="">{available.length ? "Choose…" : `No planned ${episodeWord}s left to add`}</option>
                   {available.map((pid) => {
                     const pe = getDb().plannedEpisodes.find((x) => x.id === pid)!;
                     return (
@@ -750,7 +815,7 @@ export function SessionPage({ id }: { id: string }) {
               </Field>
             )}
             <div style={{ flex: "none" }}>
-              <button className="btn primary" disabled={isDoc ? !label.trim() : !pick} onClick={addRow}>
+              <button className="btn primary" disabled={freeForm ? !label.trim() : !pick} onClick={addRow}>
                 Add to the log
               </button>
             </div>
@@ -800,9 +865,9 @@ export function SessionPage({ id }: { id: string }) {
       )}
       {session.status === "Open" && (
         <GatePanel
-          title="Close the session"
+          title={live ? "Close the day" : "Close the session"}
           gate={evaluateGate("Production", "session", id)}
-          action="Close session and send to post production"
+          action={live ? "Close the day and send recordings to post production" : "Close session and send to post production"}
           disabled={!write}
           onDone={() => void close()}
         />

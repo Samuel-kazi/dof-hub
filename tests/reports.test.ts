@@ -83,11 +83,11 @@ await t("the activity log report needs its own permission", () => {
 });
 await t("a report only includes what the person may see", () => {
   const listed = reportToText(buildReport(crew(), "pipeline.status", { which: "all" }));
-  assert.ok(listed.includes("DOF-LIVE-001-D1"), "crew see every project");
+  assert.ok(listed.includes("DOF-LIVE-002-E1"), "crew see every project");
   const v = reportToText(
     buildReport((P.setPersonGrant(hop(), "DOF-P-VOL-001", "reports.export", true), vol()), "pipeline.status", { which: "all" }),
   );
-  assert.ok(!v.includes("DOF-LIVE-001-D1"), "volunteers see only theirs");
+  assert.ok(!v.includes("DOF-LIVE-002-E1"), "volunteers see only theirs");
 });
 await t("a document report keeps the numbered sections, notes and checkboxes", () => {
   const blocks = bodyToBlocks(

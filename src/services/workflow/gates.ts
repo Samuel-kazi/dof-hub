@@ -2,6 +2,7 @@ import type { ContentRecord, RecordingSession, WorkflowStage } from "../../types
 import { RuleError } from "../../types";
 import { getDb } from "../../data/store";
 import { roleName } from "../../config/workflow";
+import { categoryOf, sessionLabelOf } from "../../config/categories";
 import { getRecord } from "../access";
 import { gearIssues, manifestForSheet } from "../equipment";
 import { asWebUrl } from "../urls";
@@ -11,7 +12,9 @@ import {
   episodesOf,
   formOf,
   getSession,
+  freeFormLog,
   isDocumentary,
+  isLiveProject,
   openRequired,
   rowsOf,
   sessionsOf,
@@ -109,17 +112,19 @@ function preProductionSessionGate(s: RecordingSession, p: Project): GateResult {
       missing.push(`Call sheet ${sheet.id} is for ${sheet.date}, not the session's date, ${s.scheduledDate}`);
   }
   missing.push(...openRequired("preSession", s.id).map((l) => `Session: ${l}`));
-  if (p.workflow.formType !== "documentary_dof" && p.workflow.formType !== "documentary_pitched" && rowsOf(s.id).length === 0)
-    warnings.push("No episodes are planned for this session yet");
+  if (!freeFormLog(p) && rowsOf(s.id).length === 0)
+    warnings.push(`No ${planLabels(p.workflow.formType).many} are planned for this session yet`);
   return result(missing, warnings);
 }
 
-function productionGate(s: RecordingSession): GateResult {
+function productionGate(s: RecordingSession, p: Project): GateResult {
   const missing: string[] = [];
-  if (s.status !== "Open") missing.push("The session must be in Production (Open)");
+  const live = isLiveProject(p);
+  if (s.status !== "Open") missing.push(live ? "The day must be in Production (on air)" : "The session must be in Production (Open)");
   missing.push(...openRequired("wrap", s.id).map((l) => `Wrap: ${l}`));
   const rows = rowsOf(s.id);
-  if (rows.length === 0) missing.push("At least one row in the session log");
+  // A live day may record nothing for post production: its show log can stay empty, and closing it makes no recordings.
+  if (rows.length === 0 && !live) missing.push("At least one row in the session log");
   for (const r of rows) if (!r.status) missing.push(`A status for log row "${r.itemLabel || r.plannedEpisodeId}"`);
   return result(missing);
 }
@@ -166,7 +171,7 @@ export function evaluateGate(stage: GateStage, level: GateLevel, id: string): Ga
     if (!s || !p) return result(["Session not found"]);
     if (p.archived || s.archivedAt) return result(["The session is closed"]);
     if (stage === "Pre-production") return preProductionSessionGate(s, p);
-    if (stage === "Production") return productionGate(s);
+    if (stage === "Production") return productionGate(s, p);
   }
   if (level === "episode") {
     const r = getRecord(id);
@@ -214,9 +219,12 @@ export function projectSummary(p: Project): ProjectSummary {
   const published = eps.filter((e) => e.episode.mdStage === "Published").length;
   const closed = sessions.filter((s) => s.status === "Closed").length;
   const parts: string[] = [];
-  if (sessions.length) parts.push(`Production: ${closed} of ${sessions.length} session${sessions.length === 1 ? "" : "s"} closed.`);
-  if (inPost) parts.push(`Post: ${inPost} episode${inPost === 1 ? "" : "s"}.`);
-  if (inMd) parts.push(`Marketing and distribution: ${inMd} episode${inMd === 1 ? "" : "s"}.`);
+  // In the project's own words: a live event's days and recordings, a release's songs.
+  const one = (sessionLabelOf(p.category) === "Day" ? "day" : "session") as string;
+  const ep = (categoryOf(p.category).workflow?.episodeLabel ?? "Episode").toLowerCase();
+  if (sessions.length) parts.push(`Production: ${closed} of ${sessions.length} ${one}${sessions.length === 1 ? "" : "s"} closed.`);
+  if (inPost) parts.push(`Post: ${inPost} ${ep}${inPost === 1 ? "" : "s"}.`);
+  if (inMd) parts.push(`Marketing and distribution: ${inMd} ${ep}${inMd === 1 ? "" : "s"}.`);
   if (published) parts.push(`Published: ${published}.`);
   // Planned episodes with no session yet are Pre-production's work. A project moved across from the earlier pipeline
   // may have episodes and no sessions; a documentary whose sessions are all closed waits to be sent to post production.
@@ -236,5 +244,5 @@ export function projectSummary(p: Project): ProjectSummary {
               : inMd
                 ? "Marketing and distribution"
                 : "Pre-production";
-  return { stage, text: parts.length ? parts.join(" ") : "Pre-production: no sessions yet." };
+  return { stage, text: parts.length ? parts.join(" ") : `Pre-production: no ${sessionLabelOf(p.category).toLowerCase()}s yet.` };
 }

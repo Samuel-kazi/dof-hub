@@ -58,6 +58,7 @@ function iconOf(entry: CatalogEntry): ReactNode {
   switch (entry.form) {
     case "sessions":
     case "recordingDayView":
+    case "showDays":
       return <IconCalendar />;
     case "callSheet":
     case "sessionLog":

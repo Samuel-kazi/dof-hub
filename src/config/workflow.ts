@@ -10,9 +10,9 @@ import type {
   WorkflowStage,
 } from "../types";
 
-// The five-stage workflow for series (podcast, testimonial and sermon), devotions and documentaries: one source
-// of truth for its stages, forms, roles and checklists. Live Shows, Music and General Use keep their own
-// pipelines in categories.ts and never use anything here.
+// The five-stage workflow for series (podcast, testimonial and sermon), devotions, documentaries, live events and
+// music releases: one source of truth for its stages, forms, roles and checklists. General Use keeps its own
+// placeholder in categories.ts and never uses anything here.
 
 export type WorkflowLevel = "project" | "session" | "episode";
 
@@ -59,7 +59,7 @@ export const WORKFLOW_STAGES: WorkflowStageDef[] = [
 export const WORKFLOW_STAGE_NAMES: WorkflowStage[] = WORKFLOW_STAGES.map((s) => s.name);
 
 /** The categories that run this workflow. */
-export const WORKFLOW_CATEGORIES: CategoryKey[] = ["series", "devotional", "documentary"];
+export const WORKFLOW_CATEGORIES: CategoryKey[] = ["series", "devotional", "documentary", "live", "music"];
 export const isWorkflowCategory = (key: CategoryKey): boolean => WORKFLOW_CATEGORIES.includes(key);
 
 // ── Types and forms ──────────────────────────────────────────
@@ -93,7 +93,13 @@ export const FORM_TYPES: FormTypeDef[] = [
     outcomes: [...OUTCOMES, "Advice only"],
   },
   { key: "devotion", label: "Devotion", category: "devotional", greenlights: 1, outcomes: OUTCOMES },
+  { key: "music_single", label: "Music: Single", category: "music", greenlights: 1, outcomes: OUTCOMES },
+  { key: "music_album", label: "Music: Album", category: "music", greenlights: 1, outcomes: OUTCOMES },
+  { key: "live_event", label: "Live Show: Event", category: "live", greenlights: 1, outcomes: OUTCOMES },
 ];
+
+/** A music release: a single or an album. */
+export const isMusicForm = (f: FormType): boolean => f === "music_single" || f === "music_album";
 
 export const formTypeOf = (key: FormType): FormTypeDef => {
   const f = FORM_TYPES.find((x) => x.key === key);

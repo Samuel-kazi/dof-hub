@@ -193,9 +193,9 @@ const { categoryOf } = await import("../src/config/categories");
 const W = await import("../src/services/workload");
 
 const db = getDb();
-assert.equal(db.schemaVersion, 22);
+assert.equal(db.schemaVersion, 23);
 assert.deepEqual(db.outbox, [], "the record of sent reminders exists");
-assert.equal(store["dof-hub-db-before-v22"], JSON.stringify(old), "a copy of the saved data is kept before it is upgraded");
+assert.equal(store["dof-hub-db-before-v23"], JSON.stringify(old), "a copy of the saved data is kept before it is upgraded");
 for (const part of [
   "developmentForms",
   "plannedEpisodes",
@@ -215,10 +215,22 @@ for (const part of [
   "shotLists",
   "shotListRows",
 ] as const)
-  assert.deepEqual(db[part], [], `the ${part} list exists, empty`);
+  // Data version 23 moves the Live Shows and DOF Music onto the workflow; nothing else is moved by the upgrade.
+  assert.deepEqual(
+    (db[part] as unknown[]).filter((x) => !/DOF-(LIVE|MUS)-/.test(JSON.stringify(x))),
+    [],
+    `the ${part} list exists, empty but for the live shows and music moved by version 23`,
+  );
 assert.ok(
-  db.records.every((r) => r.seriesType === null && r.workflow === null && r.episode === null),
-  "every record has the workflow fields, empty: nothing that existed is moved into the new workflow by the upgrade",
+  db.records
+    .filter((r) => r.category !== "live" && r.category !== "music")
+    .every((r) => r.seriesType === null && r.workflow === null && r.episode === null),
+  "every record has the workflow fields, empty: nothing else that existed is moved into the new workflow by the upgrade",
+);
+assert.ok(
+  db.records.some((r) => r.category === "live" && r.workflow?.formType === "live_event") &&
+    db.records.some((r) => r.category === "music" && r.workflow?.formType === "music_album"),
+  "version 23 moves each live show's days into an event, and each album into a release",
 );
 assert.ok(
   db.equipment.every((e) => e.unitLabel === null || typeof e.unitLabel === "string"),

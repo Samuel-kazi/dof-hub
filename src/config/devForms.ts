@@ -87,6 +87,110 @@ const stressTest: SectionDef = {
 
 const title = (n: string) => f("workingTitle", n);
 
+// ── DOF Music and Live Shows (data version 23): the same brief, in their own words ──
+
+const musicBrief: SectionDef = {
+  key: "brief",
+  label: "Brief",
+  fields: [
+    req("workingTitle", "Working title"),
+    req("logline", "Logline", "longtext"),
+    req("coreQuestion", "Core message", "longtext"),
+    req("scriptureBasis", "Scripture and source basis", "longtext"),
+    req("targetAudience", "Target audience"),
+    f("formatDuration", "Style and sound"),
+    f("contributors", "Artists, vocalists and musicians", "longtext"),
+    f("mustNotBecome", "What it must not become", "longtext"),
+    f("resourceAsk", "Resource ask", "longtext"),
+    f("distributionPlan", "Release and distribution plan", "longtext"),
+    req("successMeasures", "Success measures", "longtext", { hint: "Learning notes after release are written against these." }),
+  ],
+};
+
+const songDetails = [f("lyricsBy", "Lyrics by"), f("musicBy", "Music by"), f("keyTempo", "Key and tempo")];
+
+const musicTeam: SectionDef = {
+  key: "team",
+  label: "Team",
+  fields: [
+    req("artist", "Artist or worship team"),
+    f("producerName", "Music producer"),
+    f("soundId", "Audio engineer", "crew"),
+    f("videoDirectorId", "Video director", "crew"),
+    f("editorId", "Editor", "crew"),
+    f("confirmations", "Each person's confirmation", "longtext"),
+  ],
+};
+
+const musicBudget: SectionDef = {
+  key: "budget",
+  label: "Budget",
+  fields: [
+    f("studioTime", "Studio time", "amount"),
+    f("musicians", "Musicians and vocalists", "amount"),
+    f("mixMaster", "Mixing and mastering", "amount"),
+    f("video", "Music video", "amount"),
+    f("distribution", "Distribution", "amount"),
+    f("notes", "Notes", "longtext"),
+  ],
+};
+
+const musicForm = (album: boolean): SectionDef[] => [
+  { key: "entry", label: "Entry", fields: entryFields },
+  musicBrief,
+  {
+    key: "story",
+    label: album ? "Songs" : "The song",
+    fields: [f("synopsis", album ? "What the album is about" : "What the song is about", "longtext")],
+    planned: album ? { label: "Planned songs", min: 1, details: songDetails } : { label: "The song", min: 1, max: 1, details: songDetails },
+  },
+  musicTeam,
+  musicBudget,
+];
+
+const liveForm: SectionDef[] = [
+  { key: "entry", label: "Entry", fields: entryFields },
+  {
+    key: "brief",
+    label: "Brief",
+    fields: [
+      req("workingTitle", "Working title"),
+      req("logline", "Logline", "longtext"),
+      req("coreQuestion", "Purpose of the event", "longtext"),
+      req("scriptureBasis", "Theme and scripture", "longtext"),
+      req("targetAudience", "Audience"),
+      f("formatDuration", "Format and running order"),
+      f("contributors", "Speakers, worship team and performers", "longtext"),
+      f("mustNotBecome", "What it must not become", "longtext"),
+      f("resourceAsk", "Resource ask", "longtext"),
+      f("distributionPlan", "Streaming and distribution plan", "longtext"),
+      req("successMeasures", "Success measures", "longtext", { hint: "The show report is written against these." }),
+    ],
+  },
+  {
+    key: "team",
+    label: "Team",
+    fields: [
+      req("host", "Host or MC"),
+      f("speakers", "Speakers and guests", "longtext"),
+      f("techLeadId", "Technical lead", "crew"),
+      f("streamId", "Streaming", "crew"),
+      f("confirmations", "Each person's confirmation", "longtext"),
+    ],
+  },
+  {
+    key: "budget",
+    label: "Budget",
+    fields: [
+      f("venue", "Venue", "amount"),
+      f("gear", "Gear hire", "amount"),
+      f("streaming", "Streaming", "amount"),
+      f("travel", "Travel and accommodation", "amount"),
+      f("notes", "Notes", "longtext"),
+    ],
+  },
+];
+
 // ── The forms ────────────────────────────────────────────────
 
 export const DEV_FORMS: Record<FormType, SectionDef[]> = {
@@ -430,6 +534,9 @@ export const DEV_FORMS: Record<FormType, SectionDef[]> = {
       fields: [req("slot", "Recording slot"), f("technicalNeeds", "Technical needs", "longtext"), f("backupDate", "Backup date", "date")],
     },
   ],
+  music_single: musicForm(false),
+  music_album: musicForm(true),
+  live_event: liveForm,
 };
 
 export const sectionsOf = (formType: FormType): SectionDef[] => DEV_FORMS[formType];

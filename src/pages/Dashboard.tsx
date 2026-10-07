@@ -28,6 +28,7 @@ import { crewWorkload } from "../services/workload";
 import { modulesFor } from "../services/wrapped/permissions";
 import { KIND_LABEL, searchAll, type Hit } from "../services/search";
 import { onBoard, waitingOnPerson, workItems, type WorkItem } from "../services/workItems";
+import { urgencyReport, urgencyThresholds } from "../services/urgency";
 import type { Route } from "../ui/AppContext";
 import { PersonName } from "../ui/PersonName";
 
@@ -215,6 +216,18 @@ export function Dashboard() {
   const week = crewAccess ? crewWorkload(actor, todayIso(), 7) : [];
   const stretched = week.filter((r) => r.workload.overDays.length > 0);
 
+  // A live event is one production: of its days, only the next one shows, and only within the live window (a month).
+  const liveWindow = urgencyThresholds().liveWindowDays ?? 30;
+  const nextLiveDay = new Map<string, string>();
+  for (const i of wfItems)
+    if (i.level === "session" && i.category === "live" && !i.done && i.due && i.due >= todayIso() && !nextLiveDay.has(i.project.contentId))
+      nextLiveDay.set(i.project.contentId, i.key);
+  const liveDayShown = (i: WorkItem): boolean =>
+    nextLiveDay.get(i.project.contentId) === i.key && !!i.due && daysUntil(i.due) <= liveWindow;
+  // Live events with something urgent or at risk, from the urgency report: only within a month of their next day.
+  const liveRisks = urgencyReport(actor).filter(
+    (r) => r.kind === "project" && r.category === "live" && (r.level === "Critical" || r.level === "High"),
+  );
   // Horizon: at most five, overdue first, then nearest deadline. An earlier-pipeline item runs to its publish date;
   // a session to its date and an episode to the deadline of the stage it is in.
   const horizon: HorizonRow[] = [
@@ -241,7 +254,13 @@ export function Dashboard() {
       }),
     ...wfItems
       // A session's day that has passed is not a deadline: sessions are never overdue.
-      .filter((i) => !i.done && i.level !== "project" && !!i.due && (onBoard(i) || (i.level === "session" && i.due >= todayIso())))
+      .filter(
+        (i) =>
+          !i.done &&
+          i.level !== "project" &&
+          !!i.due &&
+          (i.level === "session" && i.category === "live" ? liveDayShown(i) : onBoard(i) || (i.level === "session" && i.due >= todayIso())),
+      )
       .map((i): HorizonRow => ({
         key: i.key,
         title: itemTitle(i),
@@ -477,10 +496,23 @@ export function Dashboard() {
 
         <section className="glass panel" aria-label="At risk">
           <h2>At risk</h2>
-          {overdue.length + atRisk.length + wfLate.length === 0 ? (
+          {overdue.length + atRisk.length + wfLate.length + liveRisks.length === 0 ? (
             <Empty>Everything is on track.</Empty>
           ) : (
             <div className="list">
+              {liveRisks.map((r) => (
+                <div key={r.id} className="list-item" onClick={() => go({ n: "record", id: r.id })}>
+                  <div className="grow">
+                    <div className="title">{r.title}</div>
+                    <div className="muted" style={{ fontSize: ".84rem" }}>
+                      {r.reasons[0]}
+                    </div>
+                  </div>
+                  <span className={`badge ${r.level === "Critical" ? "bad" : "warn"}`}>
+                    {r.level === "Critical" ? "Urgent" : "At risk"}
+                  </span>
+                </div>
+              ))}
               {wfLate.map((i) => (
                 <div key={i.key} className="list-item" onClick={() => go(i.open)}>
                   <div className="grow">

@@ -530,16 +530,18 @@ await t("in the desktop app and the demo: the Head of Production only, with a co
 
 // ── The sample data, moved (as approved) ─────────────────────
 
-await t("the demo's and a new site's sample data start in the new workflow; Live Shows and Music are as before", () => {
+await t("the demo's and a new site's sample data start in the new workflow, Live Shows and Music too (data version 23)", () => {
   const sample = buildSampleData();
   const earlier = buildSeed();
-  for (const id of ["DOF-SER-001-S1", "DOF-DEV-001", "DOF-DOC-001"]) assert.ok(find(sample, id).workflow, `${id} is in the workflow`);
+  for (const id of ["DOF-SER-001-S1", "DOF-DEV-001", "DOF-DOC-001", "DOF-LIVE-001-E1", "DOF-LIVE-002-E1", "DOF-MUS-001-A1"])
+    assert.ok(find(sample, id).workflow, `${id} is in the workflow`);
   assert.equal(find(sample, "DOF-SER-001").seriesType, "podcast");
-  assert.deepEqual(
-    sample.records.filter((r) => r.category === "live" || r.category === "music"),
-    earlier.records.filter((r) => r.category === "live" || r.category === "music"),
-    "Live Shows and Music are exactly as before",
-  );
+  // Every earlier live and music record is still there, under the same Content ID: moved, or kept archived with a pointer.
+  for (const r of earlier.records.filter((x) => x.category === "live" || x.category === "music"))
+    assert.ok(
+      sample.records.some((x) => x.contentId === r.contentId),
+      `${r.contentId} is kept`,
+    );
   assert.ok(sample.projectDocuments.length >= 3, "with the Development forms in their documents");
   assert.deepEqual(sample.audit, earlier.audit, "nothing in the activity log about a move nobody made");
   assert.deepEqual(integrityProblems(sample), []);

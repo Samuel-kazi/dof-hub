@@ -38,11 +38,14 @@ export interface CategoryConfig {
 
 /** Where a category's projects and episodes sit in its hierarchy, for the five-stage workflow. */
 export interface CategoryWorkflow {
-  projectLevel: number; // 1: a season of a series. 0: a devotion or documentary itself.
+  projectLevel: number; // 1: a season of a series, a live show's event, a music release. 0: a devotion or documentary itself.
   projectLabel: string;
   episodeLevel: number; // always projectLevel + 1
   episodeLabel: string;
   formTypes: FormType[];
+  sessionLabel?: string; // what a recording session is called: "Session", or a live event's "Day"
+  sessionToken?: string; // the letter of its code: R (DOF-SER-001-S1-R01), or D for a live event's days
+  episodeToken?: string; // the letter of an episode's code: E, T for a song, R for a live recording
 }
 
 const s = (name: string, requiredOutput: string, extra: { tasks?: string[]; docs?: string[] } = {}): StageDef => ({
@@ -118,14 +121,14 @@ export const CATEGORIES: CategoryConfig[] = [
     code: "LIVE",
     color: "#f3b943",
     supportsChildren: true,
-    childLevelLabel: "Day",
-    grandchildLevelLabel: "Day",
-    childToken: "D",
-    grandchildToken: "D",
-    // A show can run for one day or several. Each day is its own item with its own pipeline, call sheet and run of show.
-    // The five stages (build prompt v2, section 9): show planning in Development; technical prep and rehearsal in
-    // Pre-production; the show and its strike in Production; post-show editing and clips in Post production; archive
-    // and report in Marketing and distribution. Labels and checklists here, so they change without code.
+    // A live show holds its events, as a series holds its seasons (data version 23). An event is the project: one day,
+    // several days, or a recurring show. Its days are its sessions, each with its own call sheet and run of show; what
+    // was recorded on a day goes on as recordings, through post production and release, like a series' episodes.
+    childLevelLabel: "Event",
+    grandchildLevelLabel: "Recording",
+    childToken: "E",
+    grandchildToken: "R",
+    // The earlier pipeline of a show's days, kept for records made before data version 23 (they are moved across by it).
     stages: [
       s("Development", "Show plan ready: show date set and producer named"),
       s("Pre-production", "Technical prep and rehearsal done", {
@@ -137,8 +140,18 @@ export const CATEGORIES: CategoryConfig[] = [
       s("Marketing and distribution", "Archived, with the show report", { docs: ["analysis"] }),
     ],
     footageStage: "Production",
+    // The level the earlier pipeline ran on: a show's days, kept as they were in data made before data version 23.
     leafLevel: 1,
-    workflow: null,
+    workflow: {
+      projectLevel: 1,
+      projectLabel: "Event",
+      episodeLevel: 2,
+      episodeLabel: "Recording",
+      formTypes: ["live_event"],
+      sessionLabel: "Day",
+      sessionToken: "D",
+      episodeToken: "R",
+    },
   },
   {
     key: "documentary",
@@ -179,11 +192,14 @@ export const CATEGORIES: CategoryConfig[] = [
     code: "MUS",
     color: "#d58fb8",
     supportsChildren: true,
-    childLevelLabel: "Album",
-    grandchildLevelLabel: "Track",
+    // A music project holds its releases, as a series holds its seasons (data version 23). A release is the project: a
+    // single (one song, its audio and its video) or an album. Its songs are planned at Development, recorded in sessions
+    // (audio and video), and go on as songs through mixing, mastering, the video edit, review and release.
+    childLevelLabel: "Release",
+    grandchildLevelLabel: "Song",
     childToken: "A",
     grandchildToken: "T",
-    // The five stages (build prompt v2, section 10), configured here so the details can change without code.
+    // The earlier pipeline of a release's tracks, kept for records made before data version 23 (moved across by it).
     stages: [
       s("Development", "Approved concept and lyrics", { docs: ["concept"] }),
       s("Pre-production", "Session plan", { docs: ["music-plan"] }),
@@ -194,7 +210,14 @@ export const CATEGORIES: CategoryConfig[] = [
     ],
     footageStage: "Production",
     leafLevel: 2,
-    workflow: null,
+    workflow: {
+      projectLevel: 1,
+      projectLabel: "Release",
+      episodeLevel: 2,
+      episodeLabel: "Song",
+      formTypes: ["music_single", "music_album"],
+      episodeToken: "T",
+    },
   },
   {
     key: "general",
@@ -226,6 +249,12 @@ export const categoryOf = (key: CategoryKey): CategoryConfig => {
 
 /** The single source of truth for a category's colour. No view should hardcode or pick its own. */
 export const categoryColor = (key: CategoryKey): string => categoryOf(key).color;
+
+/** What a project's recording sessions are called: "Session", or a live event's "Day". */
+export const sessionLabelOf = (key: CategoryKey): string => categoryOf(key).workflow?.sessionLabel ?? "Session";
+/** The letter of a session's code (R, or D for a live event's days) and of an episode's (E, T for songs, R for live recordings). */
+export const sessionTokenOf = (key: CategoryKey): string => categoryOf(key).workflow?.sessionToken ?? "R";
+export const episodeTokenOf = (key: CategoryKey): string => categoryOf(key).workflow?.episodeToken ?? "E";
 
 /** What a record's pipeline items are called: Episode, Track, Day, or the project itself. */
 export const leafLabel = (key: CategoryKey): string => {

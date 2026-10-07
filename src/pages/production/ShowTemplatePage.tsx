@@ -4,7 +4,7 @@ import { getRecord } from "../../services/access";
 import { describeRule, occurrencesBetween } from "../../services/recurrence";
 import { addDaysIso, fmtDate, todayIso } from "../../services/utils";
 import { roleOn } from "../../services/wrapped/team";
-import { canPlanShow, daysOfShow, getTemplate, updateShowTemplate, DEFAULT_HORIZON_COUNT } from "../../services/wrapped/production";
+import { canPlanEvent, daysOfEvent, getTemplate, updateShowTemplate, DEFAULT_HORIZON_COUNT } from "../../services/wrapped/production";
 import { listLocations } from "../../services/wrapped/locations";
 import { useApp } from "../../ui/AppContext";
 import { LevelField } from "../../ui/LevelField";
@@ -42,11 +42,11 @@ export function ShowTemplatePage({ id }: { id: string }) {
         <Empty>This template does not exist, or is not part of a show you are attached to.</Empty>
       </div>
     );
-  const plan = canPlanShow(actor, show) && !show.archived;
+  const plan = canPlanEvent(actor, show) && !show.archived;
   const today = todayIso();
-  const coming = daysOfShow(show.contentId).filter((d) => d.instance?.templateId === t.id && (d.scheduledDate ?? "") >= today);
+  const coming = daysOfEvent(show.contentId).filter((d) => d.instance?.templateId === t.id && (d.scheduledDate ?? "") >= today);
   const following = coming.filter(
-    (d) => !d.instance!.locked && getDb().callSheets.find((c) => c.instanceId === d.contentId)?.status !== "final",
+    (d) => !d.instance!.locked && d.status === "Planned" && getDb().callSheets.find((c) => c.instanceId === d.id)?.status !== "final",
   );
   const next = occurrencesBetween(t.rule, today, addDaysIso(today, 366))[0] ?? today;
   const report = (r: { updated: string[]; kept: string[] } | undefined) =>
