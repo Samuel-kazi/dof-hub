@@ -5,6 +5,7 @@ import { noteUnreviewed, REVIEW_ACTIONS, reviewNotesOf, reviewOutstanding, revie
 import type { Project } from "../services/wrapped/workflow";
 import { fmtDateTime } from "../services/utils";
 import { useApp } from "./AppContext";
+import { MOD_KEY } from "./keys";
 import { Modal } from "./Modal";
 import { PersonName } from "./PersonName";
 
@@ -221,6 +222,11 @@ export function useReviewCheck(): [(ask: ReviewAsk) => Promise<ReviewGo | null>,
           onChange={(e) => setNote(e.target.value)}
         />
       </label>
+      {state.ask.deliberate && (
+        <p className="muted" style={{ fontSize: ".84rem" }}>
+          Click {state.ask.confirmLabel ?? "Continue"}, or press {MOD_KEY}+Enter.
+        </p>
+      )}
     </Modal>
   ) : null;
   return [check, modal];
