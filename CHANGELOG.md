@@ -79,7 +79,8 @@ Built in six steps, each its own commit (A to F), all approved together. Data ve
 
 - **General Use is no longer a pipeline**. Lent gear is in Equipment, under Lending. Old General Use records keep their
   IDs and open as before; an old link to its pipeline says where Lending is.
-- **The Reminders module is gone**: the Calendar holds the reminders. An old #/reminders link opens the Calendar.
+- **The Reminders module is gone**: the Calendar holds the reminders. An old #/reminders link opens the Calendar on its
+  Reminders.
 
 New validated server actions: `workflow.assignSessionStorage`, `clearSessionStorage`, `markStorage`, `importProject`,
 `setReviewedBeforeSystem`, `setPlannedStart`; `checks.dismissCheck`, `restoreCheck`, `setCheck`; `live.setRundown`,
